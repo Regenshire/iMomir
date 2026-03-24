@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Print - {{ card["name"] }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        :root {
+            --print-width: {{ print_width }};
+            --print-height: {{ print_height }};
+        }
+
+        @page {
+            size: {{ print_width }} {{ print_height }};
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="print-page print-template-{{ print_template }} print-mode-{{ print_mode }}">
+    <div class="print-sheet">
+        <img
+            src="{{ url_for('card_image', card_key=card['card_key']) }}"
+            alt="{{ card['name'] }}"
+            class="print-card-image"
+        >
+    </div>
+
+    <script>
+        window.addEventListener("load", function () {
+            window.print();
+        });
+    </script>
+</body>
+</html>

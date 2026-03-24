@@ -79,7 +79,18 @@
         <div class="result-actions result-actions-bottom">
             <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
             <a class="action-button" href="{{ url_for('result', mana_value=mana_value) }}">Again</a>
-            <button type="button" class="action-button print-button" disabled>Print</button>
+            {% if card %}
+                <a
+                    class="action-button print-button"
+                    href="{{ url_for('print_card', card_key=card['card_key']) }}"
+                    target="_blank"
+                    rel="noopener"
+                >
+                    Print
+                </a>
+            {% else %}
+                <button type="button" class="action-button print-button" disabled>Print</button>
+            {% endif %}
         </div>
     </div>
 </div>

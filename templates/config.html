@@ -133,8 +133,34 @@
             </div>
         </div>
     </div>
-
     <form id="configForm" method="post" class="config-form">
+        <div class="page-panel">
+            <h2>Print Defaults</h2>
+
+            <div class="settings-grid">
+                <label class="toggle-row" for="print_template">
+                    <span>Default Print Template</span>
+                    <select id="print_template" name="print_template">
+                        {% for value, label in print_template_options %}
+                            <option value="{{ value }}" {% if config.get("print_template") == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="toggle-row" for="print_color_mode">
+                    <span>Default Print Color</span>
+                    <select id="print_color_mode" name="print_color_mode">
+                        {% for value, label in print_color_mode_options %}
+                            <option value="{{ value }}" {% if config.get("print_color_mode") == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+        </div>
         <div class="page-panel">
             <h2>Primary Card Types</h2>
             <div class="settings-grid">

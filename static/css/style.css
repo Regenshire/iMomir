@@ -299,6 +299,15 @@ input {
   gap: 20px;
 }
 
+.toggle-row select {
+    min-height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--button);
+    color: var(--text);
+    padding: 6px 10px;
+}
+
 .icon-button-submit {
   border: 0;
   cursor: pointer;
@@ -596,4 +605,80 @@ input {
 .result-actions .action-button {
     min-height: 48px;
     font-size: 1rem;
+}
+
+/* ==========================================
+   Print Page - Image Printing
+   ========================================== */
+
+.print-page {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    --print-width: 60mm;
+    --print-height: 86mm;
+}
+
+.print-template-dk-1234 {
+    --print-width: 60mm;
+    --print-height: 86mm;
+}
+
+.print-template-standard {
+    --print-width: 2.5in;
+    --print-height: 3.5in;
+}
+
+.print-sheet {
+    width: var(--print-width);
+    height: var(--print-height);
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+.print-card-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    image-rendering: auto;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.print-mode-grayscale .print-card-image {
+    filter: grayscale(100%) contrast(1.08) brightness(1.02);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.print-mode-color .print-card-image {
+    filter: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.print-mode-monochrome .print-card-image {
+    filter: grayscale(100%) contrast(2.35) brightness(1.05);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+@media print {
+    html,
+    body.print-page {
+        width: var(--print-width);
+        height: var(--print-height);
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #ffffff;
+    }
+
+    .print-sheet {
+        width: var(--print-width);
+        height: var(--print-height);
+        margin: 0;
+        padding: 0;
+    }
 }

@@ -42,6 +42,8 @@ DEFAULT_CONFIG = {
     "allow_unsets": "0",
     "allow_arena": "0",
     "all_sets_enabled": "1",
+    "print_template": "dk-1234",
+    "print_color_mode": "grayscale",
 }
 
 PRIMARY_TYPE_KEYS = [
@@ -69,6 +71,17 @@ OTHER_FILTER_KEYS = [
     ("allow_legendary", "Allow Legendary"),
     ("allow_unsets", "Allow Un-sets"),
     ("allow_arena", "Allow Arena"),
+]
+
+PRINT_TEMPLATE_OPTIONS = [
+    ("dk-1234", "DK-1234"),
+    ("standard", "Standard"),
+]
+
+PRINT_COLOR_MODE_OPTIONS = [
+    ("grayscale", "Grayscale"),
+    ("color", "Full Color"),
+    ("monochrome", "Monochrome"),
 ]
 
 SAMPLE_SETS = [
@@ -371,10 +384,44 @@ def get_config():
 def update_config_from_form(form_data):
     updated_config = {}
 
-    for key in DEFAULT_CONFIG.keys():
-        if key == "all_sets_enabled":
-            continue
+    checkbox_keys = {
+        "type_creature",
+        "type_artifact",
+        "type_enchantment",
+        "type_instant",
+        "type_land",
+        "type_sorcery",
+        "type_planeswalker",
+        "type_battle",
+        "type_conspiracy",
+        "type_dungeon",
+        "type_emblem",
+        "type_phenomenon",
+        "type_plane",
+        "type_scheme",
+        "type_vanguard",
+        "allow_legendary",
+        "allow_unsets",
+        "allow_arena",
+    }
+
+    select_defaults = {
+        "print_template": "dk-1234",
+        "print_color_mode": "grayscale",
+    }
+
+    for key in checkbox_keys:
         updated_config[key] = "1" if form_data.get(key) == "on" else "0"
+
+    submitted_template = (form_data.get("print_template") or "").strip().lower()
+    if submitted_template not in {"dk-1234", "standard"}:
+        submitted_template = select_defaults["print_template"]
+    updated_config["print_template"] = submitted_template
+
+    submitted_color_mode = (form_data.get("print_color_mode") or "").strip().lower()
+    if submitted_color_mode not in {"grayscale", "color", "monochrome"}:
+        submitted_color_mode = select_defaults["print_color_mode"]
+    updated_config["print_color_mode"] = submitted_color_mode
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1602,6 +1649,45 @@ def result():
         card=card,
     )
 
+@app.route("/print/<card_key>")
+def print_card(card_key):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM cards WHERE card_key = ?", (card_key,))
+    card = cursor.fetchone()
+
+    conn.close()
+
+    if not card:
+        return "Card not found", 404
+
+    config = get_config()
+
+    print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
+    if print_template not in {"dk-1234", "standard"}:
+        print_template = "dk-1234"
+
+    if print_template == "standard":
+        print_width = "2.5in"
+        print_height = "3.5in"
+    else:
+        print_width = "60mm"
+        print_height = "86mm"
+
+    print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
+    if print_mode not in {"grayscale", "color", "monochrome"}:
+        print_mode = "grayscale"
+
+    return render_template(
+        "print.html",
+        card=card,
+        print_mode=print_mode,
+        print_template=print_template,
+        print_width=print_width,
+        print_height=print_height,
+    )
+
 
 @app.route("/config", methods=["GET", "POST"])
 def config():
@@ -1620,6 +1706,8 @@ def config():
         primary_type_keys=PRIMARY_TYPE_KEYS,
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
+        print_template_options=PRINT_TEMPLATE_OPTIONS,
+        print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
     )
