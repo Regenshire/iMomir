@@ -217,6 +217,7 @@ def initialize_database():
             is_legendary INTEGER NOT NULL DEFAULT 0,
             is_unset INTEGER NOT NULL DEFAULT 0,
             is_arena INTEGER NOT NULL DEFAULT 0,
+            has_paper_printing INTEGER NOT NULL DEFAULT 0,
             is_creature INTEGER NOT NULL DEFAULT 0,
             is_artifact INTEGER NOT NULL DEFAULT 0,
             is_enchantment INTEGER NOT NULL DEFAULT 0,
@@ -258,11 +259,18 @@ def initialize_database():
     ensure_column_exists(cursor, "cards", "image_source_url", "TEXT")
     ensure_column_exists(cursor, "cards", "image_cached_at", "TEXT")
     ensure_column_exists(cursor, "cards", "disable_card", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "cards", "has_paper_printing", "INTEGER NOT NULL DEFAULT 0")
     ensure_column_exists(cursor, "scryfall_default_cards", "games", "TEXT")
 
     cursor.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_cards_disable_card ON cards (disable_card)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_cards_has_paper_printing ON cards (has_paper_printing)
         """
     )
 
@@ -450,7 +458,7 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
 
     # Arena filter
     if config.get("allow_arena") == "0":
-        conditions.append("is_arena = 0")
+        conditions.append("has_paper_printing = 1")
 
     # Set filtering
     if config.get("all_sets_enabled") == "0" and selected_set_codes:
@@ -531,7 +539,7 @@ def build_image_candidate_filter_query(config, selected_set_codes, force_redownl
         conditions.append("is_unset = 0")
 
     if config.get("allow_arena") == "0":
-        conditions.append("is_arena = 0")
+        conditions.append("has_paper_printing = 1")
 
     if config.get("all_sets_enabled") == "0" and selected_set_codes:
         set_conditions = []
@@ -929,10 +937,39 @@ def import_scryfall_default_cards_into_database():
     conn.commit()
     conn.close()
 
+    refresh_cards_has_paper_printing()
+
     set_import_metadata("scryfall_default_cards_rows", inserted_count)
 
     return inserted_count
 
+def refresh_cards_has_paper_printing():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE cards
+        SET has_paper_printing = 0
+        """
+    )
+
+    cursor.execute(
+        """
+        UPDATE cards
+        SET has_paper_printing = 1
+        WHERE EXISTS (
+            SELECT 1
+            FROM scryfall_default_cards
+            WHERE scryfall_default_cards.oracle_id = cards.scryfall_id
+              AND (scryfall_default_cards.normal_image_url IS NOT NULL OR scryfall_default_cards.large_image_url IS NOT NULL)
+              AND scryfall_default_cards.games LIKE '%paper%'
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
 
 def find_best_local_scryfall_image_match(card_row, selected_set_codes):
     conn = get_db_connection()
@@ -1165,6 +1202,7 @@ def import_atomic_cards_into_database():
                 is_legendary,
                 is_unset,
                 is_arena,
+                has_paper_printing,
                 is_creature,
                 is_artifact,
                 is_enchantment,
@@ -1181,7 +1219,7 @@ def import_atomic_cards_into_database():
                 is_scheme,
                 is_vanguard
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 card_key,
@@ -1198,6 +1236,7 @@ def import_atomic_cards_into_database():
                 is_legendary,
                 is_unset,
                 is_arena,
+                0,
                 type_flags["is_creature"],
                 type_flags["is_artifact"],
                 type_flags["is_enchantment"],
@@ -1497,6 +1536,18 @@ def run_refresh_job(force_download=False):
         )
 
         summary = import_atomic_cards_into_database()
+
+        scryfall_bulk_result = download_scryfall_default_cards_json(force_download=False)
+
+        set_refresh_status(
+            stage="Indexing Paper Printings",
+            message=scryfall_bulk_result["message"],
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        import_scryfall_default_cards_into_database()
 
         if download_result.get("remote_timestamp"):
             set_import_metadata("source_last_updated", download_result["remote_timestamp"])
