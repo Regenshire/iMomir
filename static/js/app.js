@@ -1,0 +1,482 @@
+document.addEventListener("DOMContentLoaded", function () {
+    initializeManaKeypad();
+    initializeSetsPage();
+    initializeRefreshCards();
+});
+
+function initializeManaKeypad() {
+    const manaInput = document.getElementById("manaValue");
+    const manaForm = document.getElementById("manaForm");
+    const keypadButtons = document.querySelectorAll(".keypad-btn[data-key]");
+    const clearButton = document.getElementById("clearBtn");
+    const backspaceButton = document.getElementById("backspaceBtn");
+
+    if (!manaInput || !manaForm) {
+        return;
+    }
+
+    function appendDigit(digit) {
+        if (manaInput.value.length >= 2) {
+            return;
+        }
+
+        if (!/^\d$/.test(digit)) {
+            return;
+        }
+
+        manaInput.value += digit;
+    }
+
+    function clearValue() {
+        manaInput.value = "";
+    }
+
+    function backspaceValue() {
+        manaInput.value = manaInput.value.slice(0, -1);
+    }
+
+    keypadButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            const digit = button.getAttribute("data-key");
+            appendDigit(digit);
+        });
+    });
+
+    if (clearButton) {
+        clearButton.addEventListener("click", function () {
+            clearValue();
+        });
+    }
+
+    if (backspaceButton) {
+        backspaceButton.addEventListener("click", function () {
+            backspaceValue();
+        });
+    }
+
+    manaForm.addEventListener("submit", function (event) {
+        const value = manaInput.value.trim();
+
+        if (value === "") {
+            event.preventDefault();
+            alert("Please enter a mana value.");
+        }
+    });
+}
+
+function initializeSetsPage() {
+    const allSetsCheckbox = document.getElementById("allSetsEnabled");
+    const setsListWrapper = document.getElementById("setsListWrapper");
+    const setSearchInput = document.getElementById("setSearchInput");
+    const setCheckboxes = document.querySelectorAll(".set-checkbox");
+    const setRows = document.querySelectorAll(".set-row");
+
+    if (!allSetsCheckbox || !setsListWrapper) {
+        return;
+    }
+
+    function syncAllSetsState() {
+        const disableIndividualSets = allSetsCheckbox.checked;
+
+        if (disableIndividualSets) {
+            setsListWrapper.classList.add("sets-disabled");
+        } else {
+            setsListWrapper.classList.remove("sets-disabled");
+        }
+
+        setCheckboxes.forEach(function (checkbox) {
+            checkbox.disabled = disableIndividualSets;
+        });
+    }
+
+    function filterSetRows() {
+        if (!setSearchInput) {
+            return;
+        }
+
+        const searchValue = setSearchInput.value.trim().toLowerCase();
+
+        setRows.forEach(function (row) {
+            const haystack = row.getAttribute("data-set-search") || "";
+
+            if (searchValue === "" || haystack.includes(searchValue)) {
+                row.classList.remove("hidden");
+            } else {
+                row.classList.add("hidden");
+            }
+        });
+    }
+
+    allSetsCheckbox.addEventListener("change", syncAllSetsState);
+
+    if (setSearchInput) {
+        setSearchInput.addEventListener("input", filterSetRows);
+    }
+
+    syncAllSetsState();
+    filterSetRows();
+}
+
+function initializeRefreshCards() {
+    const refreshButton = document.getElementById("refreshCardsButton");
+    const forcedRefreshButton = document.getElementById("forcedRefreshCardsButton");
+    const refreshSpinner = document.getElementById("refreshSpinner");
+    const refreshStage = document.getElementById("refreshStage");
+    const refreshMessage = document.getElementById("refreshMessage");
+    const refreshError = document.getElementById("refreshError");
+    const importCardsCount = document.getElementById("importCardsCount");
+    const importSetsCount = document.getElementById("importSetsCount");
+    const importLastRefresh = document.getElementById("importLastRefresh");
+    const importSourceLastUpdated = document.getElementById("importSourceLastUpdated");
+
+    const downloadCardImagesButton = document.getElementById("downloadCardImagesButton");
+    const redownloadCardImagesButton = document.getElementById("redownloadCardImagesButton");
+    const imageDownloadSpinner = document.getElementById("imageDownloadSpinner");
+    const imageDownloadStage = document.getElementById("imageDownloadStage");
+    const imageDownloadMessage = document.getElementById("imageDownloadMessage");
+    const imageDownloadError = document.getElementById("imageDownloadError");
+    const imageCardsProcessed = document.getElementById("imageCardsProcessed");
+    const imageCardsDownloaded = document.getElementById("imageCardsDownloaded");
+    const imageCardsDisabled = document.getElementById("imageCardsDisabled");
+    const imageDownloadFinishedAt = document.getElementById("imageDownloadFinishedAt");
+
+    if (!refreshButton) {
+        return;
+    }
+
+    let refreshPollTimer = null;
+    let imagePollTimer = null;
+    let lastRefreshFinishedAtPrompted = null;
+
+    function setRefreshRunningUi(isRunning) {
+        refreshButton.disabled = isRunning;
+
+        if (forcedRefreshButton) {
+            forcedRefreshButton.disabled = isRunning;
+        }
+
+        if (refreshSpinner) {
+            refreshSpinner.classList.toggle("hidden", !isRunning);
+        }
+    }
+
+    function setImageRunningUi(isRunning) {
+        if (downloadCardImagesButton) {
+            downloadCardImagesButton.disabled = isRunning;
+        }
+
+        if (redownloadCardImagesButton) {
+            redownloadCardImagesButton.disabled = isRunning;
+        }
+
+        if (imageDownloadSpinner) {
+            imageDownloadSpinner.classList.toggle("hidden", !isRunning);
+        }
+    }
+
+    function applyRefreshStatus(status) {
+        if (refreshStage) {
+            refreshStage.textContent = status.stage || "Idle";
+        }
+
+        if (refreshMessage) {
+            refreshMessage.textContent = status.message || "";
+        }
+
+        if (refreshError) {
+            if (status.error) {
+                refreshError.textContent = status.error;
+                refreshError.classList.remove("hidden");
+            } else {
+                refreshError.textContent = "";
+                refreshError.classList.add("hidden");
+            }
+        }
+
+        if (importCardsCount && status.cards_imported !== undefined) {
+            importCardsCount.textContent = String(status.cards_imported);
+        }
+
+        if (importSetsCount && status.sets_represented !== undefined) {
+            importSetsCount.textContent = String(status.sets_represented);
+        }
+
+        if (importLastRefresh && status.finished_at) {
+            importLastRefresh.textContent = status.finished_at;
+        }
+
+        if (importSourceLastUpdated && status.source_last_updated) {
+            importSourceLastUpdated.textContent = status.source_last_updated;
+        }
+
+        setRefreshRunningUi(Boolean(status.is_running));
+    }
+
+    function applyImageStatus(status) {
+        if (imageDownloadStage) {
+            imageDownloadStage.textContent = status.stage || "Idle";
+        }
+
+        if (imageDownloadMessage) {
+            imageDownloadMessage.textContent = status.message || "";
+        }
+
+        if (imageDownloadError) {
+            if (status.error) {
+                imageDownloadError.textContent = status.error;
+                imageDownloadError.classList.remove("hidden");
+            } else {
+                imageDownloadError.textContent = "";
+                imageDownloadError.classList.add("hidden");
+            }
+        }
+
+        if (imageCardsProcessed && status.cards_processed !== undefined) {
+            imageCardsProcessed.textContent = String(status.cards_processed);
+        }
+
+        if (imageCardsDownloaded && status.cards_downloaded !== undefined) {
+            imageCardsDownloaded.textContent = String(status.cards_downloaded);
+        }
+
+        if (imageCardsDisabled && status.cards_disabled !== undefined) {
+            imageCardsDisabled.textContent = String(status.cards_disabled);
+        }
+
+        if (imageDownloadFinishedAt && status.finished_at) {
+            imageDownloadFinishedAt.textContent = status.finished_at;
+        }
+
+        setImageRunningUi(Boolean(status.is_running));
+    }
+
+    async function fetchRefreshStatus() {
+        const response = await fetch("/refresh-cards/status", {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to get refresh status.");
+        }
+
+        return await response.json();
+    }
+
+    async function fetchImageStatus() {
+        const response = await fetch("/download-card-images/status", {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error("Failed to get card image download status.");
+        }
+
+        return await response.json();
+    }
+
+    async function pollRefreshStatus() {
+        try {
+            const status = await fetchRefreshStatus();
+            applyRefreshStatus(status);
+
+            if (!status.is_running && refreshPollTimer) {
+                clearInterval(refreshPollTimer);
+                refreshPollTimer = null;
+            }
+
+            if (
+                !status.is_running &&
+                status.stage === "Complete" &&
+                status.finished_at &&
+                status.finished_at !== lastRefreshFinishedAtPrompted
+            ) {
+                lastRefreshFinishedAtPrompted = status.finished_at;
+
+                const shouldDownloadImages = window.confirm(
+                    "Card database refresh is complete.\n\nWould you like to download missing card images now?\n\nThis uses the local Scryfall bulk image index and may still take some time."
+                );
+
+                if (shouldDownloadImages) {
+                    await startImageDownload(false);
+                }
+            }
+        } catch (error) {
+            if (refreshError) {
+                refreshError.textContent = error.message;
+                refreshError.classList.remove("hidden");
+            }
+
+            setRefreshRunningUi(false);
+
+            if (refreshPollTimer) {
+                clearInterval(refreshPollTimer);
+                refreshPollTimer = null;
+            }
+        }
+    }
+
+    async function pollImageStatus() {
+        try {
+            const status = await fetchImageStatus();
+            applyImageStatus(status);
+
+            if (!status.is_running && imagePollTimer) {
+                clearInterval(imagePollTimer);
+                imagePollTimer = null;
+            }
+        } catch (error) {
+            if (imageDownloadError) {
+                imageDownloadError.textContent = error.message;
+                imageDownloadError.classList.remove("hidden");
+            }
+
+            setImageRunningUi(false);
+
+            if (imagePollTimer) {
+                clearInterval(imagePollTimer);
+                imagePollTimer = null;
+            }
+        }
+    }
+
+    async function startRefresh(forceDownload) {
+        try {
+            setRefreshRunningUi(true);
+
+            if (refreshError) {
+                refreshError.textContent = "";
+                refreshError.classList.add("hidden");
+            }
+
+            if (refreshStage) {
+                refreshStage.textContent = "Starting";
+            }
+
+            if (refreshMessage) {
+                refreshMessage.textContent = forceDownload
+                    ? "Starting forced refresh..."
+                    : "Checking whether download is needed...";
+            }
+
+            const response = await fetch("/refresh-cards/start", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    force_download: forceDownload
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to start refresh.");
+            }
+
+            await pollRefreshStatus();
+
+            if (!refreshPollTimer) {
+                refreshPollTimer = setInterval(pollRefreshStatus, 1000);
+            }
+        } catch (error) {
+            setRefreshRunningUi(false);
+
+            if (refreshError) {
+                refreshError.textContent = error.message;
+                refreshError.classList.remove("hidden");
+            }
+        }
+    }
+
+    async function startImageDownload(forceRedownload) {
+        try {
+            setImageRunningUi(true);
+
+            if (imageDownloadError) {
+                imageDownloadError.textContent = "";
+                imageDownloadError.classList.add("hidden");
+            }
+
+            if (imageDownloadStage) {
+                imageDownloadStage.textContent = "Starting";
+            }
+
+            if (imageDownloadMessage) {
+                imageDownloadMessage.textContent = forceRedownload
+                    ? "Starting full image redownload..."
+                    : "Starting missing image download...";
+            }
+
+            const response = await fetch("/download-card-images/start", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    force_redownload: forceRedownload
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to start card image download.");
+            }
+
+            await pollImageStatus();
+
+            if (!imagePollTimer) {
+                imagePollTimer = setInterval(pollImageStatus, 1000);
+            }
+        } catch (error) {
+            setImageRunningUi(false);
+
+            if (imageDownloadError) {
+                imageDownloadError.textContent = error.message;
+                imageDownloadError.classList.remove("hidden");
+            }
+        }
+    }
+
+    refreshButton.addEventListener("click", async function () {
+        await startRefresh(false);
+    });
+
+    if (forcedRefreshButton) {
+        forcedRefreshButton.addEventListener("click", async function () {
+            await startRefresh(true);
+        });
+    }
+
+    if (downloadCardImagesButton) {
+        downloadCardImagesButton.addEventListener("click", async function () {
+            await startImageDownload(false);
+        });
+    }
+
+    if (redownloadCardImagesButton) {
+        redownloadCardImagesButton.addEventListener("click", async function () {
+            const confirmed = window.confirm(
+                "ReDownload Card Images will reprocess all matching cards and can take a long time.\n\nContinue?"
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            await startImageDownload(true);
+        });
+    }
+
+    pollRefreshStatus();
+    pollImageStatus();
+}

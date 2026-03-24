@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Magic Sets{% endblock %}
+
+{% block content %}
+<div class="screen">
+    <div class="top-bar">
+        <a class="icon-button" href="{{ url_for('index') }}">Back</a>
+        <div class="app-title">Magic Sets</div>
+        <button type="submit" form="setsForm" class="icon-button icon-button-submit">
+            Save
+        </button>
+    </div>
+
+    <form id="setsForm" method="post" class="config-form">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="flash-message">
+                    {{ messages[0] }}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="page-panel">
+            <h2>Set Selection</h2>
+
+            <label class="toggle-row">
+                <span>All Sets</span>
+                <input
+                    type="checkbox"
+                    id="allSetsEnabled"
+                    name="all_sets_enabled"
+                    {% if config.get("all_sets_enabled") == "1" %}checked{% endif %}
+                >
+            </label>
+        </div>
+
+        <div class="page-panel">
+            <h2>Available Sets</h2>
+
+            <input
+                type="text"
+                id="setSearchInput"
+                class="sets-search-input"
+                placeholder="Search sets..."
+                autocomplete="off"
+            >
+
+            <div
+                id="setsListWrapper"
+                class="sets-list-wrapper {% if config.get('all_sets_enabled') == '1' %}sets-disabled{% endif %}"
+            >
+                {% for mtg_set in all_sets %}
+                <label
+                    class="toggle-row set-row"
+                    data-set-search="{{ (mtg_set['set_name'] ~ ' ' ~ mtg_set['set_code'] ~ ' ' ~ (mtg_set['release_date'][:4] if mtg_set['release_date'] else ''))|lower }}"
+                >
+                    <span>
+                        {{ mtg_set["set_name"] }}
+                        <span class="set-meta">
+                            ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
+                        </span>
+                    </span>
+                    <input
+                        type="checkbox"
+                        name="selected_sets"
+                        value="{{ mtg_set['set_code'] }}"
+                        class="set-checkbox"
+                        {% if mtg_set["set_code"] in selected_set_codes %}checked{% endif %}
+                        {% if config.get("all_sets_enabled") == "1" %}disabled{% endif %}
+                    >
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

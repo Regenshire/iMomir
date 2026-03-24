@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Result{% endblock %}
+
+{% block content %}
+<div class="screen screen-result">
+    <div class="top-bar">
+        <a class="icon-button" href="{{ url_for('index') }}">Back</a>
+        <div class="app-title">Result</div>
+        <a class="icon-button" href="{{ url_for('config') }}">Config</a>
+    </div>
+
+        <div class="result-panel">
+        <div class="result-layout">
+            <!-- LEFT COLUMN (0–8) -->
+            <div class="result-mana-rail result-mana-left">
+                <div class="result-mana-rail-label"></div>
+
+                <div class="result-mana-column">
+                    {% for mv in range(0, 9) %}
+                        <a
+                            href="{{ url_for('result', mana_value=mv) }}"
+                            class="result-mana-link {% if mana_value|int == mv %}result-mana-link-active{% endif %}"
+                        >
+                            {{ mv }}
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- CENTER CONTENT -->
+            <div class="result-main">
+                <div class="result-label">Mana Value</div>
+                <div class="result-mana">{{ mana_value }}</div>
+
+                {% if card %}
+                    <div class="card-display">
+                        {% if card["image_blob"] or card["image_url"] %}
+                            <img
+                                src="{{ url_for('card_image', card_key=card['card_key']) }}"
+                                alt="{{ card['name'] }}"
+                                class="card-image"
+                            >
+                        {% else %}
+                            <div class="card-placeholder">
+                                No image available
+                            </div>
+                        {% endif %}
+
+                        <div class="card-info">
+                            <div class="card-name">{{ card["name"] }}</div>
+                            <div class="card-type">{{ card["type_line"] }}</div>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="card-placeholder">
+                        No matching card found.
+                    </div>
+                {% endif %}
+              </div>
+
+              <!-- RIGHT COLUMN (9–16) -->
+              <div class="result-mana-rail result-mana-right">
+                  <div class="result-mana-rail-label">&nbsp;</div>
+
+                  <div class="result-mana-column">
+                      {% for mv in range(9, 17) %}
+                          <a
+                              href="{{ url_for('result', mana_value=mv) }}"
+                              class="result-mana-link {% if mana_value|int == mv %}result-mana-link-active{% endif %}"
+                          >
+                              {{ mv }}
+                          </a>
+                      {% endfor %}
+                  </div>
+              </div>
+          </div>
+
+        <div class="result-actions result-actions-bottom">
+            <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
+            <a class="action-button" href="{{ url_for('result', mana_value=mana_value) }}">Again</a>
+            <button type="button" class="action-button print-button" disabled>Print</button>
+        </div>
+    </div>
+</div>
+{% endblock %}

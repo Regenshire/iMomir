@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual env
+venv/
+.env/
+.venv/
+
+# Database
+*.db
+cards.db
+
+# App data (VERY IMPORTANT)
+data/downloads/
+data/scryfall/
+data/cache/
+data/image_cache/
+data/
+data/scryfall/default-cards.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Dev Stuff
+.vscode/
+.dev_prompts/

@@ -1,0 +1,58 @@
+{% extends "base.html" %} {% block title %}iMomir - Home{% endblock %} {% block
+content %}
+<div class="screen screen-home">
+  <div class="top-bar">
+    <a class="icon-button" href="{{ url_for('config') }}">Config</a>
+    <div class="app-title">iMomir</div>
+    <a class="icon-button" href="{{ url_for('sets') }}">Sets</a>
+  </div>
+
+  <div class="mana-panel">
+    <div class="mana-label">Mana Value</div>
+
+    <form id="manaForm" method="get" action="{{ url_for('result') }}">
+      <input
+        id="manaValue"
+        name="mana_value"
+        type="text"
+        inputmode="numeric"
+        pattern="[0-9]*"
+        maxlength="2"
+        autocomplete="off"
+        readonly
+        value=""
+      />
+
+      <div class="keypad">
+        <button type="button" class="keypad-btn" data-key="1">1</button>
+        <button type="button" class="keypad-btn" data-key="2">2</button>
+        <button type="button" class="keypad-btn" data-key="3">3</button>
+
+        <button type="button" class="keypad-btn" data-key="4">4</button>
+        <button type="button" class="keypad-btn" data-key="5">5</button>
+        <button type="button" class="keypad-btn" data-key="6">6</button>
+
+        <button type="button" class="keypad-btn" data-key="7">7</button>
+        <button type="button" class="keypad-btn" data-key="8">8</button>
+        <button type="button" class="keypad-btn" data-key="9">9</button>
+
+        <button type="button" class="keypad-btn keypad-btn-alt" id="clearBtn">
+          Clear
+        </button>
+        <button type="button" class="keypad-btn" data-key="0">0</button>
+        <button
+          type="button"
+          class="keypad-btn keypad-btn-alt"
+          id="backspaceBtn"
+        >
+          ⌫
+        </button>
+      </div>
+
+      <div class="action-row">
+        <button type="submit" class="enter-button">Enter</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

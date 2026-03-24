@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Config{% endblock %}
+
+{% block content %}
+<div class="screen">
+    <div class="top-bar">
+        <a class="icon-button" href="{{ url_for('index') }}">Back</a>
+        <div class="app-title">Config</div>
+        <button type="submit" form="configForm" class="icon-button icon-button-submit">
+            Save
+        </button>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <h2>Card Database</h2>
+
+        <div class="metadata-list">
+            <div class="metadata-row">
+                <span>Last Refresh</span>
+                <strong id="importLastRefresh">{{ import_metadata.get("last_refresh_utc", "Never") }}</strong>
+            </div>
+            <div class="metadata-row">
+                <span>Source URL</span>
+                <strong class="metadata-value-wrap">{{ import_metadata.get("source_url", "Not downloaded yet") }}</strong>
+            </div>
+            <div class="metadata-row">
+                <span>Source File Date</span>
+                <strong id="importSourceLastUpdated">{{ import_metadata.get("source_last_updated", "Unknown") }}</strong>
+            </div>
+            <div class="metadata-row">
+                <span>Cards Imported</span>
+                <strong id="importCardsCount">{{ import_metadata.get("cards_imported", "0") }}</strong>
+            </div>
+            <div class="metadata-row">
+                <span>Sets Represented</span>
+                <strong id="importSetsCount">{{ import_metadata.get("sets_represented", "0") }}</strong>
+            </div>
+        </div>
+
+        <div class="refresh-panel">
+            <div class="refresh-status-row">
+                <div id="refreshSpinner" class="spinner {% if not refresh_status.get('is_running') %}hidden{% endif %}"></div>
+                <div class="refresh-status-text">
+                    <div><strong id="refreshStage">{{ refresh_status.get("stage", "Idle") }}</strong></div>
+                    <div id="refreshMessage">{{ refresh_status.get("message", "No refresh has been run yet.") }}</div>
+                    <div id="refreshError" class="refresh-error {% if not refresh_status.get('error') %}hidden{% endif %}">
+                        {{ refresh_status.get("error", "") }}
+                    </div>
+                </div>
+            </div>
+            <div class="config-button-row">
+                <button
+                    type="button"
+                    id="refreshCardsButton"
+                    class="action-button"
+                    {% if refresh_status.get("is_running") %}disabled{% endif %}
+                >
+                    Refresh Card Database
+                </button>
+
+                <button
+                    type="button"
+                    id="forcedRefreshCardsButton"
+                    class="action-button secondary-button force-refresh-button"
+                    {% if refresh_status.get("is_running") %}disabled{% endif %}
+                >
+                    Forced Refresh
+                </button>
+            </div>
+
+            <div class="refresh-panel">
+                <div class="refresh-status-row">
+                    <div id="imageDownloadSpinner" class="spinner hidden"></div>
+                    <div class="refresh-status-text">
+                        <div><strong id="imageDownloadStage">Idle</strong></div>
+                        <div id="imageDownloadMessage">No image download has been run yet.</div>
+                        <div id="imageDownloadError" class="refresh-error hidden"></div>
+                    </div>
+                </div>
+
+                <div class="metadata-list">
+                    <div class="metadata-row">
+                        <span>Image Cards Processed</span>
+                        <strong id="imageCardsProcessed">0</strong>
+                    </div>
+                    <div class="metadata-row">
+                        <span>Images Downloaded</span>
+                        <strong id="imageCardsDownloaded">0</strong>
+                    </div>
+                    <div class="metadata-row">
+                        <span>Cards Disabled</span>
+                        <strong id="imageCardsDisabled">0</strong>
+                    </div>
+                    <div class="metadata-row">
+                        <span>Image Job Finished</span>
+                        <strong id="imageDownloadFinishedAt">Never</strong>
+                    </div>
+                </div>
+
+                <div class="config-button-row">
+                    <button
+                        type="button"
+                        id="downloadCardImagesButton"
+                        class="action-button"
+                    >
+                        Download Card Images
+                    </button>
+
+                    <button
+                        type="button"
+                        id="redownloadCardImagesButton"
+                        class="action-button secondary-button"
+                    >
+                        ReDownload Card Images
+                    </button>
+                </div>
+
+                                <div class="metadata-row">
+                    <span>Scope</span>
+                    <strong class="metadata-value-wrap">
+                        Uses current card type filters and current set selection. Normal download only processes cards missing cached images and uses the local Scryfall bulk image index.
+                    </strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form id="configForm" method="post" class="config-form">
+        <div class="page-panel">
+            <h2>Primary Card Types</h2>
+            <div class="settings-grid">
+                {% for key, label in primary_type_keys %}
+                <label class="toggle-row">
+                    <span>{{ label }}</span>
+                    <input
+                        type="checkbox"
+                        name="{{ key }}"
+                        {% if config.get(key) == "1" %}checked{% endif %}
+                    >
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="page-panel">
+            <h2>Supplemental Types</h2>
+            <div class="settings-grid">
+                {% for key, label in supplemental_type_keys %}
+                <label class="toggle-row">
+                    <span>{{ label }}</span>
+                    <input
+                        type="checkbox"
+                        name="{{ key }}"
+                        {% if config.get(key) == "1" %}checked{% endif %}
+                    >
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="page-panel">
+            <h2>Other Filters</h2>
+            <div class="settings-grid">
+                {% for key, label in other_filter_keys %}
+                <label class="toggle-row">
+                    <span>{{ label }}</span>
+                    <input
+                        type="checkbox"
+                        name="{{ key }}"
+                        {% if config.get(key) == "1" %}checked{% endif %}
+                    >
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
