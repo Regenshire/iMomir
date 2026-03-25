@@ -14,7 +14,10 @@ app.secret_key = "imomir-dev-key"
 DATABASE_PATH = "cards.db"
 DATA_DOWNLOAD_DIR = os.path.join("data", "downloads")
 ATOMIC_CARDS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AtomicCards.json")
+SET_LIST_PATH = os.path.join(DATA_DOWNLOAD_DIR, "SetList.json")
+
 MTGJSON_ATOMIC_URL = "https://mtgjson.com/api/v5/AtomicCards.json"
+MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
 
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
@@ -82,21 +85,6 @@ PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),
     ("color", "Full Color"),
     ("monochrome", "Monochrome"),
-]
-
-SAMPLE_SETS = [
-    ("LEA", "Limited Edition Alpha", "1993-08-05", "core"),
-    ("2ED", "Unlimited Edition", "1993-12-01", "core"),
-    ("ARN", "Arabian Nights", "1993-12-17", "expansion"),
-    ("ICE", "Ice Age", "1995-06-03", "expansion"),
-    ("TMP", "Tempest", "1997-10-14", "expansion"),
-    ("INV", "Invasion", "2000-10-02", "expansion"),
-    ("8ED", "Eighth Edition", "2003-07-28", "core"),
-    ("ZEN", "Zendikar", "2009-10-02", "expansion"),
-    ("RTR", "Return to Ravnica", "2012-10-05", "expansion"),
-    ("KHM", "Kaldheim", "2021-02-05", "expansion"),
-    ("WOE", "Wilds of Eldraine", "2023-09-08", "expansion"),
-    ("FIN", "Final Fantasy", "2025-06-13", "expansion"),
 ]
 
 TYPE_FLAG_MAP = {
@@ -199,6 +187,7 @@ def initialize_database():
             set_code TEXT PRIMARY KEY,
             set_name TEXT NOT NULL,
             release_date TEXT,
+            set_block TEXT,
             set_type TEXT
         )
         """
@@ -273,6 +262,8 @@ def initialize_database():
     ensure_column_exists(cursor, "cards", "image_cached_at", "TEXT")
     ensure_column_exists(cursor, "cards", "disable_card", "INTEGER NOT NULL DEFAULT 0")
     ensure_column_exists(cursor, "cards", "has_paper_printing", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "sets", "set_block", "TEXT")
+    ensure_column_exists(cursor, "sets", "set_type", "TEXT")
     ensure_column_exists(cursor, "scryfall_default_cards", "games", "TEXT")
 
     cursor.execute(
@@ -338,26 +329,6 @@ def initialize_database():
 
     conn.commit()
     conn.close()
-
-    seed_sample_sets()
-
-
-def seed_sample_sets():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    for set_code, set_name, release_date, set_type in SAMPLE_SETS:
-        cursor.execute(
-            """
-            INSERT OR IGNORE INTO sets (set_code, set_name, release_date, set_type)
-            VALUES (?, ?, ?, ?)
-            """,
-            (set_code, set_name, release_date, set_type),
-        )
-
-    conn.commit()
-    conn.close()
-
 
 def get_config():
     conn = get_db_connection()
@@ -446,9 +417,9 @@ def get_all_sets():
 
     cursor.execute(
         """
-        SELECT set_code, set_name, release_date, set_type
+        SELECT set_code, set_name, release_date, set_block, set_type
         FROM sets
-        ORDER BY set_name COLLATE NOCASE ASC
+        ORDER BY release_date DESC, set_name COLLATE NOCASE ASC
         """
     )
 
@@ -783,6 +754,33 @@ def download_atomic_cards_json(force_download=False):
         "remote_timestamp": remote_timestamp_text,
     }
 
+def download_set_list_json(force_download=False):
+    ensure_download_directories()
+
+    set_refresh_status(
+        stage="Downloading Set List",
+        message="Downloading SetList.json from MTGJSON...",
+    )
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "application/json;q=0.9,*/*;q=0.8",
+    }
+
+    response = requests.get(
+        MTGJSON_SET_LIST_URL,
+        headers=headers,
+        timeout=120,
+    )
+    response.raise_for_status()
+
+    with open(SET_LIST_PATH, "wb") as file_handle:
+        file_handle.write(response.content)
+
+    return {
+        "downloaded": True,
+        "message": "Downloaded SetList.json successfully.",
+    }
 
 def safe_list(value):
     if isinstance(value, list):
@@ -1168,6 +1166,71 @@ def build_type_flags(card_types):
             flags[flag_name] = 1
 
     return flags
+
+def import_set_list_into_database():
+    if not os.path.exists(SET_LIST_PATH):
+        raise FileNotFoundError("SetList.json was not found after download.")
+
+    set_refresh_status(stage="Parsing Set List", message="Reading SetList.json...")
+
+    with open(SET_LIST_PATH, "r", encoding="utf-8") as file_handle:
+        raw_json = json.load(file_handle)
+
+    set_list = raw_json.get("data", [])
+    if not isinstance(set_list, list):
+        raise ValueError("SetList.json did not contain a valid 'data' list.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM sets")
+
+    inserted_count = 0
+
+    for set_obj in set_list:
+        if not isinstance(set_obj, dict):
+            continue
+
+        set_code = (set_obj.get("code") or "").strip().upper()
+        set_name = (set_obj.get("name") or "").strip()
+        release_date = (set_obj.get("releaseDate") or "").strip()
+        set_block = (set_obj.get("block") or "").strip()
+        set_type = (set_obj.get("type") or "").strip()
+
+        if not set_code or not set_name:
+            continue
+
+        cursor.execute(
+            """
+            INSERT INTO sets (
+                set_code,
+                set_name,
+                release_date,
+                set_block,
+                set_type
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                set_code,
+                set_name,
+                release_date or None,
+                set_block or None,
+                set_type or None,
+            ),
+        )
+
+        inserted_count += 1
+
+        if inserted_count % 500 == 0:
+            conn.commit()
+
+    conn.commit()
+    conn.close()
+
+    set_import_metadata("sets_imported", inserted_count)
+
+    return inserted_count
 
 
 def import_atomic_cards_into_database():
@@ -1578,10 +1641,22 @@ def run_refresh_job(force_download=False):
         download_result = download_atomic_cards_json(force_download=force_download)
 
         set_refresh_status(
-            stage="Preparing Import",
-            message=f"{download_result['reason']} Beginning import from local AtomicCards.json..."
+            stage="Downloading Set List",
+            message="Downloading SetList.json from MTGJSON...",
         )
+        download_set_list_json(force_download=True)
 
+        set_refresh_status(
+            stage="Importing Sets",
+            message="Importing set metadata into SQLite...",
+        )
+        imported_sets = import_set_list_into_database()
+
+        set_refresh_status(
+            stage="Importing Cards",
+            message=f"{download_result['reason']} Beginning import from local AtomicCards.json...",
+            sets_represented=imported_sets,
+        )
         summary = import_atomic_cards_into_database()
 
         scryfall_bulk_result = download_scryfall_default_cards_json(force_download=False)
@@ -1795,11 +1870,14 @@ def sets():
     all_sets = get_all_sets()
     selected_set_codes = get_selected_set_codes()
 
+    current_year = datetime.now().year
+
     return render_template(
         "sets.html",
         config=config_values,
         all_sets=all_sets,
         selected_set_codes=selected_set_codes,
+        current_year=current_year,
     )
 
 if __name__ == "__main__":

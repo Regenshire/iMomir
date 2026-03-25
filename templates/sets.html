@@ -36,7 +36,7 @@
         </div>
 
         <div class="page-panel">
-            <h2>Available Sets</h2>
+            <h2>Set Filters</h2>
 
             <input
                 type="text"
@@ -46,19 +46,88 @@
                 autocomplete="off"
             >
 
+            <div class="sets-filter-grid">
+                <label class="sets-filter-field" for="setTypeFilter">
+                    <span>Set Type</span>
+                    <select id="setTypeFilter" class="sets-filter-select">
+                        <option value="">All Types</option>
+                        {% set ns = namespace(seen_types=[]) %}
+                        {% for mtg_set in all_sets %}
+                            {% set current_type = (mtg_set["set_type"] or "")|lower %}
+                            {% if current_type and current_type not in ns.seen_types %}
+                                {% set ns.seen_types = ns.seen_types + [current_type] %}
+                                <option value="{{ current_type }}">{{ mtg_set["set_type"] }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <div class="sets-filter-field">
+                    <span>Set Year Range</span>
+
+                    <div class="sets-year-readout">
+                        <span id="setYearStartLabel">1993</span>
+                        <span>to</span>
+                        <span id="setYearEndLabel">{{ current_year if current_year else "2026" }}</span>
+                    </div>
+
+                    <div id="setYearRange" class="sets-range-dual">
+                        <div class="sets-range-track"></div>
+                        <div class="sets-range-active"></div>
+
+                        <input
+                            type="range"
+                            id="setYearStart"
+                            min="1993"
+                            max="{{ current_year if current_year else 2026 }}"
+                            value="1993"
+                            step="1"
+                        >
+
+                        <input
+                            type="range"
+                            id="setYearEnd"
+                            min="1993"
+                            max="{{ current_year if current_year else 2026 }}"
+                            value="{{ current_year if current_year else 2026 }}"
+                            step="1"
+                        >
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="page-panel">
+            <div class="sets-panel-header">
+                <h2>Available Sets</h2>
+
+                <div class="sets-bulk-actions">
+                    <button type="button" id="deselectAllSetsButton" class="action-button secondary-button">
+                        Deselect All
+                    </button>
+                    <button type="button" id="selectVisibleSetsButton" class="action-button">
+                        Select All Visible
+                    </button>
+                </div>
+            </div>
+
             <div
                 id="setsListWrapper"
                 class="sets-list-wrapper {% if config.get('all_sets_enabled') == '1' %}sets-disabled{% endif %}"
             >
-                {% for mtg_set in all_sets %}
+                {% for mtg_set in all_sets if mtg_set["set_code"] in selected_set_codes %}
                 <label
-                    class="toggle-row set-row"
-                    data-set-search="{{ (mtg_set['set_name'] ~ ' ' ~ mtg_set['set_code'] ~ ' ' ~ (mtg_set['release_date'][:4] if mtg_set['release_date'] else ''))|lower }}"
+                    class="toggle-row set-row set-row-selected"
+                    data-set-search="{{ (mtg_set['set_name'] ~ ' ' ~ mtg_set['set_code'] ~ ' ' ~ (mtg_set['release_date'][:4] if mtg_set['release_date'] else '') ~ ' ' ~ (mtg_set['set_type'] or ''))|lower }}"
+                    data-set-type="{{ (mtg_set['set_type'] or '')|lower }}"
+                    data-set-year="{{ mtg_set['release_date'][:4] if mtg_set['release_date'] else '' }}"
+                    data-selected="1"
                 >
                     <span>
                         {{ mtg_set["set_name"] }}
                         <span class="set-meta">
                             ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
+                            {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
                         </span>
                     </span>
                     <input
@@ -66,7 +135,32 @@
                         name="selected_sets"
                         value="{{ mtg_set['set_code'] }}"
                         class="set-checkbox"
-                        {% if mtg_set["set_code"] in selected_set_codes %}checked{% endif %}
+                        checked
+                        {% if config.get("all_sets_enabled") == "1" %}disabled{% endif %}
+                    >
+                </label>
+                {% endfor %}
+
+                {% for mtg_set in all_sets if mtg_set["set_code"] not in selected_set_codes %}
+                <label
+                    class="toggle-row set-row"
+                    data-set-search="{{ (mtg_set['set_name'] ~ ' ' ~ mtg_set['set_code'] ~ ' ' ~ (mtg_set['release_date'][:4] if mtg_set['release_date'] else '') ~ ' ' ~ (mtg_set['set_type'] or ''))|lower }}"
+                    data-set-type="{{ (mtg_set['set_type'] or '')|lower }}"
+                    data-set-year="{{ mtg_set['release_date'][:4] if mtg_set['release_date'] else '' }}"
+                    data-selected="0"
+                >
+                    <span>
+                        {{ mtg_set["set_name"] }}
+                        <span class="set-meta">
+                            ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
+                            {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
+                        </span>
+                    </span>
+                    <input
+                        type="checkbox"
+                        name="selected_sets"
+                        value="{{ mtg_set['set_code'] }}"
+                        class="set-checkbox"
                         {% if config.get("all_sets_enabled") == "1" %}disabled{% endif %}
                     >
                 </label>
