@@ -10,7 +10,50 @@
     />
   </head>
   <body>
-    <div class="app-shell">{% block content %}{% endblock %}</div>
+    <div class="app-shell">
+      <div class="app-frame">
+        <nav class="app-tabs" aria-label="Primary">
+          <div class="app-tabs-left">
+            <img
+              src="{{ url_for('static', filename='img/iMomirLogo_1.png') }}"
+              alt="iMomir"
+              class="app-logo"
+            >
+          </div>
+
+          <div class="app-tabs-nav">
+            <a
+              class="app-tab {% if request.endpoint in ['index', 'result'] %}app-tab-active{% endif %}"
+              href="{{ url_for('index') }}"
+            >
+              Result
+            </a>
+
+            <a
+              class="app-tab {% if request.endpoint == 'sets' %}app-tab-active{% endif %}"
+              href="{{ url_for('sets') }}"
+            >
+              Sets
+            </a>
+
+            <a
+              class="app-tab {% if request.endpoint == 'config' %}app-tab-active{% endif %}"
+              href="{{ url_for('config') }}"
+            >
+              Config
+            </a>
+
+            <a
+              class="app-tab {% if request.endpoint == 'card_search' %}app-tab-active{% endif %}"
+              href="{{ url_for('card_search') }}"
+            >
+              Card Search
+            </a>
+          </div>
+        </nav>
+        {% block content %}{% endblock %}
+      </div>
+    </div>
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   </body>

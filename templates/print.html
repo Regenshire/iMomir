@@ -20,7 +20,7 @@
 <body class="print-page print-template-{{ print_template }} print-mode-{{ print_mode }}">
     <div class="print-sheet">
         <img
-            src="{{ url_for('card_image', card_key=card['card_key']) }}"
+            src="{{ image_src }}"
             alt="{{ card['name'] }}"
             class="print-card-image"
         >

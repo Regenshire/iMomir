@@ -25,6 +25,28 @@ SCRYFALL_DOWNLOAD_DIR = os.path.join("data", "scryfall")
 IMAGE_CACHE_DIR = os.path.join("data", "image_cache")
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 
+CARD_SEARCH_DEFAULT_TITLE = "Avatar - Momir Vig, Simic Visionary"
+CARD_SEARCH_DEFAULT_VARIANTS = {
+    "dark": {
+        "label": "Dark Token",
+        "filename": "img/MomirVig_Token_1.jpg",
+    },
+    "light": {
+        "label": "Light Token",
+        "filename": "img/MomirVig_Token_3.jpg",
+    },
+    "retro": {
+        "label": "Retro Token",
+        "filename": "img/MomirVig_Token_2.jpg",
+    },
+    "mtgo": {
+        "label": "MTGO Token",
+        "filename": "img/MomirVig_Token_4.jpg",
+    },
+}
+
+CARD_SEARCH_DEFAULT_VARIANT = "dark"
+
 DEFAULT_CONFIG = {
     "type_creature": "1",
     "type_artifact": "0",
@@ -47,6 +69,7 @@ DEFAULT_CONFIG = {
     "all_sets_enabled": "1",
     "print_template": "dk-1234",
     "print_color_mode": "grayscale",
+    "momir_default_token_variant": "dark",
 }
 
 PRIMARY_TYPE_KEYS = [
@@ -85,6 +108,13 @@ PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),
     ("color", "Full Color"),
     ("monochrome", "Monochrome"),
+]
+
+MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
+    ("dark", "Dark Token"),
+    ("light", "Light Token"),
+    ("retro", "Retro Token"),
+    ("mtgo", "MTGO Token"),
 ]
 
 TYPE_FLAG_MAP = {
@@ -394,6 +424,11 @@ def update_config_from_form(form_data):
         submitted_color_mode = select_defaults["print_color_mode"]
     updated_config["print_color_mode"] = submitted_color_mode
 
+    submitted_momir_variant = (form_data.get("momir_default_token_variant") or "").strip().lower()
+    if submitted_momir_variant not in {"dark", "light", "retro", "mtgo"}:
+        submitted_momir_variant = "dark"
+    updated_config["momir_default_token_variant"] = submitted_momir_variant
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -492,6 +527,44 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
 
     return where_clause, params
 
+def resolve_print_settings():
+    config = get_config()
+
+    print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
+    if print_template not in {"dk-1234", "standard"}:
+        print_template = "dk-1234"
+
+    if print_template == "standard":
+        print_width = "2.5in"
+        print_height = "3.5in"
+    else:
+        print_width = "60mm"
+        print_height = "86mm"
+
+    print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
+    if print_mode not in {"grayscale", "color", "monochrome"}:
+        print_mode = "grayscale"
+
+    return {
+        "print_template": print_template,
+        "print_width": print_width,
+        "print_height": print_height,
+        "print_mode": print_mode,
+    }
+
+def resolve_default_momir_variant():
+    config = get_config()
+    variant = (config.get("momir_default_token_variant") or CARD_SEARCH_DEFAULT_VARIANT).strip().lower()
+
+    if variant not in CARD_SEARCH_DEFAULT_VARIANTS:
+        variant = CARD_SEARCH_DEFAULT_VARIANT
+
+    return {
+        "key": variant,
+        "label": CARD_SEARCH_DEFAULT_VARIANTS[variant]["label"],
+        "filename": CARD_SEARCH_DEFAULT_VARIANTS[variant]["filename"],
+    }
+
 def get_card_by_key(card_key):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -508,6 +581,65 @@ def get_card_by_key(card_key):
     conn.close()
 
     return row
+
+def search_cards_for_print(search_text, search_scope="any", limit=75):
+    normalized_query = (search_text or "").strip().lower()
+    if not normalized_query:
+        return []
+
+    token_terms = [
+        "token",
+        "emblem",
+        "vanguard",
+        "dungeon",
+        "bounty",
+        "conspiracy",
+        "phenomenon",
+        "plane",
+        "scheme",
+        "hero",
+    ]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    sql = """
+        SELECT
+            card_key,
+            name,
+            type_line,
+            image_cache_path,
+            disable_card
+        FROM cards
+        WHERE LOWER(name) LIKE ?
+          AND (disable_card IS NULL OR disable_card = 0)
+    """
+    params = [f"%{normalized_query}%"]
+
+    if search_scope == "token":
+        token_clauses = []
+        for term in token_terms:
+            token_clauses.append("LOWER(type_line) LIKE ?")
+            params.append(f"%{term}%")
+        sql += " AND (" + " OR ".join(token_clauses) + ")"
+
+    sql += """
+        ORDER BY
+            CASE
+                WHEN LOWER(name) = ? THEN 0
+                WHEN LOWER(name) LIKE ? THEN 1
+                ELSE 2
+            END,
+            name COLLATE NOCASE ASC
+        LIMIT ?
+    """
+    params.extend([normalized_query, f"{normalized_query}%", limit])
+
+    cursor.execute(sql, params)
+    rows = cursor.fetchall()
+    conn.close()
+
+    return rows
 
 def draw_random_card(mana_value):
     config = get_config()
@@ -644,6 +776,107 @@ def get_import_metadata():
 
     return metadata
 
+def get_persisted_image_summary():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total_processed
+        FROM cards
+        WHERE image_cached_at IS NOT NULL
+        """
+    )
+    processed_row = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total_downloaded
+        FROM cards
+        WHERE image_cache_path IS NOT NULL
+          AND TRIM(image_cache_path) <> ''
+        """
+    )
+    downloaded_row = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total_disabled
+        FROM cards
+        WHERE disable_card = 1
+        """
+    )
+    disabled_row = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT MAX(image_cached_at) AS finished_at
+        FROM cards
+        WHERE image_cached_at IS NOT NULL
+        """
+    )
+    finished_row = cursor.fetchone()
+
+    conn.close()
+
+    return {
+        "cards_processed": int(processed_row["total_processed"] or 0),
+        "cards_downloaded": int(downloaded_row["total_downloaded"] or 0),
+        "cards_disabled": int(disabled_row["total_disabled"] or 0),
+        "finished_at": finished_row["finished_at"] or "Never",
+    }
+
+def build_config_page_refresh_status(import_metadata):
+    current_refresh_status = get_refresh_status_copy()
+
+    if current_refresh_status.get("is_running"):
+        return current_refresh_status
+
+    cards_imported = import_metadata.get("cards_imported", "0")
+    sets_represented = import_metadata.get("sets_represented", "0")
+    finished_at = import_metadata.get("last_refresh_utc")
+    source_last_updated = import_metadata.get("source_last_updated", "")
+
+    if finished_at:
+        return {
+            **current_refresh_status,
+            "stage": "Idle",
+            "message": f"Last loaded database contains {cards_imported} cards across {sets_represented} sets.",
+            "cards_processed": int(cards_imported or 0),
+            "cards_imported": int(cards_imported or 0),
+            "sets_represented": int(sets_represented or 0),
+            "finished_at": finished_at,
+            "source_last_updated": source_last_updated,
+            "error": "",
+        }
+
+    return current_refresh_status
+
+def build_config_page_image_status():
+    current_image_status = get_image_download_status_copy()
+
+    if current_image_status.get("is_running"):
+        return current_image_status
+
+    persisted_summary = get_persisted_image_summary()
+
+    if persisted_summary["cards_processed"] > 0 or persisted_summary["cards_downloaded"] > 0:
+        return {
+            **current_image_status,
+            "stage": "Idle",
+            "message": (
+                f"Cached image data loaded from database. "
+                f"Processed {persisted_summary['cards_processed']} cards, "
+                f"downloaded {persisted_summary['cards_downloaded']} images."
+            ),
+            "cards_processed": persisted_summary["cards_processed"],
+            "cards_downloaded": persisted_summary["cards_downloaded"],
+            "cards_disabled": persisted_summary["cards_disabled"],
+            "finished_at": persisted_summary["finished_at"],
+            "error": "",
+        }
+
+    return current_image_status
 
 def ensure_download_directories():
     os.makedirs(DATA_DOWNLOAD_DIR, exist_ok=True)
@@ -1737,32 +1970,75 @@ def print_card(card_key):
     if not card:
         return "Card not found", 404
 
-    config = get_config()
-
-    print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
-    if print_template not in {"dk-1234", "standard"}:
-        print_template = "dk-1234"
-
-    if print_template == "standard":
-        print_width = "2.5in"
-        print_height = "3.5in"
-    else:
-        print_width = "60mm"
-        print_height = "86mm"
-
-    print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
-    if print_mode not in {"grayscale", "color", "monochrome"}:
-        print_mode = "grayscale"
+    print_settings = resolve_print_settings()
 
     return render_template(
         "print.html",
         card=card,
-        print_mode=print_mode,
-        print_template=print_template,
-        print_width=print_width,
-        print_height=print_height,
+        image_src=url_for("card_image", card_key=card["card_key"]),
+        print_mode=print_settings["print_mode"],
+        print_template=print_settings["print_template"],
+        print_width=print_settings["print_width"],
+        print_height=print_settings["print_height"],
     )
 
+@app.route("/print-custom/default-momir-vig")
+def print_custom_default_momir_vig():
+    print_settings = resolve_print_settings()
+    selected_variant = resolve_default_momir_variant()
+
+    return render_template(
+        "print.html",
+        card={
+            "name": CARD_SEARCH_DEFAULT_TITLE,
+            "type_line": f"Avatar • {selected_variant['label']}",
+        },
+        image_src=url_for("static", filename=selected_variant["filename"]),
+        print_mode=print_settings["print_mode"],
+        print_template=print_settings["print_template"],
+        print_width=print_settings["print_width"],
+        print_height=print_settings["print_height"],
+    )
+
+@app.route("/card-search")
+def card_search():
+    search_query = (request.args.get("q") or "").strip()
+    search_scope = (request.args.get("scope") or "token").strip().lower()
+    if search_scope not in {"token", "any"}:
+        search_scope = "token"
+
+    selected_card_key = (request.args.get("selected") or "").strip()
+    selected_variant = resolve_default_momir_variant()
+
+    results = []
+    featured_card = None
+
+    if search_query:
+        results = search_cards_for_print(search_query, search_scope=search_scope, limit=75)
+
+        if selected_card_key:
+            for row in results:
+                if row["card_key"] == selected_card_key:
+                    featured_card = row
+                    break
+
+        if featured_card is None and results:
+            featured_card = results[0]
+    else:
+        featured_card = {
+            "card_key": None,
+            "name": CARD_SEARCH_DEFAULT_TITLE,
+            "type_line": f"Avatar • {selected_variant['label']}",
+            "image_src": url_for("static", filename=selected_variant["filename"]),
+        }
+
+    return render_template(
+        "card_search.html",
+        search_query=search_query,
+        search_scope=search_scope,
+        results=results,
+        featured_card=featured_card,
+    )
 
 @app.route("/config", methods=["GET", "POST"])
 def config():
@@ -1773,7 +2049,8 @@ def config():
 
     config_values = get_config()
     import_metadata = get_import_metadata()
-    current_refresh_status = get_refresh_status_copy()
+    current_refresh_status = build_config_page_refresh_status(import_metadata)
+    current_image_status = build_config_page_image_status()
 
     return render_template(
         "config.html",
@@ -1783,8 +2060,10 @@ def config():
         other_filter_keys=OTHER_FILTER_KEYS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
+        momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
+        image_download_status=current_image_status,
     )
 
 
@@ -1805,7 +2084,8 @@ def refresh_cards_start():
 
 @app.route("/refresh-cards/status", methods=["GET"])
 def refresh_cards_status():
-    return jsonify(get_refresh_status_copy())
+    import_metadata = get_import_metadata()
+    return jsonify(build_config_page_refresh_status(import_metadata))
 
 @app.route("/download-card-images/start", methods=["POST"])
 def download_card_images_start():
@@ -1828,34 +2108,32 @@ def download_card_images_start():
 
 @app.route("/download-card-images/status", methods=["GET"])
 def download_card_images_status():
-    return jsonify(get_image_download_status_copy())
+    return jsonify(build_config_page_image_status())
 
 @app.route("/card-image/<card_key>", methods=["GET"])
 def card_image(card_key):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    card = get_card_by_key(card_key)
 
-    cursor.execute(
-        """
-        SELECT image_cache_path, image_url
-        FROM cards
-        WHERE card_key = ?
-        """,
-        (card_key,),
-    )
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row:
+    if not card:
         return ("Not found", 404)
 
-    if row["image_cache_path"]:
-        abs_path = os.path.abspath(row["image_cache_path"])
+    existing_cache_path = card["image_cache_path"] or ""
+    if existing_cache_path:
+        abs_path = os.path.abspath(existing_cache_path)
         if os.path.exists(abs_path):
             return send_file(abs_path)
 
-    if row["image_url"]:
-        return redirect(row["image_url"])
+    card = ensure_card_image_cached(card)
+
+    if card:
+        refreshed_cache_path = card["image_cache_path"] or ""
+        if refreshed_cache_path:
+            abs_path = os.path.abspath(refreshed_cache_path)
+            if os.path.exists(abs_path):
+                return send_file(abs_path)
+
+        if card["image_url"]:
+            return redirect(card["image_url"])
 
     return ("Not found", 404)
 

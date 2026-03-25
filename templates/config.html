@@ -79,30 +79,32 @@
 
             <div class="refresh-panel">
                 <div class="refresh-status-row">
-                    <div id="imageDownloadSpinner" class="spinner hidden"></div>
+                    <div id="imageDownloadSpinner" class="spinner {% if not image_download_status.get('is_running') %}hidden{% endif %}"></div>
                     <div class="refresh-status-text">
-                        <div><strong id="imageDownloadStage">Idle</strong></div>
-                        <div id="imageDownloadMessage">No image download has been run yet.</div>
-                        <div id="imageDownloadError" class="refresh-error hidden"></div>
+                        <div><strong id="imageDownloadStage">{{ image_download_status.get("stage", "Idle") }}</strong></div>
+                        <div id="imageDownloadMessage">{{ image_download_status.get("message", "No image download has been run yet.") }}</div>
+                        <div id="imageDownloadError" class="refresh-error {% if not image_download_status.get('error') %}hidden{% endif %}">
+                            {{ image_download_status.get("error", "") }}
+                        </div>
                     </div>
                 </div>
 
                 <div class="metadata-list">
                     <div class="metadata-row">
                         <span>Image Cards Processed</span>
-                        <strong id="imageCardsProcessed">0</strong>
+                        <strong id="imageCardsProcessed">{{ image_download_status.get("cards_processed", 0) }}</strong>
                     </div>
                     <div class="metadata-row">
                         <span>Images Downloaded</span>
-                        <strong id="imageCardsDownloaded">0</strong>
+                        <strong id="imageCardsDownloaded">{{ image_download_status.get("cards_downloaded", 0) }}</strong>
                     </div>
                     <div class="metadata-row">
                         <span>Cards Disabled</span>
-                        <strong id="imageCardsDisabled">0</strong>
+                        <strong id="imageCardsDisabled">{{ image_download_status.get("cards_disabled", 0) }}</strong>
                     </div>
                     <div class="metadata-row">
                         <span>Image Job Finished</span>
-                        <strong id="imageDownloadFinishedAt">Never</strong>
+                        <strong id="imageDownloadFinishedAt">{{ image_download_status.get("finished_at", "Never") }}</strong>
                     </div>
                 </div>
 
@@ -159,6 +161,17 @@
                         {% endfor %}
                     </select>
                 </label>
+                <label class="toggle-row" for="momir_default_token_variant">
+                    <span>Momir Vig Default Token Style</span>
+                    <select id="momir_default_token_variant" name="momir_default_token_variant">
+                        {% for value, label in momir_default_token_variant_options %}
+                            <option value="{{ value }}" {% if config.get("momir_default_token_variant") == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+
             </div>
         </div>
         <div class="page-panel">

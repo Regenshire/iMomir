@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Card Search{% endblock %}
+
+{% block content %}
+<div class="screen">
+    <div class="page-panel">
+        <h1 class="page-title">Card Search</h1>
+        <p class="page-subtitle">
+            Search for any card to print, or switch to Token mode to search tokens, emblems, planes, schemes, dungeons, and related game objects.
+        </p>
+
+        <form method="get" action="{{ url_for('card_search') }}" class="card-search-form">
+            <div class="card-search-controls">
+                <input
+                    type="text"
+                    name="q"
+                    value="{{ search_query }}"
+                    class="card-search-input"
+                    placeholder="Search by card name..."
+                    autocomplete="off"
+                >
+
+                <select name="scope" class="card-search-select">
+                    <option value="token" {% if search_scope == "token" %}selected{% endif %}>Token</option>
+                    <option value="any" {% if search_scope == "any" %}selected{% endif %}>Any Card</option>
+                </select>
+            </div>
+
+            <div class="card-search-actions">
+                <button type="submit" class="action-button">Search</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="page-panel">
+        <h2>Preview</h2>
+
+        {% if featured_card %}
+            <div class="card-search-preview">
+                <div class="card-search-preview-image-wrap">
+                    <img
+                        src="{% if featured_card.image_src is defined %}{{ featured_card.image_src }}{% else %}{{ url_for('card_image', card_key=featured_card['card_key']) }}{% endif %}"
+                        alt="{{ featured_card['name'] }}"
+                        class="card-search-preview-image"
+                    >
+                </div>
+
+                <div class="card-search-preview-info">
+                    <div class="card-name">{{ featured_card["name"] }}</div>
+                    <div class="card-type">{{ featured_card["type_line"] or "" }}</div>
+                </div>
+
+                <div class="card-search-preview-actions">
+                    {% if featured_card["card_key"] %}
+                        <a class="action-button card-search-print-button" href="{{ url_for('print_card', card_key=featured_card['card_key']) }}" target="_blank" rel="noopener">
+                            Print
+                        </a>
+                    {% else %}
+                                                <a class="action-button card-search-print-button" href="{{ url_for('print_custom_default_momir_vig') }}" target="_blank" rel="noopener">
+                            Print
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% else %}
+            <div class="card-placeholder">
+                No matching cards found.
+            </div>
+        {% endif %}
+    </div>
+
+    {% if search_query %}
+    <div class="page-panel">
+        <h2>Results</h2>
+
+        {% if results %}
+            <div class="card-search-results">
+                {% for mtg_card in results %}
+                    <a
+                        class="card-search-result-row {% if featured_card and featured_card['card_key'] == mtg_card['card_key'] %}card-search-result-row-active{% endif %}"
+                        href="{{ url_for('card_search', q=search_query, scope=search_scope, selected=mtg_card['card_key']) }}"
+                    >
+                        <span class="card-search-result-name">{{ mtg_card["name"] }}</span>
+                        <span class="card-search-result-type">{{ mtg_card["type_line"] or "" }}</span>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="card-placeholder">
+                No matches for "{{ search_query }}".
+            </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
