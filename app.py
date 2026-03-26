@@ -67,10 +67,17 @@ DEFAULT_CONFIG = {
     "allow_unsets": "0",
     "allow_arena": "0",
     "all_sets_enabled": "1",
+    "game_mode": "custom",
+    "allow_repeats": "1",
     "print_template": "dk-1234",
     "print_color_mode": "grayscale",
     "momir_default_token_variant": "dark",
 }
+
+REPEAT_MODE_OPTIONS = [
+    ("1", "Repeat"),
+    ("0", "No Repeats"),
+]
 
 PRIMARY_TYPE_KEYS = [
     ("type_creature", "Creature"),
@@ -108,6 +115,20 @@ PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),
     ("color", "Full Color"),
     ("monochrome", "Monochrome"),
+]
+
+GAME_MODE_OPTIONS = [
+    ("custom", "Custom"),
+    ("momir_basic", "Momir Basic"),
+    ("momir_planeswalker", "Momir Planeswalker"),
+    ("momir_legends", "Momir Legends"),
+    ("momir_battleship", "Momir Battleship"),
+    ("momir_aggro", "Momir Aggro"),
+    ("momir_odds", "Momir Odds"),
+    ("momir_evens", "Momir Evens"),
+    ("momir_prime", "Momir Prime"),
+    ("planechase", "Planechase"),
+    ("archenemy", "Archenemy"),
 ]
 
 MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
@@ -292,9 +313,11 @@ def initialize_database():
     ensure_column_exists(cursor, "cards", "image_cached_at", "TEXT")
     ensure_column_exists(cursor, "cards", "disable_card", "INTEGER NOT NULL DEFAULT 0")
     ensure_column_exists(cursor, "cards", "has_paper_printing", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "cards", "rarity", "TEXT")
     ensure_column_exists(cursor, "sets", "set_block", "TEXT")
     ensure_column_exists(cursor, "sets", "set_type", "TEXT")
     ensure_column_exists(cursor, "scryfall_default_cards", "games", "TEXT")
+    ensure_column_exists(cursor, "scryfall_default_cards", "rarity", "TEXT")
 
     cursor.execute(
         """
@@ -320,6 +343,7 @@ def initialize_database():
             image_url TEXT,
             normal_image_url TEXT,
             large_image_url TEXT,
+            rarity TEXT,
             games TEXT
         )
         """
@@ -345,6 +369,30 @@ def initialize_database():
             metadata_key TEXT PRIMARY KEY,
             metadata_value TEXT NOT NULL
         )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS card_history (
+            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_key TEXT NOT NULL,
+            drawn_at_utc TEXT NOT NULL
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_card_history_drawn_at_utc
+        ON card_history (drawn_at_utc)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_card_history_card_key
+        ON card_history (card_key)
         """
     )
 
@@ -407,12 +455,36 @@ def update_config_from_form(form_data):
     }
 
     select_defaults = {
+        "game_mode": "custom",
+        "allow_repeats": "1",
         "print_template": "dk-1234",
         "print_color_mode": "grayscale",
     }
 
     for key in checkbox_keys:
         updated_config[key] = "1" if form_data.get(key) == "on" else "0"
+
+    submitted_game_mode = (form_data.get("game_mode") or "").strip().lower()
+    if submitted_game_mode not in {
+        "custom",
+        "momir_basic",
+        "momir_planeswalker",
+        "momir_legends",
+        "momir_battleship",
+        "momir_aggro",
+        "momir_odds",
+        "momir_evens",
+        "momir_prime",
+        "planechase",
+        "archenemy",
+    }:
+        submitted_game_mode = select_defaults["game_mode"]
+    updated_config["game_mode"] = submitted_game_mode
+
+    submitted_allow_repeats = (form_data.get("allow_repeats") or "").strip()
+    if submitted_allow_repeats not in {"0", "1"}:
+        submitted_allow_repeats = select_defaults["allow_repeats"]
+    updated_config["allow_repeats"] = submitted_allow_repeats
 
     submitted_template = (form_data.get("print_template") or "").strip().lower()
     if submitted_template not in {"dk-1234", "standard"}:
@@ -462,6 +534,79 @@ def get_all_sets():
     conn.close()
     return rows
 
+def cleanup_card_history():
+    cutoff_utc = datetime.now(timezone.utc).timestamp() - 86400
+    cutoff_text = datetime.fromtimestamp(cutoff_utc, timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        DELETE FROM card_history
+        WHERE drawn_at_utc < ?
+        """,
+        (cutoff_text,),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def clear_card_history():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM card_history")
+
+    conn.commit()
+    conn.close()
+
+
+def record_card_history(card_key):
+    if not card_key:
+        return
+
+    cleanup_card_history()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO card_history (
+            card_key,
+            drawn_at_utc
+        )
+        VALUES (?, ?)
+        """,
+        (
+            card_key,
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_recent_history_count():
+    cleanup_card_history()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS history_count
+        FROM card_history
+        """
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return int(row["history_count"] or 0)
 
 def get_selected_set_codes():
     conn = get_db_connection()
@@ -480,6 +625,28 @@ def get_selected_set_codes():
 
     return {row["set_code"] for row in rows}
 
+def build_enabled_type_conditions(config, game_mode):
+    if game_mode == "momir_basic":
+        return ["is_creature = 1"]
+
+    if game_mode == "momir_planeswalker":
+        return ["is_creature = 1", "is_planeswalker = 1"]
+
+    if game_mode == "planechase":
+        return ["is_plane = 1"]
+
+    if game_mode == "archenemy":
+        return ["is_scheme = 1"]
+
+    type_conditions = []
+
+    for key, _ in PRIMARY_TYPE_KEYS + SUPPLEMENTAL_TYPE_KEYS:
+        if config.get(key) == "1":
+            column = key.replace("type_", "is_")
+            type_conditions.append(f"{column} = 1")
+
+    return type_conditions
+
 def build_card_filter_query(mana_value, config, selected_set_codes):
     conditions = []
     params = []
@@ -490,13 +657,10 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
     conditions.append("CAST(mana_value AS INTEGER) = ?")
     params.append(int(mana_value))
 
-    # Card types
-    type_conditions = []
+    game_mode = (config.get("game_mode") or "custom").strip().lower()
 
-    for key, _ in PRIMARY_TYPE_KEYS + SUPPLEMENTAL_TYPE_KEYS:
-        if config.get(key) == "1":
-            column = key.replace("type_", "is_")
-            type_conditions.append(f"{column} = 1")
+    # Card types
+    type_conditions = build_enabled_type_conditions(config, game_mode)
 
     if type_conditions:
         conditions.append("(" + " OR ".join(type_conditions) + ")")
@@ -512,6 +676,37 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
     # Arena filter
     if config.get("allow_arena") == "0":
         conditions.append("has_paper_printing = 1")
+
+    # Repeat filter
+    if config.get("allow_repeats") == "0":
+        conditions.append(
+            """
+            card_key NOT IN (
+                SELECT card_key
+                FROM card_history
+            )
+            """
+        )
+
+    # Game mode filters
+    # Game mode filters
+    if game_mode == "momir_legends":
+        conditions.append("LOWER(COALESCE(rarity, '')) IN ('rare', 'mythic')")
+
+    if game_mode == "momir_battleship":
+        conditions.append("CAST(mana_value AS INTEGER) >= 5")
+
+    if game_mode == "momir_aggro":
+        conditions.append("CAST(mana_value AS INTEGER) <= 4")
+
+    if game_mode == "momir_odds":
+        conditions.append("(CAST(mana_value AS INTEGER) % 2) = 1")
+
+    if game_mode == "momir_evens":
+        conditions.append("(CAST(mana_value AS INTEGER) % 2) = 0")
+
+    if game_mode == "momir_prime":
+        conditions.append("CAST(mana_value AS INTEGER) IN (2, 3, 5, 6, 11, 13, 17, 19)")
 
     # Set filtering
     if config.get("all_sets_enabled") == "0" and selected_set_codes:
@@ -642,6 +837,8 @@ def search_cards_for_print(search_text, search_scope="any", limit=75):
     return rows
 
 def draw_random_card(mana_value):
+    cleanup_card_history()
+
     config = get_config()
     selected_set_codes = get_selected_set_codes()
 
@@ -1160,6 +1357,7 @@ def import_scryfall_default_cards_into_database():
 
         image_uris = safe_dict(card_obj.get("image_uris"))
         games = json.dumps(card_obj.get("games", []))
+        rarity = (card_obj.get("rarity") or "").strip().lower()
         if not image_uris:
             continue
 
@@ -1189,9 +1387,10 @@ def import_scryfall_default_cards_into_database():
                 image_url,
                 normal_image_url,
                 large_image_url,
+                rarity,
                 games
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 scryfall_id,
@@ -1203,6 +1402,7 @@ def import_scryfall_default_cards_into_database():
                 image_url,
                 normal_image_url,
                 large_image_url,
+                rarity,
                 games,
             ),
         )
@@ -1216,6 +1416,7 @@ def import_scryfall_default_cards_into_database():
     conn.close()
 
     refresh_cards_has_paper_printing()
+    refresh_cards_rarity_from_scryfall()
 
     set_import_metadata("scryfall_default_cards_rows", inserted_count)
 
@@ -1243,6 +1444,38 @@ def refresh_cards_has_paper_printing():
               AND (scryfall_default_cards.normal_image_url IS NOT NULL OR scryfall_default_cards.large_image_url IS NOT NULL)
               AND scryfall_default_cards.games LIKE '%paper%'
         )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+def refresh_cards_rarity_from_scryfall():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE cards
+        SET rarity = ''
+        """
+    )
+
+    cursor.execute(
+        """
+        UPDATE cards
+        SET rarity = COALESCE((
+            SELECT
+                CASE
+                    WHEN SUM(CASE WHEN LOWER(COALESCE(sdc.rarity, '')) IN ('mythic', 'mythic rare') THEN 1 ELSE 0 END) > 0 THEN 'mythic'
+                    WHEN SUM(CASE WHEN LOWER(COALESCE(sdc.rarity, '')) = 'rare' THEN 1 ELSE 0 END) > 0 THEN 'rare'
+                    WHEN SUM(CASE WHEN LOWER(COALESCE(sdc.rarity, '')) = 'uncommon' THEN 1 ELSE 0 END) > 0 THEN 'uncommon'
+                    WHEN SUM(CASE WHEN LOWER(COALESCE(sdc.rarity, '')) = 'common' THEN 1 ELSE 0 END) > 0 THEN 'common'
+                    ELSE ''
+                END
+            FROM scryfall_default_cards sdc
+            WHERE sdc.oracle_id = cards.scryfall_id
+        ), '')
         """
     )
 
@@ -1525,6 +1758,7 @@ def import_atomic_cards_into_database():
         is_legendary = 1 if "Legendary" in supertypes else 0
         is_unset = 1 if atomic_card.get("isFunny") is True else 0
         is_arena = 1 if "A" in printings else 0
+        rarity = ""
 
         image_url = build_scryfall_image_url(scryfall_id)
 
@@ -1542,6 +1776,7 @@ def import_atomic_cards_into_database():
                 printings_json,
                 scryfall_id,
                 image_url,
+                rarity,
                 is_legendary,
                 is_unset,
                 is_arena,
@@ -1562,7 +1797,7 @@ def import_atomic_cards_into_database():
                 is_scheme,
                 is_vanguard
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 card_key,
@@ -1574,8 +1809,9 @@ def import_atomic_cards_into_database():
                 atomic_card.get("layout"),
                 first_printing,
                 json.dumps(printings),
-                scryfall_id or scryfall_oracle_id or "",
+                scryfall_oracle_id or "",
                 image_url,
+                rarity,
                 is_legendary,
                 is_unset,
                 is_arena,
@@ -1951,6 +2187,9 @@ def result():
         if not cache_exists:
             card = ensure_card_image_cached(card)
 
+        if card:
+            record_card_history(card["card_key"])
+
     return render_template(
         "result.html",
         mana_value=mana_value,
@@ -2058,12 +2297,15 @@ def config():
         primary_type_keys=PRIMARY_TYPE_KEYS,
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
+        game_mode_options=GAME_MODE_OPTIONS,
+        repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
         image_download_status=current_image_status,
+        history_count=get_recent_history_count(),
     )
 
 
@@ -2109,6 +2351,15 @@ def download_card_images_start():
 @app.route("/download-card-images/status", methods=["GET"])
 def download_card_images_status():
     return jsonify(build_config_page_image_status())
+
+@app.route("/history/clear", methods=["POST"])
+def clear_history():
+    clear_card_history()
+    return jsonify({
+        "ok": True,
+        "history_count": 0,
+        "message": "Card history cleared."
+    })
 
 @app.route("/card-image/<card_key>", methods=["GET"])
 def card_image(card_key):

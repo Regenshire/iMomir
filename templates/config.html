@@ -175,6 +175,106 @@
             </div>
         </div>
         <div class="page-panel">
+            <h2>Game Modes</h2>
+
+            <div class="settings-grid">
+                <label class="toggle-row" for="game_mode">
+                    <span>Mode</span>
+                    <select id="game_mode" name="game_mode">
+                        {% for value, label in game_mode_options %}
+                            <option value="{{ value }}" {% if config.get("game_mode") == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="metadata-list">
+                <div class="metadata-row">
+                    <span>Custom</span>
+                    <strong class="metadata-value-wrap">Uses the selected type filters exactly as configured below.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Basic</span>
+                    <strong class="metadata-value-wrap">Forces Creature only.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Planeswalker</span>
+                    <strong class="metadata-value-wrap">Forces Creature and Planeswalker.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Legends</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only Rare and Mythic cards.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Battleship</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only mana value 5 or greater.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Aggro</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only mana value 4 or less.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Odds</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only odd mana value cards.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Evens</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only even mana value cards.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Momir Prime</span>
+                    <strong class="metadata-value-wrap">Uses selected types, but only mana values 2, 3, 5, 6, 11, 13, 17, and 19.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Planechase</span>
+                    <strong class="metadata-value-wrap">Forces Plane supplemental cards only.</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Archenemy</span>
+                    <strong class="metadata-value-wrap">Forces Scheme supplemental cards only.</strong>
+                </div>
+            </div>
+        </div>
+        <div class="page-panel">
+            <h2>Card Repeats</h2>
+
+            <div class="settings-grid">
+                <label class="toggle-row" for="allow_repeats">
+                    <span>Repeat Mode</span>
+                    <select id="allow_repeats" name="allow_repeats">
+                        {% for value, label in repeat_mode_options %}
+                            <option value="{{ value }}" {% if config.get("allow_repeats") == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="metadata-list">
+                <div class="metadata-row">
+                    <span>Current History</span>
+                    <strong id="historyCount">{{ history_count }}</strong>
+                </div>
+                <div class="metadata-row">
+                    <span>Behavior</span>
+                    <strong class="metadata-value-wrap">No Repeats prevents drawing any card already shown in the last 24 hours. History older than 24 hours is deleted automatically.</strong>
+                </div>
+            </div>
+
+            <div class="config-button-row">
+                <button
+                    type="button"
+                    id="clearHistoryButton"
+                    class="action-button secondary-button"
+                >
+                    Clear History
+                </button>
+            </div>
+        </div>
+        <div class="page-panel">
             <h2>Primary Card Types</h2>
             <div class="settings-grid">
                 {% for key, label in primary_type_keys %}

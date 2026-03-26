@@ -244,6 +244,8 @@ function initializeRefreshCards() {
 
     const downloadCardImagesButton = document.getElementById("downloadCardImagesButton");
     const redownloadCardImagesButton = document.getElementById("redownloadCardImagesButton");
+    const clearHistoryButton = document.getElementById("clearHistoryButton");
+    const historyCount = document.getElementById("historyCount");
     const imageDownloadSpinner = document.getElementById("imageDownloadSpinner");
     const imageDownloadStage = document.getElementById("imageDownloadStage");
     const imageDownloadMessage = document.getElementById("imageDownloadMessage");
@@ -588,6 +590,43 @@ function initializeRefreshCards() {
             }
 
             await startImageDownload(true);
+        });
+    }
+
+    if (clearHistoryButton) {
+        clearHistoryButton.addEventListener("click", async function () {
+            const confirmed = window.confirm(
+                "Clear the recent card history?\n\nThis will allow previously shown cards to be selected again immediately."
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                clearHistoryButton.disabled = true;
+
+                const response = await fetch("/history/clear", {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to clear history.");
+                }
+
+                if (historyCount) {
+                    historyCount.textContent = "0";
+                }
+            } catch (error) {
+                window.alert(error.message || "Failed to clear history.");
+            } finally {
+                clearHistoryButton.disabled = false;
+            }
         });
     }
 

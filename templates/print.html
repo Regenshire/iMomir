@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Print - {{ card["name"] }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/print.css') }}">
     <style>
         :root {
             --print-width: {{ print_width }};
@@ -25,11 +25,60 @@
             class="print-card-image"
         >
     </div>
+    <div class="print-return-bar">
+        <button type="button" class="print-return-button" onclick="window.history.back()">
+            Back to iMomir
+        </button>
+    </div>
 
     <script>
-        window.addEventListener("load", function () {
-            window.print();
-        });
+        (function () {
+            let hasNavigatedBack = false;
+            let autoPrintTriggered = false;
+
+            function isIPhoneSafari() {
+                const ua = window.navigator.userAgent || "";
+                const isIPhone = /iPhone/i.test(ua);
+                const isSafari = /Safari/i.test(ua) && !/CriOS/i.test(ua) && !/FxiOS/i.test(ua) && !/EdgiOS/i.test(ua);
+                return isIPhone && isSafari;
+            }
+
+            function goBackToApp() {
+                if (hasNavigatedBack) {
+                    return;
+                }
+
+                hasNavigatedBack = true;
+
+                if (window.history.length > 1) {
+                    window.history.back();
+                } else {
+                    window.location.href = "{{ url_for('index') }}";
+                }
+            }
+
+            function requestPrint() {
+                window.print();
+            }
+
+            window.addEventListener("load", function () {
+                const printNowButton = document.getElementById("printNowButton");
+
+                if (!isIPhoneSafari() && !autoPrintTriggered) {
+                    autoPrintTriggered = true;
+
+                    setTimeout(function () {
+                        requestPrint();
+                    }, 150);
+                }
+            });
+
+            window.addEventListener("afterprint", function () {
+                if (!isIPhoneSafari()) {
+                    setTimeout(goBackToApp, 150);
+                }
+            });
+        })();
     </script>
 </body>
 </html>
