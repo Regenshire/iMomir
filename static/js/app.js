@@ -2,6 +2,9 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeManaKeypad();
     initializeSetsPage();
     initializeRefreshCards();
+    initializeConfigPanels();
+    initializeGameModeCards();
+    initializeConfigShortcutNavigation();
 });
 
 function initializeManaKeypad() {
@@ -632,4 +635,96 @@ function initializeRefreshCards() {
 
     pollRefreshStatus();
     pollImageStatus();
+}
+
+function initializeConfigPanels() {
+    const panels = document.querySelectorAll(".collapsible-panel");
+
+    if (!panels.length) {
+        return;
+    }
+
+    panels.forEach(function (panel) {
+        const header = panel.querySelector(".collapsible-header");
+        const body = panel.querySelector(".collapsible-body");
+
+        if (!header || !body) {
+            return;
+        }
+
+        header.addEventListener("click", function () {
+            panel.classList.toggle("is-open");
+        });
+    });
+}
+
+function initializeGameModeCards() {
+    const hiddenInput = document.getElementById("game_mode");
+    const cardButtons = document.querySelectorAll(".game-mode-card");
+    const printButton = document.getElementById("printSelectedTokenButton");
+
+    if (!hiddenInput || !cardButtons.length) {
+        return;
+    }
+
+    function applySelection(selectedValue, selectedPrintHref) {
+        hiddenInput.value = selectedValue;
+
+        cardButtons.forEach(function (button) {
+            const isSelected = button.getAttribute("data-mode-value") === selectedValue;
+            button.classList.toggle("game-mode-card-selected", isSelected);
+        });
+
+        if (printButton && selectedPrintHref) {
+            printButton.setAttribute("href", selectedPrintHref);
+        }
+    }
+
+    cardButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            const selectedValue = button.getAttribute("data-mode-value") || "custom";
+            const selectedPrintHref = button.getAttribute("data-mode-print-href") || "";
+            applySelection(selectedValue, selectedPrintHref);
+        });
+    });
+}
+
+function initializeConfigShortcutNavigation() {
+    const panels = document.querySelectorAll(".collapsible-panel");
+
+    if (!panels.length) {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+    const openParam = (url.searchParams.get("open") || "").trim();
+    const scrollParam = (url.searchParams.get("scroll") || "").trim();
+
+    if (openParam) {
+        const sectionNames = openParam
+            .split(",")
+            .map(function (value) {
+                return value.trim();
+            })
+            .filter(Boolean);
+
+        sectionNames.forEach(function (sectionName) {
+            const panel = document.querySelector('.collapsible-panel[data-section="' + sectionName + '"]');
+            if (panel) {
+                panel.classList.add("is-open");
+            }
+        });
+    }
+
+    if (scrollParam) {
+        const scrollTarget = document.getElementById("section_" + scrollParam);
+        if (scrollTarget) {
+            setTimeout(function () {
+                scrollTarget.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start"
+                });
+            }, 150);
+        }
+    }
 }

@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}iMomir{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}"
@@ -20,7 +21,6 @@
               class="app-logo"
             >
           </div>
-
           <div class="app-tabs-nav">
             <a
               class="app-tab {% if request.endpoint in ['index', 'result'] %}app-tab-active{% endif %}"
@@ -40,7 +40,7 @@
               class="app-tab {% if request.endpoint == 'config' %}app-tab-active{% endif %}"
               href="{{ url_for('config') }}"
             >
-              Config
+              Modes
             </a>
 
             <a
@@ -48,6 +48,16 @@
               href="{{ url_for('card_search') }}"
             >
               Card Search
+            </a>
+          </div>
+          <div class="app-tabs-right">
+            <a
+              class="app-gear-button"
+              href="{{ url_for('config') }}?open=print_defaults,card_database&scroll=print_defaults"
+              aria-label="Open Config shortcuts"
+              title="Open Print Defaults and Card Database"
+            >
+              <i class="fa-solid fa-gear"></i>
             </a>
           </div>
         </nav>

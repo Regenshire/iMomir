@@ -45,7 +45,7 @@ input {
 
 .app-frame {
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -65,6 +65,47 @@ input {
 .app-tabs-left {
   display: flex;
   align-items: center;
+}
+
+.app-tabs-right {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    padding-right: 0px;
+}
+
+.app-gear-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--muted);
+    font-size: 22px;
+    transition: background 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+
+.app-gear-button:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.app-gear-icon {
+    width: 32px;
+    height: 32px;
+    display: block;
+}
+
+.config-section-divider {
+    height: 1px;
+    margin: 10px 4px 16px 4px;
+    background: linear-gradient(
+        90deg,
+        rgba(0, 0, 0, 0),
+        rgba(110, 128, 158, 0.65),
+        rgba(0, 0, 0, 0)
+    );
 }
 
 .app-logo {
@@ -108,7 +149,7 @@ input {
 
 .screen {
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -374,6 +415,136 @@ input {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.collapsible-panel {
+    padding: 0;
+    overflow: hidden;
+}
+
+.collapsible-header {
+    width: 100%;
+    min-height: 62px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px 20px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    text-align: left;
+}
+
+.collapsible-chevron {
+    font-size: 1.2rem;
+    color: var(--muted);
+    transition: transform 0.18s ease;
+}
+
+.collapsible-panel .collapsible-body {
+    display: none;
+    padding: 0 20px 20px 20px;
+}
+
+.collapsible-panel.is-open .collapsible-body {
+    display: block;
+}
+
+.collapsible-panel.is-open .collapsible-chevron {
+    transform: rotate(180deg);
+}
+
+.game-modes-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 14px;
+}
+
+.game-mode-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.game-mode-card {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(34, 38, 46, 0.96), rgba(26, 29, 36, 0.96));
+    color: var(--text);
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 14px;
+    padding: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.game-mode-card:hover {
+    background: var(--button);
+}
+
+.game-mode-card-selected {
+    background: var(--menu);
+    border: 2px solid var(--menuborder);
+    box-shadow: 0 0 0 1px rgba(66, 205, 111, 0.12);
+}
+
+.game-mode-card-image-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.game-mode-card-image {
+    width: 100%;
+    max-width: 78px;
+    border-radius: 6px;
+    display: block;
+}
+
+.game-mode-card-content {
+    min-width: 0;
+}
+
+.game-mode-card-title {    
+    color: #a9b0be;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 6px;
+}
+
+.game-mode-card-selected .game-mode-card-title {
+    color: #7dff9f;
+}
+
+.game-mode-card-description {
+    color: #f1f4f8;
+    font-size: 0.90rem;
+    line-height: 1.35;
+    text-align: justify;
+}
+
+@media (max-width: 560px) {
+    .game-mode-card {
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 12px;
+        padding: 10px;
+    }
+
+    .game-mode-card-image {
+        max-width: 60px;
+    }
+
+    .game-mode-card-description {
+        font-size: 0.92rem;
+    }
 }
 
 .toggle-row select {

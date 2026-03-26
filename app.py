@@ -118,17 +118,72 @@ PRINT_COLOR_MODE_OPTIONS = [
 ]
 
 GAME_MODE_OPTIONS = [
-    ("custom", "Custom"),
-    ("momir_basic", "Momir Basic"),
-    ("momir_planeswalker", "Momir Planeswalker"),
-    ("momir_legends", "Momir Legends"),
-    ("momir_battleship", "Momir Battleship"),
-    ("momir_aggro", "Momir Aggro"),
-    ("momir_odds", "Momir Odds"),
-    ("momir_evens", "Momir Evens"),
-    ("momir_prime", "Momir Prime"),
-    ("planechase", "Planechase"),
-    ("archenemy", "Archenemy"),
+    {
+        "value": "custom",
+        "label": "Custom",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode allows you to choose from all available Card Filters.",
+        "image_filename": "img/token_mode_custom.jpg",
+    },
+    {
+        "value": "momir_basic",
+        "label": "Momir Basic",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This is the standard mode of the Momir varient.",
+        "image_filename": "img/token_mode_momir_basic.jpg",
+    },
+    {
+        "value": "momir_planeswalker",
+        "label": "Momir Planeswalker",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>Creature or Planeswalker</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode includes both Creatures and Plainswalkers as token types.",
+        "image_filename": "img/token_mode_momir_planeswalker.jpg",
+    },
+    {
+        "value": "momir_legends",
+        "label": "Momir Legends",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>Rare or Mythic Creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode can only grab Creatures that are Rare or Mythic rarity.",
+        "image_filename": "img/token_mode_momir_legends.jpg",
+    },
+    {
+        "value": "momir_battleship",
+        "label": "Momir Battleship",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X that is <strong>5 or greater</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with a cost of 5 or more to be copied.",
+        "image_filename": "img/token_mode_momir_battleship.jpg",
+    },
+    {
+        "value": "momir_aggro",
+        "label": "Momir Aggro",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X that is <strong>4 or less</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with a cost of 4 or less to be copied.",
+        "image_filename": "img/token_mode_momir_aggro.jpg",
+    },
+    {
+        "value": "momir_odds",
+        "label": "Momir Odds",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X that is <strong>an odd value</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with an odd value mana cost to be copied.",
+        "image_filename": "img/token_mode_momir_odds.jpg",
+    },
+    {
+        "value": "momir_evens",
+        "label": "Momir Evens",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X that is <strong>an even value</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with an even value mana cost to be copied.",
+        "image_filename": "img/token_mode_momir_evens.jpg",
+    },
+    {
+        "value": "momir_prime",
+        "label": "Momir Prime",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with a converted mana cost of X that is a <strong>Prime Number</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with a mana cost that is a Prime Number to be copied.",
+        "image_filename": "img/token_mode_momir_prime.jpg",
+    },
+    {
+        "value": "planechase",
+        "label": "Planechase",
+        "description": "The Planechase format uses a shared planar deck. Players sometimes play planes cards that affect the battlefield. You can use this mode to generate Planes by clicking on the 0.",
+        "image_filename": "img/token_mode_planechase.jpg",
+    },
+    {
+        "value": "archenemy",
+        "label": "Archenemy",
+        "description": "You can generate Schemes for Archenemy using this mode.  It is recommended that you turn off Repeats for this mode.",
+        "image_filename": "img/token_mode_archenemy.jpg",
+    },
 ]
 
 MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
@@ -758,6 +813,36 @@ def resolve_default_momir_variant():
         "key": variant,
         "label": CARD_SEARCH_DEFAULT_VARIANTS[variant]["label"],
         "filename": CARD_SEARCH_DEFAULT_VARIANTS[variant]["filename"],
+    }
+
+def get_game_mode_option_map():
+    return {item["value"]: item for item in GAME_MODE_OPTIONS}
+
+def resolve_game_mode_token_image(mode_value):
+    mode_map = get_game_mode_option_map()
+    mode_item = mode_map.get((mode_value or "").strip().lower())
+
+    default_variant = resolve_default_momir_variant()
+    default_filename = default_variant["filename"]
+
+    if not mode_item:
+        return {
+            "filename": default_filename,
+            "label": "Custom",
+        }
+
+    configured_filename = mode_item.get("image_filename") or ""
+    static_path = os.path.join(app.static_folder, configured_filename.replace("/", os.sep))
+
+    if configured_filename and os.path.exists(static_path):
+        return {
+            "filename": configured_filename,
+            "label": mode_item["label"],
+        }
+
+    return {
+        "filename": default_filename,
+        "label": mode_item["label"],
     }
 
 def get_card_by_key(card_key):
@@ -2239,6 +2324,30 @@ def print_custom_default_momir_vig():
         print_height=print_settings["print_height"],
     )
 
+@app.route("/print-custom/game-mode/<mode_value>")
+def print_custom_game_mode(mode_value):
+    print_settings = resolve_print_settings()
+    mode_map = get_game_mode_option_map()
+    mode_item = mode_map.get((mode_value or "").strip().lower())
+
+    if not mode_item:
+        return "Game mode token not found", 404
+
+    token_image = resolve_game_mode_token_image(mode_value)
+
+    return render_template(
+        "print.html",
+        card={
+            "name": mode_item["label"],
+            "type_line": "Avatar • Game Mode Token",
+        },
+        image_src=url_for("static", filename=token_image["filename"]),
+        print_mode=print_settings["print_mode"],
+        print_template=print_settings["print_template"],
+        print_width=print_settings["print_width"],
+        print_height=print_settings["print_height"],
+    )
+
 @app.route("/card-search")
 def card_search():
     search_query = (request.args.get("q") or "").strip()
@@ -2291,13 +2400,38 @@ def config():
     current_refresh_status = build_config_page_refresh_status(import_metadata)
     current_image_status = build_config_page_image_status()
 
+    resolved_game_mode_cards = []
+    for item in GAME_MODE_OPTIONS:
+        token_image = resolve_game_mode_token_image(item["value"])
+        resolved_game_mode_cards.append({
+            **item,
+            "image_src": url_for("static", filename=token_image["filename"]),
+            "print_href": url_for("print_custom_game_mode", mode_value=item["value"]),
+        })
+
+    source_file_present = bool(
+        import_metadata.get("source_last_updated")
+        or import_metadata.get("cards_imported")
+        or os.path.exists(ATOMIC_CARDS_PATH)
+    )
+
+    section_defaults = {
+        "card_database": "0" if source_file_present else "1",
+        "print_defaults": "0",
+        "card_repeats": "0",
+        "game_modes": "1",
+        "primary_types": "0",
+        "supplemental_types": "0",
+        "other_filters": "0",
+    }
+
     return render_template(
         "config.html",
         config=config_values,
         primary_type_keys=PRIMARY_TYPE_KEYS,
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
-        game_mode_options=GAME_MODE_OPTIONS,
+        game_mode_options=resolved_game_mode_cards,
         repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
@@ -2305,6 +2439,7 @@ def config():
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
         image_download_status=current_image_status,
+        section_defaults=section_defaults,
         history_count=get_recent_history_count(),
     )
 
