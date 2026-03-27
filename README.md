@@ -59,7 +59,7 @@ pip install -r requirements.txt
 ## 🌐 Running as a Network Server (REQUIRED)
 
 ⚠️ **This app is NOT meant to be used locally only.**  
-You must run it so your phone can access it.
+You must run it on a computer/server so your mobile device can access it.  You can also run it on a laptop for use on the laptop. This is a web application that you host.
 
 ---
 
@@ -209,8 +209,8 @@ serve(app, host="0.0.0.0", port=5000)
 
 ## ⚠️ Known Limitations
 
-- iPhone Safari blocks auto-print
-- Initial image download takes time
+- iPhone Safari blocks auto-print, its recommended that you use Firefox or Chrome on apple devices so that you don't have to manually select the print option in the browser.
+- Initial card database download takes a little time, be patient
 - Requires network access
 
 ---
