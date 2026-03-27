@@ -21,7 +21,7 @@ Designed for fast, real-time gameplay at a table.
 - 🔍 Advanced filtering (type, rarity, sets, Arena, etc.)
 - 🖼 Automatic card image caching (Scryfall)
 - 🗃 Local SQLite database (MTGJSON)
-- 📱 Mobile-first UI (optimized for iPhone Safari)
+- 📱 Mobile-first UI (optimized for phone browsers such as Firefox and Chrome)
 - 🖨 Direct print support:
   - Standard (2.5" × 3.5")
   - Brother DK-1234 labels (60mm × 86mm)
