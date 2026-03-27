@@ -139,7 +139,7 @@ GAME_MODE_OPTIONS = [
     {
         "value": "momir_legends",
         "label": "Momir Legends",
-        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>Rare or Mythic Creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode can only grab Creatures that are Rare or Mythic rarity.",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>Rare or Mythic Legendary Creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode can only grab Creatures that are Rare or Mythic rarity.",
         "image_filename": "img/token_mode_momir_legends.jpg",
     },
     {
@@ -686,6 +686,9 @@ def build_enabled_type_conditions(config, game_mode):
 
     if game_mode == "momir_planeswalker":
         return ["is_creature = 1", "is_planeswalker = 1"]
+
+    if game_mode == "momir_legends":
+        return ["is_legendary = 1"]
 
     if game_mode == "planechase":
         return ["is_plane = 1"]
