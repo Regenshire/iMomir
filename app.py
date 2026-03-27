@@ -761,6 +761,11 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
     if config.get("allow_arena") == "0":
         conditions.append("has_paper_printing = 1")
 
+    # Exclude creature cards that have a mana value but no actual mana cost.
+    # This applies only to creature results, not to supplemental-only modes like
+    # Planechase or Archenemy.
+    conditions.append("(is_creature = 0 OR mana_cost IS NOT NULL)")
+
     # Repeat filter
     if config.get("allow_repeats") == "0":
         conditions.append(
@@ -1925,10 +1930,14 @@ def import_atomic_cards_into_database():
 
         scryfall_id = identifiers.get("scryfallId")
         scryfall_oracle_id = identifiers.get("scryfallOracleId")
+        layout = (atomic_card.get("layout") or "").strip().lower()
 
         types = safe_list(atomic_card.get("types"))
         supertypes = safe_list(atomic_card.get("supertypes"))
         printings = safe_list(atomic_card.get("printings"))
+
+        if layout == "reversible_card":
+            continue
 
         type_flags = build_type_flags(types)
 
@@ -1991,7 +2000,7 @@ def import_atomic_cards_into_database():
                 atomic_card.get("manaValue"),
                 atomic_card.get("manaCost"),
                 atomic_card.get("type") or "",
-                atomic_card.get("layout"),
+                layout,
                 first_printing,
                 json.dumps(printings),
                 scryfall_oracle_id or "",
