@@ -209,7 +209,7 @@ serve(app, host="0.0.0.0", port=5000)
 
 ## ⚠️ Known Limitations
 
-- iPhone Safari blocks auto-print
+- iPhone Safari blocks auto-print, its recommended that you use Firefox or Chrome on apple devices so that you don't have to manually select the print option in the browser.
 - Initial image download takes time
 - Requires network access
 
