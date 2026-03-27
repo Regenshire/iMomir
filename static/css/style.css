@@ -327,6 +327,27 @@ input {
   margin-top: 0;
 }
 
+.setup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid rgba(255, 193, 7, 0.35);
+  background: linear-gradient(180deg, rgba(70, 54, 18, 0.96), rgba(44, 34, 12, 0.96));
+}
+
+.setup-panel-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #ffe08a;
+}
+
+.setup-panel-text {
+  margin: 0;
+  color: #f5e7b8;
+  line-height: 1.5;
+}
+
 .placeholder-list {
   display: flex;
   flex-direction: column;
@@ -529,6 +550,64 @@ input {
     font-size: 0.90rem;
     line-height: 1.35;
     text-align: justify;
+}
+
+.qr-print-card {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(34, 38, 46, 0.96), rgba(26, 29, 36, 0.96));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding: 18px;
+    text-align: center;
+}
+
+.qr-print-card-image-wrap {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.qr-print-card-image {
+    width: 100%;
+    max-width: 260px;
+    background: #ffffff;
+    border-radius: 14px;
+    padding: 10px;
+    display: block;
+}
+
+.qr-print-card-content {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.qr-print-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.qr-print-card-description {
+    color: var(--muted);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.qr-print-card-url {
+    word-break: break-word;
+    color: #bcd0ff;
+    font-size: 0.92rem;
+    line-height: 1.35;
+    padding: 8px 10px;
+    border-radius: 10px;
+    background: rgba(72, 127, 255, 0.12);
+    border: 1px solid rgba(110, 156, 255, 0.35);
 }
 
 @media (max-width: 560px) {

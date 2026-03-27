@@ -4,7 +4,23 @@
 
 {% block content %}
 <div class="screen screen-result">
-        <div class="result-panel">
+    {% if not card_database_ready %}
+    <div class="page-panel setup-panel">
+        <h2 class="setup-panel-title">Initial Setup Required</h2>
+        <p class="setup-panel-text">
+            No card database has been loaded yet. Open Config and click <strong>Download Card Database</strong>.
+            This will load the card database, set list, and image index needed before cards can be generated.
+        </p>
+        <a
+            class="action-button"
+            href="{{ url_for('config') }}?open=card_database&scroll=card_database"
+        >
+            Open Setup
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="result-panel">
         <div class="result-layout">
             <!-- LEFT COLUMN (0–8) -->
             <div class="result-mana-rail result-mana-left">
@@ -48,7 +64,11 @@
                     </div>
                 {% else %}
                     <div class="card-placeholder">
-                        No matching card found.
+                        {% if not card_database_ready %}
+                            Card database not loaded yet.
+                        {% else %}
+                            No matching card found.
+                        {% endif %}
                     </div>
                 {% endif %}
               </div>
@@ -72,7 +92,11 @@
 
         <div class="result-actions result-actions-bottom">
             <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
-            <a class="action-button" href="{{ url_for('result', mana_value=mana_value) }}">Again</a>
+            {% if card_database_ready %}
+                <a class="action-button" href="{{ url_for('result', mana_value=mana_value) }}">Again</a>
+            {% else %}
+                <button type="button" class="action-button" disabled>Again</button>
+            {% endif %}
             {% if card %}
                 <a
                     class="action-button print-button"

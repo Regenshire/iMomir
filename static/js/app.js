@@ -416,14 +416,8 @@ function initializeRefreshCards() {
             ) {
                 lastRefreshFinishedAtPrompted = status.finished_at;
 
-                /*
-                const shouldDownloadImages = window.confirm(
-                    "Card database refresh is complete.\n\nWould you like to download missing card images now?\n\nThis uses the local Scryfall bulk image index and may still take some time."
-                );
-
-                if (shouldDownloadImages) {
-                    await startImageDownload(false);
-                }*/
+                // Intentionally do not prompt for bulk image download here.
+                // Card images are downloaded on demand as cards are viewed or printed.
             }
         } catch (error) {
             if (refreshError) {

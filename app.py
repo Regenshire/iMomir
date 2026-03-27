@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import sqlite3
 import threading
 import time
@@ -371,8 +372,6 @@ def initialize_database():
     ensure_column_exists(cursor, "cards", "rarity", "TEXT")
     ensure_column_exists(cursor, "sets", "set_block", "TEXT")
     ensure_column_exists(cursor, "sets", "set_type", "TEXT")
-    ensure_column_exists(cursor, "scryfall_default_cards", "games", "TEXT")
-    ensure_column_exists(cursor, "scryfall_default_cards", "rarity", "TEXT")
 
     cursor.execute(
         """
@@ -399,10 +398,15 @@ def initialize_database():
             normal_image_url TEXT,
             large_image_url TEXT,
             rarity TEXT,
-            games TEXT
+            games TEXT,
+            lang TEXT
         )
         """
     )
+
+    ensure_column_exists(cursor, "scryfall_default_cards", "games", "TEXT")
+    ensure_column_exists(cursor, "scryfall_default_cards", "rarity", "TEXT")
+    ensure_column_exists(cursor, "scryfall_default_cards", "lang", "TEXT")
 
     cursor.execute(
         """
@@ -821,6 +825,51 @@ def resolve_default_momir_variant():
 def get_game_mode_option_map():
     return {item["value"]: item for item in GAME_MODE_OPTIONS}
 
+def get_preferred_local_ip():
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        probe.connect(("8.8.8.8", 80))
+        local_ip = probe.getsockname()[0]
+        probe.close()
+
+        if local_ip and not local_ip.startswith("127."):
+            return local_ip
+    except Exception:
+        pass
+
+    try:
+        hostname_ip = socket.gethostbyname(socket.gethostname())
+        if hostname_ip and not hostname_ip.startswith("127."):
+            return hostname_ip
+    except Exception:
+        pass
+
+    return "127.0.0.1"
+
+def build_access_url():
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").strip()
+    if forwarded_proto in {"http", "https"}:
+        scheme = forwarded_proto
+    else:
+        scheme = "https" if request.is_secure else "http"
+
+    server_port = (request.environ.get("SERVER_PORT") or "5000").strip()
+    host_header = (request.headers.get("Host") or "").strip().lower()
+
+    if host_header:
+        host_only = host_header.split(":", 1)[0].strip()
+
+        if host_only not in {"127.0.0.1", "localhost", "0.0.0.0"}:
+            return f"{scheme}://{host_header}"
+
+    local_ip = get_preferred_local_ip()
+    return f"{scheme}://{local_ip}:{server_port}"
+
+
+def build_qr_code_image_url(target_url):
+    encoded_target = requests.utils.quote(target_url, safe="")
+    return f"https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=12&data={encoded_target}"
+
 def resolve_game_mode_token_image(mode_value):
     mode_map = get_game_mode_option_map()
     mode_item = mode_map.get((mode_value or "").strip().lower())
@@ -1061,6 +1110,25 @@ def get_import_metadata():
 
     return metadata
 
+def is_card_database_ready():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS ready_count
+        FROM cards
+        WHERE disable_card = 0
+          AND is_creature = 1
+          AND has_paper_printing = 1
+        """
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return int(row["ready_count"] or 0) > 0
+
 def get_persisted_image_summary():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1122,10 +1190,10 @@ def build_config_page_refresh_status(import_metadata):
     finished_at = import_metadata.get("last_refresh_utc")
     source_last_updated = import_metadata.get("source_last_updated", "")
 
-    if finished_at:
+    if finished_at and is_card_database_ready():
         return {
             **current_refresh_status,
-            "stage": "Idle",
+            "stage": "Idle - Setup Complete",
             "message": f"Last loaded database contains {cards_imported} cards across {sets_represented} sets.",
             "cards_processed": int(cards_imported or 0),
             "cards_imported": int(cards_imported or 0),
@@ -1251,7 +1319,7 @@ def download_atomic_cards_json(force_download=False):
         }
 
     set_refresh_status(
-        stage="Downloading",
+        stage="Downloading - DO NOT LEAVE PAGE",
         message=f"Downloading AtomicCards.json from MTGJSON... {reason}",
     )
 
@@ -1446,6 +1514,8 @@ def import_scryfall_default_cards_into_database():
         image_uris = safe_dict(card_obj.get("image_uris"))
         games = json.dumps(card_obj.get("games", []))
         rarity = (card_obj.get("rarity") or "").strip().lower()
+        lang = (card_obj.get("lang") or "").strip().lower()
+
         if not image_uris:
             continue
 
@@ -1476,9 +1546,10 @@ def import_scryfall_default_cards_into_database():
                 normal_image_url,
                 large_image_url,
                 rarity,
-                games
+                games,
+                lang
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 scryfall_id,
@@ -1492,6 +1563,7 @@ def import_scryfall_default_cards_into_database():
                 large_image_url,
                 rarity,
                 games,
+                lang,
             ),
         )
 
@@ -1587,6 +1659,7 @@ def find_best_local_scryfall_image_match(card_row, selected_set_codes):
             SELECT *
             FROM scryfall_default_cards
             WHERE oracle_id = ?
+              AND LOWER(COALESCE(lang, '')) = 'en'
               AND (normal_image_url IS NOT NULL OR large_image_url IS NOT NULL)
               AND (games LIKE '%paper%' OR games IS NULL)
             ORDER BY released_at ASC
@@ -1606,6 +1679,7 @@ def find_best_local_scryfall_image_match(card_row, selected_set_codes):
             SELECT *
             FROM scryfall_default_cards
             WHERE LOWER(REPLACE(REPLACE(REPLACE(card_name, ',', ''), '''', ''), '’', '')) = ?
+              AND LOWER(COALESCE(lang, '')) = 'en'
               AND (normal_image_url IS NOT NULL OR large_image_url IS NOT NULL)
               AND (games LIKE '%paper%' OR games IS NULL)
             ORDER BY released_at ASC
@@ -1626,6 +1700,7 @@ def find_best_local_scryfall_image_match(card_row, selected_set_codes):
             SELECT *
             FROM scryfall_default_cards
             WHERE card_name = ?
+              AND LOWER(COALESCE(lang, '')) = 'en'
               AND (normal_image_url IS NOT NULL OR large_image_url IS NOT NULL)
               AND (games LIKE '%paper%' OR games IS NULL)
             ORDER BY released_at ASC
@@ -1927,7 +2002,7 @@ def import_atomic_cards_into_database():
         if index % 500 == 0 or index == total_cards:
             conn.commit()
             set_refresh_status(
-                stage="Importing",
+                stage="Importing - DO NOT LEAVE PAGE",
                 message=f"Imported {imported_count} of {total_cards} atomic cards...",
                 cards_processed=index,
                 cards_imported=imported_count,
@@ -1938,11 +2013,6 @@ def import_atomic_cards_into_database():
     conn.close()
 
     refresh_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-    set_import_metadata("last_refresh_utc", refresh_time)
-    set_import_metadata("source_url", MTGJSON_ATOMIC_URL)
-    set_import_metadata("cards_imported", imported_count)
-    set_import_metadata("sets_represented", len(represented_sets))
 
     return {
         "cards_imported": imported_count,
@@ -2204,13 +2274,13 @@ def run_refresh_job(force_download=False):
         download_set_list_json(force_download=True)
 
         set_refresh_status(
-            stage="Importing Sets",
+            stage="Importing Sets - DO NOT LEAVE PAGE",
             message="Importing set metadata into SQLite...",
         )
         imported_sets = import_set_list_into_database()
 
         set_refresh_status(
-            stage="Importing Cards",
+            stage="Importing Cards - DO NOT LEAVE PAGE",
             message=f"{download_result['reason']} Beginning import from local AtomicCards.json...",
             sets_represented=imported_sets,
         )
@@ -2228,14 +2298,24 @@ def run_refresh_job(force_download=False):
 
         import_scryfall_default_cards_into_database()
 
+        refresh_finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        set_import_metadata("last_refresh_utc", refresh_finished_at)
+        set_import_metadata("source_url", MTGJSON_ATOMIC_URL)
+        set_import_metadata("cards_imported", summary["cards_imported"])
+        set_import_metadata("sets_represented", summary["sets_represented"])
+
         if download_result.get("remote_timestamp"):
             set_import_metadata("source_last_updated", download_result["remote_timestamp"])
 
         set_refresh_status(
             is_running=False,
             stage="Complete",
-            message=f"Refresh complete. Imported {summary['cards_imported']} atomic cards across {summary['sets_represented']} sets.",
-            finished_at=summary["last_refresh_utc"],
+            message=(
+                f"Refresh complete. Imported {summary['cards_imported']} atomic cards across "
+                f"{summary['sets_represented']} sets. Paper-printing index is ready."
+            ),
+            finished_at=refresh_finished_at,
             cards_processed=summary["cards_imported"],
             cards_imported=summary["cards_imported"],
             sets_represented=summary["sets_represented"],
@@ -2253,15 +2333,24 @@ def run_refresh_job(force_download=False):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        card_database_ready=is_card_database_ready(),
+    )
 
 
 @app.route("/result")
 def result():
     mana_value = request.args.get("mana_value", "").strip()
+    card_database_ready = is_card_database_ready()
 
     if not mana_value.isdigit():
-        return render_template("result.html", mana_value=mana_value, card=None)
+        return render_template(
+            "result.html",
+            mana_value=mana_value,
+            card=None,
+            card_database_ready=card_database_ready,
+        )
 
     card = draw_random_card(int(mana_value))
 
@@ -2282,6 +2371,7 @@ def result():
         "result.html",
         mana_value=mana_value,
         card=card,
+        card_database_ready=card_database_ready,
     )
 
 @app.route("/print/<card_key>")
@@ -2420,6 +2510,7 @@ def config():
 
     section_defaults = {
         "card_database": "0" if source_file_present else "1",
+        "qr_code_print": "1",
         "print_defaults": "0",
         "card_repeats": "0",
         "game_modes": "1",
@@ -2427,6 +2518,8 @@ def config():
         "supplemental_types": "0",
         "other_filters": "0",
     }
+
+    access_url = build_access_url()
 
     return render_template(
         "config.html",
@@ -2444,6 +2537,8 @@ def config():
         image_download_status=current_image_status,
         section_defaults=section_defaults,
         history_count=get_recent_history_count(),
+        qr_access_url=access_url,
+        qr_image_url=build_qr_code_image_url(access_url),
     )
 
 
@@ -2549,4 +2644,4 @@ def sets():
 
 if __name__ == "__main__":
     initialize_database()
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

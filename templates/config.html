@@ -177,6 +177,32 @@
 
         <div class="config-section-divider"></div>
 
+        <div id="section_qr_code_print" class="page-panel collapsible-panel {% if section_defaults.get('qr_code_print') == '1' %}is-open{% endif %}" data-section="qr_code_print">
+            <button type="button" class="collapsible-header">
+                <span>QR Code Scan</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+            <div class="collapsible-body">
+                <div class="qr-print-card">
+                    <div class="qr-print-card-image-wrap">
+                        <img
+                            src="{{ qr_image_url }}"
+                            alt="QR Code for iMomir"
+                            class="qr-print-card-image"
+                        >
+                    </div>
+
+                    <div class="qr-print-card-content">
+                        <div class="qr-print-card-title">Scan to Open iMomir</div>
+                        <div class="qr-print-card-description">
+                            Use your phone camera to open this iMomir server on the current network.
+                        </div>
+                        <div class="qr-print-card-url">{{ qr_access_url }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="top-bar">
             <a class="icon-button" href="{{ url_for('index') }}">Back</a>
             <div class="app-title">Config</div>
@@ -184,6 +210,7 @@
                 Save
             </button>
         </div>
+
 
         <div id="section_print_defaults" class="page-panel collapsible-panel {% if section_defaults.get('print_defaults') == '1' %}is-open{% endif %}" data-section="print_defaults">
             <button type="button" class="collapsible-header">
@@ -238,7 +265,7 @@
 
             <div class="metadata-list">
                 <div class="metadata-row">
-                    <span>Last Refresh</span>
+                    <span>Last Database Download</span>
                     <strong id="importLastRefresh">{{ import_metadata.get("last_refresh_utc", "Never") }}</strong>
                 </div>
                 <div class="metadata-row">
@@ -277,7 +304,7 @@
                         class="action-button"
                         {% if refresh_status.get("is_running") %}disabled{% endif %}
                     >
-                        Refresh Card Database
+                        Download Card Database
                     </button>
 
                     <button
@@ -325,9 +352,9 @@
                         <button
                             type="button"
                             id="downloadCardImagesButton"
-                            class="action-button"
+                            class="action-button secondary-button"
                         >
-                            Download Card Images
+                            Download Missing Card Images
                         </button>
 
                         <button
@@ -335,11 +362,18 @@
                             id="redownloadCardImagesButton"
                             class="action-button secondary-button"
                         >
-                            ReDownload Card Images
+                            ReDownload Cached Card Images
                         </button>
                     </div>
 
-                                    <div class="metadata-row">
+                    <div class="metadata-row">
+                        <span>Recommended Use</span>
+                        <strong class="metadata-value-wrap">
+                            Refresh Card Database already downloads the card database, set list, and Scryfall image index. Full image download is optional. Card images can be downloaded automatically as cards are viewed or printed.
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
                         <span>Scope</span>
                         <strong class="metadata-value-wrap">
                             Uses current card type filters and current set selection. Normal download only processes cards missing cached images and uses the local Scryfall bulk image index.
