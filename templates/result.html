@@ -75,10 +75,10 @@
 
               <!-- RIGHT COLUMN (9–16) -->
               <div class="result-mana-rail result-mana-right">
-                  <div class="result-mana-rail-label">&nbsp;</div>
+                  <div class="result-mana-rail-label"></div>
 
                   <div class="result-mana-column">
-                      {% for mv in range(9, 17) %}
+                      {% for mv in range(9, 18) %}
                           <a
                               href="{{ url_for('result', mana_value=mv) }}"
                               class="result-mana-link {% if mana_value|int == mv %}result-mana-link-active{% endif %}"

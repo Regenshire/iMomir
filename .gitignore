@@ -30,3 +30,6 @@ Thumbs.db
 # Dev Stuff
 .vscode/
 .dev_prompts/
+
+# Distributions
+dist/

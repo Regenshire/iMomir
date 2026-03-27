@@ -2,6 +2,7 @@ import json
 import os
 import socket
 import sqlite3
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -9,11 +10,29 @@ from datetime import datetime, timezone
 import requests
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
-app = Flask(__name__)
+def get_bundle_base_dir():
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_runtime_base_dir():
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+BUNDLE_BASE_DIR = get_bundle_base_dir()
+RUNTIME_BASE_DIR = get_runtime_base_dir()
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BUNDLE_BASE_DIR, "templates"),
+    static_folder=os.path.join(BUNDLE_BASE_DIR, "static"),
+)
 app.secret_key = "imomir-dev-key"
 
-DATABASE_PATH = "cards.db"
-DATA_DOWNLOAD_DIR = os.path.join("data", "downloads")
+DATABASE_PATH = os.path.join(RUNTIME_BASE_DIR, "cards.db")
+DATA_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "data")
+DATA_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "downloads")
 ATOMIC_CARDS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AtomicCards.json")
 SET_LIST_PATH = os.path.join(DATA_DOWNLOAD_DIR, "SetList.json")
 
@@ -22,8 +41,8 @@ MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
 
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
-SCRYFALL_DOWNLOAD_DIR = os.path.join("data", "scryfall")
-IMAGE_CACHE_DIR = os.path.join("data", "image_cache")
+SCRYFALL_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "scryfall")
+IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 
 CARD_SEARCH_DEFAULT_TITLE = "Avatar - Momir Vig, Simic Visionary"
@@ -261,6 +280,10 @@ def get_image_download_status_copy():
         return dict(image_download_status)
 
 def get_db_connection():
+    db_parent = os.path.dirname(DATABASE_PATH)
+    if db_parent and not os.path.exists(db_parent):
+        os.makedirs(db_parent, exist_ok=True)
+
     conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -691,9 +714,6 @@ def build_enabled_type_conditions(config, game_mode):
     if game_mode == "momir_planeswalker":
         return ["is_creature = 1", "is_planeswalker = 1"]
 
-    if game_mode == "momir_legends":
-        return ["is_legendary = 1"]
-
     if game_mode == "planechase":
         return ["is_plane = 1"]
 
@@ -728,7 +748,9 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
         conditions.append("(" + " OR ".join(type_conditions) + ")")
 
     # Legendary filter
-    if config.get("allow_legendary") == "0":
+    if game_mode == "momir_legends":
+        conditions.append("is_legendary = 1")
+    elif config.get("allow_legendary") == "0":
         conditions.append("is_legendary = 0")
 
     # Un-set filter

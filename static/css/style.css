@@ -809,7 +809,7 @@ input {
 
 .result-layout {
     display: grid;
-    grid-template-columns: 72px minmax(0, 1fr) 72px;
+    grid-template-columns: 60px minmax(0, 1fr) 60px;
     gap: 12px;
     align-items: start;
 }
