@@ -18,9 +18,31 @@ content %}
   {% endif %}
 
   <div class="mana-panel">
+    {% if current_game_mode == "tower_of_power" %}
+    <div class="mana-label">Tower of Power</div>
+
+    <form method="get" action="{{ url_for('result') }}">
+      <div class="action-row">
+        <button type="submit" class="enter-button">Draw</button>
+      </div>
+    </form>
+    {% else %}
     <div class="mana-label">Mana Value</div>
 
     <form id="manaForm" method="get" action="{{ url_for('result') }}">
+      {% if current_game_mode == "momir_select" and enabled_type_options %}
+      <label class="momir-select-card">
+        <span class="momir-select-label">Card Type</span>
+        <select name="selected_type" class="momir-select-dropdown">
+          {% for type_option in enabled_type_options %}
+            <option value="{{ type_option.value }}" {% if selected_type_value == type_option.value %}selected{% endif %}>
+              {{ type_option.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      {% endif %}
+
       <input
         id="manaValue"
         name="mana_value"
@@ -60,9 +82,12 @@ content %}
       </div>
 
       <div class="action-row">
-        <button type="submit" class="enter-button">Enter</button>
+        <button type="submit" class="enter-button">
+          {% if current_game_mode == "tower_of_power" %}Draw{% else %}Enter{% endif %}
+        </button>
       </div>
     </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

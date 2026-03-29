@@ -656,6 +656,42 @@ input {
   margin-top: 16px;
 }
 
+.momir-select-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.momir-select-card-compact {
+  margin-bottom: 0;
+}
+
+.momir-select-label {
+  color: var(--muted);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.momir-select-dropdown {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 1rem;
+}
+
+.momir-select-top-panel {
+  padding: 14px 20px;
+}
+
+.momir-select-top-form {
+  margin: 0;
+}
+
 .toggle-row {
   min-height: 56px;
   border: 1px solid var(--border);
@@ -901,6 +937,48 @@ input {
     width: 100%;
     max-width: 300px;
     border-radius: 12px;
+}
+
+.card-image-zoomable {
+    cursor: zoom-in;
+}
+
+.card-zoom-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.card-zoom-overlay.hidden {
+    display: none !important;
+}
+
+.card-zoom-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.card-zoom-content {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.card-zoom-image {
+    display: block;
+    width: auto;
+    max-width: min(92vw, 520px);
+    max-height: 82vh;
+    border-radius: 16px;
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
 }
 
 .card-info {

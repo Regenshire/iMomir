@@ -4,6 +4,23 @@
 
 {% block content %}
 <div class="screen screen-result">
+    {% if current_game_mode == "momir_select" and enabled_type_options %}
+    <div class="page-panel momir-select-top-panel">
+        <form method="get" action="{{ url_for('result') }}" class="momir-select-top-form">
+            <input type="hidden" name="mana_value" value="{{ mana_value }}">
+            <label class="momir-select-card momir-select-card-compact">
+                <select id="resultSelectedType" name="selected_type" class="momir-select-dropdown">
+                    {% for type_option in enabled_type_options %}
+                        <option value="{{ type_option.value }}" {% if selected_type_value == type_option.value %}selected{% endif %}>
+                            {{ type_option.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+        </form>
+    </div>
+    {% endif %}
+
     {% if not card_database_ready %}
     <div class="page-panel setup-panel">
         <h2 class="setup-panel-title">Initial Setup Required</h2>
@@ -21,6 +38,63 @@
     {% endif %}
 
     <div class="result-panel">
+        {% if current_game_mode == "tower_of_power" %}
+        <div class="result-main">
+            <div class="result-label">Tower of Power</div>
+
+            {% if card %}
+                <div class="card-display">
+                    {% if card["image_blob"] or card["image_url"] %}
+                        <img
+                            src="{{ url_for('card_image', card_key=card['card_key']) }}"
+                            alt="{{ card['name'] }}"
+                            class="card-image card-image-zoomable"
+                            id="resultCardImage"
+                            role="button"
+                            tabindex="0"
+                            aria-label="Zoom card image"
+                        >
+                    {% else %}
+                        <div class="card-placeholder">
+                            No image available
+                        </div>
+                    {% endif %}
+
+                    <div class="card-info">
+                        <div class="card-name">{{ card["name"] }}</div>
+                        <div class="card-type">{{ card["type_line"] }}</div>
+                    </div>
+                </div>
+            {% else %}
+                <div class="card-placeholder">
+                    {% if not card_database_ready %}
+                        Card database not loaded yet.
+                    {% else %}
+                        No matching card found.
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="result-actions result-actions-bottom">
+            <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
+            {% if card_database_ready %}
+                <a class="action-button" href="{{ url_for('result') }}">Draw</a>
+            {% else %}
+                <button type="button" class="action-button" disabled>Draw</button>
+            {% endif %}
+            {% if card %}
+                <a
+                    class="action-button print-button"
+                    href="{{ url_for('print_card', card_key=card['card_key']) }}"
+                >
+                    Print
+                </a>
+            {% else %}
+                <button type="button" class="action-button print-button" disabled>Print</button>
+            {% endif %}
+        </div>
+        {% else %}
         <div class="result-layout">
             <!-- LEFT COLUMN (0–8) -->
             <div class="result-mana-rail result-mana-left">
@@ -29,8 +103,10 @@
                 <div class="result-mana-column">
                     {% for mv in range(0, 9) %}
                         <a
-                            href="{{ url_for('result', mana_value=mv) }}"
+                            href="{{ url_for('result', mana_value=mv, selected_type=selected_type_value if current_game_mode == 'momir_select' else None) }}"
                             class="result-mana-link {% if mana_value|int == mv %}result-mana-link-active{% endif %}"
+                            data-mana-link="1"
+                            data-mana-value="{{ mv }}"
                         >
                             {{ mv }}
                         </a>
@@ -49,7 +125,11 @@
                             <img
                                 src="{{ url_for('card_image', card_key=card['card_key']) }}"
                                 alt="{{ card['name'] }}"
-                                class="card-image"
+                                class="card-image card-image-zoomable"
+                                id="resultCardImage"
+                                role="button"
+                                tabindex="0"
+                                aria-label="Zoom card image"
                             >
                         {% else %}
                             <div class="card-placeholder">
@@ -80,8 +160,10 @@
                   <div class="result-mana-column">
                       {% for mv in range(9, 18) %}
                           <a
-                              href="{{ url_for('result', mana_value=mv) }}"
+                              href="{{ url_for('result', mana_value=mv, selected_type=selected_type_value if current_game_mode == 'momir_select' else None) }}"
                               class="result-mana-link {% if mana_value|int == mv %}result-mana-link-active{% endif %}"
+                              data-mana-link="1"
+                              data-mana-value="{{ mv }}"
                           >
                               {{ mv }}
                           </a>
@@ -93,7 +175,7 @@
         <div class="result-actions result-actions-bottom">
             <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
             {% if card_database_ready %}
-                <a class="action-button" href="{{ url_for('result', mana_value=mana_value) }}">Again</a>
+                <a id="resultAgainButton" class="action-button" href="{{ url_for('result', mana_value=mana_value, selected_type=selected_type_value if current_game_mode == 'momir_select' else None) }}">Again</a>
             {% else %}
                 <button type="button" class="action-button" disabled>Again</button>
             {% endif %}
@@ -108,6 +190,20 @@
                 <button type="button" class="action-button print-button" disabled>Print</button>
             {% endif %}
         </div>
+        {% endif %}
+
+        {% if card %}
+        <div id="cardZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
+            <div id="cardZoomBackdrop" class="card-zoom-backdrop"></div>
+            <div class="card-zoom-content">
+                <img
+                    src="{{ url_for('card_image', card_key=card['card_key']) }}"
+                    alt="{{ card['name'] }}"
+                    class="card-zoom-image"
+                >
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

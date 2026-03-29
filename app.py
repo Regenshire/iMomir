@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import socket
 import sqlite3
 import sys
@@ -150,6 +151,12 @@ GAME_MODE_OPTIONS = [
         "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with converted mana cost X chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This is the standard mode of the Momir varient.",
         "image_filename": "img/token_mode_momir_basic.jpg",
     },
+        {
+        "value": "momir_select",
+        "label": "Momir Select",
+        "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a card with converted mana cost X from the <strong>selected card type</strong>. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode adds a card type selector to the draw screen and only pulls from the chosen enabled type.",
+        "image_filename": "img/token_mode_momir_select.jpg",
+    },
     {
         "value": "momir_planeswalker",
         "label": "Momir Planeswalker",
@@ -191,6 +198,12 @@ GAME_MODE_OPTIONS = [
         "label": "Momir Prime",
         "description": "The Momir Vig Avatar allows each player to start with <strong>24 life</strong>, and grants the following ability: <br><br> &#10006; <i>discard a card: Create a token that’s a copy of a <strong>creature</strong> card with a converted mana cost of X that is a <strong>Prime Number</strong>, chosen at random. Activate this ability only any time you could cast a sorcery and only once per turn.</i> <br><br> This mode only allows cards with a mana cost that is a Prime Number to be copied.",
         "image_filename": "img/token_mode_momir_prime.jpg",
+    },
+    {
+        "value": "tower_of_power",
+        "label": "Tower of Power",
+        "description": "Tower of Power is a  mode that simulates drawing from a deck of any card for the selected sets. Click <strong>Draw</strong> to draw a random card from the selected pool using <strong>Sets</strong> and <strong>Primary Card Types</strong>, plus basic and non-basic lands.",
+        "image_filename": "img/token_mode_tower_of_power.jpg",
     },
     {
         "value": "planechase",
@@ -550,6 +563,7 @@ def update_config_from_form(form_data):
     if submitted_game_mode not in {
         "custom",
         "momir_basic",
+        "momir_select",
         "momir_planeswalker",
         "momir_legends",
         "momir_battleship",
@@ -557,6 +571,7 @@ def update_config_from_form(form_data):
         "momir_odds",
         "momir_evens",
         "momir_prime",
+        "tower_of_power",
         "planechase",
         "archenemy",
     }:
@@ -582,6 +597,12 @@ def update_config_from_form(form_data):
     if submitted_momir_variant not in {"dark", "light", "retro", "mtgo"}:
         submitted_momir_variant = "dark"
     updated_config["momir_default_token_variant"] = submitted_momir_variant
+
+    if submitted_game_mode == "tower_of_power":
+        any_primary_selected = any(updated_config.get(key) == "1" for key, _ in PRIMARY_TYPE_KEYS)
+        if not any_primary_selected:
+            for key, _ in PRIMARY_TYPE_KEYS:
+                updated_config[key] = "1"
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -707,6 +728,363 @@ def get_selected_set_codes():
 
     return {row["set_code"] for row in rows}
 
+def get_draws_since_last_land():
+    cleanup_card_history()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            ch.card_key,
+            COALESCE(c.is_land, 0) AS is_land
+        FROM card_history ch
+        LEFT JOIN cards c
+            ON c.card_key = ch.card_key
+        ORDER BY ch.history_id DESC
+        LIMIT 10
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    draws_since_last_land = 0
+
+    for row in rows:
+        if int(row["is_land"] or 0) == 1:
+            return draws_since_last_land
+
+        draws_since_last_land += 1
+
+    return draws_since_last_land
+
+def get_draws_since_non_land():
+    cleanup_card_history()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            ch.card_key,
+            COALESCE(c.is_land, 0) AS is_land
+        FROM card_history ch
+        LEFT JOIN cards c
+            ON c.card_key = ch.card_key
+        ORDER BY ch.history_id DESC
+        LIMIT 10
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    draws_since_non_land = 0
+
+    for row in rows:
+        if int(row["is_land"] or 0) == 0:
+            return draws_since_non_land
+
+        draws_since_non_land += 1
+
+    return draws_since_non_land
+
+def get_enabled_type_options(config):
+    enabled_types = []
+
+    for key, label in PRIMARY_TYPE_KEYS + SUPPLEMENTAL_TYPE_KEYS:
+        if config.get(key) == "1":
+            enabled_types.append({
+                "value": key.replace("type_", ""),
+                "label": label,
+                "column": key.replace("type_", "is_"),
+            })
+
+    return enabled_types
+
+
+def resolve_selected_result_type(config, requested_type_value):
+    enabled_types = get_enabled_type_options(config)
+
+    if not enabled_types:
+        return {
+            "enabled_types": [],
+            "selected_value": "",
+            "selected_label": "",
+            "selected_column": "",
+        }
+
+    requested_type_value = (requested_type_value or "").strip().lower()
+
+    for item in enabled_types:
+        if item["value"] == requested_type_value:
+            return {
+                "enabled_types": enabled_types,
+                "selected_value": item["value"],
+                "selected_label": item["label"],
+                "selected_column": item["column"],
+            }
+
+    first_item = enabled_types[0]
+    return {
+        "enabled_types": enabled_types,
+        "selected_value": first_item["value"],
+        "selected_label": first_item["label"],
+        "selected_column": first_item["column"],
+    }
+
+def get_enabled_primary_type_options(config):
+    enabled_primary_types = []
+
+    for key, label in PRIMARY_TYPE_KEYS:
+        if config.get(key) == "1":
+            enabled_primary_types.append({
+                "value": key.replace("type_", ""),
+                "label": label,
+                "column": key.replace("type_", "is_"),
+            })
+
+    if not enabled_primary_types:
+        for key, label in PRIMARY_TYPE_KEYS:
+            enabled_primary_types.append({
+                "value": key.replace("type_", ""),
+                "label": label,
+                "column": key.replace("type_", "is_"),
+            })
+
+    return enabled_primary_types
+
+
+def append_common_draw_filters(conditions, params, config, selected_set_codes):
+    conditions.append("disable_card = 0")
+
+    if config.get("allow_unsets") == "0":
+        conditions.append("is_unset = 0")
+
+    if config.get("allow_arena") == "0":
+        conditions.append("has_paper_printing = 1")
+
+    if config.get("allow_repeats") == "0":
+        conditions.append(
+            """
+            (
+                LOWER(name) IN (
+                    'plains',
+                    'snow-covered plains',
+                    'island',
+                    'snow-covered island',
+                    'swamp',
+                    'snow-covered swamp',
+                    'mountain',
+                    'snow-covered mountain',
+                    'forest',
+                    'snow-covered forest',
+                    'wastes',
+                    'snow-covered wastes'
+                )
+                OR card_key NOT IN (
+                    SELECT card_key
+                    FROM card_history
+                )
+            )
+            """
+        )
+
+    if config.get("all_sets_enabled") == "0" and selected_set_codes:
+        set_conditions = []
+        for code in selected_set_codes:
+            set_conditions.append("printings_json LIKE ?")
+            params.append(f'%"{code}"%')
+
+        if set_conditions:
+            conditions.append("(" + " OR ".join(set_conditions) + ")")
+
+
+def fetch_random_card_by_conditions(conditions, params):
+    where_clause = " AND ".join(conditions) if conditions else "1=1"
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    query = f"""
+        SELECT *
+        FROM cards
+        WHERE {where_clause}
+        ORDER BY RANDOM()
+        LIMIT 1
+    """
+
+    cursor.execute(query, params)
+    row = cursor.fetchone()
+    conn.close()
+
+    return row
+
+
+def draw_tower_named_land(config, selected_set_codes, preferred_name, fallback_name=None):
+    for chosen_name in [preferred_name, fallback_name]:
+        if not chosen_name:
+            continue
+
+        conditions = []
+        params = []
+
+        append_common_draw_filters(conditions, params, config, selected_set_codes)
+        conditions.append("is_land = 1")
+        conditions.append("LOWER(name) = ?")
+        params.append(chosen_name.strip().lower())
+
+        row = fetch_random_card_by_conditions(conditions, params)
+        if row:
+            return row
+
+    return None
+
+
+def draw_tower_other_land(config, selected_set_codes):
+    conditions = []
+    params = []
+
+    append_common_draw_filters(conditions, params, config, selected_set_codes)
+    conditions.append("is_land = 1")
+    conditions.append(
+        """
+        LOWER(name) NOT IN (
+            'plains',
+            'snow-covered plains',
+            'island',
+            'snow-covered island',
+            'swamp',
+            'snow-covered swamp',
+            'mountain',
+            'snow-covered mountain',
+            'forest',
+            'snow-covered forest',
+            'wastes',
+            'snow-covered wastes'
+        )
+        """
+    )
+
+    return fetch_random_card_by_conditions(conditions, params)
+
+def draw_tower_any_land(config, selected_set_codes):
+    conditions = []
+    params = []
+
+    append_common_draw_filters(conditions, params, config, selected_set_codes)
+    conditions.append("is_land = 1")
+
+    return fetch_random_card_by_conditions(conditions, params)
+
+
+def draw_tower_land_card(config, selected_set_codes):
+    land_roll = random.random()
+
+    if land_roll < 0.14:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered plains" if use_snow else "plains",
+            "plains" if use_snow else "snow-covered plains",
+        )
+
+    if land_roll < 0.28:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered island" if use_snow else "island",
+            "island" if use_snow else "snow-covered island",
+        )
+
+    if land_roll < 0.42:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered swamp" if use_snow else "swamp",
+            "swamp" if use_snow else "snow-covered swamp",
+        )
+
+    if land_roll < 0.56:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered mountain" if use_snow else "mountain",
+            "mountain" if use_snow else "snow-covered mountain",
+        )
+
+    if land_roll < 0.70:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered forest" if use_snow else "forest",
+            "forest" if use_snow else "snow-covered forest",
+        )
+
+    if land_roll < 0.84:
+        use_snow = random.random() < 0.25
+        return draw_tower_named_land(
+            config,
+            selected_set_codes,
+            "snow-covered wastes" if use_snow else "wastes",
+            "wastes",
+        )
+
+    return draw_tower_other_land(config, selected_set_codes)
+
+
+def draw_tower_nonland_card(config, selected_set_codes):
+    enabled_primary_types = get_enabled_primary_type_options(config)
+
+    conditions = []
+    params = []
+
+    append_common_draw_filters(conditions, params, config, selected_set_codes)
+
+    nonland_type_conditions = []
+    for type_option in enabled_primary_types:
+        if type_option["value"] == "land":
+            continue
+        nonland_type_conditions.append(f"{type_option['column']} = 1")
+
+    if nonland_type_conditions:
+        conditions.append("(" + " OR ".join(nonland_type_conditions) + ")")
+
+    conditions.append("is_land = 0")
+    conditions.append("(is_creature = 0 OR (mana_cost IS NOT NULL AND TRIM(mana_cost) <> ''))")
+
+    return fetch_random_card_by_conditions(conditions, params)
+
+def draw_random_tower_of_power_card():
+    cleanup_card_history()
+
+    config = get_config()
+    selected_set_codes = get_selected_set_codes()
+    draws_since_last_land = get_draws_since_last_land()
+    draws_since_last_nonland = get_draws_since_non_land()
+
+    force_land_draw = draws_since_last_land > 4
+    force_nonland_draw = draws_since_last_nonland > 2
+
+    if (force_land_draw or random.random() < 0.42) and force_nonland_draw == False :
+        land_card = draw_tower_land_card(config, selected_set_codes)
+        if land_card:
+            return land_card
+
+        fallback_land_card = draw_tower_any_land(config, selected_set_codes)
+        if fallback_land_card:
+            return fallback_land_card
+
+    return draw_tower_nonland_card(config, selected_set_codes)
+
 def build_enabled_type_conditions(config, game_mode):
     if game_mode == "momir_basic":
         return ["is_creature = 1"]
@@ -729,7 +1107,7 @@ def build_enabled_type_conditions(config, game_mode):
 
     return type_conditions
 
-def build_card_filter_query(mana_value, config, selected_set_codes):
+def build_card_filter_query(mana_value, config, selected_set_codes, selected_type_value=None):
     conditions = []
     params = []
 
@@ -742,10 +1120,15 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
     game_mode = (config.get("game_mode") or "custom").strip().lower()
 
     # Card types
-    type_conditions = build_enabled_type_conditions(config, game_mode)
+    if game_mode == "momir_select":
+        selected_type_info = resolve_selected_result_type(config, selected_type_value)
+        if selected_type_info["selected_column"]:
+            conditions.append(f"({selected_type_info['selected_column']} = 1)")
+    else:
+        type_conditions = build_enabled_type_conditions(config, game_mode)
 
-    if type_conditions:
-        conditions.append("(" + " OR ".join(type_conditions) + ")")
+        if type_conditions:
+            conditions.append("(" + " OR ".join(type_conditions) + ")")
 
     # Legendary filter
     if game_mode == "momir_legends":
@@ -770,9 +1153,25 @@ def build_card_filter_query(mana_value, config, selected_set_codes):
     if config.get("allow_repeats") == "0":
         conditions.append(
             """
-            card_key NOT IN (
-                SELECT card_key
-                FROM card_history
+            (
+                LOWER(name) IN (
+                    'plains',
+                    'snow-covered plains',
+                    'island',
+                    'snow-covered island',
+                    'swamp',
+                    'snow-covered swamp',
+                    'mountain',
+                    'snow-covered mountain',
+                    'forest',
+                    'snow-covered forest',
+                    'wastes',
+                    'snow-covered wastes'
+                )
+                OR card_key NOT IN (
+                    SELECT card_key
+                    FROM card_history
+                )
             )
             """
         )
@@ -1000,14 +1399,14 @@ def search_cards_for_print(search_text, search_scope="any", limit=75):
 
     return rows
 
-def draw_random_card(mana_value):
+def draw_random_card(mana_value, selected_type_value=None):
     cleanup_card_history()
 
     config = get_config()
     selected_set_codes = get_selected_set_codes()
 
     where_clause, params = build_card_filter_query(
-        mana_value, config, selected_set_codes
+        mana_value, config, selected_set_codes, selected_type_value=selected_type_value
     )
 
     conn = get_db_connection()
@@ -2364,16 +2763,54 @@ def run_refresh_job(force_download=False):
 
 @app.route("/")
 def index():
+    config = get_config()
+    selected_type_info = resolve_selected_result_type(
+        config,
+        request.args.get("selected_type", ""),
+    )
+
     return render_template(
         "index.html",
         card_database_ready=is_card_database_ready(),
+        current_game_mode=(config.get("game_mode") or "custom").strip().lower(),
+        enabled_type_options=selected_type_info["enabled_types"],
+        selected_type_value=selected_type_info["selected_value"],
     )
-
 
 @app.route("/result")
 def result():
     mana_value = request.args.get("mana_value", "").strip()
+    selected_type_value = (request.args.get("selected_type") or "").strip().lower()
     card_database_ready = is_card_database_ready()
+    config = get_config()
+    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
+    selected_type_info = resolve_selected_result_type(config, selected_type_value)
+
+    if current_game_mode == "tower_of_power":
+        card = draw_random_tower_of_power_card() if card_database_ready else None
+
+        if card:
+            existing_cache_path = card["image_cache_path"] or ""
+            cache_exists = False
+
+            if existing_cache_path:
+                cache_exists = os.path.exists(os.path.abspath(existing_cache_path))
+
+            if not cache_exists:
+                card = ensure_card_image_cached(card)
+
+            if card:
+                record_card_history(card["card_key"])
+
+        return render_template(
+            "result.html",
+            mana_value="",
+            card=card,
+            card_database_ready=card_database_ready,
+            current_game_mode=current_game_mode,
+            enabled_type_options=[],
+            selected_type_value="",
+        )
 
     if not mana_value.isdigit():
         return render_template(
@@ -2381,9 +2818,13 @@ def result():
             mana_value=mana_value,
             card=None,
             card_database_ready=card_database_ready,
+            current_game_mode=current_game_mode,
+            enabled_type_options=selected_type_info["enabled_types"],
+            selected_type_value=selected_type_info["selected_value"],
         )
 
-    card = draw_random_card(int(mana_value))
+    draw_type_value = selected_type_info["selected_value"] if current_game_mode == "momir_select" else None
+    card = draw_random_card(int(mana_value), selected_type_value=draw_type_value)
 
     if card:
         existing_cache_path = card["image_cache_path"] or ""
@@ -2403,6 +2844,9 @@ def result():
         mana_value=mana_value,
         card=card,
         card_database_ready=card_database_ready,
+        current_game_mode=current_game_mode,
+        enabled_type_options=selected_type_info["enabled_types"],
+        selected_type_value=selected_type_info["selected_value"],
     )
 
 @app.route("/print/<card_key>")
