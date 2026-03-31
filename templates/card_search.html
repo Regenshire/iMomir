@@ -52,15 +52,9 @@
                 </div>
 
                 <div class="card-search-preview-actions">
-                    {% if featured_card["card_key"] %}
-                        <a class="action-button card-search-print-button" href="{{ url_for('print_card', card_key=featured_card['card_key']) }}">
-                            Print
-                        </a>
-                    {% else %}
-                                                <a class="action-button card-search-print-button" href="{{ url_for('print_custom_default_momir_vig') }}">
-                            Print
-                        </a>
-                    {% endif %}
+                    <a class="action-button card-search-print-button" href="{{ featured_card_print_href }}" target="_blank">
+                        Print
+                    </a>
                 </div>
             </div>
         {% else %}

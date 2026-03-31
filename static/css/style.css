@@ -260,6 +260,29 @@ input {
   margin-top: 20px;
 }
 
+.tower-draw-row {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.tower-draw-button {
+  width: 100%;
+}
+
+.tower-draw-count-select {
+  min-height: 56px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel-2);
+  color: var(--text);
+  padding: 12px 14px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .enter-button,
 .action-button {
   width: 100%;
@@ -429,6 +452,16 @@ input {
     min-height: 44px;
     font-size: 0.95rem;
     padding: 10px 8px;
+  }
+
+  .tower-draw-row {
+    grid-template-columns: minmax(0, 1fr) 92px;
+    gap: 10px;
+  }
+
+  .tower-draw-count-select {
+    min-height: 52px;
+    font-size: 0.95rem;
   }
 }
 
@@ -1020,12 +1053,12 @@ input {
     margin: 0;
     padding: 0;
     background: #ffffff;
-    --print-width: 60mm;
+    --print-width: 63mm;
     --print-height: 86mm;
 }
 
 .print-template-dk-1234 {
-    --print-width: 60mm;
+    --print-width: 63mm;
     --print-height: 86mm;
 }
 
@@ -1070,25 +1103,41 @@ input {
 }
 
 @media print {
+    @page {
+        size: var(--print-width) var(--print-height);
+        margin: 0;
+    }
+
     html,
     body.print-page {
         width: var(--print-width);
         height: var(--print-height);
-        margin: 0;
-        padding: 0;
+        margin: 0 !important;
+        padding: 0 !important;
         overflow: hidden;
         background: #ffffff;
     }
 
+    body.print-page {
+        position: relative;
+    }
+
     .print-sheet {
-        display: block;
         width: var(--print-width);
         height: var(--print-height);
-        margin: 0;
-        padding: 0;
-        position: absolute;
-        top: 0;
-        left: 0;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: fixed;
+        inset: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .print-card-image {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+        object-fit: fill;
     }
 
     .print-return-bar {

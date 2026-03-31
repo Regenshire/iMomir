@@ -250,10 +250,61 @@
                             {% endfor %}
                         </select>
                     </label>
+                    <label  class="toggle-row settings-field">
+                        <span>Use PDF Printing</span>
+                        <input
+                            type="checkbox"
+                            name="use_pdf_print"
+                            {% if config.use_pdf_print == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>PDF Width (mm)</span>
+                        <input
+                            type="number"
+                            name="pdf_width_mm"
+                            step="0.01"
+                            min="1"
+                            value="{{ config.pdf_width_mm }}"
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>PDF Height (mm)</span>
+                        <input
+                            type="number"
+                            name="pdf_height_mm"
+                            step="0.01"
+                            min="1"
+                            value="{{ config.pdf_height_mm }}"
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Crop Border</span>
+                        <input
+                            type="checkbox"
+                            name="pdf_crop_border"
+                            {% if config.pdf_crop_border == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Open Print in New Tab</span>
+                        <input
+                            type="checkbox"
+                            name="open_print_in_new_tab"
+                            {% if config.open_print_in_new_tab == "1" %}checked{% endif %}
+                        >
+                    </label>
 
                 </div>
             </div>
+            
         </div>
+
+
     </form>
     <div id="section_card_database" class="page-panel collapsible-panel {% if section_defaults.get('card_database') == '1' %}is-open{% endif %}" data-section="card_database">
         <button type="button" class="collapsible-header">
@@ -370,13 +421,6 @@
                         <span>Recommended Use</span>
                         <strong class="metadata-value-wrap">
                             Refresh Card Database already downloads the card database, set list, and Scryfall image index. Full image download is optional. Card images can be downloaded automatically as cards are viewed or printed.
-                        </strong>
-                    </div>
-
-                    <div class="metadata-row">
-                        <span>Scope</span>
-                        <strong class="metadata-value-wrap">
-                            Uses current card type filters and current set selection. Normal download only processes cards missing cached images and uses the local Scryfall bulk image index.
                         </strong>
                     </div>
                 </div>

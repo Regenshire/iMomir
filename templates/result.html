@@ -86,7 +86,8 @@
             {% if card %}
                 <a
                     class="action-button print-button"
-                    href="{{ url_for('print_card', card_key=card['card_key']) }}"
+                    href="{{ card_print_href }}"
+                    {% if open_print_in_new_tab %}target="_blank"{% endif %}
                 >
                     Print
                 </a>
@@ -182,7 +183,8 @@
             {% if card %}
                 <a
                     class="action-button print-button"
-                    href="{{ url_for('print_card', card_key=card['card_key']) }}"
+                    href="{{ card_print_href }}"
+                    {% if open_print_in_new_tab %}target="_blank"{% endif %}
                 >
                     Print
                 </a>

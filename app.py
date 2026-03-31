@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import random
@@ -9,7 +10,14 @@ import time
 from datetime import datetime, timezone
 
 import requests
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen import canvas
+from io import BytesIO
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
+
+
 
 def get_bundle_base_dir():
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
@@ -36,15 +44,27 @@ DATA_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "data")
 DATA_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "downloads")
 ATOMIC_CARDS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AtomicCards.json")
 SET_LIST_PATH = os.path.join(DATA_DOWNLOAD_DIR, "SetList.json")
+ALL_PRINTINGS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json")
 
 MTGJSON_ATOMIC_URL = "https://mtgjson.com/api/v5/AtomicCards.json"
 MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
+MTGJSON_ALL_PRINTINGS_URL = "https://mtgjson.com/api/v5/AllPrintings.json"
+MTGJSON_CSV_BASE_URL = "https://mtgjson.com/api/v5/csv"
+
+MTGJSON_SET_BOOSTER_CONTENTS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterContents.csv"
+MTGJSON_SET_BOOSTER_CONTENT_WEIGHTS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterContentWeights.csv"
+MTGJSON_SET_BOOSTER_SHEET_CARDS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterSheetCards.csv"
+MTGJSON_SET_BOOSTER_SHEETS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterSheets.csv"
 
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
 SCRYFALL_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "scryfall")
 IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
+SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
+SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContentWeights.csv")
+SET_BOOSTER_SHEET_CARDS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterSheetCards.csv")
+SET_BOOSTER_SHEETS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterSheets.csv")
 
 CARD_SEARCH_DEFAULT_TITLE = "Avatar - Momir Vig, Simic Visionary"
 CARD_SEARCH_DEFAULT_VARIANTS = {
@@ -92,7 +112,13 @@ DEFAULT_CONFIG = {
     "allow_repeats": "1",
     "print_template": "dk-1234",
     "print_color_mode": "grayscale",
+    "use_pdf_print": "1",
+    "pdf_width_mm": "57.5",
+    "pdf_height_mm": "85.25",
+    "pdf_crop_border": "1",
     "momir_default_token_variant": "dark",
+    "open_print_in_new_tab": "1",
+    "tower_pdf_draw_count": "7",
 }
 
 REPEAT_MODE_OPTIONS = [
@@ -136,6 +162,7 @@ PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),
     ("color", "Full Color"),
     ("monochrome", "Monochrome"),
+    ("optimal", "Optimal Print"),
 ]
 
 GAME_MODE_OPTIONS = [
@@ -206,6 +233,12 @@ GAME_MODE_OPTIONS = [
         "image_filename": "img/token_mode_tower_of_power.jpg",
     },
     {
+        "value": "chaos_draft",
+        "label": "Chaos Draft",
+        "description": "Chaos Draft selects a random booster pack from the currently enabled sets. One of the funnest ways to play Magic the Gathering.",
+        "image_filename": "img/token_mode_tower_of_power.jpg",
+    },
+    {
         "value": "planechase",
         "label": "Planechase",
         "description": "The Planechase format uses a shared planar deck. Players sometimes play planes cards that affect the battlefield. You can use this mode to generate Planes by clicking on the 0.",
@@ -225,6 +258,20 @@ MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
     ("retro", "Retro Token"),
     ("mtgo", "MTGO Token"),
 ]
+
+# Chaos Draft - Allowed Booster Types (EDIT THIS LIST AS NEEDED)
+ALLOWED_CHAOS_BOOSTER_TYPES = {
+    "draft",
+    "collector",
+    "set",
+    "play",
+    "jumpstart",
+    "jumpstart-v2",
+    "premium",
+    "vip",
+    "six",
+    "collector-special",
+}
 
 TYPE_FLAG_MAP = {
     "Creature": "is_creature",
@@ -469,6 +516,127 @@ def initialize_database():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS chaos_cards (
+            card_uuid TEXT PRIMARY KEY,
+            set_code TEXT NOT NULL,
+            card_name TEXT NOT NULL,
+            face_name TEXT,
+            mana_value REAL,
+            mana_cost TEXT,
+            rarity TEXT,
+            type_line TEXT,
+            layout TEXT,
+            collector_number TEXT,
+            scryfall_id TEXT,
+            scryfall_illustration_id TEXT,
+            image_url TEXT,
+            image_cache_path TEXT,
+            is_booster INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_cards_set_code
+        ON chaos_cards (set_code)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_cards_name
+        ON chaos_cards (card_name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_pack_art (
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            display_name TEXT,
+            image_path TEXT,
+            is_fallback INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (set_code, booster_name)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_booster_variants (
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            booster_index INTEGER NOT NULL,
+            booster_weight REAL NOT NULL DEFAULT 1,
+            PRIMARY KEY (set_code, booster_name, booster_index)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_booster_variant_contents (
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            booster_index INTEGER NOT NULL,
+            sheet_name TEXT NOT NULL,
+            sheet_picks INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (set_code, booster_name, booster_index, sheet_name)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_booster_sheets (
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            sheet_name TEXT NOT NULL,
+            sheet_is_foil INTEGER NOT NULL DEFAULT 0,
+            sheet_has_balance_colors INTEGER NOT NULL DEFAULT 0,
+            sheet_total_weight REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (set_code, booster_name, sheet_name)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_booster_sheet_cards (
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            sheet_name TEXT NOT NULL,
+            card_uuid TEXT NOT NULL,
+            card_weight REAL NOT NULL DEFAULT 1,
+            PRIMARY KEY (set_code, booster_name, sheet_name, card_uuid)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_pack_history (
+            history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            booster_index INTEGER NOT NULL,
+            pack_display_name TEXT NOT NULL,
+            opened_at_utc TEXT NOT NULL
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_pack_history_set_booster
+        ON chaos_pack_history (set_code, booster_name, booster_index)
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS card_history (
             history_id INTEGER PRIMARY KEY AUTOINCREMENT,
             card_key TEXT NOT NULL,
@@ -547,6 +715,9 @@ def update_config_from_form(form_data):
         "allow_legendary",
         "allow_unsets",
         "allow_arena",
+        "use_pdf_print",
+        "pdf_crop_border",
+        "open_print_in_new_tab",
     }
 
     select_defaults = {
@@ -572,6 +743,7 @@ def update_config_from_form(form_data):
         "momir_evens",
         "momir_prime",
         "tower_of_power",
+        "chaos_draft",
         "planechase",
         "archenemy",
     }:
@@ -589,7 +761,7 @@ def update_config_from_form(form_data):
     updated_config["print_template"] = submitted_template
 
     submitted_color_mode = (form_data.get("print_color_mode") or "").strip().lower()
-    if submitted_color_mode not in {"grayscale", "color", "monochrome"}:
+    if submitted_color_mode not in {"grayscale", "color", "monochrome", "optimal"}:
         submitted_color_mode = select_defaults["print_color_mode"]
     updated_config["print_color_mode"] = submitted_color_mode
 
@@ -597,6 +769,24 @@ def update_config_from_form(form_data):
     if submitted_momir_variant not in {"dark", "light", "retro", "mtgo"}:
         submitted_momir_variant = "dark"
     updated_config["momir_default_token_variant"] = submitted_momir_variant
+
+    submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
+    try:
+        parsed_pdf_width_mm = float(submitted_pdf_width_mm)
+        if parsed_pdf_width_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        parsed_pdf_width_mm = 57.5
+    updated_config["pdf_width_mm"] = str(parsed_pdf_width_mm)
+
+    submitted_pdf_height_mm = (form_data.get("pdf_height_mm") or "").strip()
+    try:
+        parsed_pdf_height_mm = float(submitted_pdf_height_mm)
+        if parsed_pdf_height_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        parsed_pdf_height_mm = 85.25
+    updated_config["pdf_height_mm"] = str(parsed_pdf_height_mm)
 
     if submitted_game_mode == "tower_of_power":
         any_primary_selected = any(updated_config.get(key) == "1" for key, _ in PRIMARY_TYPE_KEYS)
@@ -620,6 +810,132 @@ def update_config_from_form(form_data):
     conn.commit()
     conn.close()
 
+def parse_bool_csv(value):
+    return str(value or "").strip().upper() == "TRUE"
+
+
+def normalize_chaos_booster_key(booster_name):
+    value = (booster_name or "").strip().lower()
+
+    if not value:
+        return "default"
+
+    if "collector" in value:
+        return "collector"
+    if "jumpstart" in value:
+        return "jumpstart"
+    if "play" in value:
+        return "play"
+    if "set" in value:
+        return "set"
+    if "draft" in value:
+        return "draft"
+
+    return value.replace(" ", "_")
+
+def normalize_booster_type_for_filter(booster_name):
+    value = (booster_name or "").strip().lower()
+
+    # normalize common MTGJSON naming patterns
+    value = value.replace(" booster", "")
+    value = value.replace(" boosters", "")
+
+    return value
+
+def get_set_name_from_code(set_code):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT set_name
+        FROM sets
+        WHERE set_code = ?
+        """,
+        ((set_code or "").strip().upper(),),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row and row["set_name"]:
+        return row["set_name"]
+
+    return (set_code or "").strip().upper()
+
+def build_default_chaos_pack_display_name(set_code, booster_name):
+    set_name = get_set_name_from_code(set_code)
+
+    clean_booster_name = (booster_name or "").strip()
+
+    if not clean_booster_name:
+        clean_booster_name = "Booster"
+
+    return f"{set_name} - {clean_booster_name.title()}"
+
+
+def get_chaos_pack_art_relpath(set_code, booster_name):
+    normalized_set_code = (set_code or "").strip().lower()
+    normalized_booster_key = normalize_chaos_booster_key(booster_name)
+
+    direct_relpath = f"img/pack_art/{normalized_set_code}/{normalized_booster_key}.png"
+    direct_abspath = os.path.join(app.static_folder, direct_relpath.replace("/", os.sep))
+
+    if os.path.exists(direct_abspath):
+        return direct_relpath
+
+    default_relpath = f"img/pack_art/{normalized_set_code}/default.png"
+    default_abspath = os.path.join(app.static_folder, default_relpath.replace("/", os.sep))
+
+    if os.path.exists(default_abspath):
+        return default_relpath
+
+    return "img/pack_art/_fallback/booster_default.png"
+
+
+def get_chaos_pack_art_info(set_code, booster_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT display_name, image_path, is_fallback
+        FROM chaos_pack_art
+        WHERE set_code = ?
+          AND booster_name = ?
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+        ),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    default_display_name = build_default_chaos_pack_display_name(set_code, booster_name)
+    default_image_path = get_chaos_pack_art_relpath(set_code, booster_name)
+
+    if row:
+        display_name = (row["display_name"] or "").strip() or default_display_name
+        image_path = (row["image_path"] or "").strip() or default_image_path
+
+        static_abs_path = os.path.join(app.static_folder, image_path.replace("/", os.sep))
+        if not os.path.exists(static_abs_path):
+            image_path = default_image_path
+
+        return {
+            "display_name": display_name,
+            "image_path": image_path,
+            "is_fallback": int(row["is_fallback"] or 0),
+        }
+
+    return {
+        "display_name": default_display_name,
+        "image_path": default_image_path,
+        "is_fallback": 1,
+    }
+
 
 def get_all_sets():
     conn = get_db_connection()
@@ -636,6 +952,321 @@ def get_all_sets():
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+def import_chaos_cards_from_all_printings():
+    if not os.path.exists(ALL_PRINTINGS_PATH):
+        raise FileNotFoundError("AllPrintings.json was not found after download.")
+
+    set_refresh_status(
+        stage="Importing Chaos Draft Cards",
+        message="Reading AllPrintings.json for Chaos Draft card printings...",
+    )
+
+    with open(ALL_PRINTINGS_PATH, "r", encoding="utf-8") as file_handle:
+        raw_json = json.load(file_handle)
+
+    all_sets = raw_json.get("data", {})
+    if not isinstance(all_sets, dict):
+        raise ValueError("AllPrintings.json did not contain a valid 'data' object.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chaos_cards")
+
+    imported_count = 0
+
+    for set_code, set_obj in all_sets.items():
+        if not isinstance(set_obj, dict):
+            continue
+
+        set_code_clean = (set_code or "").strip().upper()
+        cards = set_obj.get("cards", [])
+
+        if not isinstance(cards, list):
+            continue
+
+        for card_obj in cards:
+            if not isinstance(card_obj, dict):
+                continue
+
+            card_uuid = (card_obj.get("uuid") or "").strip()
+            card_name = (card_obj.get("name") or "").strip()
+
+            if not card_uuid or not card_name:
+                continue
+
+            identifiers = card_obj.get("identifiers") or {}
+            if not isinstance(identifiers, dict):
+                identifiers = {}
+
+            scryfall_id = (identifiers.get("scryfallId") or "").strip()
+            scryfall_illustration_id = (identifiers.get("scryfallIllustrationId") or "").strip()
+
+            image_url = build_scryfall_image_url(scryfall_id) if scryfall_id else None
+
+            is_booster = 1
+            if card_obj.get("isPromo") is True:
+                is_booster = 0
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_cards (
+                    card_uuid,
+                    set_code,
+                    card_name,
+                    face_name,
+                    mana_value,
+                    mana_cost,
+                    rarity,
+                    type_line,
+                    layout,
+                    collector_number,
+                    scryfall_id,
+                    scryfall_illustration_id,
+                    image_url,
+                    image_cache_path,
+                    is_booster
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    card_uuid,
+                    set_code_clean,
+                    card_name,
+                    card_obj.get("faceName"),
+                    card_obj.get("manaValue"),
+                    card_obj.get("manaCost"),
+                    (card_obj.get("rarity") or "").strip().lower(),
+                    card_obj.get("type") or "",
+                    (card_obj.get("layout") or "").strip().lower(),
+                    card_obj.get("number"),
+                    scryfall_id,
+                    scryfall_illustration_id,
+                    image_url,
+                    None,
+                    is_booster,
+                ),
+            )
+
+            imported_count += 1
+
+            if imported_count % 5000 == 0:
+                conn.commit()
+                set_refresh_status(
+                    stage="Importing Chaos Draft Cards",
+                    message=f"Imported {imported_count} Chaos Draft printings...",
+                )
+
+    conn.commit()
+    conn.close()
+
+    set_import_metadata("chaos_cards_imported", imported_count)
+
+    return imported_count
+
+def import_chaos_booster_data():
+    required_files = [
+        SET_BOOSTER_CONTENTS_CSV_PATH,
+        SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH,
+        SET_BOOSTER_SHEET_CARDS_CSV_PATH,
+        SET_BOOSTER_SHEETS_CSV_PATH,
+    ]
+
+    for required_file in required_files:
+        if not os.path.exists(required_file):
+            raise FileNotFoundError(f"Chaos Draft booster file not found: {required_file}")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chaos_booster_variants")
+    cursor.execute("DELETE FROM chaos_booster_variant_contents")
+    cursor.execute("DELETE FROM chaos_booster_sheets")
+    cursor.execute("DELETE FROM chaos_booster_sheet_cards")
+
+    with open(SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH, "r", encoding="utf-8-sig", newline="") as file_handle:
+        reader = csv.DictReader(file_handle)
+        for row in reader:
+            set_code = (row.get("setCode") or "").strip().upper()
+            booster_name = (row.get("boosterName") or "").strip().lower()
+
+            if not set_code or not booster_name:
+                continue
+
+            try:
+                booster_index = int((row.get("boosterIndex") or "0").strip())
+            except ValueError:
+                booster_index = 0
+
+            try:
+                booster_weight = float((row.get("boosterWeight") or "1").strip())
+            except ValueError:
+                booster_weight = 1.0
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_booster_variants (
+                    set_code,
+                    booster_name,
+                    booster_index,
+                    booster_weight
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    set_code,
+                    booster_name,
+                    booster_index,
+                    booster_weight,
+                ),
+            )
+
+    with open(SET_BOOSTER_CONTENTS_CSV_PATH, "r", encoding="utf-8-sig", newline="") as file_handle:
+        reader = csv.DictReader(file_handle)
+        for row in reader:
+            set_code = (row.get("setCode") or "").strip().upper()
+            booster_name = (row.get("boosterName") or "").strip().lower()
+            sheet_name = (row.get("sheetName") or "").strip()
+
+            if not set_code or not booster_name or not sheet_name:
+                continue
+
+            try:
+                booster_index = int((row.get("boosterIndex") or "0").strip())
+            except ValueError:
+                booster_index = 0
+
+            try:
+                sheet_picks = int((row.get("sheetPicks") or "1").strip())
+            except ValueError:
+                sheet_picks = 1
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_booster_variant_contents (
+                    set_code,
+                    booster_name,
+                    booster_index,
+                    sheet_name,
+                    sheet_picks
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    set_code,
+                    booster_name,
+                    booster_index,
+                    sheet_name,
+                    sheet_picks,
+                ),
+            )
+
+    with open(SET_BOOSTER_SHEETS_CSV_PATH, "r", encoding="utf-8-sig", newline="") as file_handle:
+        reader = csv.DictReader(file_handle)
+        for row in reader:
+            set_code = (row.get("setCode") or "").strip().upper()
+            booster_name = (row.get("boosterName") or "").strip().lower()
+            sheet_name = (row.get("sheetName") or "").strip()
+
+            if not set_code or not booster_name or not sheet_name:
+                continue
+
+            try:
+                sheet_total_weight = float((row.get("sheetTotalWeight") or "0").strip())
+            except ValueError:
+                sheet_total_weight = 0.0
+
+            sheet_is_foil = 1 if parse_bool_csv(row.get("sheetIsFoil")) else 0
+            sheet_has_balance_colors = 1 if parse_bool_csv(row.get("sheetHasBalanceColors")) else 0
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_booster_sheets (
+                    set_code,
+                    booster_name,
+                    sheet_name,
+                    sheet_is_foil,
+                    sheet_has_balance_colors,
+                    sheet_total_weight
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    set_code,
+                    booster_name,
+                    sheet_name,
+                    sheet_is_foil,
+                    sheet_has_balance_colors,
+                    sheet_total_weight,
+                ),
+            )
+
+    with open(SET_BOOSTER_SHEET_CARDS_CSV_PATH, "r", encoding="utf-8-sig", newline="") as file_handle:
+        reader = csv.DictReader(file_handle)
+        for row in reader:
+            set_code = (row.get("setCode") or "").strip().upper()
+            booster_name = (row.get("boosterName") or "").strip().lower()
+            sheet_name = (row.get("sheetName") or "").strip()
+            card_uuid = (row.get("cardUuid") or "").strip()
+
+            if not set_code or not booster_name or not sheet_name or not card_uuid:
+                continue
+
+            try:
+                card_weight = float((row.get("cardWeight") or "1").strip())
+            except ValueError:
+                card_weight = 1.0
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_booster_sheet_cards (
+                    set_code,
+                    booster_name,
+                    sheet_name,
+                    card_uuid,
+                    card_weight
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    set_code,
+                    booster_name,
+                    sheet_name,
+                    card_uuid,
+                    card_weight,
+                ),
+            )
+
+    conn.commit()
+    conn.close()
+
+def choose_weighted_row(rows, weight_key):
+    candidate_rows = []
+    total_weight = 0.0
+
+    for row in rows:
+        try:
+            weight = float(row.get(weight_key, 0) or 0)
+        except (TypeError, ValueError):
+            weight = 0.0
+
+        if weight <= 0:
+            continue
+
+        total_weight += weight
+        candidate_rows.append((row, total_weight))
+
+    if not candidate_rows:
+        return None
+
+    roll = random.uniform(0, total_weight)
+
+    for row, running_total in candidate_rows:
+        if roll <= running_total:
+            return row
+
+    return candidate_rows[-1][0]
 
 def cleanup_card_history():
     cutoff_utc = datetime.now(timezone.utc).timestamp() - 86400
@@ -655,6 +1286,247 @@ def cleanup_card_history():
     conn.commit()
     conn.close()
 
+def clear_chaos_pack_history():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chaos_pack_history")
+
+    conn.commit()
+    conn.close()
+
+
+def record_chaos_pack_history(set_code, booster_name, booster_index, pack_display_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO chaos_pack_history (
+            set_code,
+            booster_name,
+            booster_index,
+            pack_display_name,
+            opened_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+            int(booster_index),
+            (pack_display_name or "").strip(),
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_chaos_opened_pack_keys():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT set_code, booster_name, booster_index
+        FROM chaos_pack_history
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    opened_keys = set()
+
+    for row in rows:
+        opened_keys.add(
+            (
+                (row["set_code"] or "").strip().upper(),
+                (row["booster_name"] or "").strip().lower(),
+                int(row["booster_index"] or 0),
+            )
+        )
+
+    return opened_keys
+
+def get_eligible_chaos_packs_for_spin():
+    packs = get_eligible_chaos_packs()
+    config = get_config()
+
+    if config.get("allow_repeats") != "0":
+        return packs
+
+    opened_keys = get_chaos_opened_pack_keys()
+
+    filtered_packs = []
+    for pack in packs:
+        set_code = (pack["set_code"] or "").strip().upper()
+        booster_name = (pack["booster_name"] or "").strip().lower()
+
+        variants = get_chaos_pack_variants(set_code, booster_name)
+
+        has_unused_variant = False
+        for variant in variants:
+            pack_key = (
+                set_code,
+                booster_name,
+                int(variant["booster_index"] or 0),
+            )
+
+            if pack_key not in opened_keys:
+                has_unused_variant = True
+                break
+
+        if has_unused_variant:
+            filtered_packs.append(pack)
+
+    return filtered_packs
+
+
+def get_chaos_booster_variant_contents(set_code, booster_name, booster_index):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            set_code,
+            booster_name,
+            booster_index,
+            sheet_name,
+            sheet_picks
+        FROM chaos_booster_variant_contents
+        WHERE set_code = ?
+          AND booster_name = ?
+          AND booster_index = ?
+        ORDER BY sheet_name ASC
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+            int(booster_index),
+        ),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    contents = []
+    for row in rows:
+        contents.append({
+            "set_code": row["set_code"],
+            "booster_name": row["booster_name"],
+            "booster_index": int(row["booster_index"] or 0),
+            "sheet_name": row["sheet_name"],
+            "sheet_picks": int(row["sheet_picks"] or 1),
+        })
+
+    return contents
+
+
+def get_chaos_sheet_cards(set_code, booster_name, sheet_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            cbsc.card_uuid,
+            cbsc.card_weight,
+            cc.card_name,
+            cc.rarity,
+            cc.type_line,
+            cc.image_url,
+            cc.scryfall_id,
+            cc.collector_number
+        FROM chaos_booster_sheet_cards cbsc
+        INNER JOIN chaos_cards cc
+            ON cc.card_uuid = cbsc.card_uuid
+        WHERE cbsc.set_code = ?
+          AND cbsc.booster_name = ?
+          AND cbsc.sheet_name = ?
+          AND cc.is_booster = 1
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+            sheet_name,
+        ),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    cards = []
+    for row in rows:
+        cards.append({
+            "card_uuid": row["card_uuid"],
+            "card_weight": float(row["card_weight"] or 1),
+            "card_name": row["card_name"],
+            "rarity": row["rarity"],
+            "type_line": row["type_line"],
+            "image_url": row["image_url"],
+            "scryfall_id": row["scryfall_id"],
+            "collector_number": row["collector_number"],
+        })
+
+    return cards
+
+
+def open_chaos_pack_once(set_code, booster_name, booster_index):
+    variant_contents = get_chaos_booster_variant_contents(set_code, booster_name, booster_index)
+    opened_cards = []
+
+    for content_row in variant_contents:
+        sheet_name = content_row["sheet_name"]
+        sheet_picks = int(content_row["sheet_picks"] or 1)
+
+        sheet_cards = get_chaos_sheet_cards(set_code, booster_name, sheet_name)
+        if not sheet_cards:
+            continue
+
+        available_cards = list(sheet_cards)
+
+        for _ in range(sheet_picks):
+            chosen_card = choose_weighted_row(available_cards, "card_weight")
+            if not chosen_card:
+                break
+
+            opened_cards.append({
+                "set_code": (set_code or "").strip().upper(),
+                "booster_name": (booster_name or "").strip().lower(),
+                "booster_index": int(booster_index),
+                "sheet_name": sheet_name,
+                "card_uuid": chosen_card["card_uuid"],
+                "card_name": chosen_card["card_name"],
+                "rarity": chosen_card["rarity"],
+                "type_line": chosen_card["type_line"],
+                "image_url": chosen_card["image_url"],
+                "scryfall_id": chosen_card["scryfall_id"],
+                "collector_number": chosen_card["collector_number"],
+            })
+
+    return opened_cards
+
+
+def open_chaos_pack_with_bonus_rule(set_code, booster_name, booster_index):
+    first_pack_cards = open_chaos_pack_once(set_code, booster_name, booster_index)
+    all_cards = list(first_pack_cards)
+
+    bonus_pack_opened = False
+
+    if len(first_pack_cards) < 12:
+        bonus_pack_opened = True
+        second_pack_cards = open_chaos_pack_once(set_code, booster_name, booster_index)
+        all_cards.extend(second_pack_cards)
+
+    return {
+        "cards": all_cards,
+        "bonus_pack_opened": bonus_pack_opened,
+        "total_cards": len(all_cards),
+    }
 
 def clear_card_history():
     conn = get_db_connection()
@@ -710,6 +1582,105 @@ def get_recent_history_count():
     conn.close()
 
     return int(row["history_count"] or 0)
+
+def get_chaos_pack_variants(set_code, booster_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            set_code,
+            booster_name,
+            booster_index,
+            booster_weight
+        FROM chaos_booster_variants
+        WHERE set_code = ?
+          AND booster_name = ?
+        ORDER BY booster_index ASC
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+        ),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    variants = []
+
+    for row in rows:
+        variants.append({
+            "set_code": row["set_code"],
+            "booster_name": row["booster_name"],
+            "booster_index": int(row["booster_index"] or 0),
+            "booster_weight": float(row["booster_weight"] or 0),
+        })
+
+    return variants
+
+def get_eligible_chaos_packs():
+    config = get_config()
+    selected_set_codes = get_selected_set_codes()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    params = []
+    where_conditions = []
+
+    if config.get("all_sets_enabled") == "0" and selected_set_codes:
+        placeholders = ",".join(["?"] * len(selected_set_codes))
+        where_conditions.append(f"cbv.set_code IN ({placeholders})")
+        params.extend(sorted(selected_set_codes))
+
+    where_clause = ""
+    if where_conditions:
+        where_clause = "WHERE " + " AND ".join(where_conditions)
+
+    cursor.execute(
+        f"""
+        SELECT
+            cbv.set_code,
+            cbv.booster_name,
+            COUNT(*) AS variant_count,
+            SUM(cbv.booster_weight) AS total_variant_weight
+        FROM chaos_booster_variants cbv
+        {where_clause}
+        GROUP BY cbv.set_code, cbv.booster_name
+        ORDER BY cbv.set_code ASC, cbv.booster_name ASC
+        """,
+        params,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    packs = []
+
+    for row in rows:
+        booster_name_raw = row["booster_name"]
+        booster_type = normalize_booster_type_for_filter(booster_name_raw)
+
+        if booster_type not in ALLOWED_CHAOS_BOOSTER_TYPES:
+            continue
+
+        art_info = get_chaos_pack_art_info(row["set_code"], booster_name_raw)
+
+        packs.append({
+            "set_code": row["set_code"],
+            "booster_name": booster_name_raw,
+            "display_name": art_info["display_name"],
+            "image_path": art_info["image_path"],
+            "image_src": url_for("static", filename=art_info["image_path"]),
+            "is_fallback": int(art_info["is_fallback"] or 0),
+            "variant_count": int(row["variant_count"] or 0),
+            "total_variant_weight": float(row["total_variant_weight"] or 0),
+            "booster_type": booster_type,
+        })
+
+    return packs
 
 def get_selected_set_codes():
     conn = get_db_connection()
@@ -1085,6 +2056,42 @@ def draw_random_tower_of_power_card():
 
     return draw_tower_nonland_card(config, selected_set_codes)
 
+def draw_tower_of_power_batch_cards(draw_count):
+    cards = []
+
+    try:
+        parsed_draw_count = int(draw_count)
+    except (TypeError, ValueError):
+        parsed_draw_count = 7
+
+    if parsed_draw_count < 1:
+        parsed_draw_count = 1
+    if parsed_draw_count > 100:
+        parsed_draw_count = 100
+
+    for _ in range(parsed_draw_count):
+        card = draw_random_tower_of_power_card()
+
+        if not card:
+            break
+
+        existing_cache_path = card["image_cache_path"] or ""
+        cache_exists = False
+
+        if existing_cache_path:
+            cache_exists = os.path.exists(os.path.abspath(existing_cache_path))
+
+        if not cache_exists:
+            card = ensure_card_image_cached(card)
+
+        if not card:
+            continue
+
+        record_card_history(card["card_key"])
+        cards.append(card)
+
+    return cards
+
 def build_enabled_type_conditions(config, game_mode):
     if game_mode == "momir_basic":
         return ["is_creature = 1"]
@@ -1210,6 +2217,78 @@ def build_card_filter_query(mana_value, config, selected_set_codes, selected_typ
 
     return where_clause, params
 
+def resolve_pdf_print_settings():
+    config = get_config()
+
+    use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
+    crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
+
+    try:
+        pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
+        if pdf_width_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        pdf_width_mm = 57.5
+
+    try:
+        pdf_height_mm = float((config.get("pdf_height_mm") or "85.25").strip())
+        if pdf_height_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        pdf_height_mm = 85.25
+
+    return {
+        "use_pdf_print": use_pdf_print,
+        "pdf_width_mm": pdf_width_mm,
+        "pdf_height_mm": pdf_height_mm,
+        "pdf_crop_border": crop_border,
+    }
+
+def resolve_tower_pdf_draw_count():
+    config = get_config()
+
+    raw_value = (config.get("tower_pdf_draw_count") or "7").strip()
+
+    try:
+        draw_count = int(raw_value)
+    except ValueError:
+        draw_count = 7
+
+    if draw_count < 1:
+        draw_count = 1
+    if draw_count > 100:
+        draw_count = 100
+
+    return draw_count
+
+def save_tower_pdf_draw_count(draw_count):
+    try:
+        parsed_value = int(draw_count)
+    except (TypeError, ValueError):
+        parsed_value = 7
+
+    if parsed_value < 1:
+        parsed_value = 1
+    if parsed_value > 100:
+        parsed_value = 100
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO app_config (config_key, config_value)
+        VALUES (?, ?)
+        ON CONFLICT(config_key) DO UPDATE SET config_value = excluded.config_value
+        """,
+        ("tower_pdf_draw_count", str(parsed_value)),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return parsed_value
+
 def resolve_print_settings():
     config = get_config()
 
@@ -1221,18 +2300,21 @@ def resolve_print_settings():
         print_width = "2.5in"
         print_height = "3.5in"
     else:
-        print_width = "60mm"
+        print_width = "63mm"
         print_height = "86mm"
 
     print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
-    if print_mode not in {"grayscale", "color", "monochrome"}:
+    if print_mode not in {"grayscale", "color", "monochrome", "optimal"}:
         print_mode = "grayscale"
+
+    open_in_new_tab = (config.get("open_print_in_new_tab") or "1").strip() == "1"
 
     return {
         "print_template": print_template,
         "print_width": print_width,
         "print_height": print_height,
         "print_mode": print_mode,
+        "open_in_new_tab": open_in_new_tab,
     }
 
 def resolve_default_momir_variant():
@@ -1250,6 +2332,30 @@ def resolve_default_momir_variant():
 
 def get_game_mode_option_map():
     return {item["value"]: item for item in GAME_MODE_OPTIONS}
+
+def get_card_print_href(card_key):
+    pdf_settings = resolve_pdf_print_settings()
+
+    if pdf_settings["use_pdf_print"]:
+        return url_for("print_card_pdf", card_key=card_key)
+
+    return url_for("print_card", card_key=card_key)
+
+def get_default_token_print_href():
+    pdf_settings = resolve_pdf_print_settings()
+
+    if pdf_settings["use_pdf_print"]:
+        return url_for("print_custom_default_momir_vig_pdf")
+
+    return url_for("print_custom_default_momir_vig")
+
+def get_game_mode_print_href(mode_value):
+    pdf_settings = resolve_pdf_print_settings()
+
+    if pdf_settings["use_pdf_print"]:
+        return url_for("print_custom_game_mode_pdf", mode_value=mode_value)
+
+    return url_for("print_custom_game_mode", mode_value=mode_value)
 
 def get_preferred_local_ip():
     try:
@@ -1794,6 +2900,70 @@ def download_set_list_json(force_download=False):
         "message": "Downloaded SetList.json successfully.",
     }
 
+def download_all_printings_json(force_download=False):
+    ensure_download_directories()
+
+    if not force_download and os.path.exists(ALL_PRINTINGS_PATH):
+        return {
+            "downloaded": False,
+            "message": "Local AllPrintings.json already exists.",
+        }
+
+    set_refresh_status(
+        stage="Downloading All Printings",
+        message="Downloading AllPrintings.json from MTGJSON...",
+    )
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "application/json;q=0.9,*/*;q=0.8",
+    }
+
+    response = requests.get(
+        MTGJSON_ALL_PRINTINGS_URL,
+        headers=headers,
+        timeout=600,
+    )
+    response.raise_for_status()
+
+    with open(ALL_PRINTINGS_PATH, "wb") as file_handle:
+        file_handle.write(response.content)
+
+    return {
+        "downloaded": True,
+        "message": "Downloaded AllPrintings.json successfully.",
+    }
+
+def download_chaos_booster_csvs(force_download=False):
+    ensure_download_directories()
+
+    files_to_download = [
+        (MTGJSON_SET_BOOSTER_CONTENTS_URL, SET_BOOSTER_CONTENTS_CSV_PATH),
+        (MTGJSON_SET_BOOSTER_CONTENT_WEIGHTS_URL, SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH),
+        (MTGJSON_SET_BOOSTER_SHEET_CARDS_URL, SET_BOOSTER_SHEET_CARDS_CSV_PATH),
+        (MTGJSON_SET_BOOSTER_SHEETS_URL, SET_BOOSTER_SHEETS_CSV_PATH),
+    ]
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "text/csv,application/octet-stream;q=0.9,*/*;q=0.8",
+    }
+
+    for url, file_path in files_to_download:
+        if not force_download and os.path.exists(file_path):
+            continue
+
+        set_refresh_status(
+            stage="Downloading Chaos Draft Data",
+            message=f"Downloading {os.path.basename(file_path)}...",
+        )
+
+        response = requests.get(url, headers=headers, timeout=180)
+        response.raise_for_status()
+
+        with open(file_path, "wb") as file_handle:
+            file_handle.write(response.content)
+
 def safe_list(value):
     if isinstance(value, list):
         return value
@@ -1839,6 +3009,52 @@ def safe_filename(value):
         else:
             allowed.append("_")
     return "".join(allowed).strip("_") or "card"
+
+def build_pdf_image_reader(image_path, print_mode):
+    with Image.open(image_path) as source_image:
+        image = source_image.convert("RGB")
+
+        if print_mode == "grayscale":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(1.08)
+            image = ImageEnhance.Brightness(image).enhance(1.02)
+            image = image.convert("RGB")
+
+        elif print_mode == "monochrome":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(2.35)
+            image = ImageEnhance.Brightness(image).enhance(1.05)
+            image = image.point(lambda p: 255 if p >= 160 else 0, mode="1")
+            image = image.convert("RGB")
+
+        elif print_mode == "optimal":
+            # Slight global contrast boost
+            image = ImageEnhance.Contrast(image).enhance(1.25)
+
+            # Slight brightness lift
+            image = ImageEnhance.Brightness(image).enhance(1.07)
+
+            # Push light tones toward white without killing color
+            def highlight_boost(p):
+                if p > 200:
+                    return min(255, int(p + (255 - p) * 0.7))  # push highlights toward white
+                return p
+
+            image = image.point(highlight_boost)
+
+            # Slight midtone contrast curve
+            def contrast_curve(p):
+                return int((p - 128) * 1.1 + 128)
+
+            image = image.point(contrast_curve)
+        
+        
+
+        image_buffer = BytesIO()
+        image.save(image_buffer, format="PNG")
+        image_buffer.seek(0)
+
+        return ImageReader(image_buffer)
 
 
 def get_scryfall_bulk_default_cards_download_uri():
@@ -2728,12 +3944,44 @@ def run_refresh_job(force_download=False):
 
         import_scryfall_default_cards_into_database()
 
+        set_refresh_status(
+            stage="Downloading Chaos Draft Card Data",
+            message="Downloading AllPrintings.json for Chaos Draft...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        download_all_printings_json(force_download=True)
+
+        set_refresh_status(
+            stage="Importing Chaos Draft Cards",
+            message="Importing AllPrintings.json into Chaos Draft card tables...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        import_chaos_cards_from_all_printings()
+
+        set_refresh_status(
+            stage="Importing Chaos Draft Booster Data",
+            message="Importing MTGJSON Chaos Draft booster CSV data...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        download_chaos_booster_csvs(force_download=True)
+        import_chaos_booster_data()
+
         refresh_finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         set_import_metadata("last_refresh_utc", refresh_finished_at)
         set_import_metadata("source_url", MTGJSON_ATOMIC_URL)
         set_import_metadata("cards_imported", summary["cards_imported"])
         set_import_metadata("sets_represented", summary["sets_represented"])
+        set_import_metadata("chaos_booster_data_imported_at", refresh_finished_at)
 
         if download_result.get("remote_timestamp"):
             set_import_metadata("source_last_updated", download_result["remote_timestamp"])
@@ -2743,7 +3991,7 @@ def run_refresh_job(force_download=False):
             stage="Complete",
             message=(
                 f"Refresh complete. Imported {summary['cards_imported']} atomic cards across "
-                f"{summary['sets_represented']} sets. Paper-printing index is ready."
+                f"{summary['sets_represented']} sets. Paper-printing index and Chaos Draft booster data are ready."
             ),
             finished_at=refresh_finished_at,
             cards_processed=summary["cards_imported"],
@@ -2769,12 +4017,16 @@ def index():
         request.args.get("selected_type", ""),
     )
 
+    pdf_settings = resolve_pdf_print_settings()
+
     return render_template(
         "index.html",
         card_database_ready=is_card_database_ready(),
         current_game_mode=(config.get("game_mode") or "custom").strip().lower(),
         enabled_type_options=selected_type_info["enabled_types"],
         selected_type_value=selected_type_info["selected_value"],
+        use_pdf_print=pdf_settings["use_pdf_print"],
+        tower_pdf_draw_count=resolve_tower_pdf_draw_count(),
     )
 
 @app.route("/result")
@@ -2810,6 +4062,8 @@ def result():
             current_game_mode=current_game_mode,
             enabled_type_options=[],
             selected_type_value="",
+            card_print_href=get_card_print_href(card["card_key"]) if card else "",
+            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
         )
 
     if not mana_value.isdigit():
@@ -2821,6 +4075,8 @@ def result():
             current_game_mode=current_game_mode,
             enabled_type_options=selected_type_info["enabled_types"],
             selected_type_value=selected_type_info["selected_value"],
+            card_print_href="",
+            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
         )
 
     draw_type_value = selected_type_info["selected_value"] if current_game_mode == "momir_select" else None
@@ -2847,6 +4103,8 @@ def result():
         current_game_mode=current_game_mode,
         enabled_type_options=selected_type_info["enabled_types"],
         selected_type_value=selected_type_info["selected_value"],
+        card_print_href=get_card_print_href(card["card_key"]) if card else "",
+        open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
     )
 
 @app.route("/print/<card_key>")
@@ -2874,6 +4132,143 @@ def print_card(card_key):
         print_height=print_settings["print_height"],
     )
 
+@app.route("/print-pdf/<card_key>")
+def print_card_pdf(card_key):
+    card = get_card_by_key(card_key)
+
+    if not card:
+        return "Card not found", 404
+
+    existing_cache_path = card["image_cache_path"] or ""
+    if not existing_cache_path or not os.path.exists(existing_cache_path):
+        card = ensure_card_image_cached(card)
+
+    image_path = card["image_cache_path"]
+    if not image_path or not os.path.exists(image_path):
+        return "Image not available", 404
+
+    pdf_settings = resolve_pdf_print_settings()
+    width_mm = pdf_settings["pdf_width_mm"]
+    height_mm = pdf_settings["pdf_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    draw_x_mm = 0.0
+    draw_y_mm = 0.0
+    draw_width_mm = width_mm
+    draw_height_mm = height_mm
+
+    if crop_border:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    print_settings = resolve_print_settings()
+    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
+
+    c.drawImage(
+        pdf_image_reader,
+        draw_x_mm * mm,
+        draw_y_mm * mm,
+        width=draw_width_mm * mm,
+        height=draw_height_mm * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+    c.showPage()
+    c.save()
+
+    buffer.seek(0)
+
+    pdf_filename_base = (card["scryfall_id"] or "").strip()
+    if not pdf_filename_base:
+        pdf_filename_base = safe_filename(card["card_key"])
+
+    return Response(
+        buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={pdf_filename_base}.pdf"
+        }
+    )
+
+@app.route("/print-pdf/tower-of-power-batch")
+def print_tower_of_power_batch_pdf():
+    if not is_card_database_ready():
+        return "Card database not ready", 400
+
+    pdf_settings = resolve_pdf_print_settings()
+    if not pdf_settings["use_pdf_print"]:
+        return "PDF printing is disabled", 400
+
+    requested_draw_count = request.args.get("draw_count", "").strip()
+    draw_count = save_tower_pdf_draw_count(requested_draw_count)
+
+    cards = draw_tower_of_power_batch_cards(draw_count)
+    if not cards:
+        return "No matching cards found", 404
+
+    width_mm = pdf_settings["pdf_width_mm"]
+    height_mm = pdf_settings["pdf_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    draw_x_mm = 0.0
+    draw_y_mm = 0.0
+    draw_width_mm = width_mm
+    draw_height_mm = height_mm
+
+    if crop_border:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    print_settings = resolve_print_settings()
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    for card in cards:
+        image_path = card["image_cache_path"] or ""
+        absolute_image_path = os.path.abspath(image_path) if image_path else ""
+
+        if not absolute_image_path or not os.path.exists(absolute_image_path):
+            continue
+
+        pdf_image_reader = build_pdf_image_reader(absolute_image_path, print_settings["print_mode"])
+
+        c.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
+        c.showPage()
+
+    c.save()
+    buffer.seek(0)
+
+    return Response(
+        buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename=tower_of_power_{len(cards)}_cards.pdf"
+        }
+    )
+
 @app.route("/print-custom/default-momir-vig")
 def print_custom_default_momir_vig():
     print_settings = resolve_print_settings()
@@ -2890,6 +4285,62 @@ def print_custom_default_momir_vig():
         print_template=print_settings["print_template"],
         print_width=print_settings["print_width"],
         print_height=print_settings["print_height"],
+    )
+
+@app.route("/print-pdf-custom/default-momir-vig")
+def print_custom_default_momir_vig_pdf():
+    selected_variant = resolve_default_momir_variant()
+    image_path = os.path.join(app.static_folder, selected_variant["filename"].replace("/", os.sep))
+
+    if not os.path.exists(image_path):
+        return "Image not available", 404
+
+    pdf_settings = resolve_pdf_print_settings()
+    width_mm = pdf_settings["pdf_width_mm"]
+    height_mm = pdf_settings["pdf_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    draw_x_mm = 0.0
+    draw_y_mm = 0.0
+    draw_width_mm = width_mm
+    draw_height_mm = height_mm
+
+    if crop_border:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    print_settings = resolve_print_settings()
+    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
+
+    c.drawImage(
+        pdf_image_reader,
+        draw_x_mm * mm,
+        draw_y_mm * mm,
+        width=draw_width_mm * mm,
+        height=draw_height_mm * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+    c.showPage()
+    c.save()
+
+    buffer.seek(0)
+
+    return Response(
+        buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": "inline; filename=default_momir_vig.pdf"
+        }
     )
 
 @app.route("/print-custom/game-mode/<mode_value>")
@@ -2914,6 +4365,70 @@ def print_custom_game_mode(mode_value):
         print_template=print_settings["print_template"],
         print_width=print_settings["print_width"],
         print_height=print_settings["print_height"],
+    )
+
+@app.route("/print-pdf-custom/game-mode/<mode_value>")
+def print_custom_game_mode_pdf(mode_value):
+    mode_map = get_game_mode_option_map()
+    mode_item = mode_map.get((mode_value or "").strip().lower())
+
+    if not mode_item:
+        return "Game mode token not found", 404
+
+    token_image = resolve_game_mode_token_image(mode_value)
+    image_path = os.path.join(app.static_folder, token_image["filename"].replace("/", os.sep))
+
+    if not os.path.exists(image_path):
+        return "Image not available", 404
+
+    pdf_settings = resolve_pdf_print_settings()
+    width_mm = pdf_settings["pdf_width_mm"]
+    height_mm = pdf_settings["pdf_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    draw_x_mm = 0.0
+    draw_y_mm = 0.0
+    draw_width_mm = width_mm
+    draw_height_mm = height_mm
+
+    if crop_border:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    print_settings = resolve_print_settings()
+    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
+
+    c.drawImage(
+        pdf_image_reader,
+        draw_x_mm * mm,
+        draw_y_mm * mm,
+        width=draw_width_mm * mm,
+        height=draw_height_mm * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+    c.showPage()
+    c.save()
+
+    buffer.seek(0)
+
+    safe_mode_value = (mode_value or "game_mode").strip().replace("/", "_")
+
+    return Response(
+        buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={safe_mode_value}.pdf"
+        }
     )
 
 @app.route("/card-search")
@@ -2948,12 +4463,23 @@ def card_search():
             "image_src": url_for("static", filename=selected_variant["filename"]),
         }
 
+    featured_card_print_href = ""
+
+    if featured_card:
+        featured_card_key = featured_card["card_key"] if featured_card["card_key"] else None
+
+        if featured_card_key:
+            featured_card_print_href = get_card_print_href(featured_card_key)
+        else:
+            featured_card_print_href = get_default_token_print_href()
+
     return render_template(
         "card_search.html",
         search_query=search_query,
         search_scope=search_scope,
         results=results,
         featured_card=featured_card,
+        featured_card_print_href=featured_card_print_href,
     )
 
 @app.route("/config", methods=["GET", "POST"])
@@ -2974,7 +4500,7 @@ def config():
         resolved_game_mode_cards.append({
             **item,
             "image_src": url_for("static", filename=token_image["filename"]),
-            "print_href": url_for("print_custom_game_mode", mode_value=item["value"]),
+            "print_href": get_game_mode_print_href(item["value"]),
         })
 
     source_file_present = bool(
@@ -3095,6 +4621,79 @@ def card_image(card_key):
             return redirect(card["image_url"])
 
     return ("Not found", 404)
+
+@app.route("/chaos-draft/packs", methods=["GET"])
+def chaos_draft_packs():
+    packs = get_eligible_chaos_packs()
+
+    return jsonify({
+        "ok": True,
+        "pack_count": len(packs),
+        "packs": packs,
+    })
+
+
+@app.route("/chaos-draft/open-test", methods=["GET"])
+def chaos_draft_open_test():
+    eligible_packs = get_eligible_chaos_packs_for_spin()
+
+    if not eligible_packs:
+        return jsonify({
+            "ok": False,
+            "message": "No eligible Chaos Draft packs were found.",
+        }), 404
+
+    chosen_pack = random.choice(eligible_packs)
+
+    variants = get_chaos_pack_variants(
+        chosen_pack["set_code"],
+        chosen_pack["booster_name"],
+    )
+
+    config = get_config()
+    if config.get("allow_repeats") == "0":
+        opened_keys = get_chaos_opened_pack_keys()
+        variants = [
+            variant for variant in variants
+            if (
+                (variant["set_code"] or "").strip().upper(),
+                (variant["booster_name"] or "").strip().lower(),
+                int(variant["booster_index"] or 0),
+            ) not in opened_keys
+        ]
+
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return jsonify({
+            "ok": False,
+            "message": "No eligible Chaos Draft pack variants were found.",
+        }), 404
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+    )
+
+    return jsonify({
+        "ok": True,
+        "pack": {
+            "set_code": chosen_pack["set_code"],
+            "booster_name": chosen_pack["booster_name"],
+            "display_name": chosen_pack["display_name"],
+            "image_src": chosen_pack["image_src"],
+            "variant_count": chosen_pack.get("variant_count", 0),
+            "total_variant_weight": chosen_pack.get("total_variant_weight", 0),
+        },
+        "chosen_variant": {
+            "booster_index": chosen_variant["booster_index"],
+            "booster_weight": chosen_variant["booster_weight"],
+        },
+        "bonus_pack_opened": open_result["bonus_pack_opened"],
+        "total_cards": open_result["total_cards"],
+        "cards": open_result["cards"],
+    })
 
 @app.route("/sets", methods=["GET", "POST"])
 def sets():

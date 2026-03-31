@@ -57,24 +57,41 @@
 }
 
 @media print {
+    @page {
+        size: var(--print-width) var(--print-height);
+        margin: 0;
+    }
+
     html,
     body.print-page {
         width: var(--print-width);
         height: var(--print-height);
-        margin: 0;
-        padding: 0;
+        margin: 0 !important;
+        padding: 0 !important;
         overflow: hidden;
         background: #ffffff;
+    }
+
+    body.print-page {
+        position: relative;
     }
 
     .print-sheet {
         width: var(--print-width);
         height: var(--print-height);
-        margin: 0;
-        padding: 0;
-        position: absolute;
-        top: 0;
-        left: 0;
+        margin: 0 !important;
+        padding: 0 !important;
+        position: fixed;
+        inset: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .print-card-image {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+        object-fit: fill;
     }
 
     .print-return-bar {
