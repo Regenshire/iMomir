@@ -1,4 +1,5 @@
 import csv
+import gzip
 import json
 import os
 import random
@@ -39,16 +40,26 @@ app = Flask(
 )
 app.secret_key = "imomir-dev-key"
 
+@app.context_processor
+def inject_global_template_state():
+    config = get_config()
+    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
+
+    return {
+        "nav_current_game_mode": current_game_mode,
+    }
+
 DATABASE_PATH = os.path.join(RUNTIME_BASE_DIR, "cards.db")
 DATA_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "data")
 DATA_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "downloads")
 ATOMIC_CARDS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AtomicCards.json")
 SET_LIST_PATH = os.path.join(DATA_DOWNLOAD_DIR, "SetList.json")
 ALL_PRINTINGS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json")
+ALL_PRINTINGS_GZ_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json.gz")
 
 MTGJSON_ATOMIC_URL = "https://mtgjson.com/api/v5/AtomicCards.json"
 MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
-MTGJSON_ALL_PRINTINGS_URL = "https://mtgjson.com/api/v5/AllPrintings.json"
+MTGJSON_ALL_PRINTINGS_URL = "https://mtgjson.com/api/v5/AllPrintings.json.gz"
 MTGJSON_CSV_BASE_URL = "https://mtgjson.com/api/v5/csv"
 
 MTGJSON_SET_BOOSTER_CONTENTS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterContents.csv"
@@ -630,6 +641,15 @@ def initialize_database():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS chaos_session_state (
+            state_key TEXT PRIMARY KEY,
+            state_value TEXT NOT NULL
+        )
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_chaos_pack_history_set_booster
         ON chaos_pack_history (set_code, booster_name, booster_index)
         """
@@ -966,8 +986,12 @@ def import_chaos_cards_from_all_printings():
         raw_json = json.load(file_handle)
 
     all_sets = raw_json.get("data", {})
-    if not isinstance(all_sets, dict):
-        raise ValueError("AllPrintings.json did not contain a valid 'data' object.")
+
+    if not raw_json or "data" not in raw_json:
+        raise ValueError("AllPrintings.json did not contain a top-level 'data' object.")
+
+    if not isinstance(all_sets, dict) or not all_sets:
+        raise ValueError("AllPrintings.json did not contain a valid non-empty 'data' object.")
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1527,6 +1551,131 @@ def open_chaos_pack_with_bonus_rule(set_code, booster_name, booster_index):
         "bonus_pack_opened": bonus_pack_opened,
         "total_cards": len(all_cards),
     }
+
+def set_chaos_session_state(state_key, state_value):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO chaos_session_state (state_key, state_value)
+        VALUES (?, ?)
+        ON CONFLICT(state_key) DO UPDATE SET state_value = excluded.state_value
+        """,
+        (
+            (state_key or "").strip(),
+            json.dumps(state_value),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_chaos_session_state(state_key, default_value=None):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT state_value
+        FROM chaos_session_state
+        WHERE state_key = ?
+        """,
+        ((state_key or "").strip(),),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return default_value
+
+    try:
+        return json.loads(row["state_value"])
+    except Exception:
+        return default_value
+
+
+def clear_chaos_session_state(state_key):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        DELETE FROM chaos_session_state
+        WHERE state_key = ?
+        """,
+        ((state_key or "").strip(),),
+    )
+
+    conn.commit()
+    conn.close()
+
+def get_pending_chaos_spin_result():
+    return get_chaos_session_state("pending_spin_result", default_value=None)
+
+def build_chaos_spin_result():
+    eligible_packs = get_eligible_chaos_packs_for_spin()
+
+    if not eligible_packs:
+        return None
+
+    shuffled_packs = list(eligible_packs)
+    random.shuffle(shuffled_packs)
+
+    display_packs = shuffled_packs[:15]
+
+    if not display_packs:
+        return None
+
+    winning_stop_index = random.randint(0, len(display_packs) - 1)
+    winning_pack = display_packs[winning_stop_index]
+
+    variants = get_chaos_pack_variants(
+        winning_pack["set_code"],
+        winning_pack["booster_name"],
+    )
+
+    config = get_config()
+    if config.get("allow_repeats") == "0":
+        opened_keys = get_chaos_opened_pack_keys()
+        variants = [
+            variant for variant in variants
+            if (
+                (variant["set_code"] or "").strip().upper(),
+                (variant["booster_name"] or "").strip().lower(),
+                int(variant["booster_index"] or 0),
+            ) not in opened_keys
+        ]
+
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return None
+
+    spin_result = {
+        "display_packs": display_packs,
+        "winning_pack": {
+            "set_code": winning_pack["set_code"],
+            "booster_name": winning_pack["booster_name"],
+            "display_name": winning_pack["display_name"],
+            "image_src": winning_pack["image_src"],
+            "variant_count": winning_pack.get("variant_count", 0),
+            "total_variant_weight": winning_pack.get("total_variant_weight", 0),
+        },
+        "chosen_variant": {
+            "set_code": chosen_variant["set_code"],
+            "booster_name": chosen_variant["booster_name"],
+            "booster_index": chosen_variant["booster_index"],
+            "booster_weight": chosen_variant["booster_weight"],
+        },
+        "winning_stop_index": winning_stop_index,
+    }
+
+    set_chaos_session_state("pending_spin_result", spin_result)
+
+    return spin_result
 
 def clear_card_history():
     conn = get_db_connection()
@@ -2888,7 +3037,7 @@ def download_set_list_json(force_download=False):
     response = requests.get(
         MTGJSON_SET_LIST_URL,
         headers=headers,
-        timeout=120,
+        timeout=600,
     )
     response.raise_for_status()
 
@@ -2903,7 +3052,11 @@ def download_set_list_json(force_download=False):
 def download_all_printings_json(force_download=False):
     ensure_download_directories()
 
-    if not force_download and os.path.exists(ALL_PRINTINGS_PATH):
+    if (
+        not force_download
+        and os.path.exists(ALL_PRINTINGS_PATH)
+        and os.path.getsize(ALL_PRINTINGS_PATH) > 0
+    ):
         return {
             "downloaded": False,
             "message": "Local AllPrintings.json already exists.",
@@ -2911,27 +3064,59 @@ def download_all_printings_json(force_download=False):
 
     set_refresh_status(
         stage="Downloading All Printings",
-        message="Downloading AllPrintings.json from MTGJSON...",
+        message="Downloading AllPrintings.json.gz from MTGJSON...",
     )
 
     headers = {
         "User-Agent": "iMomir/1.0",
-        "Accept": "application/json;q=0.9,*/*;q=0.8",
+        "Accept": "application/gzip,application/octet-stream;q=0.9,*/*;q=0.8",
     }
 
-    response = requests.get(
+    print("=== DOWNLOADING ALLPRINTINGS FROM ===", MTGJSON_ALL_PRINTINGS_URL)
+    print("=== WRITING GZ TO ===", ALL_PRINTINGS_GZ_PATH)
+
+    with requests.get(
         MTGJSON_ALL_PRINTINGS_URL,
         headers=headers,
-        timeout=600,
-    )
-    response.raise_for_status()
+        timeout=1200,
+        stream=True,
+    ) as response:
+        response.raise_for_status()
+        print("=== ALLPRINTINGS HTTP STATUS ===", response.status_code)
+        print("=== ALLPRINTINGS CONTENT-TYPE ===", response.headers.get("Content-Type"))
+        print("=== ALLPRINTINGS CONTENT-LENGTH ===", response.headers.get("Content-Length"))
 
-    with open(ALL_PRINTINGS_PATH, "wb") as file_handle:
-        file_handle.write(response.content)
+        with open(ALL_PRINTINGS_GZ_PATH, "wb") as file_handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    file_handle.write(chunk)
+
+    print("=== GZ EXISTS AFTER DOWNLOAD ===", os.path.exists(ALL_PRINTINGS_GZ_PATH))
+    if os.path.exists(ALL_PRINTINGS_GZ_PATH):
+        print("=== GZ SIZE ===", os.path.getsize(ALL_PRINTINGS_GZ_PATH))
+
+    set_refresh_status(
+        stage="Extracting All Printings",
+        message="Extracting AllPrintings.json from AllPrintings.json.gz...",
+    )
+
+    print("=== EXTRACTING GZ TO ===", ALL_PRINTINGS_PATH)
+
+    with gzip.open(ALL_PRINTINGS_GZ_PATH, "rb") as compressed_file:
+        with open(ALL_PRINTINGS_PATH, "wb") as output_file:
+            while True:
+                chunk = compressed_file.read(1024 * 1024)
+                if not chunk:
+                    break
+                output_file.write(chunk)
+
+    print("=== JSON EXISTS AFTER EXTRACT ===", os.path.exists(ALL_PRINTINGS_PATH))
+    if os.path.exists(ALL_PRINTINGS_PATH):
+        print("=== JSON SIZE ===", os.path.getsize(ALL_PRINTINGS_PATH))
 
     return {
         "downloaded": True,
-        "message": "Downloaded AllPrintings.json successfully.",
+        "message": "Downloaded and extracted AllPrintings.json successfully.",
     }
 
 def download_chaos_booster_csvs(force_download=False):
@@ -3056,6 +3241,61 @@ def build_pdf_image_reader(image_path, print_mode):
 
         return ImageReader(image_buffer)
 
+def build_chaos_pack_pdf(cards):
+    pdf_settings = resolve_pdf_print_settings()
+    width_mm = pdf_settings["pdf_width_mm"]
+    height_mm = pdf_settings["pdf_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    print_settings = resolve_print_settings()
+
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    draw_x_mm = 0.0
+    draw_y_mm = 0.0
+    draw_width_mm = width_mm
+    draw_height_mm = height_mm
+
+    if crop_border:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    for card in cards:
+        image_url = card.get("image_url") or ""
+
+        if not image_url:
+            continue
+
+        try:
+            response = requests.get(image_url, timeout=60)
+            response.raise_for_status()
+
+            image_buffer = BytesIO(response.content)
+            pdf_image_reader = ImageReader(image_buffer)
+
+            c.drawImage(
+                pdf_image_reader,
+                draw_x_mm * mm,
+                draw_y_mm * mm,
+                width=draw_width_mm * mm,
+                height=draw_height_mm * mm,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+            c.showPage()
+        except Exception:
+            continue
+
+    c.save()
+    buffer.seek(0)
+
+    return buffer
 
 def get_scryfall_bulk_default_cards_download_uri():
     headers = {
@@ -3145,6 +3385,9 @@ def import_scryfall_default_cards_into_database():
 
     inserted_count = 0
 
+    seen_scryfall_ids = set()
+    duplicate_scryfall_ids = 0
+
     for card_obj in raw_json:
         if not isinstance(card_obj, dict):
             continue
@@ -3175,9 +3418,14 @@ def import_scryfall_default_cards_into_database():
         if not scryfall_id or not card_name or not set_code or not image_url:
             continue
 
+        if scryfall_id in seen_scryfall_ids:
+            duplicate_scryfall_ids += 1
+        else:
+            seen_scryfall_ids.add(scryfall_id)
+
         cursor.execute(
             """
-            INSERT INTO scryfall_default_cards (
+            INSERT OR REPLACE INTO scryfall_default_cards (
                 scryfall_id,
                 oracle_id,
                 card_name,
@@ -3219,6 +3467,10 @@ def import_scryfall_default_cards_into_database():
 
     refresh_cards_has_paper_printing()
     refresh_cards_rarity_from_scryfall()
+
+    print("=== SCRYFALL IMPORT COMPLETE ===")
+    print("Inserted rows:", inserted_count)
+    print("Duplicate scryfall_ids seen during import:", duplicate_scryfall_ids)
 
     set_import_metadata("scryfall_default_cards_rows", inserted_count)
 
@@ -3944,6 +4196,8 @@ def run_refresh_job(force_download=False):
 
         import_scryfall_default_cards_into_database()
 
+        print("=== CHAOS DRAFT: BEGIN ALLPRINTINGS DOWNLOAD ===")
+
         set_refresh_status(
             stage="Downloading Chaos Draft Card Data",
             message="Downloading AllPrintings.json for Chaos Draft...",
@@ -3952,7 +4206,11 @@ def run_refresh_job(force_download=False):
             sets_represented=summary["sets_represented"],
         )
 
-        download_all_printings_json(force_download=True)
+        all_printings_result = download_all_printings_json(force_download=True)
+        print("=== CHAOS DRAFT: DOWNLOAD RESULT ===", all_printings_result)
+        print("=== CHAOS DRAFT: ALL_PRINTINGS_PATH EXISTS ===", os.path.exists(ALL_PRINTINGS_PATH))
+        if os.path.exists(ALL_PRINTINGS_PATH):
+            print("=== CHAOS DRAFT: ALL_PRINTINGS_PATH SIZE ===", os.path.getsize(ALL_PRINTINGS_PATH))
 
         set_refresh_status(
             stage="Importing Chaos Draft Cards",
@@ -3962,7 +4220,8 @@ def run_refresh_job(force_download=False):
             sets_represented=summary["sets_represented"],
         )
 
-        import_chaos_cards_from_all_printings()
+        chaos_cards_imported = import_chaos_cards_from_all_printings()
+        print("=== CHAOS DRAFT: IMPORTED CHAOS CARDS ===", chaos_cards_imported)
 
         set_refresh_status(
             stage="Importing Chaos Draft Booster Data",
@@ -3981,6 +4240,7 @@ def run_refresh_job(force_download=False):
         set_import_metadata("source_url", MTGJSON_ATOMIC_URL)
         set_import_metadata("cards_imported", summary["cards_imported"])
         set_import_metadata("sets_represented", summary["sets_represented"])
+        set_import_metadata("chaos_cards_imported", chaos_cards_imported)
         set_import_metadata("chaos_booster_data_imported_at", refresh_finished_at)
 
         if download_result.get("remote_timestamp"):
@@ -4000,6 +4260,7 @@ def run_refresh_job(force_download=False):
             source_last_updated=download_result.get("remote_timestamp", ""),
         )
     except Exception as exc:
+        print("=== REFRESH FAILED ===", repr(exc))
         set_refresh_status(
             is_running=False,
             stage="Failed",
@@ -4037,6 +4298,16 @@ def result():
     config = get_config()
     current_game_mode = (config.get("game_mode") or "custom").strip().lower()
     selected_type_info = resolve_selected_result_type(config, selected_type_value)
+
+    if current_game_mode == "chaos_draft":
+        pending_spin_result = get_chaos_session_state("pending_spin_result", default_value=None)
+
+        return render_template(
+            "chaos_draft.html",
+            card_database_ready=card_database_ready,
+            current_game_mode=current_game_mode,
+            pending_spin_result=pending_spin_result,
+        )
 
     if current_game_mode == "tower_of_power":
         card = draw_random_tower_of_power_card() if card_database_ready else None
@@ -4560,8 +4831,16 @@ def refresh_cards_start():
 
 @app.route("/refresh-cards/status", methods=["GET"])
 def refresh_cards_status():
-    import_metadata = get_import_metadata()
-    return jsonify(build_config_page_refresh_status(import_metadata))
+    try:
+        import_metadata = get_import_metadata()
+        return jsonify(build_config_page_refresh_status(import_metadata))
+    except Exception as exc:
+        return jsonify({
+            "is_running": False,
+            "stage": "Failed",
+            "message": "Refresh status failed.",
+            "error": str(exc),
+        }), 500
 
 @app.route("/download-card-images/start", methods=["POST"])
 def download_card_images_start():
@@ -4693,6 +4972,80 @@ def chaos_draft_open_test():
         "bonus_pack_opened": open_result["bonus_pack_opened"],
         "total_cards": open_result["total_cards"],
         "cards": open_result["cards"],
+    })
+
+@app.route("/chaos-draft/spin", methods=["POST"])
+def chaos_draft_spin():
+    spin_result = build_chaos_spin_result()
+
+    if not spin_result:
+        return jsonify({
+            "ok": False,
+            "message": "No eligible Chaos Draft packs were found.",
+        }), 404
+
+    return jsonify({
+        "ok": True,
+        "spin_result": spin_result,
+    })
+
+@app.route("/chaos-draft/open", methods=["POST"])
+def chaos_draft_open():
+    spin_result = get_pending_chaos_spin_result()
+
+    if not spin_result:
+        return jsonify({
+            "ok": False,
+            "message": "No pending Chaos Draft spin found."
+        }), 400
+
+    chosen_variant = spin_result.get("chosen_variant") or {}
+
+    set_code = chosen_variant.get("set_code")
+    booster_name = chosen_variant.get("booster_name")
+    booster_index = chosen_variant.get("booster_index")
+
+    if not set_code or booster_index is None:
+        return jsonify({
+            "ok": False,
+            "message": "Invalid Chaos Draft selection."
+        }), 400
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        set_code,
+        booster_name,
+        booster_index,
+    )
+
+    cards = open_result["cards"]
+
+    # Record history (only once per selection)
+    record_chaos_pack_history(
+        set_code,
+        booster_name,
+        booster_index,
+        spin_result["winning_pack"]["display_name"],
+    )
+
+    pdf_buffer = build_chaos_pack_pdf(cards)
+
+    filename_safe = f"{set_code}_{booster_name}".lower()
+
+    return Response(
+        pdf_buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={filename_safe}.pdf"
+        }
+    )
+
+@app.route("/chaos-draft/next", methods=["POST"])
+def chaos_draft_next():
+    clear_chaos_session_state("pending_spin_result")
+
+    return jsonify({
+        "ok": True,
+        "message": "Chaos Draft pack cleared.",
     })
 
 @app.route("/sets", methods=["GET", "POST"])

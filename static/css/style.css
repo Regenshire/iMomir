@@ -1417,6 +1417,154 @@ input {
     font-size: 0.92rem;
 }
 
+.chaos-draft-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.chaos-draft-spinner-shell {
+    margin-top: 0px;
+}
+
+.chaos-draft-spinner-window {
+    position: relative;
+    overflow: hidden;
+    padding: 35px 0;
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(34, 38, 46, 0.96), rgba(26, 29, 36, 0.96));
+    border: 1px solid var(--border);
+    scrollbar-width: none;
+}
+
+.chaos-draft-pointer {
+    position: absolute;
+    top: -5px;
+    padding-top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.chaos-draft-pointer img {
+    width: 48px;
+    height: auto;
+    display: block;
+}
+
+.chaos-draft-spinner-window::-webkit-scrollbar {
+    display: none;
+}
+
+.chaos-draft-spinner-window::before,
+.chaos-draft-spinner-window::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 48px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.chaos-draft-spinner-window::before {
+    left: 0;
+    background: linear-gradient(90deg, rgba(16, 17, 20, 0.92), rgba(16, 17, 20, 0));
+}
+
+.chaos-draft-spinner-window::after {
+    right: 0;
+    background: linear-gradient(270deg, rgba(16, 17, 20, 0.92), rgba(16, 17, 20, 0));
+}
+
+.chaos-draft-spinner-track {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 14px;
+    padding: 0 140px;
+    align-items: stretch;
+    will-change: transform;
+}
+
+.chaos-pack-card {
+    flex: 0 0 180px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel-2);
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    text-align: center;
+    transform: scale(1);
+    transition: transform 0.28s ease, border-color 0.28s ease, background 0.28s ease, box-shadow 0.28s ease;
+}
+
+.chaos-pack-card-winning {
+    transform: scale(1.14);
+    border: 2px solid var(--accent);
+    background: rgba(72, 127, 255, 0.16);
+    box-shadow: 0 0 0 2px rgba(72, 127, 255, 0.20), 0 16px 36px rgba(0, 0, 0, 0.28);
+}
+
+.chaos-pack-card-winning .chaos-pack-card-image {
+    transform: scale(1.07);
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+.chaos-pack-card-image-wrap {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.chaos-pack-card-image {
+    width: 100%;
+    /*max-width: 120px;*/
+    /*max-height: 180px;*/
+    max-height: 380px;
+    object-fit: contain;
+    border-radius: 10px;
+}
+
+.chaos-pack-card-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+@media (max-width: 560px) {
+    .chaos-draft-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .chaos-draft-spinner-track {
+        gap: 10px;
+        padding: 0 90px;
+    }
+
+    .chaos-pack-card {
+        flex: 0 0 145px;
+    }
+
+    .chaos-pack-card-image {
+        /*max-width: 100px;
+        max-height: 150px;*/
+        max-height: 380px;
+    }
+
+    .chaos-draft-spinner-window::before,
+    .chaos-draft-spinner-window::after {
+        width: 28px;
+    }
+}
+
 .print-return-bar {
     display: flex;
     justify-content: center;

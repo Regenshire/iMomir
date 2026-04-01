@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Chaos Draft{% endblock %}
+
+{% block content %}
+<div class="screen">
+    <div class="page-panel">
+        <h1 class="page-title">Chaos Draft</h1>
+        <p class="page-subtitle">
+            Spin to select a random booster pack from the currently enabled sets.
+        </p>
+
+        <div class="chaos-draft-actions">
+            <button type="button" id="chaosSpinButton" class="action-button">Spin</button>
+            <button type="button" id="chaosOpenButton" class="action-button secondary-button" disabled>Open</button>
+            <button type="button" id="chaosNextButton" class="action-button secondary-button" disabled>Next</button>
+        </div>
+    </div>
+
+    <div id="chaosDraftMessage" class="card-placeholder">
+        Click Spin to generate a Chaos Draft pack selection.
+    </div>
+
+    <div id="chaosDraftSpinner" class="chaos-draft-spinner-shell hidden">
+        <div class="chaos-draft-spinner-window">
+
+            <!-- NEW: Arrow Pointer -->
+            <div class="chaos-draft-pointer">
+                <img src="{{ url_for('static', filename='img/packpointer_gold.png') }}" alt="Pack Pointer">
+            </div>
+
+            <div id="chaosDraftSpinnerTrack" class="chaos-draft-spinner-track"></div>
+        </div>
+    </div>
+
+    {% if pending_spin_result %}
+    <script>
+        window.pendingChaosSpinResult = {{ pending_spin_result|tojson }};
+    </script>
+    {% endif %}
+</div>
+{% endblock %}
