@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import requests
 from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from io import BytesIO
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
@@ -886,12 +886,27 @@ def get_set_name_from_code(set_code):
 def build_default_chaos_pack_display_name(set_code, booster_name):
     set_name = get_set_name_from_code(set_code)
 
-    clean_booster_name = (booster_name or "").strip()
+    clean_booster_name = (booster_name or "").strip().lower()
 
-    if not clean_booster_name:
-        clean_booster_name = "Booster"
+    booster_label_map = {
+        "draft": "Draft Booster",
+        "set": "Set Booster",
+        "play": "Play Booster",
+        "collector": "Collector Booster",
+        "jumpstart": "Jumpstart Booster",
+        "jumpstart-v2": "Jumpstart Booster",
+        "premium": "Premium Booster",
+        "vip": "VIP Booster",
+        "six": "Six Card Booster",
+        "collector-special": "Collector Special Booster",
+    }
 
-    return f"{set_name} - {clean_booster_name.title()}"
+    display_booster_name = booster_label_map.get(
+        clean_booster_name,
+        " ".join(word.capitalize() for word in clean_booster_name.split()) if clean_booster_name else "Booster Pack"
+    )
+
+    return f"{set_name} - {display_booster_name}"
 
 
 def get_chaos_pack_art_relpath(set_code, booster_name):
@@ -3241,7 +3256,25 @@ def build_pdf_image_reader(image_path, print_mode):
 
         return ImageReader(image_buffer)
 
-def build_chaos_pack_pdf(cards):
+def split_chaos_pack_display_name_for_title(pack_display_name):
+    raw_value = (pack_display_name or "").strip()
+
+    if not raw_value:
+        return ("Booster Pack", "")
+
+    if " - " in raw_value:
+        left_part, right_part = raw_value.split(" - ", 1)
+        set_name = (left_part or "").strip()
+        booster_name = (right_part or "").strip()
+
+        if booster_name:
+            booster_name = " ".join(word.capitalize() for word in booster_name.split())
+
+        return (set_name or "Booster Pack", booster_name)
+
+    return (raw_value, "")
+
+def build_chaos_pack_pdf(cards, pack_display_name):
     pdf_settings = resolve_pdf_print_settings()
     width_mm = pdf_settings["pdf_width_mm"]
     height_mm = pdf_settings["pdf_height_mm"]
@@ -3251,6 +3284,60 @@ def build_chaos_pack_pdf(cards):
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    # Title card page
+    page_width_pts = width_mm * mm
+    page_height_pts = height_mm * mm
+
+    title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
+
+    side_padding_pts = 9 * mm
+    usable_width_pts = page_width_pts - (side_padding_pts * 2)
+
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(0, 0, page_width_pts, page_height_pts, fill=1, stroke=0)
+
+    c.setFillColorRGB(0, 0, 0)
+
+    current_y = (page_height_pts / 2) + 8
+
+    # --- DRAW TITLE (SET NAME) ---
+    if title_set_name:
+        font_name = "Helvetica-Bold"
+        font_size = 16
+        line_spacing = 16  # tighter than before
+
+        wrapped_lines = simpleSplit(title_set_name, font_name, font_size, usable_width_pts)
+
+        for line in wrapped_lines:
+            text_width = c.stringWidth(line, font_name, font_size)
+            x_position = (page_width_pts - text_width) / 2
+
+            c.setFont(font_name, font_size)
+            c.drawString(x_position, current_y, line)
+
+            current_y -= line_spacing
+
+    # --- SMALL GAP BETWEEN TITLE AND SUBTITLE (reduced) ---
+    current_y -= 4  # was larger before → now tighter
+
+    # --- DRAW SUBTITLE (BOOSTER TYPE) ---
+    if title_booster_name:
+        font_name = "Helvetica-Bold"
+        font_size = 13
+        line_spacing = 14
+
+        wrapped_lines = simpleSplit(title_booster_name, font_name, font_size, usable_width_pts)
+
+        for line in wrapped_lines:
+            text_width = c.stringWidth(line, font_name, font_size)
+            x_position = (page_width_pts - text_width) / 2
+
+            c.setFont(font_name, font_size)
+            c.drawString(x_position, current_y, line)
+
+            current_y -= line_spacing
+    c.showPage()
 
     draw_x_mm = 0.0
     draw_y_mm = 0.0
@@ -3266,31 +3353,71 @@ def build_chaos_pack_pdf(cards):
         draw_width_mm = width_mm + (crop_left_right_mm * 2)
         draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
 
+    pages_rendered = 0
+
     for card in cards:
-        image_url = card.get("image_url") or ""
+        card_uuid = card.get("card_uuid")
 
-        if not image_url:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM chaos_cards
+            WHERE card_uuid = ?
+            """,
+            (card_uuid,),
+        )
+
+        card_row = cursor.fetchone()
+        conn.close()
+
+        if not card_row:
             continue
 
-        try:
-            response = requests.get(image_url, timeout=60)
-            response.raise_for_status()
+        existing_cache_path = card_row["image_cache_path"] or ""
+        cache_exists = False
 
-            image_buffer = BytesIO(response.content)
-            pdf_image_reader = ImageReader(image_buffer)
+        if existing_cache_path:
+            abs_path = os.path.abspath(existing_cache_path)
+            cache_exists = os.path.exists(abs_path)
 
-            c.drawImage(
-                pdf_image_reader,
-                draw_x_mm * mm,
-                draw_y_mm * mm,
-                width=draw_width_mm * mm,
-                height=draw_height_mm * mm,
-                preserveAspectRatio=False,
-                mask="auto",
+        if cache_exists:
+            absolute_image_path = os.path.abspath(existing_cache_path)
+
+            pdf_image_reader = build_pdf_image_reader(
+                absolute_image_path,
+                print_settings["print_mode"]
             )
-            c.showPage()
-        except Exception:
-            continue
+        else:
+            image_url = (card_row["image_url"] or "").strip()
+            if not image_url:
+                continue
+
+            try:
+                response = requests.get(image_url, timeout=60)
+                response.raise_for_status()
+
+                image_buffer = BytesIO(response.content)
+                pdf_image_reader = ImageReader(image_buffer)
+            except Exception:
+                continue
+
+        c.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
+        c.showPage()
+        pages_rendered += 1
+
+    if pages_rendered == 0:
+        raise ValueError("No Chaos Draft card images could be rendered into the PDF.")
 
     c.save()
     buffer.seek(0)
@@ -4300,13 +4427,12 @@ def result():
     selected_type_info = resolve_selected_result_type(config, selected_type_value)
 
     if current_game_mode == "chaos_draft":
-        pending_spin_result = get_chaos_session_state("pending_spin_result", default_value=None)
+        clear_chaos_session_state("pending_spin_result")
 
         return render_template(
             "chaos_draft.html",
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
-            pending_spin_result=pending_spin_result,
         )
 
     if current_game_mode == "tower_of_power":
@@ -5019,6 +5145,12 @@ def chaos_draft_open():
 
     cards = open_result["cards"]
 
+    if not cards:
+        return jsonify({
+            "ok": False,
+            "message": "Chaos Draft pack opened but no cards were generated."
+        }), 500
+
     # Record history (only once per selection)
     record_chaos_pack_history(
         set_code,
@@ -5027,15 +5159,21 @@ def chaos_draft_open():
         spin_result["winning_pack"]["display_name"],
     )
 
-    pdf_buffer = build_chaos_pack_pdf(cards)
+    pdf_buffer = build_chaos_pack_pdf(
+        cards,
+        spin_result["winning_pack"]["display_name"],
+    )
 
-    filename_safe = f"{set_code}_{booster_name}".lower()
+    filename_safe = safe_filename(f"{set_code}_{booster_name}".lower())
+
+    pdf_buffer.seek(0)
 
     return Response(
-        pdf_buffer,
+        pdf_buffer.read(),
         mimetype="application/pdf",
         headers={
-            "Content-Disposition": f"inline; filename={filename_safe}.pdf"
+            "Content-Disposition": f"inline; filename={filename_safe}.pdf",
+            "Cache-Control": "no-store"
         }
     )
 

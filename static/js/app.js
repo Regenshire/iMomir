@@ -823,23 +823,53 @@ function initializeChaosDraftPage() {
     const spinButton = document.getElementById("chaosSpinButton");
     const openButton = document.getElementById("chaosOpenButton");
     const nextButton = document.getElementById("chaosNextButton");
+    const openRow = document.getElementById("chaosDraftOpenRow");
     const spinnerShell = document.getElementById("chaosDraftSpinner");
     const spinnerTrack = document.getElementById("chaosDraftSpinnerTrack");
+    const idleCta = document.getElementById("chaosDraftIdleCta");
+    const spinCtaButton = document.getElementById("chaosSpinButton");
+    const pointer = document.getElementById("chaosDraftPointer");
     const message = document.getElementById("chaosDraftMessage");
 
-    if (!spinButton || !spinnerShell || !spinnerTrack || !message) {
+    if (!spinCtaButton || !spinnerShell || !spinnerTrack || !message || !idleCta || !pointer) {
         return;
     }
 
     let currentSpinResult = null;
     let animationInProgress = false;
 
-    function setButtonsForIdle() {
-        spinButton.disabled = false;
+    function hideOpenRow() {
+        if (openRow) {
+            openRow.classList.remove("chaos-draft-open-row-visible");
+        }
 
         if (openButton) {
             openButton.disabled = true;
+            openButton.classList.remove("action-button-loading");
+            openButton.textContent = "Open Pack";
         }
+    }
+
+    function showOpenRow() {
+        if (openRow) {
+            openRow.classList.add("chaos-draft-open-row-visible");
+        }
+
+        if (openButton) {
+            openButton.disabled = false;
+            openButton.classList.remove("action-button-loading");
+            openButton.textContent = "Open Pack";
+        }
+    }
+
+    function setButtonsForIdle() {
+        spinCtaButton.disabled = false;
+        idleCta.classList.remove("hidden");
+        idleCta.classList.remove("chaos-draft-idle-cta-sinking");
+        spinnerTrack.classList.add("hidden");
+        pointer.classList.add("hidden");
+
+        hideOpenRow();
 
         if (nextButton) {
             nextButton.disabled = true;
@@ -847,11 +877,11 @@ function initializeChaosDraftPage() {
     }
 
     function setButtonsForAnimating() {
-        spinButton.disabled = true;
+        spinCtaButton.disabled = true;
+        spinnerTrack.classList.remove("hidden");
+        pointer.classList.remove("hidden");
 
-        if (openButton) {
-            openButton.disabled = true;
-        }
+        hideOpenRow();
 
         if (nextButton) {
             nextButton.disabled = true;
@@ -859,11 +889,12 @@ function initializeChaosDraftPage() {
     }
 
     function setButtonsForComplete() {
-        spinButton.disabled = false;
+        spinCtaButton.disabled = false;
+        idleCta.classList.add("hidden");
+        spinnerTrack.classList.remove("hidden");
+        pointer.classList.remove("hidden");
 
-        if (openButton) {
-            openButton.disabled = false;
-        }
+        showOpenRow();
 
         if (nextButton) {
             nextButton.disabled = false;
@@ -893,11 +924,11 @@ function initializeChaosDraftPage() {
         return sequence;
     }
 
-    function renderSpinnerCards(spinResult) {
+    function renderSpinnerCards(spinResult, repeatCount) {
         const displayPacks = spinResult.display_packs || [];
         spinnerTrack.innerHTML = "";
 
-        const repeatedSequence = buildRepeatedPackSequence(displayPacks, 4);
+        const repeatedSequence = buildRepeatedPackSequence(displayPacks, repeatCount);
 
         repeatedSequence.forEach(function (pack, absoluteIndex) {
             const packCard = document.createElement("div");
@@ -935,84 +966,75 @@ function initializeChaosDraftPage() {
         return 1 - Math.pow(1 - t, 3);
     }
 
-function animateTrackToTarget(finalAbsoluteIndex) {
-    const spinnerWindow = spinnerShell.querySelector(".chaos-draft-spinner-window");
-    const allCards = spinnerTrack.querySelectorAll(".chaos-pack-card");
-    const finalCard = spinnerTrack.querySelector(`[data-chaos-card-index="${finalAbsoluteIndex}"]`);
+    function animateTrackToTarget(finalAbsoluteIndex) {
+        const spinnerWindow = spinnerShell.querySelector(".chaos-draft-spinner-window");
+        const allCards = spinnerTrack.querySelectorAll(".chaos-pack-card");
+        const finalCard = spinnerTrack.querySelector(`[data-chaos-card-index="${finalAbsoluteIndex}"]`);
 
-    if (!spinnerWindow || !allCards.length || !finalCard) {
-        animationInProgress = false;
-        setButtonsForIdle();
-        return;
-    }
-
-    clearWinningState();
-
-    spinnerTrack.style.transition = "none";
-    spinnerTrack.style.transform = "translateX(0px)";
-
-    const firstCard = allCards[0];
-    const oneCardTravel = allCards.length > 1
-        ? (allCards[1].offsetLeft - allCards[0].offsetLeft)
-        : finalCard.offsetWidth + 14;
-
-    const packCount = currentSpinResult.display_packs.length;
-    const basePasses = 1 + Math.random(); // 1.0 to 2.0
-    const fractionalPass = 0.1;           // always at least 0.1 more
-    const totalPasses = basePasses + fractionalPass; // 1.1 to 2.1
-
-    const finalTranslate = getCenteredTranslateForCard(finalCard);
-
-    const jostleCardWidths = (-0.3) + (Math.random() * 0.75); // -0.3 to +0.45
-    const jostleOffsetPx = jostleCardWidths * oneCardTravel;
-
-    // Main animation should end at the overshoot/undershoot position, not at center.
-    const approachTranslate = finalTranslate + jostleOffsetPx;
-
-    const extraTravelCards = totalPasses * packCount;
-    const startTranslate = getCenteredTranslateForCard(firstCard);
-    const totalDistance = (extraTravelCards * oneCardTravel) + (startTranslate - approachTranslate);
-    const startVirtualTranslate = approachTranslate + totalDistance;
-
-    const durationMs = 9400 + Math.round((totalPasses - 1.1) * 2600);
-
-    let animationStart = null;
-
-    function snapToCenter() {
-        spinnerTrack.style.transition = "transform 160ms ease-out";
-        spinnerTrack.style.transform = `translateX(${finalTranslate}px)`;
-
-        window.setTimeout(function () {
-            spinnerTrack.style.transition = "none";
-            finalCard.classList.add("chaos-pack-card-winning");
+        if (!spinnerWindow || !allCards.length || !finalCard) {
             animationInProgress = false;
-            setButtonsForComplete();
-        }, 170);
-    }
-
-    function step(timestamp) {
-        if (!animationStart) {
-            animationStart = timestamp;
-        }
-
-        const elapsed = timestamp - animationStart;
-        const progress = Math.min(elapsed / durationMs, 1);
-        const easedProgress = easeOutCubic(progress);
-
-        const currentTranslate = startVirtualTranslate + ((approachTranslate - startVirtualTranslate) * easedProgress);
-        spinnerTrack.style.transform = `translateX(${currentTranslate}px)`;
-
-        if (progress < 1) {
-            window.requestAnimationFrame(step);
+            setButtonsForIdle();
             return;
         }
 
-        spinnerTrack.style.transform = `translateX(${approachTranslate}px)`;
-        snapToCenter();
+        clearWinningState();
+
+        spinnerTrack.style.transition = "none";
+        spinnerTrack.style.transform = "translateX(0px)";
+
+        const finalTranslate = getCenteredTranslateForCard(finalCard);
+
+        const firstCard = allCards[0];
+        const secondCard = allCards[1];
+        const oneCardTravel = secondCard
+            ? (secondCard.offsetLeft - firstCard.offsetLeft)
+            : (finalCard.offsetWidth + 14);
+
+        const jostleCardWidths = (-0.18) + (Math.random() * 0.36);
+        const jostleOffsetPx = jostleCardWidths * oneCardTravel;
+        const approachTranslate = finalTranslate + jostleOffsetPx;
+
+        const startTranslate = 0;
+        const durationMs = 7600 + Math.round(Math.random() * 1100);
+
+        let animationStart = null;
+
+        function snapToCenter() {
+            spinnerTrack.style.transition = "transform 180ms ease-out";
+            spinnerTrack.style.transform = `translateX(${finalTranslate}px)`;
+
+            window.setTimeout(function () {
+                spinnerTrack.style.transition = "none";
+                finalCard.classList.add("chaos-pack-card-winning");
+                animationInProgress = false;
+                setButtonsForComplete();
+            }, 190);
+        }
+
+        function step(timestamp) {
+            if (!animationStart) {
+                animationStart = timestamp;
+            }
+
+            const elapsed = timestamp - animationStart;
+            const progress = Math.min(elapsed / durationMs, 1);
+            const easedProgress = easeOutCubic(progress);
+            const currentTranslate = startTranslate + ((approachTranslate - startTranslate) * easedProgress);
+
+            spinnerTrack.style.transform = `translateX(${currentTranslate}px)`;
+
+            if (progress < 1) {
+                window.requestAnimationFrame(step);
+                return;
+            }
+
+            spinnerTrack.style.transform = `translateX(${approachTranslate}px)`;
+            snapToCenter();
+        }
+
+        window.requestAnimationFrame(step);
     }
 
-    window.requestAnimationFrame(step);
-}
     function runSpinAnimation(spinResult) {
         animationInProgress = true;
 
@@ -1028,12 +1050,23 @@ function animateTrackToTarget(finalAbsoluteIndex) {
             return;
         }
 
-        renderSpinnerCards(spinResult);
+        const repeatCount = 7;
+        const repeatedSequence = renderSpinnerCards(spinResult, repeatCount);
 
         message.classList.add("hidden");
         spinnerShell.classList.remove("hidden");
 
-        const finalAbsoluteIndex = (displayPacks.length * 3) + winningStopIndex;
+        const winningRepeatIndex = Math.floor(repeatCount / 2);
+        const finalAbsoluteIndex = (winningRepeatIndex * displayPacks.length) + winningStopIndex;
+
+        if (!repeatedSequence.length || finalAbsoluteIndex < 0 || finalAbsoluteIndex >= repeatedSequence.length) {
+            animationInProgress = false;
+            setButtonsForIdle();
+            message.classList.remove("hidden");
+            message.textContent = "Chaos Draft spin failed to resolve the winning pack.";
+            return;
+        }
+
         animateTrackToTarget(finalAbsoluteIndex);
     }
 
@@ -1043,37 +1076,59 @@ function animateTrackToTarget(finalAbsoluteIndex) {
         }
 
         currentSpinResult = null;
-        setButtonsForAnimating();
+        animationInProgress = true;
 
-        message.classList.remove("hidden");
-        spinnerShell.classList.add("hidden");
+        hideOpenRow();
+
+        idleCta.classList.add("chaos-draft-idle-cta-sinking");
+        spinCtaButton.disabled = true;
+
+        if (nextButton) {
+            nextButton.disabled = true;
+        }
+
+        message.classList.add("hidden");
+        spinnerShell.classList.remove("hidden");
         spinnerTrack.innerHTML = "";
         spinnerTrack.style.transform = "translateX(0px)";
-        message.textContent = "Spinning Chaos Draft packs...";
 
-        try {
-            const response = await fetch("/chaos-draft/spin", {
-                method: "POST",
-                headers: {
-                    "Accept": "application/json"
+        window.setTimeout(async function () {
+            try {
+                idleCta.classList.add("hidden");
+                spinnerTrack.classList.remove("hidden");
+                pointer.classList.remove("hidden");
+
+                const response = await fetch("/chaos-draft/spin", {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to spin Chaos Draft packs.");
                 }
-            });
 
-            const payload = await response.json();
+                currentSpinResult = payload.spin_result;
 
-            if (!response.ok || !payload.ok) {
-                throw new Error(payload.message || "Failed to spin Chaos Draft packs.");
+                if (!currentSpinResult || !currentSpinResult.winning_pack || !currentSpinResult.chosen_variant) {
+                    throw new Error("Chaos Draft spin result was incomplete.");
+                }
+
+                runSpinAnimation(currentSpinResult);
+            } catch (error) {
+                animationInProgress = false;
+                message.classList.remove("hidden");
+                spinnerTrack.classList.add("hidden");
+                pointer.classList.add("hidden");
+                idleCta.classList.remove("hidden");
+                idleCta.classList.remove("chaos-draft-idle-cta-sinking");
+                message.textContent = error.message || "Failed to spin Chaos Draft packs.";
+                setButtonsForIdle();
             }
-
-            currentSpinResult = payload.spin_result;
-            runSpinAnimation(currentSpinResult);
-        } catch (error) {
-            animationInProgress = false;
-            message.classList.remove("hidden");
-            spinnerShell.classList.add("hidden");
-            message.textContent = error.message || "Failed to spin Chaos Draft packs.";
-            setButtonsForIdle();
-        }
+        }, 180);
     }
 
     async function runNext() {
@@ -1095,14 +1150,17 @@ function animateTrackToTarget(finalAbsoluteIndex) {
 
         spinnerTrack.innerHTML = "";
         spinnerTrack.style.transform = "translateX(0px)";
-        spinnerShell.classList.add("hidden");
-        message.classList.remove("hidden");
-        message.textContent = "Click Spin to generate a Chaos Draft pack selection.";
+        spinnerShell.classList.remove("hidden");
+        idleCta.classList.remove("hidden");
+        spinnerTrack.classList.add("hidden");
+        pointer.classList.add("hidden");
+        message.classList.add("hidden");
 
+        hideOpenRow();
         setButtonsForIdle();
     }
 
-    spinButton.addEventListener("click", function () {
+    spinCtaButton.addEventListener("click", function () {
         runSpin();
     });
 
@@ -1116,6 +1174,13 @@ function animateTrackToTarget(finalAbsoluteIndex) {
         openButton.addEventListener("click", async function () {
             try {
                 openButton.disabled = true;
+
+                if (!currentSpinResult || animationInProgress) {
+                    throw new Error("No completed Chaos Draft spin is ready to open.");
+                }
+
+                openButton.classList.add("action-button-loading");
+                openButton.textContent = "Opening Pack...";
 
                 const response = await fetch("/chaos-draft/open", {
                     method: "POST",
@@ -1137,14 +1202,18 @@ function animateTrackToTarget(finalAbsoluteIndex) {
                 window.alert(error.message || "Failed to open Chaos Draft pack.");
             } finally {
                 openButton.disabled = false;
+                openButton.classList.remove("action-button-loading");
+                openButton.textContent = "Open Pack";
             }
         });
     }
 
-    if (window.pendingChaosSpinResult) {
-        currentSpinResult = window.pendingChaosSpinResult;
-        runSpinAnimation(currentSpinResult);
-    } else {
-        setButtonsForIdle();
-    }
+    spinnerShell.classList.remove("hidden");
+    idleCta.classList.remove("hidden");
+    idleCta.classList.remove("chaos-draft-idle-cta-sinking");
+    spinnerTrack.classList.add("hidden");
+    pointer.classList.add("hidden");
+    message.classList.add("hidden");
+    hideOpenRow();
+    setButtonsForIdle();
 }

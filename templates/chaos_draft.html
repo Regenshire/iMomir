@@ -4,39 +4,52 @@
 
 {% block content %}
 <div class="screen">
-    <div class="page-panel">
-        <h1 class="page-title">Chaos Draft</h1>
-        <p class="page-subtitle">
-            Spin to select a random booster pack from the currently enabled sets.
-        </p>
+    <div class="page-panel chaos-draft-header-panel">
+        <div class="chaos-draft-header-layout">
+            <div class="chaos-draft-header-copy">
+                <h1 class="page-title">Chaos Draft</h1>
+                <p class="page-subtitle">
+                    Spin to select a random booster pack from the currently enabled sets.
+                </p>
+            </div>
 
-        <div class="chaos-draft-actions">
-            <button type="button" id="chaosSpinButton" class="action-button">Spin</button>
-            <button type="button" id="chaosOpenButton" class="action-button secondary-button" disabled>Open</button>
-            <button type="button" id="chaosNextButton" class="action-button secondary-button" disabled>Next</button>
+            <div class="chaos-draft-top-actions">
+                <button type="button" id="chaosNextButton" class="chaos-draft-next-button" disabled>
+                    <span class="chaos-draft-next-button-label">Next Pack</span>
+                    <span class="chaos-draft-next-button-arrow">▷</span>
+                </button>
+            </div>
         </div>
     </div>
 
-    <div id="chaosDraftMessage" class="card-placeholder">
+    <div id="chaosDraftMessage" class="card-placeholder hidden">
         Click Spin to generate a Chaos Draft pack selection.
     </div>
 
-    <div id="chaosDraftSpinner" class="chaos-draft-spinner-shell hidden">
+    <div id="chaosDraftSpinner" class="chaos-draft-spinner-shell">
         <div class="chaos-draft-spinner-window">
-
-            <!-- NEW: Arrow Pointer -->
-            <div class="chaos-draft-pointer">
+            <div id="chaosDraftPointer" class="chaos-draft-pointer hidden">
                 <img src="{{ url_for('static', filename='img/packpointer_gold.png') }}" alt="Pack Pointer">
             </div>
 
-            <div id="chaosDraftSpinnerTrack" class="chaos-draft-spinner-track"></div>
+            <div id="chaosDraftIdleCta" class="chaos-draft-idle-cta">
+                <button type="button" id="chaosSpinButton" class="chaos-draft-spin-cta">
+                    <img
+                        src="{{ url_for('static', filename='img/spinlogo1.png') }}"
+                        alt="Spin"
+                        class="chaos-draft-spin-cta-image"
+                    >
+                </button>
+            </div>
+
+            <div id="chaosDraftSpinnerTrack" class="chaos-draft-spinner-track hidden"></div>
         </div>
     </div>
 
-    {% if pending_spin_result %}
-    <script>
-        window.pendingChaosSpinResult = {{ pending_spin_result|tojson }};
-    </script>
-    {% endif %}
+    <div id="chaosDraftOpenRow" class="chaos-draft-open-row">
+        <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
+            Open Pack
+        </button>
+    </div>
 </div>
 {% endblock %}
