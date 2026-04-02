@@ -272,6 +272,8 @@ MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
 
 # Chaos Draft - Allowed Booster Types (EDIT THIS LIST AS NEEDED)
 ALLOWED_CHAOS_BOOSTER_TYPES = {
+    "core",
+    "default",
     "draft",
     "collector",
     "set",
@@ -839,7 +841,6 @@ def normalize_chaos_booster_key(booster_name):
 
     if not value:
         return "default"
-
     if "collector" in value:
         return "collector"
     if "jumpstart" in value:
@@ -889,6 +890,7 @@ def build_default_chaos_pack_display_name(set_code, booster_name):
     clean_booster_name = (booster_name or "").strip().lower()
 
     booster_label_map = {
+        "default": "Booster",
         "draft": "Draft Booster",
         "set": "Set Booster",
         "play": "Play Booster",
