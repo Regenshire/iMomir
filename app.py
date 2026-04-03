@@ -127,6 +127,7 @@ DEFAULT_CONFIG = {
     "pdf_width_mm": "57.5",
     "pdf_height_mm": "85.25",
     "pdf_crop_border": "1",
+    "print_front_back_label": "1",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",
     "tower_pdf_draw_count": "7",
@@ -319,6 +320,16 @@ refresh_status = {
 }
 refresh_lock = threading.Lock()
 
+LOG_PATH = os.path.join(RUNTIME_BASE_DIR, "imomir_debug.log")
+
+def write_debug_log(message):
+    try:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        with open(LOG_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{timestamp}] {message}\n")
+    except Exception:
+        pass
+
 image_download_status = {
     "is_running": False,
     "stage": "Idle",
@@ -338,6 +349,13 @@ def set_refresh_status(**kwargs):
     with refresh_lock:
         refresh_status.update(kwargs)
 
+    try:
+        stage = kwargs.get("stage", refresh_status.get("stage", ""))
+        message = kwargs.get("message", refresh_status.get("message", ""))
+        error = kwargs.get("error", "")
+        write_debug_log(f"REFRESH STATUS | stage={stage} | message={message} | error={error}")
+    except Exception:
+        pass
 
 def get_refresh_status_copy():
     with refresh_lock:
@@ -347,6 +365,13 @@ def set_image_download_status(**kwargs):
     with image_download_lock:
         image_download_status.update(kwargs)
 
+    try:
+        stage = kwargs.get("stage", image_download_status.get("stage", ""))
+        message = kwargs.get("message", image_download_status.get("message", ""))
+        error = kwargs.get("error", "")
+        write_debug_log(f"IMAGE STATUS | stage={stage} | message={message} | error={error}")
+    except Exception:
+        pass
 
 def get_image_download_status_copy():
     with image_download_lock:
@@ -468,6 +493,13 @@ def initialize_database():
     ensure_column_exists(cursor, "cards", "rarity", "TEXT")
     ensure_column_exists(cursor, "sets", "set_block", "TEXT")
     ensure_column_exists(cursor, "sets", "set_type", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "faces_json", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "face_count", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "chaos_cards", "is_dual_faced", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "chaos_cards", "front_image_url", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "back_image_url", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "front_face_name", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "back_face_name", "TEXT")
 
     cursor.execute(
         """
@@ -544,7 +576,14 @@ def initialize_database():
             scryfall_illustration_id TEXT,
             image_url TEXT,
             image_cache_path TEXT,
-            is_booster INTEGER NOT NULL DEFAULT 1
+            is_booster INTEGER NOT NULL DEFAULT 1,
+            faces_json TEXT,
+            face_count INTEGER NOT NULL DEFAULT 0,
+            is_dual_faced INTEGER NOT NULL DEFAULT 0,
+            front_image_url TEXT,
+            back_image_url TEXT,
+            front_face_name TEXT,
+            back_face_name TEXT
         )
         """
     )
@@ -739,6 +778,7 @@ def update_config_from_form(form_data):
         "allow_arena",
         "use_pdf_print",
         "pdf_crop_border",
+        "print_front_back_label",
         "open_print_in_new_tab",
     }
 
@@ -1015,6 +1055,21 @@ def import_chaos_cards_from_all_printings():
 
     cursor.execute("DELETE FROM chaos_cards")
 
+    uuid_lookup = {}
+
+    for set_code, set_payload in all_sets.items():
+        if not isinstance(set_payload, dict):
+            continue
+
+        cards = safe_list(set_payload.get("cards"))
+        for card_obj in cards:
+            if not isinstance(card_obj, dict):
+                continue
+
+            card_uuid = (card_obj.get("uuid") or "").strip()
+            if card_uuid:
+                uuid_lookup[card_uuid] = card_obj
+
     imported_count = 0
 
     for set_code, set_obj in all_sets.items():
@@ -1044,7 +1099,30 @@ def import_chaos_cards_from_all_printings():
             scryfall_id = (identifiers.get("scryfallId") or "").strip()
             scryfall_illustration_id = (identifiers.get("scryfallIllustrationId") or "").strip()
 
-            image_url = build_scryfall_image_url(scryfall_id) if scryfall_id else None
+            layout = (card_obj.get("layout") or "").strip().lower()
+            side = (card_obj.get("side") or "").strip().lower()
+
+            if is_dual_faced_layout(layout) and side == "b":
+                continue
+
+            face_payloads = extract_chaos_card_faces(card_obj, uuid_lookup)
+            face_count = len(face_payloads)
+            is_dual_faced = 1 if (is_dual_faced_layout(layout) and side == "a" and face_count >= 2) else 0
+
+            front_image_url = face_payloads[0]["image_url"] if face_count >= 1 else None
+            back_image_url = face_payloads[1]["image_url"] if face_count >= 2 else None
+            front_face_name = face_payloads[0]["name"] if face_count >= 1 else None
+            back_face_name = face_payloads[1]["name"] if face_count >= 2 else None
+
+            if is_dual_faced or is_dual_faced_layout(layout):
+                write_debug_log(
+                    f"CHAOS CARD IMPORT | card_name={card_name} | layout={layout} | side={side} | "
+                    f"face_count={face_count} | is_dual_faced={is_dual_faced} | "
+                    f"front_face={front_face_name} | back_face={back_face_name} | "
+                    f"front_image={'yes' if front_image_url else 'no'} | back_image={'yes' if back_image_url else 'no'}"
+                )
+
+            image_url = front_image_url or (build_scryfall_image_url(scryfall_id) if scryfall_id else None)
 
             is_booster = 1
             if card_obj.get("isPromo") is True:
@@ -1067,9 +1145,16 @@ def import_chaos_cards_from_all_printings():
                     scryfall_illustration_id,
                     image_url,
                     image_cache_path,
-                    is_booster
+                    is_booster,
+                    faces_json,
+                    face_count,
+                    is_dual_faced,
+                    front_image_url,
+                    back_image_url,
+                    front_face_name,
+                    back_face_name
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_uuid,
@@ -1080,13 +1165,20 @@ def import_chaos_cards_from_all_printings():
                     card_obj.get("manaCost"),
                     (card_obj.get("rarity") or "").strip().lower(),
                     card_obj.get("type") or "",
-                    (card_obj.get("layout") or "").strip().lower(),
+                    layout,
                     card_obj.get("number"),
                     scryfall_id,
                     scryfall_illustration_id,
                     image_url,
                     None,
                     is_booster,
+                    json.dumps(face_payloads),
+                    face_count,
+                    is_dual_faced,
+                    front_image_url,
+                    back_image_url,
+                    front_face_name,
+                    back_face_name,
                 ),
             )
 
@@ -1094,6 +1186,7 @@ def import_chaos_cards_from_all_printings():
 
             if imported_count % 5000 == 0:
                 conn.commit()
+                write_debug_log(f"CHAOS CARD IMPORT | progress imported={imported_count}")
                 set_refresh_status(
                     stage="Importing Chaos Draft Cards",
                     message=f"Imported {imported_count} Chaos Draft printings...",
@@ -1558,7 +1651,7 @@ def open_chaos_pack_with_bonus_rule(set_code, booster_name, booster_index):
 
     bonus_pack_opened = False
 
-    if len(first_pack_cards) < 12:
+    if len(first_pack_cards) < 11:
         bonus_pack_opened = True
         second_pack_cards = open_chaos_pack_once(set_code, booster_name, booster_index)
         all_cards.extend(second_pack_cards)
@@ -1631,6 +1724,71 @@ def clear_chaos_session_state(state_key):
 
 def get_pending_chaos_spin_result():
     return get_chaos_session_state("pending_spin_result", default_value=None)
+
+def build_pending_chaos_pack_pdf():
+    spin_result = get_pending_chaos_spin_result()
+
+    if not spin_result:
+        return {
+            "ok": False,
+            "message": "No pending Chaos Draft spin found."
+        }
+
+    chosen_variant = spin_result.get("chosen_variant") or {}
+
+    set_code = chosen_variant.get("set_code")
+    booster_name = chosen_variant.get("booster_name")
+    booster_index = chosen_variant.get("booster_index")
+
+    if not set_code or booster_index is None:
+        return {
+            "ok": False,
+            "message": "Invalid Chaos Draft selection."
+        }
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        set_code,
+        booster_name,
+        booster_index,
+    )
+
+    cards = open_result["cards"]
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "Chaos Draft pack opened but no cards were generated."
+        }
+
+    record_chaos_pack_history(
+        set_code,
+        booster_name,
+        booster_index,
+        spin_result["winning_pack"]["display_name"],
+    )
+
+    pdf_buffer = build_chaos_pack_pdf(
+        cards,
+        spin_result["winning_pack"]["display_name"],
+    )
+
+    filename_safe = safe_filename(f"{set_code}_{booster_name}".lower())
+
+    pdf_bytes = pdf_buffer.getvalue()
+
+    set_chaos_session_state(
+        "pending_opened_pack_pdf",
+        {
+            "filename": f"{filename_safe}.pdf",
+            "pdf_base64": pdf_bytes.hex(),
+        },
+    )
+
+    return {
+        "ok": True,
+        "filename": f"{filename_safe}.pdf",
+        "download_url": url_for("chaos_draft_open_file"),
+    }
 
 def build_chaos_spin_result():
     eligible_packs = get_eligible_chaos_packs_for_spin()
@@ -2388,6 +2546,7 @@ def resolve_pdf_print_settings():
 
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
     crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
+    print_front_back_label = (config.get("print_front_back_label") or "1").strip() == "1"
 
     try:
         pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
@@ -2408,6 +2567,7 @@ def resolve_pdf_print_settings():
         "pdf_width_mm": pdf_width_mm,
         "pdf_height_mm": pdf_height_mm,
         "pdf_crop_border": crop_border,
+        "print_front_back_label": print_front_back_label,
     }
 
 def resolve_tower_pdf_draw_count():
@@ -3203,6 +3363,108 @@ def build_scryfall_image_url(scryfall_id):
 
     return f"https://cards.scryfall.io/normal/front/{scryfall_id[0]}/{scryfall_id[1]}/{scryfall_id}.jpg"
 
+def build_scryfall_face_image_url(scryfall_id, face_side):
+    if not scryfall_id or len(scryfall_id) < 2:
+        return None
+
+    normalized_side = (face_side or "").strip().lower()
+    if normalized_side not in {"front", "back"}:
+        normalized_side = "front"
+
+    return f"https://cards.scryfall.io/normal/{normalized_side}/{scryfall_id[0]}/{scryfall_id[1]}/{scryfall_id}.jpg"
+
+def extract_chaos_card_faces(card_obj, uuid_lookup):
+    card_name = (card_obj.get("name") or "").strip()
+    layout = (card_obj.get("layout") or "").strip().lower()
+    side = (card_obj.get("side") or "").strip().lower()
+    identifiers = safe_dict(card_obj.get("identifiers"))
+    parent_scryfall_id = (identifiers.get("scryfallId") or "").strip()
+
+    face_payloads = []
+
+    current_uuid = (card_obj.get("uuid") or "").strip()
+    other_face_ids = safe_list(card_obj.get("otherFaceIds"))
+
+    if side == "a" and other_face_ids:
+        for other_face_uuid in other_face_ids:
+            other_face_uuid = (other_face_uuid or "").strip()
+            if not other_face_uuid:
+                continue
+
+            other_face_obj = uuid_lookup.get(other_face_uuid)
+            if not isinstance(other_face_obj, dict):
+                continue
+
+            other_side = (other_face_obj.get("side") or "").strip().lower()
+            if other_side != "b":
+                continue
+
+            other_identifiers = safe_dict(other_face_obj.get("identifiers"))
+            other_scryfall_id = (other_identifiers.get("scryfallId") or "").strip()
+
+            front_face_name = (card_obj.get("faceName") or "").strip()
+            back_face_name = (other_face_obj.get("faceName") or "").strip()
+
+            if not front_face_name or not back_face_name:
+                continue
+
+            shared_scryfall_id = parent_scryfall_id or other_scryfall_id
+
+            face_payloads = [
+                {
+                    "face_index": 0,
+                    "side": "a",
+                    "uuid": current_uuid,
+                    "name": front_face_name,
+                    "type_line": card_obj.get("type") or "",
+                    "mana_cost": card_obj.get("manaCost"),
+                    "layout": layout,
+                    "scryfall_id": parent_scryfall_id,
+                    "image_url": build_scryfall_face_image_url(shared_scryfall_id, "front") if shared_scryfall_id else None,
+                },
+                {
+                    "face_index": 1,
+                    "side": "b",
+                    "uuid": other_face_uuid,
+                    "name": back_face_name,
+                    "type_line": other_face_obj.get("type") or "",
+                    "mana_cost": other_face_obj.get("manaCost"),
+                    "layout": layout,
+                    "scryfall_id": other_scryfall_id,
+                    "image_url": build_scryfall_face_image_url(shared_scryfall_id, "back") if shared_scryfall_id else None,
+                },
+            ]
+            break
+
+    if layout in {"transform", "modal_dfc", "battle", "double_faced_token"}:
+        front_url = ""
+        back_url = ""
+
+        if len(face_payloads) >= 1:
+            front_url = face_payloads[0].get("image_url") or ""
+
+        if len(face_payloads) >= 2:
+            back_url = face_payloads[1].get("image_url") or ""
+
+        write_debug_log(
+            f"CHAOS FACE EXTRACT | name={card_name} | layout={layout} | side={side} | "
+            f"other_face_count={len(other_face_ids)} | extracted_faces={len(face_payloads)} | "
+            f"front_url={front_url} | back_url={back_url}"
+        )
+
+    return face_payloads
+
+
+def is_dual_faced_layout(layout_value):
+    layout_value = (layout_value or "").strip().lower()
+
+    return layout_value in {
+        "transform",
+        "modal_dfc",
+        "battle",
+        "double_faced_token",
+    }
+
 def safe_filename(value):
     allowed = []
     for ch in (value or ""):
@@ -3258,6 +3520,38 @@ def build_pdf_image_reader(image_path, print_mode):
 
         return ImageReader(image_buffer)
 
+def draw_front_back_corner_label(pdf_canvas, page_width_mm, page_height_mm, label_text):
+    label_text = (label_text or "").strip().upper()
+    if label_text not in {"FRONT", "BACK"}:
+        return
+
+    # Small lower-left white label box similar to the example image.
+    box_x_mm = 0.0
+    box_y_mm = 0.0
+    box_width_mm = 21.0
+    box_height_mm = 5.0
+
+    pdf_canvas.setFillColorRGB(1, 1, 1)
+    pdf_canvas.setStrokeColorRGB(0, 0, 0)
+    pdf_canvas.setLineWidth(0.4)
+    pdf_canvas.rect(
+        box_x_mm * mm,
+        box_y_mm * mm,
+        box_width_mm * mm,
+        box_height_mm * mm,
+        fill=1,
+        stroke=0,
+    )
+
+    pdf_canvas.setFillColorRGB(0, 0, 0)
+    pdf_canvas.setFont("Helvetica-Bold", 8.5)
+
+    text_width_pts = pdf_canvas.stringWidth(label_text, "Helvetica-Bold", 8.5)
+    text_x_pts = (box_x_mm * mm) + ((box_width_mm * mm - text_width_pts) / 2)
+    text_y_pts = (box_y_mm * mm) + (1.55 * mm)
+
+    pdf_canvas.drawString(text_x_pts, text_y_pts, label_text)
+
 def split_chaos_pack_display_name_for_title(pack_display_name):
     raw_value = (pack_display_name or "").strip()
 
@@ -3275,6 +3569,115 @@ def split_chaos_pack_display_name_for_title(pack_display_name):
         return (set_name or "Booster Pack", booster_name)
 
     return (raw_value, "")
+
+def get_chaos_card_by_uuid(card_uuid):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (card_uuid,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+def parse_faces_json(raw_value):
+    if not raw_value:
+        return []
+
+    try:
+        parsed = json.loads(raw_value)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
+def build_chaos_print_pages_for_card(card_row):
+    if not card_row:
+        return []
+
+    write_debug_log(
+        f"CHAOS PDF EXPAND | card_name={card_row['card_name']} | "
+        f"layout={card_row['layout']} | is_dual_faced={card_row['is_dual_faced']} | "
+        f"face_count={card_row['face_count']}"
+    )
+
+    pages = []
+
+    front_image_url = (card_row["front_image_url"] or "").strip()
+    back_image_url = (card_row["back_image_url"] or "").strip()
+    image_url = (card_row["image_url"] or "").strip()
+
+    front_face_name = (card_row["front_face_name"] or card_row["card_name"] or "").strip()
+    back_face_name = (card_row["back_face_name"] or "").strip()
+
+    is_dual_faced = int(card_row["is_dual_faced"] or 0) == 1
+
+    if is_dual_faced and front_image_url and back_image_url:
+        write_debug_log(
+            f"CHAOS PDF EXPAND | dual-face direct urls | card_name={card_row['card_name']} | "
+            f"front_face={front_face_name} | back_face={back_face_name}"
+        )
+
+        pages.append({
+            "page_kind": "front",
+            "image_url": front_image_url,
+            "face_name": front_face_name,
+            "card_name": card_row["card_name"],
+        })
+        pages.append({
+            "page_kind": "back",
+            "image_url": back_image_url,
+            "face_name": back_face_name or f"{front_face_name} (Back)",
+            "card_name": card_row["card_name"],
+        })
+        return pages
+
+    faces = parse_faces_json(card_row["faces_json"])
+    if int(card_row["face_count"] or 0) >= 2 and len(faces) >= 2:
+        first_face_url = (faces[0].get("image_url") or "").strip()
+        second_face_url = (faces[1].get("image_url") or "").strip()
+
+        if first_face_url and second_face_url:
+            write_debug_log(
+                f"CHAOS PDF EXPAND | dual-face faces_json fallback | card_name={card_row['card_name']} | "
+                f"front_face={faces[0].get('name')} | back_face={faces[1].get('name')}"
+            )
+
+            pages.append({
+                "page_kind": "front",
+                "image_url": first_face_url,
+                "face_name": faces[0].get("name") or card_row["card_name"],
+                "card_name": card_row["card_name"],
+            })
+            pages.append({
+                "page_kind": "back",
+                "image_url": second_face_url,
+                "face_name": faces[1].get("name") or f"{card_row['card_name']} (Back)",
+                "card_name": card_row["card_name"],
+            })
+            return pages
+
+    if image_url:
+        write_debug_log(
+            f"CHAOS PDF EXPAND | single-page fallback | card_name={card_row['card_name']} | image_url_present=yes"
+        )
+
+        pages.append({
+            "page_kind": "single",
+            "image_url": image_url,
+            "face_name": front_face_name or card_row["card_name"],
+            "card_name": card_row["card_name"],
+        })
+
+    return pages
 
 def build_chaos_pack_pdf(cards, pack_display_name):
     pdf_settings = resolve_pdf_print_settings()
@@ -3359,64 +3762,62 @@ def build_chaos_pack_pdf(cards, pack_display_name):
 
     for card in cards:
         card_uuid = card.get("card_uuid")
-
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            SELECT *
-            FROM chaos_cards
-            WHERE card_uuid = ?
-            """,
-            (card_uuid,),
-        )
-
-        card_row = cursor.fetchone()
-        conn.close()
+        card_row = get_chaos_card_by_uuid(card_uuid)
 
         if not card_row:
             continue
 
-        existing_cache_path = card_row["image_cache_path"] or ""
-        cache_exists = False
+        page_entries = build_chaos_print_pages_for_card(card_row)
+        if not page_entries:
+            continue
 
-        if existing_cache_path:
-            abs_path = os.path.abspath(existing_cache_path)
-            cache_exists = os.path.exists(abs_path)
-
-        if cache_exists:
-            absolute_image_path = os.path.abspath(existing_cache_path)
-
-            pdf_image_reader = build_pdf_image_reader(
-                absolute_image_path,
-                print_settings["print_mode"]
-            )
-        else:
-            image_url = (card_row["image_url"] or "").strip()
-            if not image_url:
+        for page_entry in page_entries:
+            page_image_url = (page_entry.get("image_url") or "").strip()
+            if not page_image_url:
                 continue
 
+            write_debug_log(
+                f"CHAOS PDF RENDER | card_name={page_entry.get('card_name')} | "
+                f"page_kind={page_entry.get('page_kind')} | face_name={page_entry.get('face_name')} | "
+                f"has_url={'yes' if page_image_url else 'no'}"
+            )
+
             try:
-                response = requests.get(image_url, timeout=60)
+                response = requests.get(page_image_url, timeout=60)
                 response.raise_for_status()
 
                 image_buffer = BytesIO(response.content)
                 pdf_image_reader = ImageReader(image_buffer)
-            except Exception:
+            except Exception as exc:
+                write_debug_log(
+                    f"CHAOS PDF RENDER ERROR | card_name={page_entry.get('card_name')} | "
+                    f"page_kind={page_entry.get('page_kind')} | error={str(exc)}"
+                )
                 continue
 
-        c.drawImage(
-            pdf_image_reader,
-            draw_x_mm * mm,
-            draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
-            preserveAspectRatio=False,
-            mask="auto",
-        )
-        c.showPage()
-        pages_rendered += 1
+            c.drawImage(
+                pdf_image_reader,
+                draw_x_mm * mm,
+                draw_y_mm * mm,
+                width=draw_width_mm * mm,
+                height=draw_height_mm * mm,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+
+            if (
+                pdf_settings.get("print_front_back_label")
+                and int(card_row["is_dual_faced"] or 0) == 1
+            ):
+                page_kind = (page_entry.get("page_kind") or "").strip().lower()
+
+                if page_kind == "front":
+                    draw_front_back_corner_label(c, width_mm, height_mm, "FRONT")
+                elif page_kind == "back":
+                    draw_front_back_corner_label(c, width_mm, height_mm, "BACK")
+
+            c.showPage()
+            pages_rendered += 1
 
     if pages_rendered == 0:
         raise ValueError("No Chaos Draft card images could be rendered into the PDF.")
@@ -3500,9 +3901,13 @@ def download_scryfall_default_cards_json(force_download=False):
 def import_scryfall_default_cards_into_database():
     if not os.path.exists(SCRYFALL_DEFAULT_CARDS_PATH):
         raise FileNotFoundError("Scryfall default-cards bulk file was not found.")
+    
+    write_debug_log("SCRYFALL IMPORT | Starting import_scryfall_default_cards_into_database()")
 
     with open(SCRYFALL_DEFAULT_CARDS_PATH, "r", encoding="utf-8") as file_handle:
         raw_json = json.load(file_handle)
+
+    write_debug_log(f"SCRYFALL IMPORT | Loaded JSON file | records={len(raw_json) if isinstance(raw_json, list) else 'invalid'}")
 
     if not isinstance(raw_json, list):
         raise ValueError("Scryfall default-cards JSON was not a list.")
@@ -3514,15 +3919,21 @@ def import_scryfall_default_cards_into_database():
 
     inserted_count = 0
 
+    skipped_multiface_count = 0
+    skipped_no_image_count = 0
+    skipped_invalid_count = 0
+
     seen_scryfall_ids = set()
     duplicate_scryfall_ids = 0
 
-    for card_obj in raw_json:
+    for card_index, card_obj in enumerate(raw_json, start=1):
         if not isinstance(card_obj, dict):
+            skipped_invalid_count += 1
             continue
 
         # Skip multi-face cards (we only want clean single-face printings)
         if card_obj.get("card_faces"):
+            skipped_multiface_count += 1
             continue
 
         image_uris = safe_dict(card_obj.get("image_uris"))
@@ -3531,6 +3942,7 @@ def import_scryfall_default_cards_into_database():
         lang = (card_obj.get("lang") or "").strip().lower()
 
         if not image_uris:
+            skipped_no_image_count += 1
             continue
 
         scryfall_id = card_obj.get("id")
@@ -3590,6 +4002,11 @@ def import_scryfall_default_cards_into_database():
 
         if inserted_count % 2000 == 0:
             conn.commit()
+            write_debug_log(
+                f"SCRYFALL IMPORT | progress inserted={inserted_count} scanned={card_index} "
+                f"skipped_multiface={skipped_multiface_count} skipped_no_image={skipped_no_image_count} "
+                f"skipped_invalid={skipped_invalid_count}"
+            )
 
     conn.commit()
     conn.close()
@@ -3600,6 +4017,14 @@ def import_scryfall_default_cards_into_database():
     print("=== SCRYFALL IMPORT COMPLETE ===")
     print("Inserted rows:", inserted_count)
     print("Duplicate scryfall_ids seen during import:", duplicate_scryfall_ids)
+
+    write_debug_log(
+        f"SCRYFALL IMPORT COMPLETE | inserted={inserted_count} "
+        f"duplicates={duplicate_scryfall_ids} "
+        f"skipped_multiface={skipped_multiface_count} "
+        f"skipped_no_image={skipped_no_image_count} "
+        f"skipped_invalid={skipped_invalid_count}"
+    )
 
     set_import_metadata("scryfall_default_cards_rows", inserted_count)
 
@@ -5119,62 +5544,36 @@ def chaos_draft_spin():
 
 @app.route("/chaos-draft/open", methods=["POST"])
 def chaos_draft_open():
-    spin_result = get_pending_chaos_spin_result()
+    result = build_pending_chaos_pack_pdf()
 
-    if not spin_result:
-        return jsonify({
-            "ok": False,
-            "message": "No pending Chaos Draft spin found."
-        }), 400
+    if not result.get("ok"):
+        return jsonify(result), 400
 
-    chosen_variant = spin_result.get("chosen_variant") or {}
+    return jsonify(result)
 
-    set_code = chosen_variant.get("set_code")
-    booster_name = chosen_variant.get("booster_name")
-    booster_index = chosen_variant.get("booster_index")
+@app.route("/chaos-draft/open-file", methods=["GET"])
+def chaos_draft_open_file():
+    pdf_state = get_chaos_session_state("pending_opened_pack_pdf", default_value=None)
 
-    if not set_code or booster_index is None:
-        return jsonify({
-            "ok": False,
-            "message": "Invalid Chaos Draft selection."
-        }), 400
+    if not pdf_state:
+        return "No opened Chaos Draft PDF is available.", 404
 
-    open_result = open_chaos_pack_with_bonus_rule(
-        set_code,
-        booster_name,
-        booster_index,
-    )
+    pdf_hex = (pdf_state.get("pdf_base64") or "").strip()
+    filename = (pdf_state.get("filename") or "chaos_draft_pack.pdf").strip()
 
-    cards = open_result["cards"]
+    if not pdf_hex:
+        return "Chaos Draft PDF data was empty.", 404
 
-    if not cards:
-        return jsonify({
-            "ok": False,
-            "message": "Chaos Draft pack opened but no cards were generated."
-        }), 500
-
-    # Record history (only once per selection)
-    record_chaos_pack_history(
-        set_code,
-        booster_name,
-        booster_index,
-        spin_result["winning_pack"]["display_name"],
-    )
-
-    pdf_buffer = build_chaos_pack_pdf(
-        cards,
-        spin_result["winning_pack"]["display_name"],
-    )
-
-    filename_safe = safe_filename(f"{set_code}_{booster_name}".lower())
-
-    pdf_buffer.seek(0)
+    try:
+        pdf_bytes = bytes.fromhex(pdf_hex)
+    except Exception:
+        return "Chaos Draft PDF data was invalid.", 500
 
     return Response(
-        pdf_buffer.read(),
+        pdf_bytes,
         mimetype="application/pdf",
         headers={
-            "Content-Disposition": f"inline; filename={filename_safe}.pdf",
+            "Content-Disposition": f"inline; filename={filename}",
             "Cache-Control": "no-store"
         }
     )
@@ -5182,10 +5581,72 @@ def chaos_draft_open():
 @app.route("/chaos-draft/next", methods=["POST"])
 def chaos_draft_next():
     clear_chaos_session_state("pending_spin_result")
+    clear_chaos_session_state("pending_opened_pack_pdf")
 
     return jsonify({
         "ok": True,
         "message": "Chaos Draft pack cleared.",
+    })
+
+@app.route("/debug/chaos-card")
+def debug_chaos_card():
+    card_name = (request.args.get("name") or "").strip()
+
+    if not card_name:
+        return jsonify({
+            "ok": False,
+            "message": "Missing ?name=Card Name"
+        }), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            set_code,
+            card_name,
+            layout,
+            face_count,
+            is_dual_faced,
+            front_face_name,
+            back_face_name,
+            front_image_url,
+            back_image_url,
+            image_url,
+            faces_json
+        FROM chaos_cards
+        WHERE LOWER(card_name) = LOWER(?)
+        ORDER BY set_code, collector_number
+        """,
+        (card_name,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = []
+    for row in rows:
+        results.append({
+            "card_uuid": row["card_uuid"],
+            "set_code": row["set_code"],
+            "card_name": row["card_name"],
+            "layout": row["layout"],
+            "face_count": row["face_count"],
+            "is_dual_faced": row["is_dual_faced"],
+            "front_face_name": row["front_face_name"],
+            "back_face_name": row["back_face_name"],
+            "front_image_url": row["front_image_url"],
+            "back_image_url": row["back_image_url"],
+            "image_url": row["image_url"],
+            "faces_json": row["faces_json"],
+        })
+
+    return jsonify({
+        "ok": True,
+        "count": len(results),
+        "results": results,
     })
 
 @app.route("/sets", methods=["GET", "POST"])

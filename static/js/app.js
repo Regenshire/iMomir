@@ -1185,22 +1185,24 @@ function initializeChaosDraftPage() {
                 const response = await fetch("/chaos-draft/open", {
                     method: "POST",
                     headers: {
-                        "Accept": "application/pdf"
+                        "Accept": "application/json"
                     }
                 });
 
-                if (!response.ok) {
-                    throw new Error("Failed to open pack.");
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to open pack.");
                 }
 
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
+                if (!payload.download_url) {
+                    throw new Error("Chaos Draft pack did not return a download URL.");
+                }
 
-                window.open(url, "_blank");
+                window.location.href = payload.download_url;
 
             } catch (error) {
                 window.alert(error.message || "Failed to open Chaos Draft pack.");
-            } finally {
                 openButton.disabled = false;
                 openButton.classList.remove("action-button-loading");
                 openButton.textContent = "Open Pack";
