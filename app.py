@@ -130,6 +130,7 @@ DEFAULT_CONFIG = {
     "print_front_back_label": "1",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",
+    "debug_log": "0",
     "tower_pdf_draw_count": "7",
 }
 
@@ -322,7 +323,19 @@ refresh_lock = threading.Lock()
 
 LOG_PATH = os.path.join(RUNTIME_BASE_DIR, "imomir_debug.log")
 
+app.config["DEBUG_LOG_ENABLED"] = False
+
+def set_runtime_debug_log_enabled_from_config():
+    try:
+        config = get_config()
+        app.config["DEBUG_LOG_ENABLED"] = (config.get("debug_log") or "0").strip() == "1"
+    except Exception:
+        app.config["DEBUG_LOG_ENABLED"] = False
+
 def write_debug_log(message):
+    if not app.config.get("DEBUG_LOG_ENABLED", False):
+        return
+
     try:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         with open(LOG_PATH, "a", encoding="utf-8") as log_file:
@@ -780,6 +793,7 @@ def update_config_from_form(form_data):
         "pdf_crop_border",
         "print_front_back_label",
         "open_print_in_new_tab",
+        "debug_log",
     }
 
     select_defaults = {
@@ -871,6 +885,8 @@ def update_config_from_form(form_data):
 
     conn.commit()
     conn.close()
+
+    set_runtime_debug_log_enabled_from_config()
 
 def parse_bool_csv(value):
     return str(value or "").strip().upper() == "TRUE"
@@ -1608,6 +1624,53 @@ def get_chaos_sheet_cards(set_code, booster_name, sheet_name):
 
     return cards
 
+def get_chaos_sheet_info(set_code, booster_name, sheet_name):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            set_code,
+            booster_name,
+            sheet_name,
+            sheet_is_foil,
+            sheet_has_balance_colors,
+            sheet_total_weight
+        FROM chaos_booster_sheets
+        WHERE set_code = ?
+          AND booster_name = ?
+          AND sheet_name = ?
+        LIMIT 1
+        """,
+        (
+            (set_code or "").strip().upper(),
+            (booster_name or "").strip().lower(),
+            sheet_name,
+        ),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return {
+            "set_code": (set_code or "").strip().upper(),
+            "booster_name": (booster_name or "").strip().lower(),
+            "sheet_name": sheet_name,
+            "sheet_is_foil": 0,
+            "sheet_has_balance_colors": 0,
+            "sheet_total_weight": 0.0,
+        }
+
+    return {
+        "set_code": row["set_code"],
+        "booster_name": row["booster_name"],
+        "sheet_name": row["sheet_name"],
+        "sheet_is_foil": int(row["sheet_is_foil"] or 0),
+        "sheet_has_balance_colors": int(row["sheet_has_balance_colors"] or 0),
+        "sheet_total_weight": float(row["sheet_total_weight"] or 0),
+    }
 
 def open_chaos_pack_once(set_code, booster_name, booster_index):
     variant_contents = get_chaos_booster_variant_contents(set_code, booster_name, booster_index)
@@ -1617,6 +1680,7 @@ def open_chaos_pack_once(set_code, booster_name, booster_index):
         sheet_name = content_row["sheet_name"]
         sheet_picks = int(content_row["sheet_picks"] or 1)
 
+        sheet_info = get_chaos_sheet_info(set_code, booster_name, sheet_name)
         sheet_cards = get_chaos_sheet_cards(set_code, booster_name, sheet_name)
         if not sheet_cards:
             continue
@@ -1633,6 +1697,9 @@ def open_chaos_pack_once(set_code, booster_name, booster_index):
                 "booster_name": (booster_name or "").strip().lower(),
                 "booster_index": int(booster_index),
                 "sheet_name": sheet_name,
+                "sheet_is_foil": int(sheet_info["sheet_is_foil"] or 0),
+                "sheet_has_balance_colors": int(sheet_info["sheet_has_balance_colors"] or 0),
+                "sheet_total_weight": float(sheet_info["sheet_total_weight"] or 0),
                 "card_uuid": chosen_card["card_uuid"],
                 "card_name": chosen_card["card_name"],
                 "rarity": chosen_card["rarity"],
@@ -1641,6 +1708,12 @@ def open_chaos_pack_once(set_code, booster_name, booster_index):
                 "scryfall_id": chosen_card["scryfall_id"],
                 "collector_number": chosen_card["collector_number"],
             })
+
+            write_debug_log(
+                f"CHAOS PACK PICK | set={set_code} | booster={booster_name} | booster_index={booster_index} | "
+                f"sheet={sheet_name} | foil={sheet_info['sheet_is_foil']} | "
+                f"card={chosen_card['card_name']} | rarity={chosen_card['rarity']}"
+            )
 
     return opened_cards
 
@@ -1760,6 +1833,8 @@ def build_pending_chaos_pack_pdf():
             "message": "Chaos Draft pack opened but no cards were generated."
         }
 
+    cards = sort_opened_chaos_pack_cards(cards, booster_name)
+
     record_chaos_pack_history(
         set_code,
         booster_name,
@@ -1789,6 +1864,178 @@ def build_pending_chaos_pack_pdf():
         "filename": f"{filename_safe}.pdf",
         "download_url": url_for("chaos_draft_open_file"),
     }
+
+def is_chaos_basic_land_card(card_entry):
+    type_line = (card_entry.get("type_line") or "").strip().lower()
+    card_name = (card_entry.get("card_name") or "").strip().lower()
+
+    if "basic land" in type_line:
+        return True
+
+    return card_name in {
+        "plains",
+        "island",
+        "swamp",
+        "mountain",
+        "forest",
+        "wastes",
+        "snow-covered plains",
+        "snow-covered island",
+        "snow-covered swamp",
+        "snow-covered mountain",
+        "snow-covered forest",
+        "snow-covered wastes",
+    }
+
+
+def is_chaos_wildcard_slot(card_entry):
+    sheet_name = (card_entry.get("sheet_name") or "").strip().lower()
+    type_line = (card_entry.get("type_line") or "").strip().lower()
+
+    wildcard_terms = [
+        "wildcard",
+        "list",
+        "archive",
+        "mystical",
+        "bonus",
+        "boosterfun",
+        "booster_fun",
+        "showcase",
+        "special",
+        "source",
+        "story",
+        "guest",
+        "commander",
+        "masterpiece",
+        "expedition",
+        "invention",
+        "breaking news",
+        "big score",
+        "enchanting tales",
+        "multiverse legends",
+        "retro",
+    ]
+
+    for term in wildcard_terms:
+        if term in sheet_name:
+            return True
+
+    # Keep token/ad/helper objects out of the main rarity flow if they appear.
+    if any(term in type_line for term in ["token", "emblem", "card", "art series"]):
+        return True
+
+    return False
+
+
+def get_chaos_pack_sort_bucket(card_entry, booster_name):
+    rarity = (card_entry.get("rarity") or "").strip().lower()
+    sheet_is_foil = int(card_entry.get("sheet_is_foil") or 0)
+    booster_key = normalize_chaos_booster_key(booster_name)
+
+    if is_chaos_basic_land_card(card_entry):
+        return "land"
+
+    if is_chaos_wildcard_slot(card_entry):
+        return "wildcard"
+
+    # In collector boosters, foil is the norm, so do NOT let foil override
+    # the structural bucket. Treat foil as a secondary property there.
+    if booster_key != "collector" and sheet_is_foil == 1:
+        return "foil"
+
+    if rarity == "common":
+        return "common"
+
+    if rarity == "uncommon":
+        return "uncommon"
+
+    if rarity in {"rare", "mythic", "mythic rare"}:
+        return "rare_mythic"
+
+    # If collector has cards that are foil but not clearly classifiable by rarity,
+    # keep them as wildcard rather than forcing them all into foil.
+    if sheet_is_foil == 1:
+        return "foil"
+
+    return "wildcard"
+
+
+def get_chaos_booster_sort_profile(booster_name):
+    booster_key = normalize_chaos_booster_key(booster_name)
+
+    if booster_key in {"play", "draft"}:
+        return ["common", "uncommon", "rare_mythic", "wildcard", "foil", "land"]
+
+    if booster_key == "collector":
+        return ["common", "uncommon", "land", "wildcard", "rare_mythic", "foil"]
+
+    if booster_key == "set":
+        return ["land", "common", "uncommon", "wildcard", "rare_mythic", "foil"]
+
+    if booster_key == "jumpstart":
+        return None
+
+    return ["common", "uncommon", "rare_mythic", "wildcard", "foil", "land"]
+
+
+def get_chaos_bucket_secondary_sort_key(card_entry):
+    rarity = (card_entry.get("rarity") or "").strip().lower()
+    card_name = (card_entry.get("card_name") or "").strip().lower()
+    collector_number = (card_entry.get("collector_number") or "").strip().lower()
+
+    rarity_rank = {
+        "common": 0,
+        "uncommon": 1,
+        "rare": 2,
+        "mythic": 3,
+        "mythic rare": 3,
+    }.get(rarity, 9)
+
+    return (
+        rarity_rank,
+        card_name,
+        collector_number,
+    )
+
+
+def sort_opened_chaos_pack_cards(cards, booster_name):
+    if not cards:
+        return []
+
+    sort_profile = get_chaos_booster_sort_profile(booster_name)
+
+    # Leave Jumpstart untouched for now.
+    if sort_profile is None:
+        return list(cards)
+
+    bucket_rank = {bucket_name: index for index, bucket_name in enumerate(sort_profile)}
+
+    def sort_key(card_entry):
+        bucket_name = get_chaos_pack_sort_bucket(card_entry, booster_name)
+        primary_rank = bucket_rank.get(bucket_name, 999)
+        secondary_key = get_chaos_bucket_secondary_sort_key(card_entry)
+
+        return (primary_rank, secondary_key)
+
+    sorted_cards = sorted(cards, key=sort_key)
+
+    write_debug_log(
+        f"CHAOS PACK SORT | booster={booster_name} | "
+        f"profile={' > '.join(sort_profile)} | "
+        f"before={len(cards)} | after={len(sorted_cards)}"
+    )
+
+    for card_entry in sorted_cards:
+        write_debug_log(
+            f"CHAOS PACK SORT CARD | booster={booster_name} | "
+            f"bucket={get_chaos_pack_sort_bucket(card_entry, booster_name)} | "
+            f"sheet={card_entry.get('sheet_name')} | "
+            f"foil={card_entry.get('sheet_is_foil')} | "
+            f"rarity={card_entry.get('rarity')} | "
+            f"card={card_entry.get('card_name')}"
+        )
+
+    return sorted_cards
 
 def build_chaos_spin_result():
     eligible_packs = get_eligible_chaos_packs_for_spin()
@@ -4860,6 +5107,7 @@ def result():
             "chaos_draft.html",
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
+            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
         )
 
     if current_game_mode == "tower_of_power":
@@ -5672,4 +5920,5 @@ def sets():
 
 if __name__ == "__main__":
     initialize_database()
+    set_runtime_debug_log_enabled_from_config()
     app.run(host="0.0.0.0", port=5000, debug=True)

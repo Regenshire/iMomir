@@ -830,6 +830,10 @@ function initializeChaosDraftPage() {
     const spinCtaButton = document.getElementById("chaosSpinButton");
     const pointer = document.getElementById("chaosDraftPointer");
     const message = document.getElementById("chaosDraftMessage");
+    const chaosDraftScreen = document.getElementById("chaosDraftScreen");
+    const openPrintInNewTab = chaosDraftScreen
+        ? chaosDraftScreen.getAttribute("data-open-print-in-new-tab") === "1"
+        : true;
 
     if (!spinCtaButton || !spinnerShell || !spinnerTrack || !message || !idleCta || !pointer) {
         return;
@@ -1191,15 +1195,19 @@ function initializeChaosDraftPage() {
 
                 const payload = await response.json();
 
-                if (!response.ok || !payload.ok) {
+                if (!response.ok || !payload.ok || !payload.download_url) {
                     throw new Error(payload.message || "Failed to open pack.");
                 }
 
-                if (!payload.download_url) {
-                    throw new Error("Chaos Draft pack did not return a download URL.");
-                }
+                if (openPrintInNewTab) {
+                    window.open(payload.download_url, "_blank", "noopener");
 
-                window.location.href = payload.download_url;
+                    openButton.disabled = false;
+                    openButton.classList.remove("action-button-loading");
+                    openButton.textContent = "Open Pack";
+                } else {
+                    window.location.href = payload.download_url;
+                }
 
             } catch (error) {
                 window.alert(error.message || "Failed to open Chaos Draft pack.");
