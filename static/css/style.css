@@ -1673,16 +1673,192 @@ input {
 }
 
 .chaos-pack-card-winning {
+    position: relative;
+    z-index: 10;
+    overflow: hidden;
     transform: scale(1.14);
     border: 2px solid var(--accent);
     background: rgba(72, 127, 255, 0.16);
     box-shadow: 0 0 0 2px rgba(72, 127, 255, 0.20), 0 16px 36px rgba(0, 0, 0, 0.28);
 }
 
+.chaos-pack-card-winning::after {
+    content: "";
+    position: absolute;
+    inset: -20%;
+    transform: translateX(-140%) rotate(8deg);
+    pointer-events: none;
+    animation: chaos-winning-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Normal hit = current silver shimmer */
+.chaos-pack-card-winning-normal::after {
+    background: linear-gradient(
+        115deg,
+        rgba(255, 255, 255, 0) 18%,
+        rgba(255, 255, 255, 0.10) 34%,
+        rgba(255, 255, 255, 0.34) 50%,
+        rgba(255, 255, 255, 0.10) 66%,
+        rgba(255, 255, 255, 0) 82%
+    );
+}
+
+/* Jackpot = subtle rainbow sheen */
+.chaos-pack-card-winning-jackpot::after {
+    z-index: 1;
+    background: linear-gradient(
+        115deg,
+        rgba(255, 255, 255, 0) 14%,
+        rgba(255, 80, 80, 0.14) 26%,
+        rgba(255, 170, 0, 0.16) 34%,
+        rgba(255, 255, 120, 0.20) 42%,
+        rgba(120, 255, 160, 0.18) 50%,
+        rgba(100, 180, 255, 0.20) 58%,
+        rgba(180, 120, 255, 0.18) 66%,
+        rgba(255, 255, 255, 0.26) 74%,
+        rgba(255, 255, 255, 0) 86%
+    );
+    animation-duration: 1.55s;
+}
+
+.chaos-pack-card-winning-jackpot::before {
+    content: "";
+    position: absolute;
+    inset: -8%;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0.72;
+    mix-blend-mode: screen;
+    background:
+        radial-gradient(circle at 14% 22%, rgba(255, 245, 180, 0.55) 0 2px, rgba(255, 245, 180, 0.20) 3px, rgba(255, 245, 180, 0) 10px),
+        radial-gradient(circle at 28% 70%, rgba(255, 255, 255, 0.48) 0 1.8px, rgba(255, 255, 255, 0.16) 3px, rgba(255, 255, 255, 0) 9px),
+        radial-gradient(circle at 42% 34%, rgba(255, 220, 255, 0.42) 0 2px, rgba(255, 220, 255, 0.14) 3px, rgba(255, 220, 255, 0) 10px),
+        radial-gradient(circle at 58% 18%, rgba(190, 235, 255, 0.46) 0 2.2px, rgba(190, 235, 255, 0.16) 3.4px, rgba(190, 235, 255, 0) 10px),
+        radial-gradient(circle at 66% 62%, rgba(255, 250, 210, 0.52) 0 2.4px, rgba(255, 250, 210, 0.18) 3.6px, rgba(255, 250, 210, 0) 11px),
+        radial-gradient(circle at 78% 30%, rgba(255, 255, 255, 0.42) 0 1.7px, rgba(255, 255, 255, 0.14) 2.8px, rgba(255, 255, 255, 0) 8px),
+        radial-gradient(circle at 84% 76%, rgba(255, 235, 170, 0.48) 0 2.1px, rgba(255, 235, 170, 0.16) 3.2px, rgba(255, 235, 170, 0) 10px),
+        radial-gradient(circle at 92% 46%, rgba(220, 240, 255, 0.40) 0 1.8px, rgba(220, 240, 255, 0.13) 2.8px, rgba(220, 240, 255, 0) 8px);
+    filter: blur(1.2px);
+    animation: chaos-jackpot-motes 5.5s ease-in-out infinite alternate;
+}
+
+/* Bad pack = red sinister shimmer */
+.chaos-pack-card-winning-badpack::after {
+    background: linear-gradient(
+        115deg,
+        rgba(255, 255, 255, 0) 18%,
+        rgba(110, 0, 0, 0.12) 32%,
+        rgba(185, 20, 20, 0.22) 46%,
+        rgba(255, 70, 70, 0.28) 54%,
+        rgba(185, 20, 20, 0.22) 62%,
+        rgba(110, 0, 0, 0.12) 74%,
+        rgba(255, 255, 255, 0) 84%
+    );
+    animation-duration: 2.4s;
+    opacity: 0.85;
+}
+
 .chaos-pack-card-winning .chaos-pack-card-image {
     transform: scale(1.07);
     margin-top: 5px;
     margin-bottom: 5px;
+}
+
+@keyframes chaos-winning-shimmer {
+    0% {
+        transform: translateX(-140%) rotate(8deg);
+    }
+    100% {
+        transform: translateX(140%) rotate(8deg);
+    }
+}
+
+@keyframes chaos-jackpot-motes {
+    0% {
+        opacity: 0.46;
+        transform: translate3d(-4px, 3px, 0) scale(0.98);
+        filter: blur(1.4px) brightness(0.92);
+    }
+    25% {
+        opacity: 0.62;
+        transform: translate3d(-1px, -1px, 0) scale(1.01);
+        filter: blur(1.2px) brightness(1.00);
+    }
+    50% {
+        opacity: 0.74;
+        transform: translate3d(2px, -4px, 0) scale(1.03);
+        filter: blur(1.1px) brightness(1.08);
+    }
+    75% {
+        opacity: 0.66;
+        transform: translate3d(4px, -2px, 0) scale(1.02);
+        filter: blur(1.2px) brightness(1.03);
+    }
+    100% {
+        opacity: 0.54;
+        transform: translate3d(6px, -5px, 0) scale(1.00);
+        filter: blur(1.35px) brightness(0.96);
+    }
+}
+
+.chaos-draft-busy-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(3px);
+}
+
+.chaos-draft-busy-overlay:not(.hidden) {
+    display: flex;
+}
+
+.chaos-draft-busy-backdrop {
+    position: absolute;
+    inset: 0;
+}
+
+.chaos-draft-busy-card {
+    width: min(100%, 360px);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(34, 38, 46, 0.98), rgba(26, 29, 36, 0.98));
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+}
+
+.chaos-draft-busy-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 4px solid rgba(255, 255, 255, 0.18);
+    border-top-color: #ffffff;
+    animation: spin 0.85s linear infinite;
+}
+
+.chaos-draft-busy-title {
+    font-size: 1.12rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.chaos-draft-busy-text {
+    color: var(--muted);
+    font-size: 0.96rem;
+    line-height: 1.45;
+}
+
+.chaos-draft-open-button.action-button-loading {
+    opacity: 0.82;
 }
 
 .chaos-pack-card-image-wrap {
@@ -1727,15 +1903,21 @@ input {
     .chaos-draft-spinner-track {
         gap: 10px;
         padding: 0 90px;
+
+        position: relative;
+        bottom: -30px;
+        scale: 1.15;
+        transform-origin: center center;
     }
 
     .chaos-pack-card {
-        flex: 0 0 145px;
+        flex: 0 0 190px;
+        padding: 12px;
     }
 
     .chaos-pack-card-image {
-        max-width: 100px;
-        max-height: 150px;
+        max-width: 140px;
+        max-height: 210px;
     }
 
     .chaos-draft-spinner-window::before,

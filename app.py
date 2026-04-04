@@ -130,8 +130,10 @@ DEFAULT_CONFIG = {
     "print_front_back_label": "1",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",
+    "sound_enabled": "1",
     "debug_log": "0",
     "tower_pdf_draw_count": "7",
+    "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
 }
 
 REPEAT_MODE_OPTIONS = [
@@ -272,20 +274,26 @@ MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS = [
     ("mtgo", "MTGO Token"),
 ]
 
-# Chaos Draft - Allowed Booster Types (EDIT THIS LIST AS NEEDED)
+CHAOS_PACK_TYPE_OPTIONS = [
+    {"value": "core", "label": "Core Booster"},
+    {"value": "default", "label": "Booster"},
+    {"value": "set", "label": "Set Booster"},
+    {"value": "draft", "label": "Draft Booster"},
+    {"value": "play", "label": "Play Booster"},
+    {"value": "collector", "label": "Collector Booster"},
+    {"value": "collector-special", "label": "Collector Special Booster"},
+    {"value": "jumpstart", "label": "Jumpstart Booster"},
+    {"value": "jumpstart-v2", "label": "Jumpstart Booster"},
+    {"value": "premium", "label": "Premium Booster"},
+    {"value": "vip", "label": "VIP Booster"},
+    {"value": "six", "label": "Six Card Booster"},
+    {"value": "collector-sample", "label": "Collector Sample Pack (2 cards)"},
+]
+
+# Chaos Draft - supported booster types derived from the master option list
 ALLOWED_CHAOS_BOOSTER_TYPES = {
-    "core",
-    "default",
-    "draft",
-    "collector",
-    "set",
-    "play",
-    "jumpstart",
-    "jumpstart-v2",
-    "premium",
-    "vip",
-    "six",
-    "collector-special",
+    item["value"]
+    for item in CHAOS_PACK_TYPE_OPTIONS
 }
 
 TYPE_FLAG_MAP = {
@@ -793,6 +801,7 @@ def update_config_from_form(form_data):
         "pdf_crop_border",
         "print_front_back_label",
         "open_print_in_new_tab",
+        "sound_enabled",
         "debug_log",
     }
 
@@ -919,6 +928,46 @@ def normalize_booster_type_for_filter(booster_name):
 
     return value
 
+def parse_chaos_pack_types_config(raw_value):
+    allowed_pack_types = {item["value"] for item in CHAOS_PACK_TYPE_OPTIONS}
+
+    selected_pack_types = set()
+    for item in (raw_value or "").split(","):
+        normalized_item = (item or "").strip().lower()
+        if normalized_item and normalized_item in allowed_pack_types:
+            selected_pack_types.add(normalized_item)
+
+    if not selected_pack_types:
+        selected_pack_types = set(ALLOWED_CHAOS_BOOSTER_TYPES)
+
+    return selected_pack_types
+
+
+def get_selected_chaos_pack_types(config=None):
+    if config is None:
+        config = get_config()
+
+    return parse_chaos_pack_types_config(config.get("chaos_pack_types", ""))
+
+
+def build_chaos_pack_types_config_value(selected_pack_types):
+    allowed_pack_types = [item["value"] for item in CHAOS_PACK_TYPE_OPTIONS]
+
+    normalized_selected = []
+    selected_lookup = {str(item).strip().lower() for item in (selected_pack_types or [])}
+
+    for pack_type in allowed_pack_types:
+        if pack_type in selected_lookup:
+            normalized_selected.append(pack_type)
+
+    return ",".join(normalized_selected)
+
+def get_chaos_pack_type_label_map():
+    return {
+        item["value"]: item["label"]
+        for item in CHAOS_PACK_TYPE_OPTIONS
+    }
+
 def get_set_name_from_code(set_code):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -945,19 +994,7 @@ def build_default_chaos_pack_display_name(set_code, booster_name):
 
     clean_booster_name = (booster_name or "").strip().lower()
 
-    booster_label_map = {
-        "default": "Booster",
-        "draft": "Draft Booster",
-        "set": "Set Booster",
-        "play": "Play Booster",
-        "collector": "Collector Booster",
-        "jumpstart": "Jumpstart Booster",
-        "jumpstart-v2": "Jumpstart Booster",
-        "premium": "Premium Booster",
-        "vip": "VIP Booster",
-        "six": "Six Card Booster",
-        "collector-special": "Collector Special Booster",
-    }
+    booster_label_map = get_chaos_pack_type_label_map()
 
     display_booster_name = booster_label_map.get(
         clean_booster_name,
@@ -2229,12 +2266,16 @@ def get_eligible_chaos_packs():
     conn.close()
 
     packs = []
+    selected_chaos_pack_types = get_selected_chaos_pack_types(config)
 
     for row in rows:
         booster_name_raw = row["booster_name"]
         booster_type = normalize_booster_type_for_filter(booster_name_raw)
 
         if booster_type not in ALLOWED_CHAOS_BOOSTER_TYPES:
+            continue
+
+        if booster_type not in selected_chaos_pack_types:
             continue
 
         art_info = get_chaos_pack_art_info(row["set_code"], booster_name_raw)
@@ -3147,6 +3188,8 @@ def build_image_candidate_filter_query(config, selected_set_codes, force_redownl
 
 def update_selected_sets_from_form(form_data):
     all_sets_enabled = "1" if form_data.get("all_sets_enabled") == "on" else "0"
+    selected_pack_types = form_data.getlist("chaos_pack_types")
+    chaos_pack_types_value = build_chaos_pack_types_config_value(selected_pack_types)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -3158,6 +3201,15 @@ def update_selected_sets_from_form(form_data):
         ON CONFLICT(config_key) DO UPDATE SET config_value = excluded.config_value
         """,
         ("all_sets_enabled", all_sets_enabled),
+    )
+
+    cursor.execute(
+        """
+        INSERT INTO app_config (config_key, config_value)
+        VALUES (?, ?)
+        ON CONFLICT(config_key) DO UPDATE SET config_value = excluded.config_value
+        """,
+        ("chaos_pack_types", chaos_pack_types_value),
     )
 
     cursor.execute("DELETE FROM selected_sets")
@@ -5108,6 +5160,7 @@ def result():
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
             open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
         )
 
     if current_game_mode == "tower_of_power":
@@ -5905,6 +5958,7 @@ def sets():
         return redirect(url_for("sets"))
 
     config_values = get_config()
+    selected_chaos_pack_types = get_selected_chaos_pack_types(config_values)
     all_sets = get_all_sets()
     selected_set_codes = get_selected_set_codes()
 
@@ -5916,6 +5970,9 @@ def sets():
         all_sets=all_sets,
         selected_set_codes=selected_set_codes,
         current_year=current_year,
+        current_game_mode=(config_values.get("game_mode") or "custom").strip().lower(),
+        chaos_pack_type_options=CHAOS_PACK_TYPE_OPTIONS,
+        selected_chaos_pack_types=selected_chaos_pack_types,
     )
 
 if __name__ == "__main__":

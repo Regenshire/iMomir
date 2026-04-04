@@ -300,6 +300,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Sound On/Off</span>
+                        <input
+                            type="checkbox"
+                            name="sound_enabled"
+                            {% if config.sound_enabled == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Debug Log</span>
                         <input
                             type="checkbox"

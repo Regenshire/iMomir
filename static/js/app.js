@@ -831,16 +831,384 @@ function initializeChaosDraftPage() {
     const pointer = document.getElementById("chaosDraftPointer");
     const message = document.getElementById("chaosDraftMessage");
     const chaosDraftScreen = document.getElementById("chaosDraftScreen");
+    const busyOverlay = document.getElementById("chaosDraftBusyOverlay");
+    const busyTitle = document.getElementById("chaosDraftBusyTitle");
+    const busyText = document.getElementById("chaosDraftBusyText");
     const openPrintInNewTab = chaosDraftScreen
         ? chaosDraftScreen.getAttribute("data-open-print-in-new-tab") === "1"
         : true;
 
-    if (!spinCtaButton || !spinnerShell || !spinnerTrack || !message || !idleCta || !pointer) {
+    const soundEnabled = chaosDraftScreen
+        ? chaosDraftScreen.getAttribute("data-sound-enabled") === "1"
+        : true;
+
+    if (
+        !spinCtaButton ||
+        !spinnerShell ||
+        !spinnerTrack ||
+        !message ||
+        !idleCta ||
+        !pointer ||
+        !busyOverlay ||
+        !busyTitle ||
+        !busyText
+    ) {
         return;
     }
 
+    // Allow clicking outside the busy modal to cancel
+    busyOverlay.addEventListener("click", function (e) {
+        if (
+            e.target.classList.contains("chaos-draft-busy-overlay") ||
+            e.target.classList.contains("chaos-draft-busy-backdrop")
+        ) {
+            cancelOpenPack("user-click-outside");
+        }
+    });
+
     let currentSpinResult = null;
     let animationInProgress = false;
+    let openInProgress = false;
+    let openAbortController = null;
+    let audioContext = null;
+    let rouletteTickCardSpacing = 0;
+    let rouletteNextTickThreshold = null;
+    let rouletteLastTranslateX = 0;
+    let rouletteTickTimer = null;
+    let currentWinningPack = null;
+
+    const jackpotBoosterTypes = new Set([
+        "collector",
+        "vip",
+        "premium"
+    ]);
+
+    const jackpotSetCodes = new Set([
+        "LEA", // Alpha
+        "LEB",  // Beta
+        "2ED",
+        "ARN",
+        "LEG",
+        "ATQ",
+        "3ED",
+        "30A",
+        "PTK",
+        "USG"
+    ]);
+
+    const badPackSetCodes = new Set([
+        "HML",
+        "PCY",
+        "FEM",
+        "DRK",
+        "CHR"
+    ]);
+
+    function showBusyOverlay(titleText, bodyText) {
+        busyTitle.textContent = titleText || "Working";
+        busyText.textContent = bodyText || "";
+        busyOverlay.classList.remove("hidden");
+        busyOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function hideBusyOverlay() {
+        busyOverlay.classList.add("hidden");
+        busyOverlay.setAttribute("aria-hidden", "true");
+    }
+
+    function resetOpenPackUiState() {
+        hideBusyOverlay();
+
+        openInProgress = false;
+        openAbortController = null;
+
+        if (openButton) {
+            openButton.disabled = false;
+            openButton.classList.remove("action-button-loading");
+            openButton.textContent = "Open Pack";
+        }
+
+        if (nextButton) {
+            nextButton.disabled = false;
+        }
+
+        if (currentSpinResult) {
+            spinCtaButton.disabled = true;
+        } else {
+            spinCtaButton.disabled = false;
+        }
+    }
+
+    function cancelOpenPack(reason) {
+        if (openAbortController) {
+            try {
+                openAbortController.abort();
+            } catch (e) {
+            }
+        }
+
+        resetOpenPackUiState();
+
+        if (reason) {
+            console.warn("Chaos Draft open cancelled:", reason);
+        }
+    }
+
+    function getAudioContext() {
+        if (!soundEnabled) {
+            return null;
+        }
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            return null;
+        }
+
+        if (!audioContext) {
+            audioContext = new AudioContextClass();
+        }
+
+        if (audioContext.state === "suspended") {
+            audioContext.resume().catch(function () {
+            });
+        }
+
+        return audioContext;
+    }
+
+    function playTone(frequency, durationSeconds, type, volume, whenOffsetSeconds) {
+        const ctx = getAudioContext();
+        if (!ctx) {
+            return;
+        }
+
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const startAt = ctx.currentTime + (whenOffsetSeconds || 0);
+
+        oscillator.type = type || "sine";
+        oscillator.frequency.setValueAtTime(frequency, startAt);
+
+        gainNode.gain.setValueAtTime(0.0001, startAt);
+        gainNode.gain.exponentialRampToValueAtTime(Math.max(volume || 0.03, 0.0001), startAt + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, startAt + durationSeconds);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        oscillator.start(startAt);
+        oscillator.stop(startAt + durationSeconds + 0.02);
+    }
+
+    function playDecayingTone(frequency, durationSeconds, type, volume, whenOffsetSeconds) {
+        const ctx = getAudioContext();
+        if (!ctx) {
+            return;
+        }
+
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        const startAt = ctx.currentTime + (whenOffsetSeconds || 0);
+
+        oscillator.type = type || "sine";
+        oscillator.frequency.setValueAtTime(frequency, startAt);
+
+        gainNode.gain.setValueAtTime(0.0001, startAt);
+        gainNode.gain.exponentialRampToValueAtTime(
+            Math.max(volume || 0.03, 0.0001),
+            startAt + 0.008
+        );
+        gainNode.gain.exponentialRampToValueAtTime(
+            0.0001,
+            startAt + durationSeconds
+        );
+
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+
+        oscillator.start(startAt);
+        oscillator.stop(startAt + durationSeconds + 0.03);
+    }
+
+    function playRouletteTick() {
+        //playTone(1150, 0.028, "triangle", 0.010, 0.00);
+        //playTone(820, 0.040, "triangle", 0.006, 0.008);
+        playTone(484, 0.115, "square", 0.012, 0.000);
+        playTone(968, 0.070, "square", 0.0035, 0.000);
+    }
+
+    /*function playMinorWinSound() {
+        //playTone(740, 0.11, "triangle", 0.04, 0.00);
+        playTone(932, 0.12, "triangle", 0.04, 0.07);
+        playTone(1175, 0.18, "triangle", 0.05, 0.14);
+    }*/
+
+    function playMinorWinSound() {
+        // Trumpet-style victory fanfare
+        // Using sawtooth for brass-like tone
+
+        const baseVolume = 0.045;
+
+        // Note sequence (ascending, triumphant)
+        playTone(784, 0.18, "sawtooth", baseVolume, 0.00);   // G5
+        playTone(988, 0.18, "sawtooth", baseVolume, 0.14);   // B5
+        playTone(1175, 0.22, "sawtooth", baseVolume, 0.28);  // D6
+
+        // Final sustained victory note
+        playTone(1568, 0.60, "sawtooth", baseVolume + 0.01, 0.46); // G6
+
+        // Add brightness layer (harmonics)
+        playTone(3136, 0.50, "triangle", 0.012, 0.46);
+    }
+
+    /*function playJackpotSound() {
+        playTone(523, 0.14, "triangle", 0.04, 0.00);
+        playTone(659, 0.14, "triangle", 0.04, 0.08);
+        playTone(784, 0.16, "triangle", 0.045, 0.16);
+        playTone(1047, 0.32, "triangle", 0.055, 0.28);
+    }*/
+
+    function playJackpotSound() {
+        // Epic trumpet-style jackpot fanfare
+        // Bigger rise, longer finish, brighter harmonic layer
+
+        const v = 0.055;
+
+        // Opening fanfare
+        playTone(784, 0.16, "sawtooth", v, 0.00);    // G5
+        playTone(988, 0.16, "sawtooth", v, 0.12);    // B5
+        playTone(1175, 0.18, "sawtooth", v, 0.24);   // D6
+        playTone(1568, 0.22, "sawtooth", v + 0.004, 0.38); // G6
+
+        // Heroic second rise
+        playTone(1175, 0.18, "sawtooth", v, 0.58);   // D6
+        playTone(1568, 0.20, "sawtooth", v + 0.004, 0.72); // G6
+        playTone(1976, 0.24, "sawtooth", v + 0.006, 0.88); // B6
+
+        // Final victory hold
+        playTone(2350, 0.95, "sawtooth", v + 0.010, 1.06); // D7
+
+        // Bright brass shimmer
+        playTone(4700, 0.72, "triangle", 0.012, 1.08);
+        playTone(3136, 0.82, "triangle", 0.010, 1.06);
+    }
+
+    function playBadPackSound() {
+        // Classic Price Is Right losing horns: descending "wahh waaahhh"
+
+        const v = 0.045;
+
+        // First horn (shorter)
+        playDecayingTone(370, 0.55, "sawtooth", v, 0.00);   // F#4-ish
+        playDecayingTone(740, 0.40, "triangle", 0.010, 0.00); // harmonic layer
+
+        // Second horn (longer, lower, sadder)
+        playDecayingTone(277, 0.95, "sawtooth", v + 0.004, 0.38); // C#4-ish
+        playDecayingTone(554, 0.70, "triangle", 0.010, 0.38);     // harmonic
+    }
+
+    function isBigWinPack(packInfo) {
+        if (!packInfo) {
+            return false;
+        }
+
+        const boosterName = String(packInfo.booster_name || "").trim().toLowerCase();
+        const setCode = String(packInfo.set_code || "").trim().toUpperCase();
+
+        if (jackpotBoosterTypes.has(boosterName)){
+            return true;
+        }
+
+        if (jackpotSetCodes.has(setCode)){
+            return true;
+        }
+
+        return false;
+    }
+
+    function isBadPack(packInfo) {
+        if (!packInfo) {
+            return false;
+        }
+
+        const setCode = String(packInfo.set_code || "").trim().toUpperCase();
+
+        return badPackSetCodes.has(setCode);
+    }
+
+    function stopRouletteTicks() {
+        rouletteTickCardSpacing = 0;
+        rouletteNextTickThreshold = null;
+        rouletteLastTranslateX = 0;
+    }
+
+    function startRouletteTicks(cardSpacing, startTranslateX) {
+        rouletteTickCardSpacing = Math.max(1, Number(cardSpacing) || 0);
+        rouletteLastTranslateX = Number(startTranslateX) || 0;
+
+        if (rouletteTickCardSpacing <= 0) {
+            rouletteNextTickThreshold = null;
+            return;
+        }
+
+        rouletteNextTickThreshold =
+            rouletteLastTranslateX - rouletteTickCardSpacing;
+    }
+
+    function updateRouletteTicks(currentTranslateX) {
+        if (!rouletteTickCardSpacing || rouletteNextTickThreshold === null) {
+            rouletteLastTranslateX = currentTranslateX;
+            return;
+        }
+
+        // Spinner moves left over time, so translateX becomes more negative.
+        // Fire one tick each time we cross another card spacing.
+        while (currentTranslateX <= rouletteNextTickThreshold) {
+            playRouletteTick();
+            rouletteNextTickThreshold -= rouletteTickCardSpacing;
+        }
+
+        rouletteLastTranslateX = currentTranslateX;
+    }
+
+    function playWinningSoundForPack(packInfo) {
+        if (isBadPack(packInfo)) {
+            playBadPackSound(); // you'll define this next
+            return;
+        }
+
+        if (isBigWinPack(packInfo)) {
+            playJackpotSound();
+        } else {
+            playMinorWinSound();
+        }
+    }
+
+    function getWinningVisualClassForPack(packInfo) {
+        if (isBadPack(packInfo)) {
+            return "chaos-pack-card-winning-badpack";
+        }
+
+        if (isBigWinPack(packInfo)) {
+            return "chaos-pack-card-winning-jackpot";
+        }
+
+        return "chaos-pack-card-winning-normal";
+    }
+
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+            cancelOpenPack("escape-key");
+        }
+    });
+
+    window.addEventListener("pageshow", function () {
+        resetOpenPackUiState();
+    });
+
+    window.addEventListener("pagehide", function () {
+        hideBusyOverlay();
+    });
 
     function hideOpenRow() {
         if (openRow) {
@@ -867,7 +1235,7 @@ function initializeChaosDraftPage() {
     }
 
     function setButtonsForIdle() {
-        spinCtaButton.disabled = false;
+        spinCtaButton.disabled = openInProgress;
         idleCta.classList.remove("hidden");
         idleCta.classList.remove("chaos-draft-idle-cta-sinking");
         spinnerTrack.classList.add("hidden");
@@ -876,7 +1244,7 @@ function initializeChaosDraftPage() {
         hideOpenRow();
 
         if (nextButton) {
-            nextButton.disabled = true;
+            nextButton.disabled = false;
         }
     }
 
@@ -893,7 +1261,7 @@ function initializeChaosDraftPage() {
     }
 
     function setButtonsForComplete() {
-        spinCtaButton.disabled = false;
+        spinCtaButton.disabled = openInProgress;
         idleCta.classList.add("hidden");
         spinnerTrack.classList.remove("hidden");
         pointer.classList.remove("hidden");
@@ -908,7 +1276,12 @@ function initializeChaosDraftPage() {
     function clearWinningState() {
         const allCards = spinnerTrack.querySelectorAll(".chaos-pack-card");
         allCards.forEach(function (card) {
-            card.classList.remove("chaos-pack-card-winning");
+            card.classList.remove(
+                "chaos-pack-card-winning",
+                "chaos-pack-card-winning-normal",
+                "chaos-pack-card-winning-jackpot",
+                "chaos-pack-card-winning-badpack"
+            );
         });
     }
 
@@ -976,6 +1349,7 @@ function initializeChaosDraftPage() {
         const finalCard = spinnerTrack.querySelector(`[data-chaos-card-index="${finalAbsoluteIndex}"]`);
 
         if (!spinnerWindow || !allCards.length || !finalCard) {
+            stopRouletteTicks();
             animationInProgress = false;
             setButtonsForIdle();
             return;
@@ -1001,6 +1375,8 @@ function initializeChaosDraftPage() {
         const startTranslate = 0;
         const durationMs = 7600 + Math.round(Math.random() * 1100);
 
+        startRouletteTicks(oneCardTravel, startTranslate);
+
         let animationStart = null;
 
         function snapToCenter() {
@@ -1008,8 +1384,13 @@ function initializeChaosDraftPage() {
             spinnerTrack.style.transform = `translateX(${finalTranslate}px)`;
 
             window.setTimeout(function () {
+                const winningVisualClass = getWinningVisualClassForPack(currentWinningPack);
+
                 spinnerTrack.style.transition = "none";
                 finalCard.classList.add("chaos-pack-card-winning");
+                finalCard.classList.add(winningVisualClass);
+                stopRouletteTicks();
+                playWinningSoundForPack(currentWinningPack);
                 animationInProgress = false;
                 setButtonsForComplete();
             }, 190);
@@ -1026,6 +1407,7 @@ function initializeChaosDraftPage() {
             const currentTranslate = startTranslate + ((approachTranslate - startTranslate) * easedProgress);
 
             spinnerTrack.style.transform = `translateX(${currentTranslate}px)`;
+            updateRouletteTicks(currentTranslate);
 
             if (progress < 1) {
                 window.requestAnimationFrame(step);
@@ -1046,6 +1428,7 @@ function initializeChaosDraftPage() {
         const winningStopIndex = Number(spinResult.winning_stop_index || 0);
 
         if (!displayPacks.length) {
+            stopRouletteTicks();
             animationInProgress = false;
             message.classList.remove("hidden");
             spinnerShell.classList.add("hidden");
@@ -1060,10 +1443,12 @@ function initializeChaosDraftPage() {
         message.classList.add("hidden");
         spinnerShell.classList.remove("hidden");
 
+        currentWinningPack = spinResult.winning_pack || null;
         const winningRepeatIndex = Math.floor(repeatCount / 2);
         const finalAbsoluteIndex = (winningRepeatIndex * displayPacks.length) + winningStopIndex;
 
         if (!repeatedSequence.length || finalAbsoluteIndex < 0 || finalAbsoluteIndex >= repeatedSequence.length) {
+            stopRouletteTicks();
             animationInProgress = false;
             setButtonsForIdle();
             message.classList.remove("hidden");
@@ -1123,6 +1508,7 @@ function initializeChaosDraftPage() {
 
                 runSpinAnimation(currentSpinResult);
             } catch (error) {
+                stopRouletteTicks();
                 animationInProgress = false;
                 message.classList.remove("hidden");
                 spinnerTrack.classList.add("hidden");
@@ -1136,10 +1522,13 @@ function initializeChaosDraftPage() {
     }
 
     async function runNext() {
-        if (animationInProgress) {
+        if (animationInProgress || openInProgress) {
             return;
         }
 
+        stopRouletteTicks();
+        hideBusyOverlay();
+        currentWinningPack = null;
         currentSpinResult = null;
 
         try {
@@ -1176,21 +1565,44 @@ function initializeChaosDraftPage() {
 
     if (openButton) {
         openButton.addEventListener("click", async function () {
-            try {
-                openButton.disabled = true;
+            const openTimeoutMs = 30000;
+            let timeoutId = null;
 
-                if (!currentSpinResult || animationInProgress) {
+            try {
+                if (!currentSpinResult || animationInProgress || openInProgress) {
                     throw new Error("No completed Chaos Draft spin is ready to open.");
+                }
+
+                openInProgress = true;
+                openAbortController = new AbortController();
+
+                openButton.disabled = true;
+                spinCtaButton.disabled = true;
+
+                if (nextButton) {
+                    nextButton.disabled = true;
                 }
 
                 openButton.classList.add("action-button-loading");
                 openButton.textContent = "Opening Pack...";
 
+                showBusyOverlay(
+                    "Opening Pack",
+                    "Building your Chaos Draft pack PDF. Large or special packs can take several seconds."
+                );
+
+                timeoutId = window.setTimeout(function () {
+                    if (openAbortController) {
+                        openAbortController.abort();
+                    }
+                }, openTimeoutMs);
+
                 const response = await fetch("/chaos-draft/open", {
                     method: "POST",
                     headers: {
                         "Accept": "application/json"
-                    }
+                    },
+                    signal: openAbortController.signal
                 });
 
                 const payload = await response.json();
@@ -1199,21 +1611,36 @@ function initializeChaosDraftPage() {
                     throw new Error(payload.message || "Failed to open pack.");
                 }
 
-                if (openPrintInNewTab) {
-                    window.open(payload.download_url, "_blank", "noopener");
+                hideBusyOverlay();
 
-                    openButton.disabled = false;
-                    openButton.classList.remove("action-button-loading");
-                    openButton.textContent = "Open Pack";
+                if (openPrintInNewTab) {
+                    resetOpenPackUiState();
+                    window.open(payload.download_url, "_blank", "noopener");
                 } else {
+                    resetOpenPackUiState();
                     window.location.href = payload.download_url;
                 }
-
             } catch (error) {
-                window.alert(error.message || "Failed to open Chaos Draft pack.");
-                openButton.disabled = false;
-                openButton.classList.remove("action-button-loading");
-                openButton.textContent = "Open Pack";
+                const wasUserCancel =
+                    error &&
+                    error.name === "AbortError" &&
+                    !openInProgress;
+
+                hideBusyOverlay();
+
+                if (!wasUserCancel) {
+                    const errorMessage = error && error.name === "AbortError"
+                        ? "Opening the pack timed out after 30 seconds."
+                        : (error.message || "Failed to open Chaos Draft pack.");
+
+                    window.alert(errorMessage);
+                }
+
+                resetOpenPackUiState();
+            } finally {
+                if (timeoutId) {
+                    window.clearTimeout(timeoutId);
+                }
             }
         });
     }
@@ -1224,6 +1651,7 @@ function initializeChaosDraftPage() {
     spinnerTrack.classList.add("hidden");
     pointer.classList.add("hidden");
     message.classList.add("hidden");
+    hideBusyOverlay();
     hideOpenRow();
     setButtonsForIdle();
 }

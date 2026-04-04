@@ -3,7 +3,12 @@
 {% block title %}iMomir - Chaos Draft{% endblock %}
 
 {% block content %}
-<div class="screen" id="chaosDraftScreen" data-open-print-in-new-tab="{{ '1' if open_print_in_new_tab else '0' }}">
+<div
+    class="screen"
+    id="chaosDraftScreen"
+    data-open-print-in-new-tab="{{ '1' if open_print_in_new_tab else '0' }}"
+    data-sound-enabled="{{ '1' if sound_enabled else '0' }}"
+>
     <div class="page-panel chaos-draft-header-panel">
         <div class="chaos-draft-header-layout">
             <div class="chaos-draft-header-copy">
@@ -50,6 +55,17 @@
         <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
             Open Pack
         </button>
+    </div>
+
+<div id="chaosDraftBusyOverlay" class="chaos-draft-busy-overlay hidden" aria-hidden="true">
+    <div class="chaos-draft-busy-backdrop"></div>
+    <div class="chaos-draft-busy-card">
+            <div class="chaos-draft-busy-spinner"></div>
+            <div id="chaosDraftBusyTitle" class="chaos-draft-busy-title">Opening Pack</div>
+            <div id="chaosDraftBusyText" class="chaos-draft-busy-text">
+                Relax while we crack your Pack!
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
