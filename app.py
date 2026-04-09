@@ -16,6 +16,7 @@ from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from io import BytesIO
+from pypdf import PdfWriter
 from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 
@@ -71,6 +72,8 @@ SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
 SCRYFALL_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "scryfall")
 IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
+CHAOS_IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_image_cache")
+CHAOS_TEMP_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_temp_cache")
 PACK_ART_DIR = os.path.join(app.static_folder, "img", "pack_art")
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
@@ -257,6 +260,12 @@ GAME_MODE_OPTIONS = [
         "value": "chaos_draft",
         "label": "Chaos Draft",
         "description": "Chaos Draft selects a random booster pack from the currently enabled sets. One of the funnest ways to play Magic the Gathering.",
+        "image_filename": "img/token_mode_tower_of_power.jpg",
+    },
+    {
+        "value": "preprint_chaos_draft",
+        "label": "PRE-PRINT - Chaos Draft",
+        "description": "Pre-generate Chaos Draft packs for your next game. Choose how many players and how many packs per player, then combine all generated packs into one printable PDF document.",
         "image_filename": "img/token_mode_tower_of_power.jpg",
     },
     {
@@ -835,6 +844,7 @@ def update_config_from_form(form_data):
         "momir_prime",
         "tower_of_power",
         "chaos_draft",
+        "preprint_chaos_draft",
         "planechase",
         "archenemy",
     }:
@@ -1881,6 +1891,29 @@ def clear_chaos_session_state(state_key):
 def get_pending_chaos_spin_result():
     return get_chaos_session_state("pending_spin_result", default_value=None)
 
+def build_chaos_pack_pdf_from_variant(set_code, booster_name, booster_index, pack_display_name):
+    open_result = open_chaos_pack_with_bonus_rule(
+        set_code,
+        booster_name,
+        booster_index,
+    )
+
+    cards = open_result["cards"]
+
+    if not cards:
+        raise ValueError("Chaos Draft pack opened but no cards were generated.")
+
+    cards = sort_opened_chaos_pack_cards(cards, booster_name)
+
+    record_chaos_pack_history(
+        set_code,
+        booster_name,
+        booster_index,
+        pack_display_name,
+    )
+
+    return build_chaos_pack_pdf(cards, pack_display_name)
+
 def build_pending_chaos_pack_pdf():
     spin_result = get_pending_chaos_spin_result()
 
@@ -1946,6 +1979,86 @@ def build_pending_chaos_pack_pdf():
         "ok": True,
         "filename": f"{filename_safe}.pdf",
         "download_url": url_for("chaos_draft_open_file"),
+    }
+
+def build_preprint_chaos_draft_pdf(player_count, packs_per_player):
+    try:
+        parsed_player_count = int(player_count)
+    except (TypeError, ValueError):
+        parsed_player_count = 4
+
+    try:
+        parsed_packs_per_player = int(packs_per_player)
+    except (TypeError, ValueError):
+        parsed_packs_per_player = 3
+
+    if parsed_player_count < 2:
+        parsed_player_count = 2
+    if parsed_player_count > 12:
+        parsed_player_count = 12
+
+    if parsed_packs_per_player < 1:
+        parsed_packs_per_player = 1
+    if parsed_packs_per_player > 9:
+        parsed_packs_per_player = 9
+
+    # FUTURE FEATURE NOTE:
+    # Add pack printing options for PRE-PRINT - Chaos Draft
+    # such as grouping/separators per player, alternate print ordering,
+    # and optional pack labeling / cut-sheet handling.
+
+    merger = PdfWriter()
+    generated_pack_count = 0
+
+    for player_number in range(1, parsed_player_count + 1):
+        for pack_number in range(1, parsed_packs_per_player + 1):
+            chosen_result = choose_random_eligible_chaos_pack_variant()
+
+            if not chosen_result:
+                raise ValueError(
+                    f"Not enough eligible Chaos Draft packs remained to finish generation. "
+                    f"Generated {generated_pack_count} packs before stopping."
+                )
+
+            chosen_pack = chosen_result["pack"]
+            chosen_variant = chosen_result["variant"]
+
+            pack_display_name = chosen_pack["display_name"]
+
+            pack_pdf_buffer = build_chaos_pack_pdf_from_variant(
+                chosen_variant["set_code"],
+                chosen_variant["booster_name"],
+                chosen_variant["booster_index"],
+                pack_display_name,
+            )
+
+            merger.append(pack_pdf_buffer)
+            generated_pack_count += 1
+
+            write_debug_log(
+                f"PREPRINT CHAOS DRAFT | player={player_number} | pack={pack_number} | "
+                f"set={chosen_variant['set_code']} | booster={chosen_variant['booster_name']} | "
+                f"booster_index={chosen_variant['booster_index']}"
+            )
+
+    output_buffer = BytesIO()
+    merger.write(output_buffer)
+    merger.close()
+    output_buffer.seek(0)
+
+    filename = (
+        f"preprint_chaos_draft_"
+        f"{parsed_player_count}p_"
+        f"{parsed_packs_per_player}x_"
+        f"{generated_pack_count}_packs.pdf"
+    )
+
+    return {
+        "buffer": output_buffer,
+        "filename": filename,
+        "player_count": parsed_player_count,
+        "packs_per_player": parsed_packs_per_player,
+        "generated_pack_count": generated_pack_count,
     }
 
 def is_chaos_basic_land_card(card_entry):
@@ -2119,6 +2232,41 @@ def sort_opened_chaos_pack_cards(cards, booster_name):
         )
 
     return sorted_cards
+
+def choose_random_eligible_chaos_pack_variant():
+    eligible_packs = get_eligible_chaos_packs_for_spin()
+
+    if not eligible_packs:
+        return None
+
+    chosen_pack = random.choice(eligible_packs)
+
+    variants = get_chaos_pack_variants(
+        chosen_pack["set_code"],
+        chosen_pack["booster_name"],
+    )
+
+    config = get_config()
+    if config.get("allow_repeats") == "0":
+        opened_keys = get_chaos_opened_pack_keys()
+        variants = [
+            variant for variant in variants
+            if (
+                (variant["set_code"] or "").strip().upper(),
+                (variant["booster_name"] or "").strip().lower(),
+                int(variant["booster_index"] or 0),
+            ) not in opened_keys
+        ]
+
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return None
+
+    return {
+        "pack": chosen_pack,
+        "variant": chosen_variant,
+    }
 
 def build_chaos_spin_result():
     eligible_packs = get_eligible_chaos_packs_for_spin()
@@ -3652,6 +3800,8 @@ def ensure_download_directories():
     os.makedirs(DATA_DOWNLOAD_DIR, exist_ok=True)
     os.makedirs(SCRYFALL_DOWNLOAD_DIR, exist_ok=True)
     os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
+    os.makedirs(CHAOS_IMAGE_CACHE_DIR, exist_ok=True)
+    os.makedirs(CHAOS_TEMP_CACHE_DIR, exist_ok=True)
 
 def parse_remote_last_modified(raw_value):
     raw_value = (raw_value or "").strip()
@@ -4033,6 +4183,66 @@ def safe_filename(value):
             allowed.append("_")
     return "".join(allowed).strip("_") or "card"
 
+def build_chaos_cached_image_filename(card_uuid, page_kind, face_name, image_url):
+    uuid_part = safe_filename(card_uuid or "card")
+    page_part = safe_filename(page_kind or "single")
+    face_part = safe_filename(face_name or "face")
+
+    file_ext = ".jpg"
+    lower_url = (image_url or "").strip().lower()
+
+    if lower_url.endswith(".png"):
+        file_ext = ".png"
+    elif lower_url.endswith(".jpg") or lower_url.endswith(".jpeg"):
+        file_ext = ".jpg"
+
+    return f"{uuid_part}_{page_part}_{face_part}{file_ext}"
+
+
+def get_chaos_cached_image_paths(card_uuid, page_kind, face_name, image_url):
+    filename = build_chaos_cached_image_filename(card_uuid, page_kind, face_name, image_url)
+    abs_path = os.path.join(CHAOS_IMAGE_CACHE_DIR, filename)
+    rel_path = os.path.join("data", "chaos_image_cache", filename).replace("\\", "/")
+
+    return {
+        "filename": filename,
+        "absolute_path": abs_path,
+        "relative_path": rel_path,
+    }
+
+
+def download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url):
+    if not image_url:
+        return None
+
+    ensure_download_directories()
+
+    cache_paths = get_chaos_cached_image_paths(card_uuid, page_kind, face_name, image_url)
+    abs_path = cache_paths["absolute_path"]
+
+    if os.path.exists(abs_path):
+        write_debug_log(
+            f"CHAOS IMAGE CACHE HIT | card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | file={cache_paths['filename']}"
+        )
+        return cache_paths
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "*/*",
+    }
+
+    response = requests.get(image_url, headers=headers, timeout=120)
+    response.raise_for_status()
+
+    with open(abs_path, "wb") as file_handle:
+        file_handle.write(response.content)
+
+    write_debug_log(
+        f"CHAOS IMAGE CACHE MISS | card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | downloaded={cache_paths['filename']}"
+    )
+
+    return cache_paths
+
 def get_two_card_borderless_slots_mm():
     # 3.5" x 5" portrait page
     # Two rotated cards, stacked vertically, no margins.
@@ -4303,6 +4513,11 @@ def split_chaos_pack_display_name_for_title(pack_display_name):
 
     return (raw_value, "")
 
+def get_chaos_temp_file_path(filename):
+    ensure_download_directories()
+    safe_name = safe_filename(filename)
+    return os.path.join(CHAOS_TEMP_CACHE_DIR, safe_name)
+
 def build_chaos_pack_title_card_image_bytes(pack_display_name, card_width_mm=63.5, card_height_mm=88.9):
     title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
 
@@ -4415,6 +4630,8 @@ def build_chaos_print_pages_for_card(card_row):
 
     pages = []
 
+    card_uuid = (card_row["card_uuid"] or "").strip()
+
     front_image_url = (card_row["front_image_url"] or "").strip()
     back_image_url = (card_row["back_image_url"] or "").strip()
     image_url = (card_row["image_url"] or "").strip()
@@ -4435,12 +4652,14 @@ def build_chaos_print_pages_for_card(card_row):
             "image_url": front_image_url,
             "face_name": front_face_name,
             "card_name": card_row["card_name"],
+            "card_uuid": card_uuid,
         })
         pages.append({
             "page_kind": "back",
             "image_url": back_image_url,
             "face_name": back_face_name or f"{front_face_name} (Back)",
             "card_name": card_row["card_name"],
+            "card_uuid": card_uuid,
         })
         return pages
 
@@ -4460,12 +4679,14 @@ def build_chaos_print_pages_for_card(card_row):
                 "image_url": first_face_url,
                 "face_name": faces[0].get("name") or card_row["card_name"],
                 "card_name": card_row["card_name"],
+                "card_uuid": card_uuid,
             })
             pages.append({
                 "page_kind": "back",
                 "image_url": second_face_url,
                 "face_name": faces[1].get("name") or f"{card_row['card_name']} (Back)",
                 "card_name": card_row["card_name"],
+                "card_uuid": card_uuid,
             })
             return pages
 
@@ -4479,6 +4700,7 @@ def build_chaos_print_pages_for_card(card_row):
             "image_url": image_url,
             "face_name": front_face_name or card_row["card_name"],
             "card_name": card_row["card_name"],
+            "card_uuid": card_uuid,
         })
 
     return pages
@@ -4571,7 +4793,7 @@ def build_chaos_pack_pdf(cards, pack_display_name):
             title_card_bytes = build_chaos_pack_title_card_image_bytes(pack_display_name)
 
             title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
-            title_temp_path = os.path.join(RUNTIME_BASE_DIR, title_temp_filename)
+            title_temp_path = get_chaos_temp_file_path(title_temp_filename)
 
             with open(title_temp_path, "wb") as title_file:
                 title_file.write(title_card_bytes)
@@ -4580,6 +4802,7 @@ def build_chaos_pack_pdf(cards, pack_display_name):
                 "temp_path": title_temp_path,
                 "page_kind": "title",
                 "is_dual_faced": 0,
+                "is_persistent_cache_file": False,
             })
         except Exception as exc:
             write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
@@ -4607,19 +4830,21 @@ def build_chaos_pack_pdf(cards, pack_display_name):
             )
 
             try:
-                response = requests.get(page_image_url, timeout=60)
-                response.raise_for_status()
+                cached_result = download_chaos_image_to_cache(
+                    page_entry.get("card_uuid"),
+                    page_entry.get("page_kind"),
+                    page_entry.get("face_name"),
+                    page_image_url,
+                )
 
-                temp_filename = f"chaos_tmp_{safe_filename(page_entry.get('card_name') or 'card')}_{len(rendered_image_entries)}.png"
-                temp_path = os.path.join(RUNTIME_BASE_DIR, temp_filename)
-
-                with Image.open(BytesIO(response.content)) as temp_image:
-                    temp_image.convert("RGB").save(temp_path, format="PNG")
+                if not cached_result:
+                    raise ValueError("No cached result returned for chaos image download.")
 
                 rendered_image_entries.append({
-                    "temp_path": temp_path,
+                    "temp_path": cached_result["absolute_path"],
                     "page_kind": (page_entry.get("page_kind") or "").strip().lower(),
                     "is_dual_faced": int(card_row["is_dual_faced"] or 0),
+                    "is_persistent_cache_file": True,
                 })
 
             except Exception as exc:
@@ -4706,6 +4931,9 @@ def build_chaos_pack_pdf(cards, pack_display_name):
     finally:
         for rendered_entry in rendered_image_entries:
             try:
+                if rendered_entry.get("is_persistent_cache_file", False):
+                    continue
+
                 if os.path.exists(rendered_entry["temp_path"]):
                     os.remove(rendered_entry["temp_path"])
             except Exception:
@@ -5766,6 +5994,16 @@ def result():
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
         )
 
+    if current_game_mode == "preprint_chaos_draft":
+        return render_template(
+            "preprint_chaos_draft.html",
+            card_database_ready=card_database_ready,
+            current_game_mode=current_game_mode,
+            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            default_player_count=4,
+            default_packs_per_player=3,
+        )
+
     if current_game_mode == "tower_of_power":
         card = draw_random_tower_of_power_card() if card_database_ready else None
 
@@ -6551,6 +6789,33 @@ def chaos_draft_open_file():
         mimetype="application/pdf",
         headers={
             "Content-Disposition": f"inline; filename={filename}",
+            "Cache-Control": "no-store"
+        }
+    )
+
+@app.route("/chaos-draft/preprint-pdf", methods=["GET"])
+def chaos_draft_preprint_pdf():
+    if not is_card_database_ready():
+        return "Card database not ready", 400
+
+    pdf_settings = resolve_pdf_print_settings()
+    if not pdf_settings["use_pdf_print"]:
+        return "PDF printing is disabled", 400
+
+    player_count = (request.args.get("player_count") or "4").strip()
+    packs_per_player = (request.args.get("packs_per_player") or "3").strip()
+
+    try:
+        preprint_result = build_preprint_chaos_draft_pdf(player_count, packs_per_player)
+    except Exception as exc:
+        write_debug_log(f"PREPRINT CHAOS DRAFT ERROR | error={str(exc)}")
+        return str(exc), 400
+
+    return Response(
+        preprint_result["buffer"].getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{preprint_result["filename"]}"',
             "Cache-Control": "no-store"
         }
     )

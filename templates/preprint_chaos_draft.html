@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - PRE-PRINT Chaos Draft{% endblock %}
+
+{% block content %}
+<div class="screen screen-result">
+    {% if not card_database_ready %}
+    <div class="page-panel setup-panel">
+        <h2 class="setup-panel-title">Initial Setup Required</h2>
+        <p class="setup-panel-text">
+            No card database has been loaded yet. Open Config and click <strong>Download Card Database</strong>.
+            This will load the card database, set list, and image index needed before packs can be generated.
+        </p>
+        <a
+            class="action-button"
+            href="{{ url_for('config') }}?open=card_database&scroll=card_database"
+        >
+            Open Setup
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="page-panel chaos-draft-header-panel">
+        <div class="chaos-draft-header-layout">
+            <div class="chaos-draft-header-copy">
+                <h1 class="page-title">PRE-PRINT - Chaos Draft</h1>
+                <p class="page-subtitle">
+                    Generate random Chaos Draft packs for your next game and combine them into one printable PDF.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-panel">
+        <form
+            method="get"
+            action="{{ url_for('chaos_draft_preprint_pdf') }}"
+            class="preprint-chaos-form"
+            id="preprintChaosForm"
+        >
+            <div class="settings-grid">
+                <label class="toggle-row" for="playerCount">
+                    <span>How Many Players</span>
+                    <select id="playerCount" name="player_count" {% if not card_database_ready %}disabled{% endif %}>
+                        {% for player_count in range(2, 13) %}
+                            <option value="{{ player_count }}" {% if default_player_count == player_count %}selected{% endif %}>
+                                {{ player_count }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label class="toggle-row" for="packsPerPlayer">
+                    <span>Packs Per Player</span>
+                    <select id="packsPerPlayer" name="packs_per_player" {% if not card_database_ready %}disabled{% endif %}>
+                        {% for pack_count in range(1, 10) %}
+                            <option value="{{ pack_count }}" {% if default_packs_per_player == pack_count %}selected{% endif %}>
+                                {{ pack_count }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+
+            <div class="result-actions result-actions-bottom">
+                <a class="action-button secondary-button" href="{{ url_for('index') }}">Back</a>
+
+                {% if card_database_ready %}
+                    <button
+                        type="submit"
+                        id="preprintGenerateButton"
+                        class="action-button"
+                    >
+                        Generate Packs
+                    </button>
+                {% else %}
+                    <button type="button" class="action-button" disabled>Generate Packs</button>
+                {% endif %}
+
+                <button type="button" class="action-button print-button" disabled>Print</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="page-panel">
+        <h2>Future Feature Note</h2>
+        <p class="page-subtitle">
+            Future feature: add pack printing options for PRE-PRINT - Chaos Draft.
+        </p>
+    </div>
+</div>
+<div id="preprintChaosBusyOverlay" class="chaos-draft-busy-overlay hidden" aria-hidden="true">
+    <div class="chaos-draft-busy-backdrop"></div>
+    <div class="chaos-draft-busy-card">
+        <div class="chaos-draft-busy-spinner"></div>
+        <div id="preprintChaosBusyTitle" class="chaos-draft-busy-title">Generating Packs</div>
+        <div id="preprintChaosBusyText" class="chaos-draft-busy-text">
+            Please wait while iMomir builds your combined Chaos Draft PDF.
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById("preprintChaosForm");
+    const generateButton = document.getElementById("preprintGenerateButton");
+    const busyOverlay = document.getElementById("preprintChaosBusyOverlay");
+    const busyTitle = document.getElementById("preprintChaosBusyTitle");
+    const busyText = document.getElementById("preprintChaosBusyText");
+
+    if (!form || !generateButton || !busyOverlay || !busyTitle || !busyText) {
+        return;
+    }
+
+    let isGenerating = false;
+
+    function showBusyOverlay(titleText, bodyText) {
+        busyTitle.textContent = titleText;
+        busyText.textContent = bodyText;
+        busyOverlay.classList.remove("hidden");
+        busyOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function hideBusyOverlay() {
+        busyOverlay.classList.add("hidden");
+        busyOverlay.setAttribute("aria-hidden", "true");
+    }
+
+    function setGeneratingState(isBusy) {
+        isGenerating = isBusy;
+        generateButton.disabled = isBusy;
+        generateButton.classList.toggle("action-button-loading", isBusy);
+    }
+
+    form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+
+        if (isGenerating) {
+            return;
+        }
+
+        const formData = new FormData(form);
+        const query = new URLSearchParams(formData).toString();
+        const requestUrl = form.action + "?" + query;
+
+        let pdfWindow = null;
+
+        try {
+            pdfWindow = window.open("", "_blank");
+
+            showBusyOverlay(
+                "Generating Packs",
+                "Please wait while we generate and combine your Chaos Draft packs..."
+            );
+            setGeneratingState(true);
+
+            if (pdfWindow) {
+                pdfWindow.document.write(
+                    "<!doctype html><html><head><title>Generating PDF</title></head><body style='font-family:Arial,Helvetica,sans-serif;padding:24px;background:#ffffff;color:#111827;'><h2>Generating PDF...</h2><p>Please wait while we prepare your PRE-PRINT Chaos Draft file.</p></body></html>"
+                );
+                pdfWindow.document.close();
+            }
+
+            const response = await fetch(requestUrl, {
+                method: "GET",
+                cache: "no-store",
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || "Failed to generate Chaos Draft PDF.");
+            }
+
+            busyTitle.textContent = "Opening PDF";
+            busyText.textContent = "Your combined PDF is ready and will open now.";
+
+            const pdfBlob = await response.blob();
+            const blobUrl = URL.createObjectURL(pdfBlob);
+
+            if (pdfWindow && !pdfWindow.closed) {
+                pdfWindow.location.href = blobUrl;
+            } else {
+                window.open(blobUrl, "_blank");
+            }
+
+            setTimeout(function () {
+                URL.revokeObjectURL(blobUrl);
+            }, 60000);
+        } catch (error) {
+            console.error(error);
+
+            if (pdfWindow && !pdfWindow.closed) {
+                pdfWindow.close();
+            }
+
+            alert("Failed to generate packs: " + (error && error.message ? error.message : "Unknown error"));
+        } finally {
+            setGeneratingState(false);
+            hideBusyOverlay();
+        }
+    });
+})();
+</script>
+{% endblock %}

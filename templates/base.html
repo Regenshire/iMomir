@@ -24,9 +24,9 @@
           <div class="app-tabs-nav">
             <a
               class="app-tab {% if request.endpoint in ['index', 'result'] %}app-tab-active{% endif %}"
-              href="{% if nav_current_game_mode == 'chaos_draft' %}{{ url_for('result') }}{% else %}{{ url_for('index') }}{% endif %}"
+              href="{% if nav_current_game_mode in ['chaos_draft', 'preprint_chaos_draft'] %}{{ url_for('result') }}{% else %}{{ url_for('index') }}{% endif %}"
             >
-              {% if nav_current_game_mode == 'chaos_draft' %}Draft{% else %}Result{% endif %}
+              {% if nav_current_game_mode in ['chaos_draft', 'preprint_chaos_draft'] %}Draft{% else %}Result{% endif %}
             </a>
 
             <a

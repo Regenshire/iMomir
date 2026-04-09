@@ -1453,6 +1453,12 @@ input {
     max-width: 360px;
 }
 
+.preprint-chaos-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
 .chaos-draft-top-actions {
     display: flex;
     align-items: center;
@@ -1859,6 +1865,11 @@ input {
 
 .chaos-draft-open-button.action-button-loading {
     opacity: 0.82;
+}
+
+#preprintGenerateButton.action-button-loading {
+    opacity: 0.82;
+    pointer-events: none;
 }
 
 .chaos-pack-card-image-wrap {
