@@ -4,18 +4,54 @@
     background: #ffffff;
 }
 
+.print-page {
+    position: relative;
+}
+
 .print-sheet {
-    width: var(--print-width);
-    height: var(--print-height);
+    position: absolute;
+    left: var(--sheet-offset-x, 0mm);
+    top: var(--sheet-offset-y, 0mm);
+    width: var(--sheet-width, var(--print-width));
+    height: var(--sheet-height, var(--print-height));
     box-sizing: border-box;
     overflow: hidden;
+    background: #ffffff;
 }
 
 .print-card-image {
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: fill;
+}
+
+.print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot {
+    position: absolute;
+    left: 0;
+    width: 3.5in;
+    height: 2.5in;
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot-top {
+    top: 0;
+}
+
+.print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot-bottom {
+    top: 2.5in;
+}
+
+.print-card-image-rotated-90 {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5in;
+    height: 3.5in;
+    transform-origin: top left;
+    transform: rotate(90deg) translateY(-3.5in);
+    object-fit: fill;
 }
 
 .print-mode-grayscale .print-card-image {
@@ -77,14 +113,41 @@
     }
 
     .print-sheet {
-        width: var(--print-width);
-        height: var(--print-height);
+        width: var(--sheet-width, var(--print-width));
+        height: var(--sheet-height, var(--print-height));
         margin: 0 !important;
         padding: 0 !important;
         position: fixed;
-        inset: 0;
+        left: var(--sheet-offset-x, 0mm);
+        top: var(--sheet-offset-y, 0mm);
         box-sizing: border-box;
         overflow: hidden;
+    }
+
+    .print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot {
+        position: fixed;
+        left: 0 !important;
+        width: 3.5in !important;
+        height: 2.5in !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden;
+    }
+
+    .print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot-top {
+        top: 0 !important;
+    }
+
+    .print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot-bottom {
+        top: 2.5in !important;
+    }
+
+    .print-template-borderless-3p5x5-two-card .print-card-image-rotated-90 {
+        width: 5in !important;
+        height: 3.5in !important;
+        transform-origin: top left;
+        transform: rotate(90deg) translateY(-3.5in);
+        object-fit: fill;
     }
 
     .print-card-image {

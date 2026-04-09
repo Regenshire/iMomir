@@ -9,6 +9,10 @@
         :root {
             --print-width: {{ print_width }};
             --print-height: {{ print_height }};
+            --sheet-width: {{ sheet_width }};
+            --sheet-height: {{ sheet_height }};
+            --sheet-offset-x: {{ sheet_offset_x }};
+            --sheet-offset-y: {{ sheet_offset_y }};
         }
 
         @page {
@@ -18,13 +22,31 @@
     </style>
 </head>
 <body class="print-page print-template-{{ print_template }} print-mode-{{ print_mode }}">
-    <div class="print-sheet">
-        <img
-            src="{{ image_src }}"
-            alt="{{ card['name'] }}"
-            class="print-card-image"
-        >
-    </div>
+    {% if print_template == "borderless-3p5x5-two-card" %}
+        <div class="print-sheet print-sheet-two-card-slot print-sheet-two-card-slot-top">
+            <img
+                src="{{ image_src }}"
+                alt="{{ card['name'] }}"
+                class="print-card-image print-card-image-rotated-90"
+            >
+        </div>
+
+        <div class="print-sheet print-sheet-two-card-slot print-sheet-two-card-slot-bottom">
+            <img
+                src="{{ image_src }}"
+                alt="{{ card['name'] }}"
+                class="print-card-image print-card-image-rotated-90"
+            >
+        </div>
+    {% else %}
+        <div class="print-sheet">
+            <img
+                src="{{ image_src }}"
+                alt="{{ card['name'] }}"
+                class="print-card-image"
+            >
+        </div>
+    {% endif %}
     <div class="print-return-bar">
         <button type="button" class="print-return-button" onclick="window.history.back()">
             Back to iMomir

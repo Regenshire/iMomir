@@ -19,6 +19,7 @@ data/cache/
 data/image_cache/
 data/
 data/scryfall/default-cards.json
+Utility/temp/
 
 # OS
 .DS_Store
@@ -35,3 +36,6 @@ Thumbs.db
 dist/
 build/
 build/iMomir/
+
+# Silhouette files
+/static/sil/Examples/

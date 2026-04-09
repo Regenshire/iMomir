@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 
 import requests
-from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops, ImageDraw, ImageFont
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
@@ -71,6 +71,7 @@ SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
 SCRYFALL_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "scryfall")
 IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
+PACK_ART_DIR = os.path.join(app.static_folder, "img", "pack_art")
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
 SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContentWeights.csv")
@@ -171,6 +172,11 @@ OTHER_FILTER_KEYS = [
 PRINT_TEMPLATE_OPTIONS = [
     ("dk-1234", "DK-1234"),
     ("standard", "Standard"),
+
+    ("borderless-3p5x5-two-card", "PDF ONLY - 3.5 x 5 Borderless - 2 Card Layout"),
+    ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
+    ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
+    ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
 ]
 
 PRINT_COLOR_MODE_OPTIONS = [
@@ -841,7 +847,7 @@ def update_config_from_form(form_data):
     updated_config["allow_repeats"] = submitted_allow_repeats
 
     submitted_template = (form_data.get("print_template") or "").strip().lower()
-    if submitted_template not in {"dk-1234", "standard"}:
+    if submitted_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
         submitted_template = select_defaults["print_template"]
     updated_config["print_template"] = submitted_template
 
@@ -1001,7 +1007,8 @@ def build_default_chaos_pack_display_name(set_code, booster_name):
         " ".join(word.capitalize() for word in clean_booster_name.split()) if clean_booster_name else "Booster Pack"
     )
 
-    return f"{set_name} - {display_booster_name}"
+    set_code_clean = (set_code or "").strip().upper()
+    return f"{set_name} - {display_booster_name} ({set_code_clean})"
 
 
 def get_chaos_pack_art_relpath(set_code, booster_name):
@@ -1010,11 +1017,14 @@ def get_chaos_pack_art_relpath(set_code, booster_name):
 
     direct_relpath = f"img/pack_art/{normalized_set_code}/{normalized_booster_key}.png"
     direct_abspath = os.path.join(app.static_folder, direct_relpath.replace("/", os.sep))
+    ##direct_abspath = os.path.join(PACK_ART_DIR , "default.png")
 
     if os.path.exists(direct_abspath):
         return direct_relpath
 
     default_relpath = f"img/pack_art/{normalized_set_code}/default.png"
+
+
     default_abspath = os.path.join(app.static_folder, default_relpath.replace("/", os.sep))
 
     if os.path.exists(default_abspath):
@@ -1066,6 +1076,42 @@ def get_chaos_pack_art_info(set_code, booster_name):
         "is_fallback": 1,
     }
 
+def ensure_chaos_pack_art_set_folders():
+    os.makedirs(PACK_ART_DIR, exist_ok=True)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT set_code
+        FROM sets
+        WHERE set_code IS NOT NULL
+          AND TRIM(set_code) <> ''
+        ORDER BY set_code
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    created_count = 0
+
+    for row in rows:
+        set_code = (row["set_code"] or "").strip().lower()
+        if not set_code:
+            continue
+
+        set_folder_path = os.path.join(PACK_ART_DIR, set_code)
+
+        if not os.path.exists(set_folder_path):
+            os.makedirs(set_folder_path, exist_ok=True)
+            created_count += 1
+            write_debug_log(f"PACK ART FOLDER CREATED | set_code={set_code} | path={set_folder_path}")
+
+    write_debug_log(f"PACK ART FOLDER ENSURE COMPLETE | created_count={created_count}")
+
+    return created_count
 
 def get_all_sets():
     conn = get_db_connection()
@@ -2829,6 +2875,192 @@ def build_card_filter_query(mana_value, config, selected_set_codes, selected_typ
 
     return where_clause, params
 
+def resolve_print_template_layout(print_template):
+    normalized_template = (print_template or "").strip().lower()
+
+    if normalized_template == "standard":
+        return {
+            "print_template": "standard",
+
+            "page_width_css": "2.5in",
+            "page_height_css": "3.5in",
+            "page_width_mm": 63.5,
+            "page_height_mm": 88.9,
+
+            "sheet_width_css": "2.5in",
+            "sheet_height_css": "3.5in",
+            "sheet_width_mm": 63.5,
+            "sheet_height_mm": 88.9,
+
+            "sheet_offset_x_css": "0mm",
+            "sheet_offset_y_css": "0mm",
+            "sheet_offset_x_mm": 0.0,
+            "sheet_offset_y_mm": 0.0,
+
+            "uses_fixed_inner_margin": False,
+        }
+    
+    if normalized_template == "borderless-3p5x5-two-card":
+        return {
+            "print_template": "borderless-3p5x5-two-card",
+
+            # Final sheet/page size: 3.5 x 5 portrait
+            "page_width_css": "3.5in",
+            "page_height_css": "5in",
+            "page_width_mm": 88.9,
+            "page_height_mm": 127.0,
+
+            # Legacy single-sheet values are kept for compatibility,
+            # but this template will use explicit card slots instead.
+            "sheet_width_css": "3.5in",
+            "sheet_height_css": "5in",
+            "sheet_width_mm": 88.9,
+            "sheet_height_mm": 127.0,
+
+            "sheet_offset_x_css": "0in",
+            "sheet_offset_y_css": "0in",
+            "sheet_offset_x_mm": 0.0,
+            "sheet_offset_y_mm": 0.0,
+
+            "uses_fixed_inner_margin": True,
+
+            # New flag so both HTML and PDF know this is a 2-card composed layout.
+            "is_multi_card_layout": True,
+        }
+    
+    if normalized_template == "silhouette-letter-horizontal-8":
+        return {
+            "print_template": "silhouette-letter-horizontal-8",
+
+            "page_width_css": "11in",
+            "page_height_css": "8.5in",
+            "page_width_mm": 279.4,
+            "page_height_mm": 215.9,
+
+            "sheet_width_css": "11in",
+            "sheet_height_css": "8.5in",
+            "sheet_width_mm": 279.4,
+            "sheet_height_mm": 215.9,
+
+            "sheet_offset_x_css": "0mm",
+            "sheet_offset_y_css": "0mm",
+            "sheet_offset_x_mm": 0.0,
+            "sheet_offset_y_mm": 0.0,
+
+            "uses_fixed_inner_margin": True,
+            "is_multi_card_layout": True,
+            "is_silhouette_layout": True,
+        }
+    
+    if normalized_template == "portrait-3p5x5-top-aligned":
+        return {
+            "print_template": "portrait-3p5x5-top-aligned",
+
+            "page_width_css": "3.5in",
+            "page_height_css": "5in",
+            "page_width_mm": 88.9,
+            "page_height_mm": 127.0,
+
+            "sheet_width_css": "2.5in",
+            "sheet_height_css": "3.5in",
+            "sheet_width_mm": 63.5,
+            "sheet_height_mm": 88.9,
+
+            "sheet_offset_x_css": "0.5in",
+            "sheet_offset_y_css": "0mm",
+            "sheet_offset_x_mm": 12.7,
+            "sheet_offset_y_mm": 38.1,
+
+            "uses_fixed_inner_margin": True,
+        }
+
+    if normalized_template == "landscape-3p5x5-centered":
+        return {
+            "print_template": "landscape-3p5x5-centered",
+
+            "page_width_css": "5in",
+            "page_height_css": "3.5in",
+            "page_width_mm": 127.0,
+            "page_height_mm": 88.9,
+
+            "sheet_width_css": "2.5in",
+            "sheet_height_css": "3.5in",
+            "sheet_width_mm": 63.5,
+            "sheet_height_mm": 88.9,
+
+            "sheet_offset_x_css": "1.25in",
+            "sheet_offset_y_css": "0in",
+            "sheet_offset_x_mm": 31.75,
+            "sheet_offset_y_mm": 0.0,
+
+            "uses_fixed_inner_margin": True,
+        }
+
+    if normalized_template == "perf-63x94":
+        return {
+            "print_template": "perf-63x94",
+
+            "page_width_css": "69mm",
+            "page_height_css": "94mm",
+            "page_width_mm": 63.0,
+            "page_height_mm": 94.0,
+
+            "sheet_width_css": "63mm",
+            "sheet_height_css": "88mm",
+            "sheet_width_mm": 63.0,
+            "sheet_height_mm": 88.0,
+
+            "sheet_offset_x_css": "0mm",
+            "sheet_offset_y_css": "3mm",
+            "sheet_offset_x_mm": 0.0,
+            "sheet_offset_y_mm": 3.0,
+
+            "uses_fixed_inner_margin": True,
+        }
+
+    if normalized_template == "perf-69x94":
+        return {
+            "print_template": "perf-69x94",
+
+            "page_width_css": "69mm",
+            "page_height_css": "94mm",
+            "page_width_mm": 69.0,
+            "page_height_mm": 94.0,
+
+            "sheet_width_css": "63mm",
+            "sheet_height_css": "88mm",
+            "sheet_width_mm": 63.0,
+            "sheet_height_mm": 88.0,
+
+            "sheet_offset_x_css": "3mm",
+            "sheet_offset_y_css": "3mm",
+            "sheet_offset_x_mm": 3.0,
+            "sheet_offset_y_mm": 3.0,
+
+            "uses_fixed_inner_margin": True,
+        }
+
+    return {
+        "print_template": "dk-1234",
+
+        "page_width_css": "63mm",
+        "page_height_css": "86mm",
+        "page_width_mm": 63.0,
+        "page_height_mm": 86.0,
+
+        "sheet_width_css": "63mm",
+        "sheet_height_css": "86mm",
+        "sheet_width_mm": 63.0,
+        "sheet_height_mm": 86.0,
+
+        "sheet_offset_x_css": "0mm",
+        "sheet_offset_y_css": "0mm",
+        "sheet_offset_x_mm": 0.0,
+        "sheet_offset_y_mm": 0.0,
+
+        "uses_fixed_inner_margin": False,
+    }
+
 def resolve_pdf_print_settings():
     config = get_config()
 
@@ -2903,19 +3135,42 @@ def save_tower_pdf_draw_count(draw_count):
 
     return parsed_value
 
+def is_silhouette_template(print_template):
+    normalized_template = (print_template or "").strip().lower()
+    return normalized_template in {
+        "silhouette-letter-horizontal-8",
+    }
+
+def resolve_pdf_template_layout():
+    config = get_config()
+    print_template = (config.get("print_template") or "dk-1234").strip().lower()
+
+    if print_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
+        print_template = "dk-1234"
+
+    template_layout = resolve_print_template_layout(print_template)
+
+    return {
+        "print_template": template_layout["print_template"],
+        "page_width_mm": template_layout["page_width_mm"],
+        "page_height_mm": template_layout["page_height_mm"],
+        "draw_x_mm": template_layout["sheet_offset_x_mm"],
+        "draw_y_mm": template_layout["sheet_offset_y_mm"],
+        "draw_width_mm": template_layout["sheet_width_mm"],
+        "draw_height_mm": template_layout["sheet_height_mm"],
+        "uses_fixed_inner_margin": template_layout["uses_fixed_inner_margin"],
+        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
+        "is_silhouette_layout": template_layout.get("is_silhouette_layout", False),
+    }
+
 def resolve_print_settings():
     config = get_config()
 
     print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
-    if print_template not in {"dk-1234", "standard"}:
+    if print_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
         print_template = "dk-1234"
 
-    if print_template == "standard":
-        print_width = "2.5in"
-        print_height = "3.5in"
-    else:
-        print_width = "63mm"
-        print_height = "86mm"
+    template_layout = resolve_print_template_layout(print_template)
 
     print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
     if print_mode not in {"grayscale", "color", "monochrome", "optimal"}:
@@ -2924,11 +3179,16 @@ def resolve_print_settings():
     open_in_new_tab = (config.get("open_print_in_new_tab") or "1").strip() == "1"
 
     return {
-        "print_template": print_template,
-        "print_width": print_width,
-        "print_height": print_height,
+        "print_template": template_layout["print_template"],
+        "print_width": template_layout["page_width_css"],
+        "print_height": template_layout["page_height_css"],
+        "sheet_width": template_layout["sheet_width_css"],
+        "sheet_height": template_layout["sheet_height_css"],
+        "sheet_offset_x": template_layout["sheet_offset_x_css"],
+        "sheet_offset_y": template_layout["sheet_offset_y_css"],
         "print_mode": print_mode,
         "open_in_new_tab": open_in_new_tab,
+        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
     }
 
 def resolve_default_momir_variant():
@@ -3773,6 +4033,180 @@ def safe_filename(value):
             allowed.append("_")
     return "".join(allowed).strip("_") or "card"
 
+def get_two_card_borderless_slots_mm():
+    # 3.5" x 5" portrait page
+    # Two rotated cards, stacked vertically, no margins.
+    return [
+        {
+            "x_mm": 0.0,
+            "y_mm": 63.5,
+            "width_mm": 88.9,
+            "height_mm": 63.5,
+            "rotation_degrees": 90,
+        },
+        {
+            "x_mm": 0.0,
+            "y_mm": 0.0,
+            "width_mm": 88.9,
+            "height_mm": 63.5,
+            "rotation_degrees": 90,
+        },
+    ]
+
+def get_silhouette_letter_horizontal_8_slots_mm():
+    return [
+        {"x_mm": 13.0,  "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 76.5,  "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 140.0, "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 203.5, "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+
+        {"x_mm": 13.0,  "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 76.5,  "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 140.0, "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+        {"x_mm": 203.5, "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+    ]
+
+def build_pdf_image_reader_from_bytes(image_bytes, print_mode):
+    with Image.open(BytesIO(image_bytes)) as source_image:
+        image = source_image.convert("RGB")
+
+        if print_mode == "grayscale":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(1.08)
+            image = ImageEnhance.Brightness(image).enhance(1.02)
+            image = image.convert("RGB")
+
+        elif print_mode == "monochrome":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(2.35)
+            image = ImageEnhance.Brightness(image).enhance(1.05)
+            image = image.point(lambda p: 255 if p >= 160 else 0, mode="1")
+            image = image.convert("RGB")
+
+        elif print_mode == "optimal":
+            image = ImageEnhance.Contrast(image).enhance(1.25)
+            image = ImageEnhance.Brightness(image).enhance(1.07)
+
+            def highlight_boost(p):
+                if p > 200:
+                    return min(255, int(p + (255 - p) * 0.7))
+                return p
+
+            image = image.point(highlight_boost)
+
+            def contrast_curve(p):
+                return int((p - 128) * 1.1 + 128)
+
+            image = image.point(contrast_curve)
+
+        image_buffer = BytesIO()
+        image.save(image_buffer, format="PNG")
+        image_buffer.seek(0)
+        return ImageReader(image_buffer)
+
+
+def get_processed_card_image_bytes(image_path, print_mode):
+    with Image.open(image_path) as source_image:
+        image = source_image.convert("RGB")
+
+        if print_mode == "grayscale":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(1.08)
+            image = ImageEnhance.Brightness(image).enhance(1.02)
+            image = image.convert("RGB")
+
+        elif print_mode == "monochrome":
+            image = ImageOps.grayscale(image)
+            image = ImageEnhance.Contrast(image).enhance(2.35)
+            image = ImageEnhance.Brightness(image).enhance(1.05)
+            image = image.point(lambda p: 255 if p >= 160 else 0, mode="1")
+            image = image.convert("RGB")
+
+        elif print_mode == "optimal":
+            image = ImageEnhance.Contrast(image).enhance(1.25)
+            image = ImageEnhance.Brightness(image).enhance(1.07)
+
+            def highlight_boost(p):
+                if p > 200:
+                    return min(255, int(p + (255 - p) * 0.7))
+                return p
+
+            image = image.point(highlight_boost)
+
+            def contrast_curve(p):
+                return int((p - 128) * 1.1 + 128)
+
+            image = image.point(contrast_curve)
+
+        output_buffer = BytesIO()
+        image.save(output_buffer, format="PNG")
+        return output_buffer.getvalue()
+
+def draw_processed_image_into_two_card_slot(pdf_canvas, image_path, print_mode, slot_def):
+    processed_image_bytes = get_processed_card_image_bytes(image_path, print_mode)
+
+    with Image.open(BytesIO(processed_image_bytes)) as source_image:
+        rotated_image = source_image.convert("RGB").transpose(Image.Transpose.ROTATE_270)
+
+        rotated_buffer = BytesIO()
+        rotated_image.save(rotated_buffer, format="PNG")
+        rotated_buffer.seek(0)
+
+        slot_reader = ImageReader(rotated_buffer)
+
+    pdf_canvas.drawImage(
+        slot_reader,
+        slot_def["x_mm"] * mm,
+        slot_def["y_mm"] * mm,
+        width=slot_def["width_mm"] * mm,
+        height=slot_def["height_mm"] * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height_mm):
+    background_reader = ImageReader(image_path)
+
+    pdf_canvas.drawImage(
+        background_reader,
+        0,
+        0,
+        width=page_width_mm * mm,
+        height=page_height_mm * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+def draw_processed_image_into_slot(pdf_canvas, image_path, print_mode, slot_def):
+    processed_image_bytes = get_processed_card_image_bytes(image_path, print_mode)
+
+    with Image.open(BytesIO(processed_image_bytes)) as source_image:
+        image = source_image.convert("RGB")
+
+        rotation_degrees = int(slot_def.get("rotation_degrees", 0) or 0)
+        if rotation_degrees == 90:
+            image = image.transpose(Image.Transpose.ROTATE_270)
+        elif rotation_degrees == 180:
+            image = image.transpose(Image.Transpose.ROTATE_180)
+        elif rotation_degrees == 270:
+            image = image.transpose(Image.Transpose.ROTATE_90)
+
+        slot_buffer = BytesIO()
+        image.save(slot_buffer, format="PNG")
+        slot_buffer.seek(0)
+
+        slot_reader = ImageReader(slot_buffer)
+
+    pdf_canvas.drawImage(
+        slot_reader,
+        slot_def["x_mm"] * mm,
+        slot_def["y_mm"] * mm,
+        width=slot_def["width_mm"] * mm,
+        height=slot_def["height_mm"] * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
 def build_pdf_image_reader(image_path, print_mode):
     with Image.open(image_path) as source_image:
         image = source_image.convert("RGB")
@@ -3868,6 +4302,77 @@ def split_chaos_pack_display_name_for_title(pack_display_name):
         return (set_name or "Booster Pack", booster_name)
 
     return (raw_value, "")
+
+def build_chaos_pack_title_card_image_bytes(pack_display_name, card_width_mm=63.5, card_height_mm=88.9):
+    title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
+
+    pixels_per_mm = 12
+    image_width_px = int(round(card_width_mm * pixels_per_mm))
+    image_height_px = int(round(card_height_mm * pixels_per_mm))
+
+    image = Image.new("RGB", (image_width_px, image_height_px), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    border_color = (0, 0, 0)
+    text_color = (0, 0, 0)
+
+    draw.rounded_rectangle(
+        [(6, 6), (image_width_px - 7, image_height_px - 7)],
+        radius=26,
+        outline=border_color,
+        width=6,
+        fill=(255, 255, 255),
+    )
+
+    try:
+        title_font = ImageFont.truetype("arialbd.ttf", 64)
+        subtitle_font = ImageFont.truetype("arialbd.ttf", 42)
+    except Exception:
+        title_font = ImageFont.load_default()
+        subtitle_font = ImageFont.load_default()
+
+    side_padding_px = 50
+    usable_width_px = image_width_px - (side_padding_px * 2)
+
+    title_lines = []
+    subtitle_lines = []
+
+    if title_set_name:
+        title_lines = simpleSplit(title_set_name, "Helvetica-Bold", 18, usable_width_px / pixels_per_mm * mm)
+
+    if title_booster_name:
+        subtitle_lines = simpleSplit(title_booster_name, "Helvetica-Bold", 12, usable_width_px / pixels_per_mm * mm)
+
+    # Fallback if simpleSplit returns nothing useful
+    if not title_lines and title_set_name:
+        title_lines = [title_set_name]
+    if not subtitle_lines and title_booster_name:
+        subtitle_lines = [title_booster_name]
+
+    total_line_count = len(title_lines) + len(subtitle_lines)
+    line_height_title = 78
+    line_height_subtitle = 56
+    total_height = (len(title_lines) * line_height_title) + (len(subtitle_lines) * line_height_subtitle)
+
+    current_y = max(80, (image_height_px - total_height) // 2)
+
+    for line in title_lines:
+        bbox = draw.textbbox((0, 0), line, font=title_font)
+        text_width = bbox[2] - bbox[0]
+        text_x = (image_width_px - text_width) // 2
+        draw.text((text_x, current_y), line, fill=text_color, font=title_font)
+        current_y += line_height_title
+
+    for line in subtitle_lines:
+        bbox = draw.textbbox((0, 0), line, font=subtitle_font)
+        text_width = bbox[2] - bbox[0]
+        text_x = (image_width_px - text_width) // 2
+        draw.text((text_x, current_y), line, fill=text_color, font=subtitle_font)
+        current_y += line_height_subtitle
+
+    output_buffer = BytesIO()
+    image.save(output_buffer, format="PNG")
+    return output_buffer.getvalue()
 
 def get_chaos_card_by_uuid(card_uuid):
     conn = get_db_connection()
@@ -3980,75 +4485,77 @@ def build_chaos_print_pages_for_card(card_row):
 
 def build_chaos_pack_pdf(cards, pack_display_name):
     pdf_settings = resolve_pdf_print_settings()
-    width_mm = pdf_settings["pdf_width_mm"]
-    height_mm = pdf_settings["pdf_height_mm"]
+    pdf_template_layout = resolve_pdf_template_layout()
     crop_border = pdf_settings["pdf_crop_border"]
 
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
+
     print_settings = resolve_print_settings()
+    is_silhouette_layout = pdf_template_layout.get("is_silhouette_layout", False)
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    # Title card page
-    page_width_pts = width_mm * mm
-    page_height_pts = height_mm * mm
+    if not is_silhouette_layout:
+        # Title card page
+        page_width_pts = width_mm * mm
+        page_height_pts = height_mm * mm
 
-    title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
+        title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
 
-    side_padding_pts = 9 * mm
-    usable_width_pts = page_width_pts - (side_padding_pts * 2)
+        side_padding_pts = 9 * mm
+        usable_width_pts = page_width_pts - (side_padding_pts * 2)
 
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(0, 0, page_width_pts, page_height_pts, fill=1, stroke=0)
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(0, 0, page_width_pts, page_height_pts, fill=1, stroke=0)
 
-    c.setFillColorRGB(0, 0, 0)
+        c.setFillColorRGB(0, 0, 0)
 
-    current_y = (page_height_pts / 2) + 8
+        current_y = (page_height_pts / 2) + 8
 
-    # --- DRAW TITLE (SET NAME) ---
-    if title_set_name:
-        font_name = "Helvetica-Bold"
-        font_size = 16
-        line_spacing = 16  # tighter than before
+        if title_set_name:
+            font_name = "Helvetica-Bold"
+            font_size = 16
+            line_spacing = 16
 
-        wrapped_lines = simpleSplit(title_set_name, font_name, font_size, usable_width_pts)
+            wrapped_lines = simpleSplit(title_set_name, font_name, font_size, usable_width_pts)
 
-        for line in wrapped_lines:
-            text_width = c.stringWidth(line, font_name, font_size)
-            x_position = (page_width_pts - text_width) / 2
+            for line in wrapped_lines:
+                text_width = c.stringWidth(line, font_name, font_size)
+                x_position = (page_width_pts - text_width) / 2
 
-            c.setFont(font_name, font_size)
-            c.drawString(x_position, current_y, line)
+                c.setFont(font_name, font_size)
+                c.drawString(x_position, current_y, line)
 
-            current_y -= line_spacing
+                current_y -= line_spacing
 
-    # --- SMALL GAP BETWEEN TITLE AND SUBTITLE (reduced) ---
-    current_y -= 4  # was larger before → now tighter
+        current_y -= 4
 
-    # --- DRAW SUBTITLE (BOOSTER TYPE) ---
-    if title_booster_name:
-        font_name = "Helvetica-Bold"
-        font_size = 13
-        line_spacing = 14
+        if title_booster_name:
+            font_name = "Helvetica-Bold"
+            font_size = 13
+            line_spacing = 14
 
-        wrapped_lines = simpleSplit(title_booster_name, font_name, font_size, usable_width_pts)
+            wrapped_lines = simpleSplit(title_booster_name, font_name, font_size, usable_width_pts)
 
-        for line in wrapped_lines:
-            text_width = c.stringWidth(line, font_name, font_size)
-            x_position = (page_width_pts - text_width) / 2
+            for line in wrapped_lines:
+                text_width = c.stringWidth(line, font_name, font_size)
+                x_position = (page_width_pts - text_width) / 2
 
-            c.setFont(font_name, font_size)
-            c.drawString(x_position, current_y, line)
+                c.setFont(font_name, font_size)
+                c.drawString(x_position, current_y, line)
 
-            current_y -= line_spacing
-    c.showPage()
+                current_y -= line_spacing
 
-    draw_x_mm = 0.0
-    draw_y_mm = 0.0
-    draw_width_mm = width_mm
-    draw_height_mm = height_mm
+        c.showPage()
 
-    if crop_border:
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
+
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
         crop_left_right_mm = width_mm * 0.05
         crop_top_bottom_mm = height_mm * 0.034
 
@@ -4057,7 +4564,25 @@ def build_chaos_pack_pdf(cards, pack_display_name):
         draw_width_mm = width_mm + (crop_left_right_mm * 2)
         draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
 
-    pages_rendered = 0
+    rendered_image_entries = []
+
+    if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
+        try:
+            title_card_bytes = build_chaos_pack_title_card_image_bytes(pack_display_name)
+
+            title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
+            title_temp_path = os.path.join(RUNTIME_BASE_DIR, title_temp_filename)
+
+            with open(title_temp_path, "wb") as title_file:
+                title_file.write(title_card_bytes)
+
+            rendered_image_entries.append({
+                "temp_path": title_temp_path,
+                "page_kind": "title",
+                "is_dual_faced": 0,
+            })
+        except Exception as exc:
+            write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
 
     for card in cards:
         card_uuid = card.get("card_uuid")
@@ -4085,8 +4610,18 @@ def build_chaos_pack_pdf(cards, pack_display_name):
                 response = requests.get(page_image_url, timeout=60)
                 response.raise_for_status()
 
-                image_buffer = BytesIO(response.content)
-                pdf_image_reader = ImageReader(image_buffer)
+                temp_filename = f"chaos_tmp_{safe_filename(page_entry.get('card_name') or 'card')}_{len(rendered_image_entries)}.png"
+                temp_path = os.path.join(RUNTIME_BASE_DIR, temp_filename)
+
+                with Image.open(BytesIO(response.content)) as temp_image:
+                    temp_image.convert("RGB").save(temp_path, format="PNG")
+
+                rendered_image_entries.append({
+                    "temp_path": temp_path,
+                    "page_kind": (page_entry.get("page_kind") or "").strip().lower(),
+                    "is_dual_faced": int(card_row["is_dual_faced"] or 0),
+                })
+
             except Exception as exc:
                 write_debug_log(
                     f"CHAOS PDF RENDER ERROR | card_name={page_entry.get('card_name')} | "
@@ -4094,29 +4629,87 @@ def build_chaos_pack_pdf(cards, pack_display_name):
                 )
                 continue
 
-            c.drawImage(
-                pdf_image_reader,
-                draw_x_mm * mm,
-                draw_y_mm * mm,
-                width=draw_width_mm * mm,
-                height=draw_height_mm * mm,
-                preserveAspectRatio=False,
-                mask="auto",
-            )
+    pages_rendered = 0
 
-            if (
-                pdf_settings.get("print_front_back_label")
-                and int(card_row["is_dual_faced"] or 0) == 1
-            ):
-                page_kind = (page_entry.get("page_kind") or "").strip().lower()
+    try:
+        if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
+            background_abs_path = os.path.join(app.static_folder, "sil", "SIL_LETTER_HORIZONTAL.png")
 
-                if page_kind == "front":
-                    draw_front_back_corner_label(c, width_mm, height_mm, "FRONT")
-                elif page_kind == "back":
-                    draw_front_back_corner_label(c, width_mm, height_mm, "BACK")
+            if not os.path.exists(background_abs_path):
+                raise FileNotFoundError(f"Silhouette background not found: {background_abs_path}")
 
-            c.showPage()
-            pages_rendered += 1
+            slot_defs = get_silhouette_letter_horizontal_8_slots_mm()
+
+            for page_start_index in range(0, len(rendered_image_entries), 8):
+                page_entries = rendered_image_entries[page_start_index:page_start_index + 8]
+
+                draw_pdf_background_image(
+                    c,
+                    background_abs_path,
+                    width_mm,
+                    height_mm,
+                )
+
+                for slot_index, rendered_entry in enumerate(page_entries):
+                    draw_processed_image_into_slot(
+                        c,
+                        rendered_entry["temp_path"],
+                        print_settings["print_mode"],
+                        slot_defs[slot_index],
+                    )
+
+                c.showPage()
+                pages_rendered += 1
+
+        elif pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
+            slot_defs = get_two_card_borderless_slots_mm()
+
+            for page_start_index in range(0, len(rendered_image_entries), 2):
+                page_entries = rendered_image_entries[page_start_index:page_start_index + 2]
+
+                for slot_index, rendered_entry in enumerate(page_entries):
+                    draw_processed_image_into_two_card_slot(
+                        c,
+                        rendered_entry["temp_path"],
+                        print_settings["print_mode"],
+                        slot_defs[slot_index],
+                    )
+
+                c.showPage()
+                pages_rendered += 1
+        else:
+            for rendered_entry in rendered_image_entries:
+                pdf_image_reader = build_pdf_image_reader(
+                    rendered_entry["temp_path"],
+                    print_settings["print_mode"],
+                )
+
+                c.drawImage(
+                    pdf_image_reader,
+                    draw_x_mm * mm,
+                    draw_y_mm * mm,
+                    width=draw_width_mm * mm,
+                    height=draw_height_mm * mm,
+                    preserveAspectRatio=False,
+                    mask="auto",
+                )
+
+                if pdf_settings.get("print_front_back_label") and rendered_entry["is_dual_faced"]:
+                    if rendered_entry["page_kind"] == "front":
+                        draw_front_back_corner_label(c, width_mm, height_mm, "FRONT")
+                    elif rendered_entry["page_kind"] == "back":
+                        draw_front_back_corner_label(c, width_mm, height_mm, "BACK")
+
+                c.showPage()
+                pages_rendered += 1
+
+    finally:
+        for rendered_entry in rendered_image_entries:
+            try:
+                if os.path.exists(rendered_entry["temp_path"]):
+                    os.remove(rendered_entry["temp_path"])
+            except Exception:
+                pass
 
     if pages_rendered == 0:
         raise ValueError("No Chaos Draft card images could be rendered into the PDF.")
@@ -5035,6 +5628,15 @@ def run_refresh_job(force_download=False):
             message=f"{download_result['reason']} Beginning import from local AtomicCards.json...",
             sets_represented=imported_sets,
         )
+
+        set_refresh_status(
+            stage="Preparing Pack Art Folders",
+            message="Creating Chaos Draft pack art set folders...",
+            sets_represented=imported_sets,
+        )
+
+        created_pack_art_folders = ensure_chaos_pack_art_set_folders()
+
         summary = import_atomic_cards_into_database()
 
         scryfall_bulk_result = download_scryfall_default_cards_json(force_download=False)
@@ -5095,6 +5697,7 @@ def run_refresh_job(force_download=False):
         set_import_metadata("sets_represented", summary["sets_represented"])
         set_import_metadata("chaos_cards_imported", chaos_cards_imported)
         set_import_metadata("chaos_booster_data_imported_at", refresh_finished_at)
+        set_import_metadata("chaos_pack_art_folders_created", created_pack_art_folders)
 
         if download_result.get("remote_timestamp"):
             set_import_metadata("source_last_updated", download_result["remote_timestamp"])
@@ -5255,6 +5858,10 @@ def print_card(card_key):
         print_template=print_settings["print_template"],
         print_width=print_settings["print_width"],
         print_height=print_settings["print_height"],
+        sheet_width=print_settings["sheet_width"],
+        sheet_height=print_settings["sheet_height"],
+        sheet_offset_x=print_settings["sheet_offset_x"],
+        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf/<card_key>")
@@ -5273,19 +5880,21 @@ def print_card_pdf(card_key):
         return "Image not available", 404
 
     pdf_settings = resolve_pdf_print_settings()
-    width_mm = pdf_settings["pdf_width_mm"]
-    height_mm = pdf_settings["pdf_height_mm"]
+    pdf_template_layout = resolve_pdf_template_layout()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
     crop_border = pdf_settings["pdf_crop_border"]
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    draw_x_mm = 0.0
-    draw_y_mm = 0.0
-    draw_width_mm = width_mm
-    draw_height_mm = height_mm
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
 
-    if crop_border:
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
         crop_left_right_mm = width_mm * 0.05
         crop_top_bottom_mm = height_mm * 0.034
 
@@ -5297,15 +5906,26 @@ def print_card_pdf(card_key):
     print_settings = resolve_print_settings()
     pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
 
-    c.drawImage(
-        pdf_image_reader,
-        draw_x_mm * mm,
-        draw_y_mm * mm,
-        width=draw_width_mm * mm,
-        height=draw_height_mm * mm,
-        preserveAspectRatio=False,
-        mask="auto",
-    )
+    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for slot in slot_defs:
+            draw_processed_image_into_two_card_slot(
+                c,
+                image_path,
+                print_settings["print_mode"],
+                slot,
+            )
+    else:
+        c.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
 
     c.showPage()
     c.save()
@@ -5340,16 +5960,19 @@ def print_tower_of_power_batch_pdf():
     if not cards:
         return "No matching cards found", 404
 
-    width_mm = pdf_settings["pdf_width_mm"]
-    height_mm = pdf_settings["pdf_height_mm"]
+    pdf_template_layout = resolve_pdf_template_layout()
+    print_settings = resolve_print_settings()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
     crop_border = pdf_settings["pdf_crop_border"]
 
-    draw_x_mm = 0.0
-    draw_y_mm = 0.0
-    draw_width_mm = width_mm
-    draw_height_mm = height_mm
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
 
-    if crop_border:
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
         crop_left_right_mm = width_mm * 0.05
         crop_top_bottom_mm = height_mm * 0.034
 
@@ -5358,30 +5981,49 @@ def print_tower_of_power_batch_pdf():
         draw_width_mm = width_mm + (crop_left_right_mm * 2)
         draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
 
-    print_settings = resolve_print_settings()
-
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
-
+    valid_card_paths = []
     for card in cards:
         image_path = card["image_cache_path"] or ""
         absolute_image_path = os.path.abspath(image_path) if image_path else ""
 
-        if not absolute_image_path or not os.path.exists(absolute_image_path):
-            continue
+        if absolute_image_path and os.path.exists(absolute_image_path):
+            valid_card_paths.append(absolute_image_path)
 
-        pdf_image_reader = build_pdf_image_reader(absolute_image_path, print_settings["print_mode"])
+    if not valid_card_paths:
+        return "No matching card images found", 404
 
-        c.drawImage(
-            pdf_image_reader,
-            draw_x_mm * mm,
-            draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
-            preserveAspectRatio=False,
-            mask="auto",
-        )
-        c.showPage()
+    buffer = BytesIO()
+    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for page_start_index in range(0, len(valid_card_paths), 2):
+            page_card_paths = valid_card_paths[page_start_index:page_start_index + 2]
+
+            for slot_index, card_path in enumerate(page_card_paths):
+                draw_processed_image_into_two_card_slot(
+                    c,
+                    card_path,
+                    print_settings["print_mode"],
+                    slot_defs[slot_index],
+                )
+
+            c.showPage()
+    else:
+        for card_path in valid_card_paths:
+            pdf_image_reader = build_pdf_image_reader(card_path, print_settings["print_mode"])
+
+            c.drawImage(
+                pdf_image_reader,
+                draw_x_mm * mm,
+                draw_y_mm * mm,
+                width=draw_width_mm * mm,
+                height=draw_height_mm * mm,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+            c.showPage()
 
     c.save()
     buffer.seek(0)
@@ -5390,7 +6032,7 @@ def print_tower_of_power_batch_pdf():
         buffer,
         mimetype="application/pdf",
         headers={
-            "Content-Disposition": f"inline; filename=tower_of_power_{len(cards)}_cards.pdf"
+            "Content-Disposition": f"inline; filename=tower_of_power_{len(valid_card_paths)}_cards.pdf"
         }
     )
 
@@ -5410,6 +6052,10 @@ def print_custom_default_momir_vig():
         print_template=print_settings["print_template"],
         print_width=print_settings["print_width"],
         print_height=print_settings["print_height"],
+        sheet_width=print_settings["sheet_width"],
+        sheet_height=print_settings["sheet_height"],
+        sheet_offset_x=print_settings["sheet_offset_x"],
+        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf-custom/default-momir-vig")
@@ -5421,19 +6067,21 @@ def print_custom_default_momir_vig_pdf():
         return "Image not available", 404
 
     pdf_settings = resolve_pdf_print_settings()
-    width_mm = pdf_settings["pdf_width_mm"]
-    height_mm = pdf_settings["pdf_height_mm"]
+    pdf_template_layout = resolve_pdf_template_layout()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
     crop_border = pdf_settings["pdf_crop_border"]
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    draw_x_mm = 0.0
-    draw_y_mm = 0.0
-    draw_width_mm = width_mm
-    draw_height_mm = height_mm
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
 
-    if crop_border:
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
         crop_left_right_mm = width_mm * 0.05
         crop_top_bottom_mm = height_mm * 0.034
 
@@ -5445,15 +6093,26 @@ def print_custom_default_momir_vig_pdf():
     print_settings = resolve_print_settings()
     pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
 
-    c.drawImage(
-        pdf_image_reader,
-        draw_x_mm * mm,
-        draw_y_mm * mm,
-        width=draw_width_mm * mm,
-        height=draw_height_mm * mm,
-        preserveAspectRatio=False,
-        mask="auto",
-    )
+    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for slot in slot_defs:
+            draw_processed_image_into_two_card_slot(
+                c,
+                image_path,
+                print_settings["print_mode"],
+                slot,
+            )
+    else:
+        c.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
 
     c.showPage()
     c.save()
@@ -5490,6 +6149,10 @@ def print_custom_game_mode(mode_value):
         print_template=print_settings["print_template"],
         print_width=print_settings["print_width"],
         print_height=print_settings["print_height"],
+        sheet_width=print_settings["sheet_width"],
+        sheet_height=print_settings["sheet_height"],
+        sheet_offset_x=print_settings["sheet_offset_x"],
+        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf-custom/game-mode/<mode_value>")
@@ -5507,19 +6170,21 @@ def print_custom_game_mode_pdf(mode_value):
         return "Image not available", 404
 
     pdf_settings = resolve_pdf_print_settings()
-    width_mm = pdf_settings["pdf_width_mm"]
-    height_mm = pdf_settings["pdf_height_mm"]
+    pdf_template_layout = resolve_pdf_template_layout()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
     crop_border = pdf_settings["pdf_crop_border"]
 
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    draw_x_mm = 0.0
-    draw_y_mm = 0.0
-    draw_width_mm = width_mm
-    draw_height_mm = height_mm
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
 
-    if crop_border:
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
         crop_left_right_mm = width_mm * 0.05
         crop_top_bottom_mm = height_mm * 0.034
 
@@ -5531,15 +6196,26 @@ def print_custom_game_mode_pdf(mode_value):
     print_settings = resolve_print_settings()
     pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
 
-    c.drawImage(
-        pdf_image_reader,
-        draw_x_mm * mm,
-        draw_y_mm * mm,
-        width=draw_width_mm * mm,
-        height=draw_height_mm * mm,
-        preserveAspectRatio=False,
-        mask="auto",
-    )
+    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for slot in slot_defs:
+            draw_processed_image_into_two_card_slot(
+                c,
+                image_path,
+                print_settings["print_mode"],
+                slot,
+            )
+    else:
+        c.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
 
     c.showPage()
     c.save()

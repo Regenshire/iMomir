@@ -1588,7 +1588,7 @@ function initializeChaosDraftPage() {
 
                 showBusyOverlay(
                     "Opening Pack",
-                    "Building your Chaos Draft pack PDF. Large or special packs can take several seconds."
+                    "We are cracking your pack! Lets see what you opened..."
                 );
 
                 timeoutId = window.setTimeout(function () {
