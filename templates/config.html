@@ -325,6 +325,14 @@
                             {% if config.print_front_back_label == "1" %}checked{% endif %}>
                     </label>
 
+                    <label class="toggle-row settings-field">
+                        <span>Use Pack Image for Title</span>
+                        <input
+                            type="checkbox"
+                            name="use_pack_image_for_title"
+                            {% if config.use_pack_image_for_title == "1" %}checked{% endif %}
+                        >
+                    </label>
                 </div>
             </div>
             

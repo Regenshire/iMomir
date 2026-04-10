@@ -3,6 +3,7 @@ import gzip
 import json
 import os
 import random
+import re
 import socket
 import sqlite3
 import sys
@@ -75,6 +76,19 @@ IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
 CHAOS_IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_image_cache")
 CHAOS_TEMP_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_temp_cache")
 PACK_ART_DIR = os.path.join(app.static_folder, "img", "pack_art")
+SILHOUETTE_LETTER_CARD_WIDTH_MM = 63.5
+SILHOUETTE_LETTER_CARD_HEIGHT_MM = 88.9
+
+SILHOUETTE_LETTER_START_X_MM = 13.0
+SILHOUETTE_LETTER_START_Y_MM = 18.6
+
+SILHOUETTE_LETTER_COLUMNS = 4
+SILHOUETTE_LETTER_ROWS = 2
+
+SILHOUETTE_EDGE_BORDER_PIXELS = 1
+SILHOUETTE_RENDER_TARGET_WIDTH_PX = 762
+SILHOUETTE_RENDER_TARGET_HEIGHT_PX = 1067
+
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
 SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContentWeights.csv")
@@ -132,6 +146,7 @@ DEFAULT_CONFIG = {
     "pdf_height_mm": "85.25",
     "pdf_crop_border": "1",
     "print_front_back_label": "1",
+    "use_pack_image_for_title": "0",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",
     "sound_enabled": "1",
@@ -815,6 +830,7 @@ def update_config_from_form(form_data):
         "use_pdf_print",
         "pdf_crop_border",
         "print_front_back_label",
+        "use_pack_image_for_title",
         "open_print_in_new_tab",
         "sound_enabled",
         "debug_log",
@@ -984,6 +1000,19 @@ def get_chaos_pack_type_label_map():
         for item in CHAOS_PACK_TYPE_OPTIONS
     }
 
+def normalize_chaos_pack_display_name(display_name):
+    value = (display_name or "").strip()
+    if not value:
+        return value
+
+    match = re.search(r"\(([^()]*)\)\s*$", value)
+    if not match:
+        return value
+
+    set_code = (match.group(1) or "").strip().upper()
+    normalized_value = value[:match.start()] + f"({set_code})"
+    return normalized_value
+
 def get_set_name_from_code(set_code):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1018,27 +1047,37 @@ def build_default_chaos_pack_display_name(set_code, booster_name):
     )
 
     set_code_clean = (set_code or "").strip().upper()
-    return f"{set_name} - {display_booster_name} ({set_code_clean})"
+    return normalize_chaos_pack_display_name(
+        f"{set_name} - {display_booster_name} ({set_code_clean})"
+    )
 
 
 def get_chaos_pack_art_relpath(set_code, booster_name):
-    normalized_set_code = (set_code or "").strip().lower()
     normalized_booster_key = normalize_chaos_booster_key(booster_name)
 
-    direct_relpath = f"img/pack_art/{normalized_set_code}/{normalized_booster_key}.png"
-    direct_abspath = os.path.join(app.static_folder, direct_relpath.replace("/", os.sep))
-    ##direct_abspath = os.path.join(PACK_ART_DIR , "default.png")
+    set_code_variants = []
+    raw_set_code = (set_code or "").strip()
 
-    if os.path.exists(direct_abspath):
-        return direct_relpath
+    if raw_set_code:
+        set_code_variants.append(raw_set_code)
+        if raw_set_code.upper() not in set_code_variants:
+            set_code_variants.append(raw_set_code.upper())
+        if raw_set_code.lower() not in set_code_variants:
+            set_code_variants.append(raw_set_code.lower())
 
-    default_relpath = f"img/pack_art/{normalized_set_code}/default.png"
+    for set_code_variant in set_code_variants:
+        direct_relpath = f"img/pack_art/{set_code_variant}/{normalized_booster_key}.png"
+        direct_abspath = os.path.join(app.static_folder, direct_relpath.replace("/", os.sep))
 
+        if os.path.exists(direct_abspath):
+            return direct_relpath
 
-    default_abspath = os.path.join(app.static_folder, default_relpath.replace("/", os.sep))
+    for set_code_variant in set_code_variants:
+        default_relpath = f"img/pack_art/{set_code_variant}/default.png"
+        default_abspath = os.path.join(app.static_folder, default_relpath.replace("/", os.sep))
 
-    if os.path.exists(default_abspath):
-        return default_relpath
+        if os.path.exists(default_abspath):
+            return default_relpath
 
     return "img/pack_art/_fallback/booster_default.png"
 
@@ -1067,7 +1106,9 @@ def get_chaos_pack_art_info(set_code, booster_name):
     default_image_path = get_chaos_pack_art_relpath(set_code, booster_name)
 
     if row:
-        display_name = (row["display_name"] or "").strip() or default_display_name
+        display_name = normalize_chaos_pack_display_name(
+            (row["display_name"] or "").strip() or default_display_name
+        )
         image_path = (row["image_path"] or "").strip() or default_image_path
 
         static_abs_path = os.path.join(app.static_folder, image_path.replace("/", os.sep))
@@ -1912,7 +1953,12 @@ def build_chaos_pack_pdf_from_variant(set_code, booster_name, booster_index, pac
         pack_display_name,
     )
 
-    return build_chaos_pack_pdf(cards, pack_display_name)
+    return build_chaos_pack_pdf(
+        cards,
+        pack_display_name,
+        set_code=set_code,
+        booster_name=booster_name,
+    )
 
 def build_pending_chaos_pack_pdf():
     spin_result = get_pending_chaos_spin_result()
@@ -1961,6 +2007,8 @@ def build_pending_chaos_pack_pdf():
     pdf_buffer = build_chaos_pack_pdf(
         cards,
         spin_result["winning_pack"]["display_name"],
+        set_code=set_code,
+        booster_name=booster_name,
     )
 
     filename_safe = safe_filename(f"{set_code}_{booster_name}".lower())
@@ -4183,6 +4231,27 @@ def safe_filename(value):
             allowed.append("_")
     return "".join(allowed).strip("_") or "card"
 
+def get_silhouette_edge_border_pixels():
+    try:
+        parsed_value = int(SILHOUETTE_EDGE_BORDER_PIXELS)
+    except Exception:
+        parsed_value = 1
+
+    if parsed_value < 0:
+        parsed_value = 0
+
+    return parsed_value
+
+
+def get_silhouette_horizontal_border_mm():
+    border_pixels = get_silhouette_edge_border_pixels()
+    return (border_pixels / SILHOUETTE_RENDER_TARGET_WIDTH_PX) * SILHOUETTE_LETTER_CARD_WIDTH_MM
+
+
+def get_silhouette_vertical_border_mm():
+    border_pixels = get_silhouette_edge_border_pixels()
+    return (border_pixels / SILHOUETTE_RENDER_TARGET_HEIGHT_PX) * SILHOUETTE_LETTER_CARD_HEIGHT_MM
+
 def build_chaos_cached_image_filename(card_uuid, page_kind, face_name, image_url):
     uuid_part = safe_filename(card_uuid or "card")
     page_part = safe_filename(page_kind or "single")
@@ -4264,17 +4333,36 @@ def get_two_card_borderless_slots_mm():
     ]
 
 def get_silhouette_letter_horizontal_8_slots_mm():
-    return [
-        {"x_mm": 13.0,  "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 76.5,  "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 140.0, "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 203.5, "y_mm": 107.5, "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
+    horizontal_border_mm = get_silhouette_horizontal_border_mm()
+    vertical_border_mm = get_silhouette_vertical_border_mm()
 
-        {"x_mm": 13.0,  "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 76.5,  "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 140.0, "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-        {"x_mm": 203.5, "y_mm": 18.6,  "width_mm": 63.5, "height_mm": 88.9, "rotation_degrees": 0},
-    ]
+    horizontal_step_mm = SILHOUETTE_LETTER_CARD_WIDTH_MM + (horizontal_border_mm * 2)
+    vertical_step_mm = SILHOUETTE_LETTER_CARD_HEIGHT_MM + (vertical_border_mm * 2)
+
+    slot_defs = []
+
+    for row_index in range(SILHOUETTE_LETTER_ROWS):
+        for column_index in range(SILHOUETTE_LETTER_COLUMNS):
+            display_row_index = (SILHOUETTE_LETTER_ROWS - 1) - row_index
+
+            art_x_mm = SILHOUETTE_LETTER_START_X_MM + (column_index * horizontal_step_mm)
+            art_y_mm = SILHOUETTE_LETTER_START_Y_MM + (display_row_index * vertical_step_mm)
+
+            slot_defs.append({
+                "x_mm": art_x_mm - horizontal_border_mm,
+                "y_mm": art_y_mm - vertical_border_mm,
+                "width_mm": SILHOUETTE_LETTER_CARD_WIDTH_MM + (horizontal_border_mm * 2),
+                "height_mm": SILHOUETTE_LETTER_CARD_HEIGHT_MM + (vertical_border_mm * 2),
+                "rotation_degrees": 0,
+            })
+
+    write_debug_log(
+        f"SILHOUETTE LETTER LAYOUT | border_pixels={get_silhouette_edge_border_pixels()} | "
+        f"horizontal_border_mm={horizontal_border_mm:.6f} | vertical_border_mm={vertical_border_mm:.6f} | "
+        f"horizontal_step_mm={horizontal_step_mm:.6f} | vertical_step_mm={vertical_step_mm:.6f}"
+    )
+
+    return slot_defs
 
 def build_pdf_image_reader_from_bytes(image_bytes, print_mode):
     with Image.open(BytesIO(image_bytes)) as source_image:
@@ -4314,6 +4402,53 @@ def build_pdf_image_reader_from_bytes(image_bytes, print_mode):
         image_buffer.seek(0)
         return ImageReader(image_buffer)
 
+def add_duplicated_edge_border(image, border_pixels=None):
+    if border_pixels is None:
+        border_pixels = get_silhouette_edge_border_pixels()
+
+    if border_pixels <= 0:
+        return image
+
+    source_image = image.convert("RGB")
+    source_width, source_height = source_image.size
+
+    if source_width <= 0 or source_height <= 0:
+        return source_image
+
+    expanded_image = Image.new(
+        "RGB",
+        (source_width + (border_pixels * 2), source_height + (border_pixels * 2))
+    )
+
+    # Paste the original image in the center.
+    expanded_image.paste(source_image, (border_pixels, border_pixels))
+
+    # Duplicate top and bottom rows.
+    top_row = source_image.crop((0, 0, source_width, 1)).resize((source_width, border_pixels), Image.NEAREST)
+    bottom_row = source_image.crop((0, source_height - 1, source_width, source_height)).resize((source_width, border_pixels), Image.NEAREST)
+
+    expanded_image.paste(top_row, (border_pixels, 0))
+    expanded_image.paste(bottom_row, (border_pixels, border_pixels + source_height))
+
+    # Duplicate left and right columns.
+    left_column = source_image.crop((0, 0, 1, source_height)).resize((border_pixels, source_height), Image.NEAREST)
+    right_column = source_image.crop((source_width - 1, 0, source_width, source_height)).resize((border_pixels, source_height), Image.NEAREST)
+
+    expanded_image.paste(left_column, (0, border_pixels))
+    expanded_image.paste(right_column, (border_pixels + source_width, border_pixels))
+
+    # Duplicate corners.
+    top_left_pixel = source_image.crop((0, 0, 1, 1)).resize((border_pixels, border_pixels), Image.NEAREST)
+    top_right_pixel = source_image.crop((source_width - 1, 0, source_width, 1)).resize((border_pixels, border_pixels), Image.NEAREST)
+    bottom_left_pixel = source_image.crop((0, source_height - 1, 1, source_height)).resize((border_pixels, border_pixels), Image.NEAREST)
+    bottom_right_pixel = source_image.crop((source_width - 1, source_height - 1, source_width, source_height)).resize((border_pixels, border_pixels), Image.NEAREST)
+
+    expanded_image.paste(top_left_pixel, (0, 0))
+    expanded_image.paste(top_right_pixel, (border_pixels + source_width, 0))
+    expanded_image.paste(bottom_left_pixel, (0, border_pixels + source_height))
+    expanded_image.paste(bottom_right_pixel, (border_pixels + source_width, border_pixels + source_height))
+
+    return expanded_image
 
 def get_processed_card_image_bytes(image_path, print_mode):
     with Image.open(image_path) as source_image:
@@ -4387,11 +4522,14 @@ def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height
         mask="auto",
     )
 
-def draw_processed_image_into_slot(pdf_canvas, image_path, print_mode, slot_def):
+def draw_processed_image_into_slot(pdf_canvas, image_path, print_mode, slot_def, add_edge_bleed_border=False):
     processed_image_bytes = get_processed_card_image_bytes(image_path, print_mode)
 
     with Image.open(BytesIO(processed_image_bytes)) as source_image:
         image = source_image.convert("RGB")
+
+        if add_edge_bleed_border:
+            image = add_duplicated_edge_border(image)
 
         rotation_degrees = int(slot_def.get("rotation_degrees", 0) or 0)
         if rotation_degrees == 90:
@@ -4506,9 +4644,6 @@ def split_chaos_pack_display_name_for_title(pack_display_name):
         set_name = (left_part or "").strip()
         booster_name = (right_part or "").strip()
 
-        if booster_name:
-            booster_name = " ".join(word.capitalize() for word in booster_name.split())
-
         return (set_name or "Booster Pack", booster_name)
 
     return (raw_value, "")
@@ -4518,8 +4653,68 @@ def get_chaos_temp_file_path(filename):
     safe_name = safe_filename(filename)
     return os.path.join(CHAOS_TEMP_CACHE_DIR, safe_name)
 
+def build_chaos_pack_image_title_card_bytes(set_code, booster_name, card_width_mm=63.5, card_height_mm=88.9):
+    booster_key = normalize_chaos_booster_key(booster_name)
+
+    set_code_variants = []
+    raw_set_code = (set_code or "").strip()
+
+    if raw_set_code:
+        set_code_variants.append(raw_set_code)
+        if raw_set_code.upper() not in set_code_variants:
+            set_code_variants.append(raw_set_code.upper())
+        if raw_set_code.lower() not in set_code_variants:
+            set_code_variants.append(raw_set_code.lower())
+
+    image_abs_path = None
+
+    for set_code_variant in set_code_variants:
+        candidate_relpath = f"img/pack_art/{set_code_variant}/{booster_key}.png"
+        candidate_abs_path = os.path.join(app.static_folder, candidate_relpath.replace("/", os.sep))
+
+        if os.path.exists(candidate_abs_path):
+            image_abs_path = candidate_abs_path
+            break
+
+    if not image_abs_path:
+        return None
+
+    with Image.open(image_abs_path) as source_image:
+        image = source_image.convert("RGB")
+
+        source_width, source_height = image.size
+        crop_amount_x = int(round(source_width * 0.05))
+
+        left = crop_amount_x
+        top = 0
+        right = source_width - crop_amount_x
+        bottom = source_height
+
+        if right <= left:
+            return None
+
+        cropped_image = image.crop((left, top, right, bottom))
+
+        target_width_px = 762
+        target_height_px = 1067
+
+        # COVER behavior:
+        # preserve aspect ratio, scale to fill the target card shape,
+        # then crop overflow instead of stretching the image.
+        fitted_image = ImageOps.fit(
+            cropped_image,
+            (target_width_px, target_height_px),
+            method=Image.LANCZOS,
+            centering=(0.5, 0.5),
+        )
+
+        output_buffer = BytesIO()
+        fitted_image.save(output_buffer, format="PNG")
+        return output_buffer.getvalue()
+
 def build_chaos_pack_title_card_image_bytes(pack_display_name, card_width_mm=63.5, card_height_mm=88.9):
-    title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
+    normalized_pack_display_name = normalize_chaos_pack_display_name(pack_display_name)
+    title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(normalized_pack_display_name)
 
     pixels_per_mm = 12
     image_width_px = int(round(card_width_mm * pixels_per_mm))
@@ -4705,7 +4900,7 @@ def build_chaos_print_pages_for_card(card_row):
 
     return pages
 
-def build_chaos_pack_pdf(cards, pack_display_name):
+def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=None):
     pdf_settings = resolve_pdf_print_settings()
     pdf_template_layout = resolve_pdf_template_layout()
     crop_border = pdf_settings["pdf_crop_border"]
@@ -4790,7 +4985,16 @@ def build_chaos_pack_pdf(cards, pack_display_name):
 
     if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
         try:
-            title_card_bytes = build_chaos_pack_title_card_image_bytes(pack_display_name)
+            config = get_config()
+            use_pack_image_for_title = (config.get("use_pack_image_for_title") or "0").strip() == "1"
+
+            title_card_bytes = None
+
+            if use_pack_image_for_title and set_code and booster_name:
+                title_card_bytes = build_chaos_pack_image_title_card_bytes(set_code, booster_name)
+
+            if not title_card_bytes:
+                title_card_bytes = build_chaos_pack_title_card_image_bytes(pack_display_name)
 
             title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
             title_temp_path = get_chaos_temp_file_path(title_temp_filename)
@@ -4881,6 +5085,7 @@ def build_chaos_pack_pdf(cards, pack_display_name):
                         rendered_entry["temp_path"],
                         print_settings["print_mode"],
                         slot_defs[slot_index],
+                        add_edge_bleed_border=True,
                     )
 
                 c.showPage()
