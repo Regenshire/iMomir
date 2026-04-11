@@ -55,6 +55,20 @@
         <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
             Open Pack
         </button>
+
+        {% if template_download_links %}
+        <div class="chaos-draft-template-links">
+            {% for link in template_download_links %}
+            <a
+                class="chaos-draft-template-link"
+                href="{{ url_for('static', filename=link.filename) }}"
+                download
+            >
+                {{ link.label }}
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
 
 <div id="chaosDraftBusyOverlay" class="chaos-draft-busy-overlay hidden" aria-hidden="true">

@@ -1515,6 +1515,24 @@ input {
     margin-top: 18px;
 }
 
+.chaos-draft-template-links {
+    margin-top: 8px;
+    text-align: center;
+}
+
+.chaos-draft-template-link {
+    display: inline-block;
+    font-size: 0.9rem;
+    line-height: 1.2;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    color: #bcd0ff;
+}
+
+.chaos-draft-template-link:hover {
+    color: #ffffff;
+}
+
 .chaos-draft-open-row.chaos-draft-open-row-visible {
     display: block;
 }

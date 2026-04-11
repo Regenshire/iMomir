@@ -81,13 +81,19 @@
             </div>
         </form>
     </div>
-
-    <div class="page-panel">
-        <h2>Future Feature Note</h2>
-        <p class="page-subtitle">
-            Future feature: add pack printing options for PRE-PRINT - Chaos Draft.
-        </p>
+    {% if template_download_links %}
+    <div class="chaos-draft-template-links">
+        {% for link in template_download_links %}
+        <a
+            class="chaos-draft-template-link"
+            href="{{ url_for('static', filename=link.filename) }}"
+            download
+        >
+            {{ link.label }}
+        </a>
+        {% endfor %}
     </div>
+    {% endif %}
 </div>
 <div id="preprintChaosBusyOverlay" class="chaos-draft-busy-overlay hidden" aria-hidden="true">
     <div class="chaos-draft-busy-backdrop"></div>

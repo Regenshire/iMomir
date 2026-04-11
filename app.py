@@ -190,12 +190,37 @@ OTHER_FILTER_KEYS = [
 PRINT_TEMPLATE_OPTIONS = [
     ("dk-1234", "DK-1234"),
     ("standard", "Standard"),
-
     ("borderless-3p5x5-two-card", "PDF ONLY - 3.5 x 5 Borderless - 2 Card Layout"),
     ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
     ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
     ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
 ]
+
+PRINT_TEMPLATE_METADATA = {
+    "dk-1234": {
+        "download_links": [],
+    },
+    "standard": {
+        "download_links": [],
+    },
+    "borderless-3p5x5-two-card": {
+        "download_links": [],
+    },
+    "portrait-3p5x5-top-aligned": {
+        "download_links": [],
+    },
+    "landscape-3p5x5-centered": {
+        "download_links": [],
+    },
+    "silhouette-letter-horizontal-8": {
+        "download_links": [
+            {
+                "label": "Download Silhouette Template",
+                "filename": "sil/Silhouette_Legal_Vertical_8_Card.studio3",
+            }
+        ],
+    },
+}
 
 PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),
@@ -325,6 +350,27 @@ ALLOWED_CHAOS_BOOSTER_TYPES = {
     item["value"]
     for item in CHAOS_PACK_TYPE_OPTIONS
 }
+
+# ==========================================
+# Chaos Draft Duplicate Control
+# ==========================================
+
+CHAOS_DUPLICATE_CONTROL_ENABLED = True
+
+# Booster types this applies to (normalized names)
+CHAOS_DUPLICATE_CONTROL_TYPES = {
+    "play",
+    "draft",
+    "set",
+    "collector",
+}
+
+# Probability to reroll when duplicate is detected (0.0 - 1.0)
+CHAOS_DUPLICATE_REROLL_CHANCE = 0.5
+
+# Max attempts to find a non-duplicate before giving up
+CHAOS_DUPLICATE_MAX_REROLLS = 3
+CHAOS_DUPLICATE_LOG_ALL_DETECTIONS = True
 
 TYPE_FLAG_MAP = {
     "Creature": "is_creature",
@@ -1825,6 +1871,59 @@ def open_chaos_pack_once(set_code, booster_name, booster_index):
             chosen_card = choose_weighted_row(available_cards, "card_weight")
             if not chosen_card:
                 break
+
+            # ==========================================
+            # Duplicate Control Logic
+            # ==========================================
+            booster_type = normalize_booster_type_for_filter(booster_name)
+
+            if (
+                CHAOS_DUPLICATE_CONTROL_ENABLED
+                and booster_type in CHAOS_DUPLICATE_CONTROL_TYPES
+            ):
+                existing_card_names = {
+                    (c.get("card_name") or "").strip().lower()
+                    for c in opened_cards
+                }
+
+                chosen_card_name = (chosen_card.get("card_name") or "").strip().lower()
+
+                if chosen_card_name in existing_card_names:
+                    write_debug_log(
+                        f"CHAOS DUPLICATE DETECTED | card={chosen_card['card_name']} | booster={booster_name}"
+                    )
+
+                    if random.random() < CHAOS_DUPLICATE_REROLL_CHANCE:
+                        write_debug_log(
+                            f"CHAOS DUPLICATE REROLL ATTEMPT | card={chosen_card['card_name']}"
+                        )
+
+                        reroll_attempts = 0
+                        replacement_card = chosen_card
+
+                        while reroll_attempts < CHAOS_DUPLICATE_MAX_REROLLS:
+                            reroll_attempts += 1
+
+                            candidate = choose_weighted_row(available_cards, "card_weight")
+                            if not candidate:
+                                break
+
+                            candidate_name = (candidate.get("card_name") or "").strip().lower()
+
+                            if candidate_name not in existing_card_names:
+                                replacement_card = candidate
+                                write_debug_log(
+                                    f"CHAOS DUPLICATE REROLL SUCCESS | old_card={chosen_card['card_name']} | new_card={candidate['card_name']} | attempts={reroll_attempts}"
+                                )
+                                break
+
+                        chosen_card = replacement_card
+                    else:
+                        write_debug_log(
+                            f"CHAOS DUPLICATE KEPT | card={chosen_card['card_name']} | reason=chance_roll_failed"
+                        )
+
+            # ==========================================
 
             opened_cards.append({
                 "set_code": (set_code or "").strip().upper(),
@@ -3357,6 +3456,23 @@ def resolve_pdf_template_layout():
         "uses_fixed_inner_margin": template_layout["uses_fixed_inner_margin"],
         "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
         "is_silhouette_layout": template_layout.get("is_silhouette_layout", False),
+    }
+
+def get_active_print_template_metadata():
+    config = get_config()
+    selected_template_value = (config.get("print_template") or "dk-1234").strip().lower()
+
+    if selected_template_value not in PRINT_TEMPLATE_METADATA:
+        return {
+            "template_value": selected_template_value,
+            "download_links": [],
+        }
+
+    template_metadata = PRINT_TEMPLATE_METADATA[selected_template_value]
+
+    return {
+        "template_value": selected_template_value,
+        "download_links": list(template_metadata.get("download_links", [])),
     }
 
 def resolve_print_settings():
@@ -6191,15 +6307,20 @@ def result():
     if current_game_mode == "chaos_draft":
         clear_chaos_session_state("pending_spin_result")
 
+        active_template_metadata = get_active_print_template_metadata()
+
         return render_template(
             "chaos_draft.html",
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
             open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
+            template_download_links=active_template_metadata["download_links"],
         )
 
     if current_game_mode == "preprint_chaos_draft":
+        active_template_metadata = get_active_print_template_metadata()
+
         return render_template(
             "preprint_chaos_draft.html",
             card_database_ready=card_database_ready,
@@ -6207,6 +6328,7 @@ def result():
             open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
             default_player_count=4,
             default_packs_per_player=3,
+            template_download_links=active_template_metadata["download_links"],
         )
 
     if current_game_mode == "tower_of_power":
