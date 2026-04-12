@@ -88,6 +88,8 @@ SILHOUETTE_LETTER_ROWS = 2
 SILHOUETTE_EDGE_BORDER_PIXELS = 1
 SILHOUETTE_RENDER_TARGET_WIDTH_PX = 762
 SILHOUETTE_RENDER_TARGET_HEIGHT_PX = 1067
+SILHOUETTE_CORNER_RADIUS_MM = 3.25
+SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE = True
 
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
 SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
@@ -4566,6 +4568,37 @@ def add_duplicated_edge_border(image, border_pixels=None):
 
     return expanded_image
 
+def mm_to_px(mm_value, pixels_per_mm):
+    return max(1, int(round(float(mm_value) * float(pixels_per_mm))))
+
+
+def apply_rounded_corner_mask(image, radius_px, matte_rgb=(0, 0, 0)):
+    if radius_px <= 0:
+        return image.convert("RGB")
+
+    source_rgb = image.convert("RGB")
+    width, height = source_rgb.size
+
+    mask = Image.new("L", (width, height), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle(
+        [(0, 0), (width - 1, height - 1)],
+        radius=radius_px,
+        fill=255,
+    )
+
+    # Composite onto a SOLID matte to eliminate any white/gray alpha fringe.
+    matte_image = Image.new("RGB", (width, height), matte_rgb)
+    matte_image.paste(source_rgb, (0, 0), mask)
+
+    return matte_image
+
+
+def build_white_blank_card_image(width_px, height_px, radius_px=0):
+    base_image = Image.new("RGB", (width_px, height_px), (255, 255, 255))
+
+    return base_image.convert("RGB")
+
 def get_processed_card_image_bytes(image_path, print_mode):
     with Image.open(image_path) as source_image:
         image = source_image.convert("RGB")
@@ -4638,35 +4671,64 @@ def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height
         mask="auto",
     )
 
-def draw_processed_image_into_slot(pdf_canvas, image_path, print_mode, slot_def, add_edge_bleed_border=False):
-    processed_image_bytes = get_processed_card_image_bytes(image_path, print_mode)
+def draw_processed_image_into_slot(
+    pdf_canvas,
+    image_path,
+    print_mode,
+    slot_def,
+    add_edge_bleed_border=False,
+    rounded_corner_radius_mm=0.0,
+    blank_white_card=False,
+):
+    slot_width_mm = float(slot_def["width_mm"])
+    slot_height_mm = float(slot_def["height_mm"])
 
-    with Image.open(BytesIO(processed_image_bytes)) as source_image:
-        image = source_image.convert("RGB")
+    target_width_px = mm_to_px(slot_width_mm, 12)
+    target_height_px = mm_to_px(slot_height_mm, 12)
+    radius_px = mm_to_px(rounded_corner_radius_mm, 12) if rounded_corner_radius_mm and rounded_corner_radius_mm > 0 else 0
 
-        if add_edge_bleed_border:
-            image = add_duplicated_edge_border(image)
+    if blank_white_card:
+        image = build_white_blank_card_image(
+            target_width_px,
+            target_height_px,
+            radius_px=radius_px,
+        )
+    else:
+        processed_image_bytes = get_processed_card_image_bytes(image_path, print_mode)
 
-        rotation_degrees = int(slot_def.get("rotation_degrees", 0) or 0)
-        if rotation_degrees == 90:
-            image = image.transpose(Image.Transpose.ROTATE_270)
-        elif rotation_degrees == 180:
-            image = image.transpose(Image.Transpose.ROTATE_180)
-        elif rotation_degrees == 270:
-            image = image.transpose(Image.Transpose.ROTATE_90)
+        with Image.open(BytesIO(processed_image_bytes)) as source_image:
+            image = source_image.convert("RGB")
 
-        slot_buffer = BytesIO()
-        image.save(slot_buffer, format="PNG")
-        slot_buffer.seek(0)
+            if add_edge_bleed_border:
+                image = add_duplicated_edge_border(image)
 
-        slot_reader = ImageReader(slot_buffer)
+            rotation_degrees = int(slot_def.get("rotation_degrees", 0) or 0)
+            if rotation_degrees == 90:
+                image = image.transpose(Image.Transpose.ROTATE_270)
+            elif rotation_degrees == 180:
+                image = image.transpose(Image.Transpose.ROTATE_180)
+            elif rotation_degrees == 270:
+                image = image.transpose(Image.Transpose.ROTATE_90)
+
+            image = image.resize((target_width_px, target_height_px), Image.LANCZOS)
+
+            if radius_px > 0:
+                image = apply_rounded_corner_mask(image, radius_px, matte_rgb=(0, 0, 0))
+            else:
+                image = image.convert("RGB")
+
+    slot_buffer = BytesIO()
+    image.convert("RGB").save(slot_buffer, format="PNG")
+    slot_buffer.seek(0)
+
+    slot_reader = ImageReader(slot_buffer)
 
     pdf_canvas.drawImage(
         slot_reader,
         slot_def["x_mm"] * mm,
         slot_def["y_mm"] * mm,
-        width=slot_def["width_mm"] * mm,
-        height=slot_def["height_mm"] * mm,
+        width=slot_width_mm * mm,
+        height=slot_height_mm * mm,
         preserveAspectRatio=False,
         mask="auto",
     )
@@ -5202,7 +5264,20 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                         print_settings["print_mode"],
                         slot_defs[slot_index],
                         add_edge_bleed_border=True,
+                        rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
                     )
+
+                if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
+                    for blank_slot_index in range(len(page_entries), len(slot_defs)):
+                        draw_processed_image_into_slot(
+                            c,
+                            image_path=None,
+                            print_mode=print_settings["print_mode"],
+                            slot_def=slot_defs[blank_slot_index],
+                            add_edge_bleed_border=False,
+                            rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+                            blank_white_card=True,
+                        )
 
                 c.showPage()
                 pages_rendered += 1
