@@ -2370,6 +2370,23 @@ def build_inline_pdf_response(pdf_buffer, filename):
         }
     )
 
+def render_print_page(card, image_src):
+    print_settings = resolve_print_settings()
+
+    return render_template(
+        "print.html",
+        card=card,
+        image_src=image_src,
+        print_mode=print_settings["print_mode"],
+        print_template=print_settings["print_template"],
+        print_width=print_settings["print_width"],
+        print_height=print_settings["print_height"],
+        sheet_width=print_settings["sheet_width"],
+        sheet_height=print_settings["sheet_height"],
+        sheet_offset_x=print_settings["sheet_offset_x"],
+        sheet_offset_y=print_settings["sheet_offset_y"],
+    )
+
 def split_chaos_pack_display_name_for_title(pack_display_name):
     raw_value = (pack_display_name or "").strip()
 
@@ -4045,31 +4062,14 @@ def result():
 
 @app.route("/print/<card_key>")
 def print_card(card_key):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM cards WHERE card_key = ?", (card_key,))
-    card = cursor.fetchone()
-
-    conn.close()
+    card = get_card_by_key(card_key)
 
     if not card:
         return "Card not found", 404
 
-    print_settings = resolve_print_settings()
-
-    return render_template(
-        "print.html",
+    return render_print_page(
         card=card,
         image_src=url_for("card_image", card_key=card["card_key"]),
-        print_mode=print_settings["print_mode"],
-        print_template=print_settings["print_template"],
-        print_width=print_settings["print_width"],
-        print_height=print_settings["print_height"],
-        sheet_width=print_settings["sheet_width"],
-        sheet_height=print_settings["sheet_height"],
-        sheet_offset_x=print_settings["sheet_offset_x"],
-        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf/<card_key>")
@@ -4190,24 +4190,14 @@ def print_tower_of_power_batch_pdf():
 
 @app.route("/print-custom/default-momir-vig")
 def print_custom_default_momir_vig():
-    print_settings = resolve_print_settings()
     selected_variant = resolve_default_momir_variant()
 
-    return render_template(
-        "print.html",
+    return render_print_page(
         card={
             "name": CARD_SEARCH_DEFAULT_TITLE,
             "type_line": f"Avatar • {selected_variant['label']}",
         },
         image_src=url_for("static", filename=selected_variant["filename"]),
-        print_mode=print_settings["print_mode"],
-        print_template=print_settings["print_template"],
-        print_width=print_settings["print_width"],
-        print_height=print_settings["print_height"],
-        sheet_width=print_settings["sheet_width"],
-        sheet_height=print_settings["sheet_height"],
-        sheet_offset_x=print_settings["sheet_offset_x"],
-        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf-custom/default-momir-vig")
@@ -4223,7 +4213,6 @@ def print_custom_default_momir_vig_pdf():
 
 @app.route("/print-custom/game-mode/<mode_value>")
 def print_custom_game_mode(mode_value):
-    print_settings = resolve_print_settings()
     mode_map = get_game_mode_option_map()
     mode_item = mode_map.get((mode_value or "").strip().lower())
 
@@ -4232,21 +4221,12 @@ def print_custom_game_mode(mode_value):
 
     token_image = resolve_game_mode_token_image(mode_value)
 
-    return render_template(
-        "print.html",
+    return render_print_page(
         card={
             "name": mode_item["label"],
             "type_line": "Avatar • Game Mode Token",
         },
         image_src=url_for("static", filename=token_image["filename"]),
-        print_mode=print_settings["print_mode"],
-        print_template=print_settings["print_template"],
-        print_width=print_settings["print_width"],
-        print_height=print_settings["print_height"],
-        sheet_width=print_settings["sheet_width"],
-        sheet_height=print_settings["sheet_height"],
-        sheet_offset_x=print_settings["sheet_offset_x"],
-        sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
 @app.route("/print-pdf-custom/game-mode/<mode_value>")
@@ -4488,7 +4468,7 @@ def chaos_draft_open_test():
         chosen_pack["booster_name"],
     )
 
-    config = get_config()
+    config = get_request_config()
     if config.get("allow_repeats") == "0":
         opened_keys = get_chaos_opened_pack_keys()
         variants = [
