@@ -3,7 +3,7 @@
 {% block title %}iMomir - Result{% endblock %}
 
 {% block content %}
-<div class="screen screen-result">
+<div class="screen screen-result screen-medium">
     {% if current_game_mode == "momir_select" and enabled_type_options %}
     <div class="page-panel momir-select-top-panel">
         <form method="get" action="{{ url_for('result') }}" class="momir-select-top-form">

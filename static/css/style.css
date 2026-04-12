@@ -12,6 +12,14 @@
   --danger: #8f3f3f;
   --button: #2a2e37;
   --button-hover: #353a45;
+
+  --mobile-frame-max: 540px;
+  --tablet-frame-max: 860px;
+  --desktop-frame-max: 1280px;
+
+  --content-narrow: 720px;
+  --content-medium: 960px;
+  --content-wide: 1180px;
 }
 
 * {
@@ -45,7 +53,7 @@ input {
 
 .app-frame {
   width: 100%;
-  max-width: 540px;
+  max-width: var(--mobile-frame-max);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -149,10 +157,29 @@ input {
 
 .screen {
   width: 100%;
-  max-width: 540px;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.screen-narrow {
+  max-width: var(--content-narrow);
+  margin: 0 auto;
+}
+
+.screen-medium {
+  max-width: var(--content-medium);
+  margin: 0 auto;
+}
+
+.screen-wide {
+  max-width: var(--content-wide);
+  margin: 0 auto;
+}
+
+.screen-full {
+  max-width: 100%;
 }
 
 .top-bar {
@@ -388,6 +415,94 @@ input {
   align-items: center;
   padding: 12px 14px;
   color: var(--muted);
+}
+
+@media (min-width: 700px) {
+  .app-shell {
+    padding: 24px;
+  }
+
+  .app-frame {
+    max-width: var(--tablet-frame-max);
+    gap: 18px;
+  }
+
+  .screen {
+    gap: 24px;
+  }
+
+  .app-tabs {
+    padding: 12px 18px;
+    gap: 14px;
+  }
+
+  .app-tabs-nav {
+    gap: 10px;
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .app-tab {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  .page-title {
+    font-size: 1.7rem;
+  }
+
+  .page-subtitle {
+    font-size: 1rem;
+  }
+
+  .mana-panel,
+  .result-panel,
+  .page-panel {
+    padding: 24px;
+  }
+
+  .keypad-btn {
+    min-height: 78px;
+  }
+
+  .card-image {
+    max-width: 360px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .app-frame {
+    max-width: var(--desktop-frame-max);
+    gap: 20px;
+  }
+
+  .app-shell {
+    padding: 28px 32px;
+  }
+
+  .app-tabs {
+    padding: 14px 20px;
+    border-radius: 20px;
+  }
+
+  .page-title {
+    font-size: 1.9rem;
+  }
+
+  .page-subtitle {
+    font-size: 1.02rem;
+    line-height: 1.6;
+  }
+
+  .mana-panel,
+  .result-panel,
+  .page-panel {
+    padding: 26px;
+  }
+
+  .card-image {
+    max-width: 420px;
+  }
 }
 
 @media (max-width: 560px) {
