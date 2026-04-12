@@ -2299,6 +2299,77 @@ def draw_front_back_corner_label(pdf_canvas, page_width_mm, page_height_mm, labe
 
     pdf_canvas.drawString(text_x_pts, text_y_pts, label_text)
 
+def build_single_image_pdf_buffer(image_path):
+    pdf_settings = resolve_pdf_print_settings()
+    pdf_template_layout = resolve_pdf_template_layout()
+    print_settings = resolve_print_settings()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    buffer = BytesIO()
+    pdf_canvas = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
+
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    if (
+        pdf_template_layout.get("is_multi_card_layout", False)
+        and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card"
+    ):
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for slot in slot_defs:
+            draw_processed_image_into_two_card_slot(
+                pdf_canvas,
+                image_path,
+                print_settings["print_mode"],
+                slot,
+            )
+    else:
+        pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
+
+        pdf_canvas.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
+
+    pdf_canvas.showPage()
+    pdf_canvas.save()
+    buffer.seek(0)
+
+    return buffer
+
+def build_inline_pdf_response(pdf_buffer, filename):
+    safe_name = (filename or "document.pdf").strip()
+    if not safe_name.lower().endswith(".pdf"):
+        safe_name = f"{safe_name}.pdf"
+
+    return Response(
+        pdf_buffer,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={safe_name}"
+        }
+    )
+
 def split_chaos_pack_display_name_for_title(pack_display_name):
     raw_value = (pack_display_name or "").strip()
 
@@ -2651,7 +2722,7 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
 
     if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
         try:
-            config = get_config()
+            config = get_request_config()
             use_pack_image_for_title = (config.get("use_pack_image_for_title") or "0").strip() == "1"
 
             title_card_bytes = None
@@ -3541,6 +3612,28 @@ def ensure_card_image_cached(card_row):
     finally:
         conn.close()
 
+def ensure_card_has_local_image(card_row):
+    if not card_row:
+        return None
+
+    existing_cache_path = (card_row["image_cache_path"] or "").strip()
+    if existing_cache_path:
+        absolute_path = os.path.abspath(existing_cache_path)
+        if os.path.exists(absolute_path):
+            return card_row
+
+    refreshed_card = ensure_card_image_cached(card_row)
+    if not refreshed_card:
+        return None
+
+    refreshed_cache_path = (refreshed_card["image_cache_path"] or "").strip()
+    if refreshed_cache_path:
+        absolute_path = os.path.abspath(refreshed_cache_path)
+        if os.path.exists(absolute_path):
+            return refreshed_card
+
+    return refreshed_card
+
 def run_image_download_job(force_redownload=False):
     conn = None
 
@@ -3899,14 +3992,7 @@ def result():
         card = draw_random_tower_of_power_card() if card_database_ready else None
 
         if card:
-            existing_cache_path = card["image_cache_path"] or ""
-            cache_exists = False
-
-            if existing_cache_path:
-                cache_exists = os.path.exists(os.path.abspath(existing_cache_path))
-
-            if not cache_exists:
-                card = ensure_card_image_cached(card)
+            card = ensure_card_has_local_image(card)
 
             if card:
                 record_card_history(card["card_key"])
@@ -3940,14 +4026,7 @@ def result():
     card = draw_random_card(int(mana_value), selected_type_value=draw_type_value)
 
     if card:
-        existing_cache_path = card["image_cache_path"] or ""
-        cache_exists = False
-
-        if existing_cache_path:
-            cache_exists = os.path.exists(os.path.abspath(existing_cache_path))
-
-        if not cache_exists:
-            card = ensure_card_image_cached(card)
+        card = ensure_card_has_local_image(card)
 
         if card:
             record_card_history(card["card_key"])
@@ -4000,78 +4079,22 @@ def print_card_pdf(card_key):
     if not card:
         return "Card not found", 404
 
-    existing_cache_path = card["image_cache_path"] or ""
-    if not existing_cache_path or not os.path.exists(existing_cache_path):
-        card = ensure_card_image_cached(card)
+    card = ensure_card_has_local_image(card)
 
-    image_path = card["image_cache_path"]
-    if not image_path or not os.path.exists(image_path):
+    image_path = (card["image_cache_path"] or "").strip() if card else ""
+    if not image_path:
         return "Image not available", 404
 
-    pdf_settings = resolve_pdf_print_settings()
-    pdf_template_layout = resolve_pdf_template_layout()
-
-    width_mm = pdf_template_layout["page_width_mm"]
-    height_mm = pdf_template_layout["page_height_mm"]
-    crop_border = pdf_settings["pdf_crop_border"]
-
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
-
-    draw_x_mm = pdf_template_layout["draw_x_mm"]
-    draw_y_mm = pdf_template_layout["draw_y_mm"]
-    draw_width_mm = pdf_template_layout["draw_width_mm"]
-    draw_height_mm = pdf_template_layout["draw_height_mm"]
-
-    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
-        crop_left_right_mm = width_mm * 0.05
-        crop_top_bottom_mm = height_mm * 0.034
-
-        draw_x_mm = -crop_left_right_mm
-        draw_y_mm = -crop_top_bottom_mm
-        draw_width_mm = width_mm + (crop_left_right_mm * 2)
-        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
-
-    print_settings = resolve_print_settings()
-    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
-
-    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
-        slot_defs = get_two_card_borderless_slots_mm()
-
-        for slot in slot_defs:
-            draw_processed_image_into_two_card_slot(
-                c,
-                image_path,
-                print_settings["print_mode"],
-                slot,
-            )
-    else:
-        c.drawImage(
-            pdf_image_reader,
-            draw_x_mm * mm,
-            draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
-            preserveAspectRatio=False,
-            mask="auto",
-        )
-
-    c.showPage()
-    c.save()
-
-    buffer.seek(0)
+    absolute_image_path = os.path.abspath(image_path)
+    if not os.path.exists(absolute_image_path):
+        return "Image not available", 404
 
     pdf_filename_base = (card["scryfall_id"] or "").strip()
     if not pdf_filename_base:
         pdf_filename_base = safe_filename(card["card_key"])
 
-    return Response(
-        buffer,
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": f"inline; filename={pdf_filename_base}.pdf"
-        }
-    )
+    pdf_buffer = build_single_image_pdf_buffer(absolute_image_path)
+    return build_inline_pdf_response(pdf_buffer, f"{pdf_filename_base}.pdf")
 
 @app.route("/print-pdf/tower-of-power-batch")
 def print_tower_of_power_batch_pdf():
@@ -4195,66 +4218,8 @@ def print_custom_default_momir_vig_pdf():
     if not os.path.exists(image_path):
         return "Image not available", 404
 
-    pdf_settings = resolve_pdf_print_settings()
-    pdf_template_layout = resolve_pdf_template_layout()
-
-    width_mm = pdf_template_layout["page_width_mm"]
-    height_mm = pdf_template_layout["page_height_mm"]
-    crop_border = pdf_settings["pdf_crop_border"]
-
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
-
-    draw_x_mm = pdf_template_layout["draw_x_mm"]
-    draw_y_mm = pdf_template_layout["draw_y_mm"]
-    draw_width_mm = pdf_template_layout["draw_width_mm"]
-    draw_height_mm = pdf_template_layout["draw_height_mm"]
-
-    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
-        crop_left_right_mm = width_mm * 0.05
-        crop_top_bottom_mm = height_mm * 0.034
-
-        draw_x_mm = -crop_left_right_mm
-        draw_y_mm = -crop_top_bottom_mm
-        draw_width_mm = width_mm + (crop_left_right_mm * 2)
-        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
-
-    print_settings = resolve_print_settings()
-    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
-
-    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
-        slot_defs = get_two_card_borderless_slots_mm()
-
-        for slot in slot_defs:
-            draw_processed_image_into_two_card_slot(
-                c,
-                image_path,
-                print_settings["print_mode"],
-                slot,
-            )
-    else:
-        c.drawImage(
-            pdf_image_reader,
-            draw_x_mm * mm,
-            draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
-            preserveAspectRatio=False,
-            mask="auto",
-        )
-
-    c.showPage()
-    c.save()
-
-    buffer.seek(0)
-
-    return Response(
-        buffer,
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": "inline; filename=default_momir_vig.pdf"
-        }
-    )
+    pdf_buffer = build_single_image_pdf_buffer(image_path)
+    return build_inline_pdf_response(pdf_buffer, "default_momir_vig.pdf")
 
 @app.route("/print-custom/game-mode/<mode_value>")
 def print_custom_game_mode(mode_value):
@@ -4298,68 +4263,9 @@ def print_custom_game_mode_pdf(mode_value):
     if not os.path.exists(image_path):
         return "Image not available", 404
 
-    pdf_settings = resolve_pdf_print_settings()
-    pdf_template_layout = resolve_pdf_template_layout()
-
-    width_mm = pdf_template_layout["page_width_mm"]
-    height_mm = pdf_template_layout["page_height_mm"]
-    crop_border = pdf_settings["pdf_crop_border"]
-
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
-
-    draw_x_mm = pdf_template_layout["draw_x_mm"]
-    draw_y_mm = pdf_template_layout["draw_y_mm"]
-    draw_width_mm = pdf_template_layout["draw_width_mm"]
-    draw_height_mm = pdf_template_layout["draw_height_mm"]
-
-    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
-        crop_left_right_mm = width_mm * 0.05
-        crop_top_bottom_mm = height_mm * 0.034
-
-        draw_x_mm = -crop_left_right_mm
-        draw_y_mm = -crop_top_bottom_mm
-        draw_width_mm = width_mm + (crop_left_right_mm * 2)
-        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
-
-    print_settings = resolve_print_settings()
-    pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
-
-    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
-        slot_defs = get_two_card_borderless_slots_mm()
-
-        for slot in slot_defs:
-            draw_processed_image_into_two_card_slot(
-                c,
-                image_path,
-                print_settings["print_mode"],
-                slot,
-            )
-    else:
-        c.drawImage(
-            pdf_image_reader,
-            draw_x_mm * mm,
-            draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
-            preserveAspectRatio=False,
-            mask="auto",
-        )
-
-    c.showPage()
-    c.save()
-
-    buffer.seek(0)
-
     safe_mode_value = (mode_value or "game_mode").strip().replace("/", "_")
-
-    return Response(
-        buffer,
-        mimetype="application/pdf",
-        headers={
-            "Content-Disposition": f"inline; filename={safe_mode_value}.pdf"
-        }
-    )
+    pdf_buffer = build_single_image_pdf_buffer(image_path)
+    return build_inline_pdf_response(pdf_buffer, f"{safe_mode_value}.pdf")
 
 @app.route("/card-search")
 def card_search():
@@ -4540,18 +4446,12 @@ def card_image(card_key):
     if not card:
         return ("Not found", 404)
 
-    existing_cache_path = card["image_cache_path"] or ""
-    if existing_cache_path:
-        abs_path = os.path.abspath(existing_cache_path)
-        if os.path.exists(abs_path):
-            return send_file(abs_path)
-
-    card = ensure_card_image_cached(card)
+    card = ensure_card_has_local_image(card)
 
     if card:
-        refreshed_cache_path = card["image_cache_path"] or ""
-        if refreshed_cache_path:
-            abs_path = os.path.abspath(refreshed_cache_path)
+        cache_path = (card["image_cache_path"] or "").strip()
+        if cache_path:
+            abs_path = os.path.abspath(cache_path)
             if os.path.exists(abs_path):
                 return send_file(abs_path)
 
