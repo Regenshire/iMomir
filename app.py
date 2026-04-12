@@ -16,7 +16,7 @@ from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from io import BytesIO
 from pypdf import PdfWriter
-from flask import Flask, Response, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from paths import (
     ALL_PRINTINGS_GZ_PATH,
@@ -159,9 +159,146 @@ app = Flask(
 )
 app.secret_key = APP_SECRET_KEY
 
+def get_request_config():
+    if not hasattr(g, "_config_cache"):
+        g._config_cache = get_config()
+    return g._config_cache
+
+
+def _build_pdf_print_settings(config):
+    use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
+    crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
+    print_front_back_label = (config.get("print_front_back_label") or "1").strip() == "1"
+
+    try:
+        pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
+        if pdf_width_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        pdf_width_mm = 57.5
+
+    try:
+        pdf_height_mm = float((config.get("pdf_height_mm") or "85.25").strip())
+        if pdf_height_mm <= 0:
+            raise ValueError()
+    except ValueError:
+        pdf_height_mm = 85.25
+
+    return {
+        "use_pdf_print": use_pdf_print,
+        "pdf_width_mm": pdf_width_mm,
+        "pdf_height_mm": pdf_height_mm,
+        "pdf_crop_border": crop_border,
+        "print_front_back_label": print_front_back_label,
+    }
+
+
+def get_request_pdf_print_settings():
+    if not hasattr(g, "_pdf_print_settings_cache"):
+        g._pdf_print_settings_cache = _build_pdf_print_settings(get_request_config())
+    return g._pdf_print_settings_cache
+
+
+def _build_pdf_template_layout(config):
+    print_template = (config.get("print_template") or "dk-1234").strip().lower()
+
+    if print_template not in {
+        "dk-1234",
+        "standard",
+        "borderless-3p5x5-two-card",
+        "silhouette-letter-horizontal-8",
+        "perf-63x94",
+        "perf-69x94",
+        "landscape-3p5x5-centered",
+        "portrait-3p5x5-top-aligned",
+    }:
+        print_template = "dk-1234"
+
+    template_layout = resolve_print_template_layout(print_template)
+
+    return {
+        "print_template": template_layout["print_template"],
+        "page_width_mm": template_layout["page_width_mm"],
+        "page_height_mm": template_layout["page_height_mm"],
+        "draw_x_mm": template_layout["sheet_offset_x_mm"],
+        "draw_y_mm": template_layout["sheet_offset_y_mm"],
+        "draw_width_mm": template_layout["sheet_width_mm"],
+        "draw_height_mm": template_layout["sheet_height_mm"],
+        "uses_fixed_inner_margin": template_layout["uses_fixed_inner_margin"],
+        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
+        "is_silhouette_layout": template_layout.get("is_silhouette_layout", False),
+    }
+
+
+def get_request_pdf_template_layout():
+    if not hasattr(g, "_pdf_template_layout_cache"):
+        g._pdf_template_layout_cache = _build_pdf_template_layout(get_request_config())
+    return g._pdf_template_layout_cache
+
+
+def _build_print_settings(config):
+    print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
+    if print_template not in {
+        "dk-1234",
+        "standard",
+        "borderless-3p5x5-two-card",
+        "silhouette-letter-horizontal-8",
+        "perf-63x94",
+        "perf-69x94",
+        "landscape-3p5x5-centered",
+        "portrait-3p5x5-top-aligned",
+    }:
+        print_template = "dk-1234"
+
+    template_layout = resolve_print_template_layout(print_template)
+
+    print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
+    if print_mode not in {"grayscale", "color", "monochrome", "optimal"}:
+        print_mode = "grayscale"
+
+    open_in_new_tab = (config.get("open_print_in_new_tab") or "1").strip() == "1"
+
+    return {
+        "print_template": template_layout["print_template"],
+        "print_width": template_layout["page_width_css"],
+        "print_height": template_layout["page_height_css"],
+        "sheet_width": template_layout["sheet_width_css"],
+        "sheet_height": template_layout["sheet_height_css"],
+        "sheet_offset_x": template_layout["sheet_offset_x_css"],
+        "sheet_offset_y": template_layout["sheet_offset_y_css"],
+        "print_mode": print_mode,
+        "open_in_new_tab": open_in_new_tab,
+        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
+    }
+
+
+def get_request_print_settings():
+    if not hasattr(g, "_print_settings_cache"):
+        g._print_settings_cache = _build_print_settings(get_request_config())
+    return g._print_settings_cache
+
+
+def _build_default_momir_variant(config):
+    variant = (config.get("momir_default_token_variant") or CARD_SEARCH_DEFAULT_VARIANT).strip().lower()
+
+    if variant not in CARD_SEARCH_DEFAULT_VARIANTS:
+        variant = CARD_SEARCH_DEFAULT_VARIANT
+
+    return {
+        "key": variant,
+        "label": CARD_SEARCH_DEFAULT_VARIANTS[variant]["label"],
+        "filename": CARD_SEARCH_DEFAULT_VARIANTS[variant]["filename"],
+    }
+
+
+def get_request_default_momir_variant():
+    if not hasattr(g, "_default_momir_variant_cache"):
+        g._default_momir_variant_cache = _build_default_momir_variant(get_request_config())
+    return g._default_momir_variant_cache
+
 @app.context_processor
 def inject_global_template_state():
-    config = get_config()
+    config = get_request_config()
     current_game_mode = (config.get("game_mode") or "custom").strip().lower()
 
     return {
@@ -933,33 +1070,7 @@ def resolve_print_template_layout(print_template):
     }
 
 def resolve_pdf_print_settings():
-    config = get_config()
-
-    use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
-    crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
-    print_front_back_label = (config.get("print_front_back_label") or "1").strip() == "1"
-
-    try:
-        pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
-        if pdf_width_mm <= 0:
-            raise ValueError()
-    except ValueError:
-        pdf_width_mm = 57.5
-
-    try:
-        pdf_height_mm = float((config.get("pdf_height_mm") or "85.25").strip())
-        if pdf_height_mm <= 0:
-            raise ValueError()
-    except ValueError:
-        pdf_height_mm = 85.25
-
-    return {
-        "use_pdf_print": use_pdf_print,
-        "pdf_width_mm": pdf_width_mm,
-        "pdf_height_mm": pdf_height_mm,
-        "pdf_crop_border": crop_border,
-        "print_front_back_label": print_front_back_label,
-    }
+    return get_request_pdf_print_settings()
 
 def resolve_tower_pdf_draw_count():
     config = get_config()
@@ -1000,29 +1111,10 @@ def is_silhouette_template(print_template):
     }
 
 def resolve_pdf_template_layout():
-    config = get_config()
-    print_template = (config.get("print_template") or "dk-1234").strip().lower()
-
-    if print_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
-        print_template = "dk-1234"
-
-    template_layout = resolve_print_template_layout(print_template)
-
-    return {
-        "print_template": template_layout["print_template"],
-        "page_width_mm": template_layout["page_width_mm"],
-        "page_height_mm": template_layout["page_height_mm"],
-        "draw_x_mm": template_layout["sheet_offset_x_mm"],
-        "draw_y_mm": template_layout["sheet_offset_y_mm"],
-        "draw_width_mm": template_layout["sheet_width_mm"],
-        "draw_height_mm": template_layout["sheet_height_mm"],
-        "uses_fixed_inner_margin": template_layout["uses_fixed_inner_margin"],
-        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
-        "is_silhouette_layout": template_layout.get("is_silhouette_layout", False),
-    }
+    return get_request_pdf_template_layout()
 
 def get_active_print_template_metadata():
-    config = get_config()
+    config = get_request_config()
     selected_template_value = (config.get("print_template") or "dk-1234").strip().lower()
 
     if selected_template_value not in PRINT_TEMPLATE_METADATA:
@@ -1039,45 +1131,10 @@ def get_active_print_template_metadata():
     }
 
 def resolve_print_settings():
-    config = get_config()
-
-    print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
-    if print_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
-        print_template = "dk-1234"
-
-    template_layout = resolve_print_template_layout(print_template)
-
-    print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
-    if print_mode not in {"grayscale", "color", "monochrome", "optimal"}:
-        print_mode = "grayscale"
-
-    open_in_new_tab = (config.get("open_print_in_new_tab") or "1").strip() == "1"
-
-    return {
-        "print_template": template_layout["print_template"],
-        "print_width": template_layout["page_width_css"],
-        "print_height": template_layout["page_height_css"],
-        "sheet_width": template_layout["sheet_width_css"],
-        "sheet_height": template_layout["sheet_height_css"],
-        "sheet_offset_x": template_layout["sheet_offset_x_css"],
-        "sheet_offset_y": template_layout["sheet_offset_y_css"],
-        "print_mode": print_mode,
-        "open_in_new_tab": open_in_new_tab,
-        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
-    }
+    return get_request_print_settings()
 
 def resolve_default_momir_variant():
-    config = get_config()
-    variant = (config.get("momir_default_token_variant") or CARD_SEARCH_DEFAULT_VARIANT).strip().lower()
-
-    if variant not in CARD_SEARCH_DEFAULT_VARIANTS:
-        variant = CARD_SEARCH_DEFAULT_VARIANT
-
-    return {
-        "key": variant,
-        "label": CARD_SEARCH_DEFAULT_VARIANTS[variant]["label"],
-        "filename": CARD_SEARCH_DEFAULT_VARIANTS[variant]["filename"],
-    }
+    return get_request_default_momir_variant()
 
 def get_game_mode_option_map():
     return {item["value"]: item for item in GAME_MODE_OPTIONS}
@@ -3783,7 +3840,7 @@ def run_refresh_job(force_download=False):
 
 @app.route("/")
 def index():
-    config = get_config()
+    config = get_request_config()
     selected_type_info = resolve_selected_result_type(
         config,
         request.args.get("selected_type", ""),
@@ -3806,7 +3863,8 @@ def result():
     mana_value = request.args.get("mana_value", "").strip()
     selected_type_value = (request.args.get("selected_type") or "").strip().lower()
     card_database_ready = is_card_database_ready()
-    config = get_config()
+    config = get_request_config()
+    print_settings = resolve_print_settings()
     current_game_mode = (config.get("game_mode") or "custom").strip().lower()
     selected_type_info = resolve_selected_result_type(config, selected_type_value)
 
@@ -3819,7 +3877,7 @@ def result():
             "chaos_draft.html",
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
-            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
         )
@@ -3831,7 +3889,7 @@ def result():
             "preprint_chaos_draft.html",
             card_database_ready=card_database_ready,
             current_game_mode=current_game_mode,
-            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            open_print_in_new_tab=print_settings["open_in_new_tab"],
             default_player_count=4,
             default_packs_per_player=3,
             template_download_links=active_template_metadata["download_links"],
@@ -3862,7 +3920,7 @@ def result():
             enabled_type_options=[],
             selected_type_value="",
             card_print_href=get_card_print_href(card["card_key"]) if card else "",
-            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            open_print_in_new_tab=print_settings["open_in_new_tab"],
         )
 
     if not mana_value.isdigit():
@@ -3875,7 +3933,7 @@ def result():
             enabled_type_options=selected_type_info["enabled_types"],
             selected_type_value=selected_type_info["selected_value"],
             card_print_href="",
-            open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+            open_print_in_new_tab=print_settings["open_in_new_tab"],
         )
 
     draw_type_value = selected_type_info["selected_value"] if current_game_mode == "momir_select" else None
@@ -3903,7 +3961,7 @@ def result():
         enabled_type_options=selected_type_info["enabled_types"],
         selected_type_value=selected_type_info["selected_value"],
         card_print_href=get_card_print_href(card["card_key"]) if card else "",
-        open_print_in_new_tab=resolve_print_settings()["open_in_new_tab"],
+        open_print_in_new_tab=print_settings["open_in_new_tab"],
     )
 
 @app.route("/print/<card_key>")
@@ -4361,7 +4419,7 @@ def config():
         flash("Configuration saved.")
         return redirect(url_for("config"))
 
-    config_values = get_config()
+    config_values = get_request_config()
     import_metadata = get_import_metadata()
     current_refresh_status = build_config_page_refresh_status(import_metadata)
     current_image_status = build_config_page_image_status()
@@ -4742,7 +4800,7 @@ def sets():
         flash("Magic set selection saved.")
         return redirect(url_for("sets"))
 
-    config_values = get_config()
+    config_values = get_request_config()
     selected_chaos_pack_types = get_selected_chaos_pack_types(config_values)
     all_sets = get_all_sets()
     selected_set_codes = get_selected_set_codes()
