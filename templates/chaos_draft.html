@@ -8,6 +8,7 @@
     id="chaosDraftScreen"
     data-open-print-in-new-tab="{{ '1' if open_print_in_new_tab else '0' }}"
     data-sound-enabled="{{ '1' if sound_enabled else '0' }}"
+    data-chaos-export-format="{{ chaos_draft_export_format }}"
 >
     <div class="page-panel chaos-draft-header-panel">
         <div class="chaos-draft-header-layout">
@@ -52,9 +53,41 @@
     </div>
 
     <div id="chaosDraftOpenRow" class="chaos-draft-open-row">
-        <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
-            Open Pack
-        </button>
+        <div class="chaos-draft-open-actions">
+            <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
+                Open Pack (PDF)
+            </button>
+
+            {% if chaos_draft_export_format in ["archidekt", "moxfield"] %}
+            <div class="chaos-export-split" id="chaosExportSplit">
+                <button type="button" id="chaosExportMainButton" class="action-button secondary-button chaos-export-main-button" disabled>
+                    Export
+                </button>
+                <button type="button" id="chaosExportMenuButton" class="action-button secondary-button chaos-export-menu-button" disabled aria-expanded="false" aria-haspopup="true">
+                    ▾
+                </button>
+
+                <div id="chaosExportMenu" class="chaos-export-menu hidden">
+                    <button
+                        type="button"
+                        id="chaosExportCopyButton"
+                        class="chaos-export-menu-item"
+                        data-export-action="copy"
+                    >
+                        Copy {{ chaos_draft_export_format|capitalize }}
+                    </button>
+                    <button
+                        type="button"
+                        id="chaosExportSaveButton"
+                        class="chaos-export-menu-item"
+                        data-export-action="save"
+                    >
+                        Save {{ chaos_draft_export_format|capitalize }}
+                    </button>
+                </div>
+            </div>
+            {% endif %}
+        </div>
 
         {% if template_download_links %}
         <div class="chaos-draft-template-links">

@@ -240,6 +240,16 @@
                             {% endfor %}
                         </select>
                     </label>
+                    <label class="toggle-row" for="chaos_draft_export_format">
+                        <span>Chaos Draft Export</span>
+                        <select id="chaos_draft_export_format" name="chaos_draft_export_format">
+                            {% for value, label in chaos_draft_export_format_options %}
+                                <option value="{{ value }}" {% if config.get("chaos_draft_export_format", "none") == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
                     <label class="toggle-row" for="momir_default_token_variant">
                         <span>Momir Vig Default Token Style</span>
                         <select id="momir_default_token_variant" name="momir_default_token_variant">

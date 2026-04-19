@@ -53,6 +53,7 @@ from settings import (
     CHAOS_DUPLICATE_MAX_REROLLS,
     CHAOS_DUPLICATE_REROLL_CHANCE,
     CHAOS_PACK_TYPE_OPTIONS,
+    CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
     GAME_MODE_OPTIONS,
     MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
     MTGJSON_ALL_PRINTINGS_URL,
@@ -124,6 +125,7 @@ from modes.tower import (
 )
 
 from modes.chaos import (
+    build_chaos_pack_export_text,
     build_chaos_pack_pdf_from_variant,
     build_chaos_pack_types_config_value,
     build_chaos_spin_result,
@@ -425,6 +427,7 @@ def update_config_from_form(form_data):
         "allow_repeats": "1",
         "print_template": "dk-1234",
         "print_color_mode": "grayscale",
+        "chaos_draft_export_format": "none",
     }
 
     for key in checkbox_keys:
@@ -470,6 +473,11 @@ def update_config_from_form(form_data):
     if submitted_momir_variant not in {"dark", "light", "retro", "mtgo"}:
         submitted_momir_variant = "dark"
     updated_config["momir_default_token_variant"] = submitted_momir_variant
+
+    submitted_chaos_export_format = (form_data.get("chaos_draft_export_format") or "").strip().lower()
+    if submitted_chaos_export_format not in {"none", "archidekt", "moxfield"}:
+        submitted_chaos_export_format = select_defaults["chaos_draft_export_format"]
+    updated_config["chaos_draft_export_format"] = submitted_chaos_export_format
 
     submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
     try:
@@ -3989,6 +3997,7 @@ def result():
             current_game_mode=current_game_mode,
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
+            chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
             template_download_links=active_template_metadata["download_links"],
         )
 
@@ -4348,6 +4357,7 @@ def config():
         repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
+        chaos_draft_export_format_options=CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
@@ -4516,7 +4526,10 @@ def chaos_draft_open_test():
 
 @app.route("/chaos-draft/spin", methods=["POST"])
 def chaos_draft_spin():
-    spin_result = build_chaos_spin_result(app.static_folder)
+    spin_result = build_chaos_spin_result(
+        app.static_folder,
+        write_debug_log,
+    )
 
     if not spin_result:
         return jsonify({
@@ -4569,6 +4582,77 @@ def chaos_draft_open_file():
         }
     )
 
+@app.route("/chaos-draft/export", methods=["POST"])
+def chaos_draft_export():
+    config = get_request_config()
+    export_format = (config.get("chaos_draft_export_format") or "none").strip().lower()
+
+    if export_format not in {"archidekt", "moxfield"}:
+        return jsonify({
+            "ok": False,
+            "message": "Chaos Draft export is disabled."
+        }), 400
+
+    opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
+
+    if not opened_pack:
+        return jsonify({
+            "ok": False,
+            "message": "No opened Chaos Draft pack is available."
+        }), 400
+
+    try:
+        export_text = build_chaos_pack_export_text(opened_pack, export_format)
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    filename_base = safe_filename(
+        f"{opened_pack['set_code']}_{opened_pack['booster_name']}_{export_format}".lower()
+    )
+
+    set_chaos_session_state(
+        "pending_opened_pack_export",
+        {
+            "filename": f"{filename_base}.txt",
+            "export_text": export_text,
+            "export_format": export_format,
+        },
+    )
+
+    return jsonify({
+        "ok": True,
+        "export_format": export_format,
+        "filename": f"{filename_base}.txt",
+        "export_text": export_text,
+        "download_url": url_for("chaos_draft_export_file"),
+    })
+
+
+@app.route("/chaos-draft/export-file", methods=["GET"])
+def chaos_draft_export_file():
+    export_state = get_chaos_session_state("pending_opened_pack_export", default_value=None)
+
+    if not export_state:
+        return "No Chaos Draft export is available.", 404
+
+    export_text = (export_state.get("export_text") or "").strip()
+    filename = (export_state.get("filename") or "chaos_draft_export.txt").strip()
+
+    if not export_text:
+        return "Chaos Draft export data was empty.", 404
+
+    return Response(
+        export_text,
+        mimetype="text/plain; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store"
+        }
+    )
+
 @app.route("/chaos-draft/preprint-pdf", methods=["GET"])
 def chaos_draft_preprint_pdf():
     if not is_card_database_ready():
@@ -4605,7 +4689,9 @@ def chaos_draft_preprint_pdf():
 @app.route("/chaos-draft/next", methods=["POST"])
 def chaos_draft_next():
     clear_chaos_session_state("pending_spin_result")
+    clear_chaos_session_state("pending_opened_pack")
     clear_chaos_session_state("pending_opened_pack_pdf")
+    clear_chaos_session_state("pending_opened_pack_export")
 
     return jsonify({
         "ok": True,

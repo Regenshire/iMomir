@@ -967,8 +967,49 @@ def choose_random_eligible_chaos_pack_variant(static_folder):
         "variant": chosen_variant,
     }
 
+def build_opened_chaos_pack_state(
+    set_code,
+    booster_name,
+    booster_index,
+    pack_display_name,
+    write_debug_log_fn,
+):
+    open_result = open_chaos_pack_with_bonus_rule(
+        set_code,
+        booster_name,
+        booster_index,
+        write_debug_log_fn,
+    )
 
-def build_chaos_spin_result(static_folder):
+    cards = open_result["cards"]
+
+    if not cards:
+        raise ValueError("Chaos Draft pack opened but no cards were generated.")
+
+    cards = sort_opened_chaos_pack_cards(cards, booster_name, write_debug_log_fn)
+
+    opened_pack_state = {
+        "set_code": (set_code or "").strip().upper(),
+        "booster_name": (booster_name or "").strip().lower(),
+        "booster_index": int(booster_index),
+        "display_name": (pack_display_name or "").strip(),
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+        "total_cards": len(cards),
+        "cards": cards,
+    }
+
+    set_chaos_session_state("pending_opened_pack", opened_pack_state)
+
+    record_chaos_pack_history(
+        set_code,
+        booster_name,
+        booster_index,
+        pack_display_name,
+    )
+
+    return opened_pack_state
+
+def build_chaos_spin_result(static_folder, write_debug_log_fn=None):
     eligible_packs = get_eligible_chaos_packs_for_spin(static_folder)
 
     if not eligible_packs:
@@ -1007,6 +1048,14 @@ def build_chaos_spin_result(static_folder):
     if not chosen_variant:
         return None
 
+    opened_pack_state = build_opened_chaos_pack_state(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+        winning_pack["display_name"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
     spin_result = {
         "display_packs": display_packs,
         "winning_pack": {
@@ -1024,6 +1073,9 @@ def build_chaos_spin_result(static_folder):
             "booster_weight": chosen_variant["booster_weight"],
         },
         "winning_stop_index": winning_stop_index,
+        "opened_pack_ready": True,
+        "opened_pack_total_cards": int(opened_pack_state.get("total_cards") or 0),
+        "bonus_pack_opened": bool(opened_pack_state.get("bonus_pack_opened")),
     }
 
     set_chaos_session_state("pending_spin_result", spin_result)
@@ -1067,59 +1119,76 @@ def build_chaos_pack_pdf_from_variant(
         booster_name=booster_name,
     )
 
+def build_chaos_pack_export_text(opened_pack, export_format):
+    if not opened_pack:
+        raise ValueError("No opened Chaos Draft pack is available.")
+
+    normalized_export_format = (export_format or "").strip().lower()
+    if normalized_export_format not in {"archidekt", "moxfield"}:
+        raise ValueError("Invalid Chaos Draft export format.")
+
+    cards = opened_pack.get("cards") or []
+    if not cards:
+        raise ValueError("Opened Chaos Draft pack did not contain any cards.")
+
+    quantity_by_name = {}
+    ordered_names = []
+
+    for card in cards:
+        card_name = (card.get("card_name") or "").strip()
+        if not card_name:
+            continue
+
+        if card_name not in quantity_by_name:
+            quantity_by_name[card_name] = 0
+            ordered_names.append(card_name)
+
+        quantity_by_name[card_name] += 1
+
+    lines = []
+    for card_name in ordered_names:
+        lines.append(f"{quantity_by_name[card_name]} {card_name}")
+
+    export_text = "\n".join(lines).strip()
+
+    if not export_text:
+        raise ValueError("Could not build Chaos Draft export text.")
+
+    return export_text
 
 def build_pending_chaos_pack_pdf(
     build_chaos_pack_pdf_fn,
     write_debug_log_fn,
     safe_filename_fn,
 ):
-    spin_result = get_pending_chaos_spin_result()
+    opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
 
-    if not spin_result:
+    if not opened_pack:
         return {
             "ok": False,
-            "message": "No pending Chaos Draft spin found."
+            "message": "No opened Chaos Draft pack is available."
         }
 
-    chosen_variant = spin_result.get("chosen_variant") or {}
+    set_code = (opened_pack.get("set_code") or "").strip().upper()
+    booster_name = (opened_pack.get("booster_name") or "").strip().lower()
+    display_name = (opened_pack.get("display_name") or "").strip()
+    cards = opened_pack.get("cards") or []
 
-    set_code = chosen_variant.get("set_code")
-    booster_name = chosen_variant.get("booster_name")
-    booster_index = chosen_variant.get("booster_index")
-
-    if not set_code or booster_index is None:
+    if not set_code or not booster_name or not display_name:
         return {
             "ok": False,
-            "message": "Invalid Chaos Draft selection."
+            "message": "Opened Chaos Draft pack data was incomplete."
         }
-
-    open_result = open_chaos_pack_with_bonus_rule(
-        set_code,
-        booster_name,
-        booster_index,
-        write_debug_log_fn,
-    )
-
-    cards = open_result["cards"]
 
     if not cards:
         return {
             "ok": False,
-            "message": "Chaos Draft pack opened but no cards were generated."
+            "message": "Opened Chaos Draft pack did not contain any cards."
         }
-
-    cards = sort_opened_chaos_pack_cards(cards, booster_name, write_debug_log_fn)
-
-    record_chaos_pack_history(
-        set_code,
-        booster_name,
-        booster_index,
-        spin_result["winning_pack"]["display_name"],
-    )
 
     pdf_buffer = build_chaos_pack_pdf_fn(
         cards,
-        spin_result["winning_pack"]["display_name"],
+        display_name,
         set_code=set_code,
         booster_name=booster_name,
     )
@@ -1140,7 +1209,6 @@ def build_pending_chaos_pack_pdf(
         "filename": f"{filename_safe}.pdf",
         "download_url": url_for("chaos_draft_open_file"),
     }
-
 
 def build_preprint_chaos_draft_pdf(
     player_count,

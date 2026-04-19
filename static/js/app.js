@@ -834,6 +834,11 @@ function initializeChaosDraftPage() {
     const busyOverlay = document.getElementById("chaosDraftBusyOverlay");
     const busyTitle = document.getElementById("chaosDraftBusyTitle");
     const busyText = document.getElementById("chaosDraftBusyText");
+    const exportMainButton = document.getElementById("chaosExportMainButton");
+    const exportMenuButton = document.getElementById("chaosExportMenuButton");
+    const exportMenu = document.getElementById("chaosExportMenu");
+    const exportCopyButton = document.getElementById("chaosExportCopyButton");
+    const exportSaveButton = document.getElementById("chaosExportSaveButton");
     const openPrintInNewTab = chaosDraftScreen
         ? chaosDraftScreen.getAttribute("data-open-print-in-new-tab") === "1"
         : true;
@@ -841,6 +846,10 @@ function initializeChaosDraftPage() {
     const soundEnabled = chaosDraftScreen
         ? chaosDraftScreen.getAttribute("data-sound-enabled") === "1"
         : true;
+
+    const chaosExportFormat = chaosDraftScreen
+        ? (chaosDraftScreen.getAttribute("data-chaos-export-format") || "none").toLowerCase()
+        : "none";
 
     if (
         !spinCtaButton ||
@@ -876,6 +885,7 @@ function initializeChaosDraftPage() {
     let rouletteLastTranslateX = 0;
     let rouletteTickTimer = null;
     let currentWinningPack = null;
+    let selectedExportAction = "copy";
 
     const jackpotBoosterTypes = new Set([
         "collector",
@@ -925,8 +935,18 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = false;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack";
+            openButton.textContent = "Open Pack (PDF)";
         }
+
+        if (exportMainButton) {
+            exportMainButton.disabled = chaosExportFormat === "none";
+        }
+
+        if (exportMenuButton) {
+            exportMenuButton.disabled = chaosExportFormat === "none";
+        }
+
+        applySelectedExportActionUi();
 
         if (nextButton) {
             nextButton.disabled = false;
@@ -1210,6 +1230,127 @@ function initializeChaosDraftPage() {
         hideBusyOverlay();
     });
 
+    function closeExportMenu() {
+        if (!exportMenu || !exportMenuButton) {
+            return;
+        }
+
+        exportMenu.classList.add("hidden");
+        exportMenuButton.setAttribute("aria-expanded", "false");
+    }
+
+    function toggleExportMenu() {
+        if (!exportMenu || !exportMenuButton || exportMenuButton.disabled) {
+            return;
+        }
+
+        const willOpen = exportMenu.classList.contains("hidden");
+        exportMenu.classList.toggle("hidden", !willOpen);
+        exportMenuButton.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    }
+
+    function applySelectedExportActionUi() {
+        if (exportCopyButton) {
+            exportCopyButton.classList.toggle(
+                "chaos-export-menu-item-active",
+                selectedExportAction === "copy"
+            );
+        }
+
+        if (exportSaveButton) {
+            exportSaveButton.classList.toggle(
+                "chaos-export-menu-item-active",
+                selectedExportAction === "save"
+            );
+        }
+
+        if (exportMainButton) {
+            exportMainButton.textContent = selectedExportAction === "save" ? "Save" : "Copy";
+        }
+    }
+
+    function setSelectedExportAction(actionName) {
+        const normalizedAction = String(actionName || "").trim().toLowerCase();
+
+        if (normalizedAction !== "copy" && normalizedAction !== "save") {
+            return;
+        }
+
+        selectedExportAction = normalizedAction;
+        applySelectedExportActionUi();
+    }
+
+    async function runSelectedExportAction() {
+        if (selectedExportAction === "save") {
+            await requestChaosExport(true);
+            return;
+        }
+
+        await requestChaosExport(false);
+    }
+
+    async function copyTextToClipboard(textValue) {
+        const normalizedText = String(textValue || "");
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(normalizedText);
+                return true;
+            } catch (error) {
+                // Fall through to legacy copy method.
+            }
+        }
+
+        const hiddenTextArea = document.createElement("textarea");
+        hiddenTextArea.value = normalizedText;
+        hiddenTextArea.setAttribute("readonly", "");
+        hiddenTextArea.style.position = "fixed";
+        hiddenTextArea.style.top = "-1000px";
+        hiddenTextArea.style.left = "-1000px";
+        hiddenTextArea.style.opacity = "0";
+        hiddenTextArea.style.pointerEvents = "none";
+
+        document.body.appendChild(hiddenTextArea);
+
+        try {
+            hiddenTextArea.focus();
+            hiddenTextArea.select();
+            hiddenTextArea.setSelectionRange(0, hiddenTextArea.value.length);
+
+            const copySucceeded = document.execCommand("copy");
+
+            if (!copySucceeded) {
+                throw new Error("Legacy clipboard copy command failed.");
+            }
+
+            return true;
+        } finally {
+            document.body.removeChild(hiddenTextArea);
+        }
+    }
+
+    async function requestChaosExport(saveToFile) {
+        const response = await fetch("/chaos-draft/export", {
+            method: "POST",
+            headers: {
+                "Accept": "application/json"
+            }
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Failed to export Chaos Draft pack.");
+        }
+
+        if (saveToFile) {
+            window.location.href = payload.download_url;
+            return;
+        }
+
+        await copyTextToClipboard(payload.export_text);
+    }
+
     function hideOpenRow() {
         if (openRow) {
             openRow.classList.remove("chaos-draft-open-row-visible");
@@ -1218,8 +1359,18 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = true;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack";
+            openButton.textContent = "Open Pack (PDF)";
         }
+
+        if (exportMainButton) {
+            exportMainButton.disabled = true;
+        }
+
+        if (exportMenuButton) {
+            exportMenuButton.disabled = true;
+        }
+
+        closeExportMenu();
     }
 
     function showOpenRow() {
@@ -1230,8 +1381,18 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = false;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack";
+            openButton.textContent = "Open Pack (PDF)";
         }
+
+        if (exportMainButton) {
+            exportMainButton.disabled = chaosExportFormat === "none";
+        }
+
+        if (exportMenuButton) {
+            exportMenuButton.disabled = chaosExportFormat === "none";
+        }
+
+        applySelectedExportActionUi();
     }
 
     function setButtonsForIdle() {
@@ -1644,6 +1805,61 @@ function initializeChaosDraftPage() {
             }
         });
     }
+
+    if (exportMainButton) {
+        exportMainButton.addEventListener("click", async function () {
+            try {
+                await runSelectedExportAction();
+            } catch (error) {
+                window.alert(error.message || "Failed to export Chaos Draft pack.");
+            }
+        });
+    }
+
+    if (exportMenuButton) {
+        exportMenuButton.addEventListener("click", function (event) {
+            event.stopPropagation();
+            toggleExportMenu();
+        });
+    }
+
+    if (exportCopyButton) {
+        exportCopyButton.addEventListener("click", async function () {
+            setSelectedExportAction("copy");
+            closeExportMenu();
+
+            try {
+                await runSelectedExportAction();
+            } catch (error) {
+                window.alert(error.message || "Failed to export Chaos Draft pack.");
+            }
+        });
+    }
+
+    if (exportSaveButton) {
+        exportSaveButton.addEventListener("click", async function () {
+            setSelectedExportAction("save");
+            closeExportMenu();
+
+            try {
+                await runSelectedExportAction();
+            } catch (error) {
+                window.alert(error.message || "Failed to export Chaos Draft pack.");
+            }
+        });
+    }
+
+    document.addEventListener("click", function () {
+        closeExportMenu();
+    });
+
+    if (exportMenu) {
+        exportMenu.addEventListener("click", function (event) {
+            event.stopPropagation();
+        });
+    }  
+
+    setSelectedExportAction("copy");
 
     spinnerShell.classList.remove("hidden");
     idleCta.classList.remove("hidden");

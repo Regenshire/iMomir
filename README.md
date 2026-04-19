@@ -1,212 +1,230 @@
 # iMomir
 
-iMomir is a web application for playing a **paper version of the Magic: The Gathering Momir Basic format**.
+iMomir is a web app for playing paper versions of Magic: The Gathering random card formats.
 
-It generates random cards by mana value and allows instant printing directly from a phone using AirPrint-compatible label printers.
+You can use it to generate cards by mana value, open random Chaos Draft packs, print cards and packs, and export Chaos Draft deck lists.
 
----
+It is designed to work well on a computer, laptop, phone, or tablet when it is hosted on a device on your local network.
 
-## 🎯 Core Concept
+## What iMomir Can Do
 
-Enter a mana value → iMomir selects a **random valid creature card** → print it instantly as a physical card.
+- Generate random cards by mana value
+- Support multiple game modes
+- Filter by set
+- Open random Chaos Draft packs
+- Generate printable PDFs
+- Cache card images locally
+- Export Chaos Draft lists for Archidekt or Moxfield
+- Show a QR code so a phone can open the app quickly
 
-Designed for fast, real-time gameplay at a table.
+## Game Modes
 
----
+iMomir currently includes:
 
-## 🚀 Key Features
+- Custom
+- Momir Basic
+- Momir Select
+- Momir Planeswalker
+- Momir Legends
+- Momir Battleship
+- Momir Aggro
+- Momir Odds
+- Momir Evens
+- Momir Prime
+- Tower of Power
+- Chaos Draft
+- PRE-PRINT Chaos Draft
+- Planechase
+- Archenemy
 
-- 🎲 Random card generation by mana value
-- 🎮 Multiple game modes (Momir Basic, Legends, Planeswalker, etc.)
-- 🔍 Advanced filtering (type, rarity, sets, Arena, etc.)
-- 🖼 Automatic card image caching (Scryfall)
-- 🗃 Local SQLite database (MTGJSON)
-- 📱 Mobile-first UI (optimized for phone browsers such as Firefox and Chrome)
-- 🖨 Direct print support:
-  - Standard (2.5" × 3.5")
-  - Brother DK-1234 labels (60mm × 86mm)
+## What You Need
 
----
-
-## 🧱 Technology Stack
-
-- Backend: Flask
-- Database: SQLite  
-- Frontend: HTML, CSS, Vanilla JS  
-- Data Sources:
-  - MTGJSON (card metadata)
-  - Scryfall (card images)
-
----
-
-## ⚙️ Installation
-
-### 1. Install Python
-
-Download:
-https://www.python.org/downloads/
-
----
-
-### 2. Install Dependencies
+Install the required Python packages:
 
 ```bash
 pip install -r requirements.txt
 ```
 
----
+## How to Start the App
 
-## 🌐 Running as a Network Server (REQUIRED)
-
-⚠️ **This app is NOT meant to be used locally only.**  
-You must run it on a computer/server so your mobile device can access it.  You can also run it on a laptop for use on the laptop. This is a web application that you host.
-
----
-
-### Step 1 — Start the Server
+Run:
 
 ```bash
 python app.py
 ```
 
-The app runs on:
+The app starts on port 5000.
 
-```
-http://0.0.0.0:5000
-```
+## How to Open the App
 
----
+### If you are using the same computer
 
-### Step 2 — Determine Your Local IP
+Open:
 
-#### Windows
-```bash
-ipconfig
+```text
+http://127.0.0.1:5000
 ```
 
-#### Mac / Linux
-```bash
-ifconfig
-```
-or
-```bash
-ip addr
+### If you are using a phone or another device on your network
+
+Find the IP address of the computer or device running the iMomir application, then open:
+
+```text
+http://YOUR-IP-ADDRESS:5000
 ```
 
 Example:
-```
-192.168.1.50
-```
 
----
-
-### Step 3 — Open on Your Phone
-
-On the same WiFi network:
-
-```
+```text
 http://192.168.1.50:5000
 ```
 
----
+## First Time Setup
 
-### Step 4 — Use Built-in QR Code (Recommended)
+When you first open iMomir, you need to load the database.
 
-Go to:
+### Step 1
+Open the `Modes` tab.
 
-```
-Config → QR Code Scan
-```
+### Step 2
+Open the `Card Database` section.
 
-Scan the QR code to open instantly.
+### Step 3
+Click `Download Card Database`.
 
----
+This loads the card data and set data needed for the app.
 
-## 🧠 How Networking Works (Important)
+### Step 4
+If you want, you can also use the image download tools in the same section to pre-download card images.
 
-iMomir automatically determines your LAN-accessible address.
+If you do not do that, iMomir can still download images later as needed.
 
-If you see `127.0.0.1` in your QR code:
+## Main Tabs
 
-👉 Your system failed to resolve LAN IP  
-👉 Fix by:
-- Connecting to WiFi
-- Disabling VPN
-- Ensuring network allows local routing
+## Draft
 
----
+This is the main play screen.
 
-## 🛠 Initial Setup (Required)
+What appears here depends on the selected mode.
 
-After first launch:
+Examples:
 
-1. Go to **Config → Card Database**
-2. Click:
-   - ✅ **Refresh Card Database**
-   - ✅ **Download Card Images**
+- Momir modes let you enter a mana value and generate a card
+- Tower of Power lets you draw random cards from the enabled set pool
+- Chaos Draft lets you spin for a random pack, then open or export it
+- PRE-PRINT Chaos Draft lets you generate printable packs ahead of time
 
----
+## Sets
 
-## 🖨 Printing
+Use this tab to control what sets are available.
 
-### Recommended Hardware
+You can:
 
-- Printer: Brother QL-820NWBC
-- Labels: DK-1234 (60mm × 86mm)
+- use all sets
+- manually choose sets
+- filter by year
+- filter by set type
+- control which booster types are allowed in Chaos Draft
 
----
+## Modes
 
-### Print Flow
+Use this tab to control the app settings.
 
-1. Generate card
-2. Tap **Print**
-3. iPhone Safari → Share → Print (AirPrint)
+You can:
 
----
+- choose the active game mode
+- change print settings
+- refresh the card database
+- download images
+- control repeat behavior
+- open the QR code screen
 
-## 🎮 Game Modes
+## Printing
 
-- Momir Basic
-- Planeswalker
-- Legends
-- Aggro / Battleship
-- Odd / Even / Prime
-- Planechase / Archenemy
+iMomir supports normal browser printing and PDF printing.
 
----
+### Browser Printing
 
-## 🔄 Refresh Behavior
+Used when PDF printing is turned off.
 
-### Refresh Card Database
-- Downloads latest MTGJSON
-- Rebuilds database
+### PDF Printing
 
-### Download Card Images
-- Matches cards and caches locally
+Used when PDF printing is turned on.
 
----
+Print settings include:
 
-## ⚠️ Known Limitations
+- print template
+- print color mode
+- PDF width and height
+- crop border
+- front/back label
+- open print in new tab
+- Chaos Draft title image options
 
-- iPhone Safari blocks auto-print, its recommended that you use Firefox or Chrome on apple devices so that you don't have to manually select the print option in the browser.
-- Initial card database download takes a little time, be patient
-- Requires network access
+## Chaos Draft
 
----
+Chaos Draft lets you spin for a random booster pack from the sets and booster types you have enabled.
 
-## 📜 License
+### Chaos Draft flow
+
+### Step 1
+Click the spin button.
+
+### Step 2
+iMomir selects a random eligible booster pack.
+
+### Step 3
+The pack contents are generated immediately.
+
+### Step 4
+You can then:
+
+- open the pack as a printable PDF
+- export the pack list for Archidekt (configured in Config)
+- export the pack list for Moxfield (configured in Config)
+
+## PRE-PRINT Chaos Draft
+
+PRE-PRINT Chaos Draft lets you generate multiple Chaos Draft packs at once.
+
+You choose:
+
+- number of players
+- number of packs per player
+
+iMomir then generates a combined printable PDF that can be printed.
+
+## QR Code
+
+The QR code screen makes it easy to open iMomir on a phone or tablet.
+
+Open the QR code from the `Modes` tab and scan it with your phone.
+
+## Data Sources
+
+iMomir uses:
+
+- MTGJSON for card and booster data
+- Scryfall for image matching and card image data
+
+## Notes
+
+- iMomir is meant to run as a local web app
+- it works on the same computer or across your local network
+- first-time database setup can take a little time
+- image downloads can also take some time
+- clipboard copy may not work on every browser or non-secure local network page, but Save export will still work
+
+## License
 
 MIT License
 
----
+## Disclaimer
 
-## ⚖️ Disclaimer
+iMomir is an unofficial fan project and is not affiliated with Wizards of the Coast.
 
-Not affiliated with Wizards of the Coast.
+## Credits
+The following online resources are used extensively by the application:
 
----
-
-## 🙌 Credits
-
-- MTGJSON — https://mtgjson.com
-- Scryfall — https://scryfall.com
+- MTGJSON
+- Scryfall

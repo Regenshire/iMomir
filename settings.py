@@ -81,6 +81,7 @@ DEFAULT_CONFIG = {
     "debug_log": "0",
     "tower_pdf_draw_count": "7",
     "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
+    "chaos_draft_export_format": "none",
 }
 
 REPEAT_MODE_OPTIONS = [
@@ -149,6 +150,12 @@ PRINT_TEMPLATE_METADATA = {
         ],
     },
 }
+
+CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [
+    ("none", "None"),
+    ("archidekt", "Archidekt"),
+    ("moxfield", "Moxfield"),
+]
 
 PRINT_COLOR_MODE_OPTIONS = [
     ("grayscale", "Grayscale"),

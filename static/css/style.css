@@ -1652,6 +1652,78 @@ input {
     display: block;
 }
 
+.chaos-draft-open-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.chaos-export-split {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 52px;
+    gap: 0;
+    min-width: 220px;
+}
+
+.chaos-export-main-button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.chaos-export-menu-button {
+    min-width: 52px;
+    border-left: 1px solid var(--border);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.chaos-export-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 220px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.32);
+    padding: 8px;
+    z-index: 30;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.chaos-export-menu:not(.hidden) {
+    display: flex;
+}
+
+.chaos-export-menu.hidden {
+    display: none;
+}
+
+.chaos-export-menu-item {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    text-align: left;
+    padding: 10px 12px;
+    cursor: pointer;
+}
+
+.chaos-export-menu-item:hover {
+    background: var(--button);
+}
+
+.chaos-export-menu-item-active {
+    background: rgba(72, 127, 255, 0.18);
+    border-color: rgba(110, 156, 255, 0.55);
+    color: #ffffff;
+}
+
 .chaos-draft-open-button {
     min-height: 66px;
     font-size: 1.2rem;
@@ -2072,6 +2144,14 @@ input {
     .chaos-draft-spin-cta {
         width: 220px;
         height: 220px;
+    }
+
+    .chaos-draft-open-actions {
+        grid-template-columns: 1fr;
+    }
+
+    .chaos-export-split {
+        min-width: 100%;
     }
 }
 
