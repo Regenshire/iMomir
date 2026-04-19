@@ -1,6 +1,6 @@
 # iMomir
 
-iMomir is a mobile-first web application for playing a **paper version of the Magic: The Gathering Momir Basic format**.
+iMomir is a web application for playing a **paper version of the Magic: The Gathering Momir Basic format**.
 
 It generates random cards by mana value and allows instant printing directly from a phone using AirPrint-compatible label printers.
 
@@ -183,27 +183,6 @@ After first launch:
 
 ### Download Card Images
 - Matches cards and caches locally
-
----
-
-## 🧪 Optional: Production Mode
-
-```bash
-pip install waitress
-```
-
-```python
-from waitress import serve
-serve(app, host="0.0.0.0", port=5000)
-```
-
----
-
-## 🔐 Firewall Notes
-
-- Allow Python through firewall
-- Ensure port 5000 is open
-- Devices must be on same network
 
 ---
 
