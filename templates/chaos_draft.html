@@ -54,6 +54,9 @@
 
     <div id="chaosDraftOpenRow" class="chaos-draft-open-row">
         <div class="chaos-draft-open-actions">
+            <button type="button" id="chaosViewButton" class="action-button secondary-button chaos-draft-view-button" disabled>
+                View
+            </button>
             <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
                 Open Pack (PDF)
             </button>
@@ -102,6 +105,29 @@
             {% endfor %}
         </div>
         {% endif %}
+    </div>
+
+    <div id="chaosDraftInlineViewPanel" class="page-panel chaos-pack-inline-view-panel hidden">
+        <div class="chaos-pack-inline-view-header">
+            <div class="chaos-pack-inline-view-header-copy">
+                <h2 id="chaosPackInlineTitle" class="page-title">Pack contents</h2>
+                <p id="chaosPackInlineSubtitle" class="page-subtitle"></p>
+            </div>
+        </div>
+
+        <div id="chaosPackInlineGrid" class="chaos-pack-inline-grid"></div>
+    </div>
+
+    <div id="chaosPackZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
+        <div id="chaosPackZoomBackdrop" class="card-zoom-backdrop"></div>
+        <div class="card-zoom-content">
+            <img
+                id="chaosPackZoomImage"
+                src=""
+                alt=""
+                class="card-zoom-image"
+            >
+        </div>
     </div>
 
 <div id="chaosDraftBusyOverlay" class="chaos-draft-busy-overlay hidden" aria-hidden="true">

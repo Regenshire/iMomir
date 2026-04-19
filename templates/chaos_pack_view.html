@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Pack View{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel chaos-pack-view-header-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">{{ pack_display_name }}</h1>
+                <p class="page-subtitle">
+                    {{ pack_total_cards }} cards{% if bonus_pack_opened %} • Bonus pack opened{% endif %}
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="chaos-pack-view-grid">
+        {% for card in cards %}
+        <div class="chaos-pack-view-card">
+            <div class="chaos-pack-view-image-wrap">
+                <img
+                    src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                    alt="{{ card.card_name }}"
+                    class="chaos-pack-view-image"
+                >
+            </div>
+
+            <div class="chaos-pack-view-info">
+                <div class="chaos-pack-view-name">{{ card.card_name }}</div>
+
+                {% if display_pack_prices %}
+                <div class="chaos-pack-view-price">
+                    {% if card.price_info.price is not none %}
+                        ${{ "%.2f"|format(card.price_info.price) }}
+                    {% else %}
+                        Price unavailable
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if card.special_badges %}
+                <div class="chaos-pack-view-badges">
+                    {% for badge in card.special_badges %}
+                    <span class="chaos-pack-view-badge">{{ badge }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

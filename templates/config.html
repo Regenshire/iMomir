@@ -343,6 +343,26 @@
                             {% if config.use_pack_image_for_title == "1" %}checked{% endif %}
                         >
                     </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Display Pack Prices</span>
+                        <input
+                            type="checkbox"
+                            name="display_pack_prices"
+                            {% if config.display_pack_prices == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row" for="pack_price_source">
+                        <span>Pack Price Source</span>
+                        <select id="pack_price_source" name="pack_price_source">
+                            {% for value, label in pack_price_source_options %}
+                                <option value="{{ value }}" {% if config.get("pack_price_source", "tcgplayer-retail") == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
                 </div>
             </div>
             
@@ -471,5 +491,32 @@
             </div>
         </div>
     </div>
+
+    <footer class="app-footer">
+        <div class="app-footer-credits">
+        Powered by
+        <a
+            href="https://mtgjson.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="app-footer-link"
+        >
+            MTGJSON
+        </a>
+        and
+        <a
+            href="https://scryfall.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="app-footer-link"
+        >
+            Scryfall
+        </a>
+        </div>
+
+        <div class="app-footer-disclaimer">
+        iMomir is not approved or endorsed by Wizards of the Coast in any way. Magic: The Gathering card images and rules are property of Wizards of the Coast. © Wizards of the Coast LLC.
+        </div>
+    </footer>
 </div>
 {% endblock %}

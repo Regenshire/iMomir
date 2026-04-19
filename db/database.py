@@ -320,6 +320,27 @@ def initialize_database():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS card_prices (
+            card_uuid TEXT PRIMARY KEY,
+            tcgplayer_normal_price REAL,
+            tcgplayer_foil_price REAL,
+            tcgplayer_etched_price REAL,
+            currency TEXT,
+            price_date TEXT,
+            updated_at_utc TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_card_prices_uuid
+        ON card_prices (card_uuid)
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_chaos_pack_history_set_booster
         ON chaos_pack_history (set_code, booster_name, booster_index)
         """

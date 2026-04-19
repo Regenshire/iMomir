@@ -29,6 +29,8 @@ ALL_PRINTINGS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json")
 ALL_PRINTINGS_GZ_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json.gz")
 
 SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
+ALL_PRICES_TODAY_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPricesToday.json")
+ALL_PRICES_TODAY_ZIP_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPricesToday.json.zip")
 
 SET_BOOSTER_CONTENTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContents.csv")
 SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH = os.path.join(DATA_DOWNLOAD_DIR, "setBoosterContentWeights.csv")

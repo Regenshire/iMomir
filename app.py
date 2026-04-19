@@ -86,6 +86,12 @@ from settings import (
     TYPE_FLAG_MAP,
 )
 
+from db.pricing import (
+    download_all_prices_today_json,
+    enrich_pack_cards_with_prices,
+    import_all_prices_today_into_database,
+)
+
 from db.database import (
     ensure_column_exists,
     get_all_sets,
@@ -420,6 +426,7 @@ def update_config_from_form(form_data):
         "open_print_in_new_tab",
         "sound_enabled",
         "debug_log",
+        "display_pack_prices",
     }
 
     select_defaults = {
@@ -468,6 +475,11 @@ def update_config_from_form(form_data):
     if submitted_color_mode not in {"grayscale", "color", "monochrome", "optimal"}:
         submitted_color_mode = select_defaults["print_color_mode"]
     updated_config["print_color_mode"] = submitted_color_mode
+
+    submitted_pack_price_source = (form_data.get("pack_price_source") or "").strip().lower()
+    if submitted_pack_price_source not in {"tcgplayer-retail"}:
+        submitted_pack_price_source = "tcgplayer-retail"
+    updated_config["pack_price_source"] = submitted_pack_price_source
 
     submitted_momir_variant = (form_data.get("momir_default_token_variant") or "").strip().lower()
     if submitted_momir_variant not in {"dark", "light", "retro", "mtgo"}:
@@ -3919,6 +3931,27 @@ def run_refresh_job(force_download=False):
         download_chaos_booster_csvs(force_download=True)
         import_chaos_booster_data()
 
+        set_refresh_status(
+            stage="Downloading Price Data",
+            message="Downloading MTGJSON AllPricesToday data...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        download_all_prices_today_json()
+
+        set_refresh_status(
+            stage="Importing Price Data",
+            message="Importing card prices into SQLite...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        imported_price_rows = import_all_prices_today_into_database()
+        set_import_metadata("card_prices_imported", imported_price_rows)
+
         refresh_finished_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
         set_import_metadata("last_refresh_utc", refresh_finished_at)
@@ -4555,6 +4588,39 @@ def chaos_draft_open():
 
     return jsonify(result)
 
+@app.route("/chaos-card-image/<card_uuid>", methods=["GET"])
+def chaos_card_image(card_uuid):
+    card_row = get_chaos_card_by_uuid(card_uuid)
+
+    if not card_row:
+        return ("Not found", 404)
+
+    page_entries = build_chaos_print_pages_for_card(card_row)
+    if not page_entries:
+        return ("Not found", 404)
+
+    first_page = page_entries[0]
+    image_url = (first_page.get("image_url") or "").strip()
+
+    if not image_url:
+        return ("Not found", 404)
+
+    cached_result = download_chaos_image_to_cache(
+        first_page.get("card_uuid"),
+        first_page.get("page_kind"),
+        first_page.get("face_name"),
+        image_url,
+    )
+
+    if not cached_result:
+        return ("Not found", 404)
+
+    absolute_path = os.path.abspath(cached_result["absolute_path"])
+    if os.path.exists(absolute_path):
+        return send_file(absolute_path)
+
+    return redirect(image_url)
+
 @app.route("/chaos-draft/open-file", methods=["GET"])
 def chaos_draft_open_file():
     pdf_state = get_chaos_session_state("pending_opened_pack_pdf", default_value=None)
@@ -4580,6 +4646,74 @@ def chaos_draft_open_file():
             "Content-Disposition": f"inline; filename={filename}",
             "Cache-Control": "no-store"
         }
+    )
+
+@app.route("/chaos-draft/view-data", methods=["GET"])
+def chaos_draft_view_data():
+    opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
+
+    if not opened_pack:
+        return jsonify({
+            "ok": False,
+            "message": "No opened Chaos Draft pack is available."
+        }), 404
+
+    config = get_request_config()
+    display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
+    pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
+
+    cards = enrich_pack_cards_with_prices(
+        opened_pack.get("cards") or [],
+        display_prices=display_pack_prices,
+        price_source=pack_price_source,
+    )
+
+    serialized_cards = []
+    for card in cards:
+        serialized_cards.append({
+            "card_uuid": card.get("card_uuid"),
+            "card_name": card.get("card_name"),
+            "image_src": url_for("chaos_card_image", card_uuid=card.get("card_uuid")),
+            "finish_type": card.get("finish_type"),
+            "special_badges": card.get("special_badges") or [],
+            "price": card.get("price_info", {}).get("price"),
+            "currency": card.get("price_info", {}).get("currency") or "USD",
+        })
+
+    return jsonify({
+        "ok": True,
+        "pack_display_name": opened_pack.get("display_name") or "",
+        "pack_total_cards": int(opened_pack.get("total_cards") or 0),
+        "bonus_pack_opened": bool(opened_pack.get("bonus_pack_opened")),
+        "display_pack_prices": display_pack_prices,
+        "cards": serialized_cards,
+    })
+
+@app.route("/chaos-draft/view", methods=["GET"])
+def chaos_draft_view():
+    opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
+
+    if not opened_pack:
+        return "No opened Chaos Draft pack is available.", 404
+
+    config = get_request_config()
+    display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
+    pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
+
+    cards = enrich_pack_cards_with_prices(
+        opened_pack.get("cards") or [],
+        display_prices=display_pack_prices,
+        price_source=pack_price_source,
+    )
+
+    return render_template(
+        "chaos_pack_view.html",
+        pack_display_name=opened_pack.get("display_name") or "",
+        pack_total_cards=int(opened_pack.get("total_cards") or 0),
+        bonus_pack_opened=bool(opened_pack.get("bonus_pack_opened")),
+        cards=cards,
+        display_pack_prices=display_pack_prices,
+        pack_price_source=pack_price_source,
     )
 
 @app.route("/chaos-draft/export", methods=["POST"])

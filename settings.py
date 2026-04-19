@@ -2,6 +2,7 @@ MTGJSON_ATOMIC_URL = "https://mtgjson.com/api/v5/AtomicCards.json"
 MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
 MTGJSON_ALL_PRINTINGS_URL = "https://mtgjson.com/api/v5/AllPrintings.json.gz"
 MTGJSON_CSV_BASE_URL = "https://mtgjson.com/api/v5/csv"
+MTGJSON_ALL_PRICES_TODAY_URL = "https://mtgjson.com/api/v5/AllPricesToday.json.zip"
 
 MTGJSON_SET_BOOSTER_CONTENTS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterContents.csv"
 MTGJSON_SET_BOOSTER_CONTENT_WEIGHTS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterContentWeights.csv"
@@ -82,6 +83,8 @@ DEFAULT_CONFIG = {
     "tower_pdf_draw_count": "7",
     "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
     "chaos_draft_export_format": "none",
+    "display_pack_prices": "1",
+    "pack_price_source": "tcgplayer-retail",
 }
 
 REPEAT_MODE_OPTIONS = [
@@ -155,6 +158,10 @@ CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [
     ("none", "None"),
     ("archidekt", "Archidekt"),
     ("moxfield", "Moxfield"),
+]
+
+PACK_PRICE_SOURCE_OPTIONS = [
+    ("tcgplayer-retail", "TCGPlayer Retail"),
 ]
 
 PRINT_COLOR_MODE_OPTIONS = [

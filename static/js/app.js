@@ -821,6 +821,7 @@ function initializeMomirSelectResultLinks() {
 
 function initializeChaosDraftPage() {
     const spinButton = document.getElementById("chaosSpinButton");
+    const viewButton = document.getElementById("chaosViewButton");
     const openButton = document.getElementById("chaosOpenButton");
     const nextButton = document.getElementById("chaosNextButton");
     const openRow = document.getElementById("chaosDraftOpenRow");
@@ -839,6 +840,13 @@ function initializeChaosDraftPage() {
     const exportMenu = document.getElementById("chaosExportMenu");
     const exportCopyButton = document.getElementById("chaosExportCopyButton");
     const exportSaveButton = document.getElementById("chaosExportSaveButton");
+    const inlineViewPanel = document.getElementById("chaosDraftInlineViewPanel");
+    const inlineViewGrid = document.getElementById("chaosPackInlineGrid");
+    const inlineViewTitle = document.getElementById("chaosPackInlineTitle");
+    const inlineViewSubtitle = document.getElementById("chaosPackInlineSubtitle");
+    const packZoomOverlay = document.getElementById("chaosPackZoomOverlay");
+    const packZoomBackdrop = document.getElementById("chaosPackZoomBackdrop");
+    const packZoomImage = document.getElementById("chaosPackZoomImage");
     const openPrintInNewTab = chaosDraftScreen
         ? chaosDraftScreen.getAttribute("data-open-print-in-new-tab") === "1"
         : true;
@@ -886,6 +894,7 @@ function initializeChaosDraftPage() {
     let rouletteTickTimer = null;
     let currentWinningPack = null;
     let selectedExportAction = "copy";
+    let inlinePackViewLoaded = false;
 
     const jackpotBoosterTypes = new Set([
         "collector",
@@ -926,11 +935,177 @@ function initializeChaosDraftPage() {
         busyOverlay.setAttribute("aria-hidden", "true");
     }
 
+    function hideInlinePackView() {
+        if (inlineViewPanel) {
+            inlineViewPanel.classList.add("hidden");
+        }
+
+        if (inlineViewGrid) {
+            inlineViewGrid.innerHTML = "";
+        }
+
+        if (inlineViewTitle) {
+            inlineViewTitle.textContent = "Pack contents";
+        }
+
+        if (inlineViewSubtitle) {
+            inlineViewSubtitle.textContent = "";
+        }
+
+        inlinePackViewLoaded = false;
+    }
+
+    function openPackZoom(imageSrc, imageAlt) {
+        if (!packZoomOverlay || !packZoomImage) {
+            return;
+        }
+
+        packZoomImage.src = imageSrc || "";
+        packZoomImage.alt = imageAlt || "Pack card image";
+        packZoomOverlay.classList.remove("hidden");
+        packZoomOverlay.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+    }
+
+    function closePackZoom() {
+        if (!packZoomOverlay || !packZoomImage) {
+            return;
+        }
+
+        packZoomOverlay.classList.add("hidden");
+        packZoomOverlay.setAttribute("aria-hidden", "true");
+        packZoomImage.src = "";
+        packZoomImage.alt = "";
+        document.body.style.overflow = "";
+    }
+
+    function formatPackCardPrice(priceValue) {
+        if (priceValue === null || priceValue === undefined || priceValue === "") {
+            return "Price unavailable";
+        }
+
+        const numericPrice = Number(priceValue);
+        if (!Number.isFinite(numericPrice)) {
+            return "Price unavailable";
+        }
+
+        return `$${numericPrice.toFixed(2)}`;
+    }
+
+    function buildPackBadgeMarkup(cardData) {
+        const badges = [];
+
+        if (cardData.price !== null && cardData.price !== undefined && Number.isFinite(Number(cardData.price))) {
+            const numericPrice = Number(cardData.price);
+            const priceClass = numericPrice > 2 ? " chaos-pack-inline-price-high" : "";
+            badges.push(
+                `<span class="chaos-pack-inline-price${priceClass}">${formatPackCardPrice(numericPrice)}</span>`
+            );
+        }
+
+        const specialBadges = Array.isArray(cardData.special_badges) ? cardData.special_badges : [];
+        specialBadges.forEach(function (badgeText) {
+            badges.push(`<span class="chaos-pack-inline-badge">${badgeText}</span>`);
+        });
+
+        return badges.join("");
+    }
+
+    function renderInlinePackView(payload) {
+        if (!inlineViewPanel || !inlineViewGrid || !payload) {
+            return;
+        }
+
+        const cards = Array.isArray(payload.cards) ? payload.cards : [];
+
+        if (inlineViewTitle) {
+            inlineViewTitle.textContent = payload.pack_display_name || "Pack contents";
+        }
+
+        if (inlineViewSubtitle) {
+            const subtitleParts = [];
+            subtitleParts.push(`${payload.pack_total_cards || cards.length} cards`);
+
+            if (payload.bonus_pack_opened) {
+                subtitleParts.push("Bonus pack opened");
+            }
+
+            inlineViewSubtitle.textContent = subtitleParts.join(" • ");
+        }
+
+        inlineViewGrid.innerHTML = "";
+
+        cards.forEach(function (cardData) {
+            const cardElement = document.createElement("div");
+            cardElement.className = "chaos-pack-inline-card";
+
+            const badgesMarkup = buildPackBadgeMarkup(cardData);
+
+            cardElement.innerHTML = `
+                <div class="chaos-pack-inline-image-wrap">
+                    <img
+                        src="${cardData.image_src}"
+                        alt="${cardData.card_name}"
+                        class="chaos-pack-inline-image"
+                        role="button"
+                        tabindex="0"
+                    >
+                </div>
+                <div class="chaos-pack-inline-info">
+                    <div class="chaos-pack-inline-name">${cardData.card_name}</div>
+                    <div class="chaos-pack-inline-meta-row">${badgesMarkup}</div>
+                </div>
+            `;
+
+            const imageElement = cardElement.querySelector(".chaos-pack-inline-image");
+            if (imageElement) {
+                imageElement.addEventListener("click", function () {
+                    openPackZoom(cardData.image_src, cardData.card_name);
+                });
+
+                imageElement.addEventListener("keydown", function (event) {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openPackZoom(cardData.image_src, cardData.card_name);
+                    }
+                });
+            }
+
+            inlineViewGrid.appendChild(cardElement);
+        });
+
+        inlineViewPanel.classList.remove("hidden");
+        inlinePackViewLoaded = true;
+    }
+
+    async function loadInlinePackView() {
+        const response = await fetch("/chaos-draft/view-data", {
+            method: "GET",
+            headers: {
+                "Accept": "application/json"
+            }
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Failed to load pack view.");
+        }
+
+        renderInlinePackView(payload);
+    }
+
     function resetOpenPackUiState() {
         hideBusyOverlay();
 
         openInProgress = false;
         openAbortController = null;
+
+        if (viewButton) {
+            viewButton.disabled = false;
+            viewButton.classList.remove("action-button-loading");
+            viewButton.textContent = "View";
+        }
 
         if (openButton) {
             openButton.disabled = false;
@@ -945,8 +1120,6 @@ function initializeChaosDraftPage() {
         if (exportMenuButton) {
             exportMenuButton.disabled = chaosExportFormat === "none";
         }
-
-        applySelectedExportActionUi();
 
         if (nextButton) {
             nextButton.disabled = false;
@@ -1356,6 +1529,12 @@ function initializeChaosDraftPage() {
             openRow.classList.remove("chaos-draft-open-row-visible");
         }
 
+        if (viewButton) {
+            viewButton.disabled = true;
+            viewButton.classList.remove("action-button-loading");
+            viewButton.textContent = "View";
+        }
+
         if (openButton) {
             openButton.disabled = true;
             openButton.classList.remove("action-button-loading");
@@ -1378,6 +1557,12 @@ function initializeChaosDraftPage() {
             openRow.classList.add("chaos-draft-open-row-visible");
         }
 
+        if (viewButton) {
+            viewButton.disabled = false;
+            viewButton.classList.remove("action-button-loading");
+            viewButton.textContent = "View";
+        }
+
         if (openButton) {
             openButton.disabled = false;
             openButton.classList.remove("action-button-loading");
@@ -1391,8 +1576,6 @@ function initializeChaosDraftPage() {
         if (exportMenuButton) {
             exportMenuButton.disabled = chaosExportFormat === "none";
         }
-
-        applySelectedExportActionUi();
     }
 
     function setButtonsForIdle() {
@@ -1710,6 +1893,8 @@ function initializeChaosDraftPage() {
         pointer.classList.add("hidden");
         message.classList.add("hidden");
 
+        hideInlinePackView();
+        closePackZoom();
         hideOpenRow();
         setButtonsForIdle();
     }
@@ -1721,6 +1906,29 @@ function initializeChaosDraftPage() {
     if (nextButton) {
         nextButton.addEventListener("click", function () {
             runNext();
+        });
+    }
+
+    if (viewButton) {
+        viewButton.addEventListener("click", async function () {
+            if (!currentSpinResult || animationInProgress || openInProgress) {
+                window.alert("No completed Chaos Draft spin is ready to view.");
+                return;
+            }
+
+            try {
+                viewButton.disabled = true;
+                viewButton.classList.add("action-button-loading");
+                viewButton.textContent = "Loading...";
+
+                await loadInlinePackView();
+            } catch (error) {
+                window.alert(error.message || "Failed to load pack view.");
+            } finally {
+                viewButton.disabled = false;
+                viewButton.classList.remove("action-button-loading");
+                viewButton.textContent = "View";
+            }
         });
     }
 
@@ -1857,7 +2065,25 @@ function initializeChaosDraftPage() {
         exportMenu.addEventListener("click", function (event) {
             event.stopPropagation();
         });
-    }  
+    }
+
+    if (packZoomOverlay) {
+        packZoomOverlay.addEventListener("click", function () {
+            closePackZoom();
+        });
+    }
+
+    if (packZoomBackdrop) {
+        packZoomBackdrop.addEventListener("click", function () {
+            closePackZoom();
+        });
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && packZoomOverlay && !packZoomOverlay.classList.contains("hidden")) {
+            closePackZoom();
+        }
+    });
 
     setSelectedExportAction("copy");
 
@@ -1868,6 +2094,8 @@ function initializeChaosDraftPage() {
     pointer.classList.add("hidden");
     message.classList.add("hidden");
     hideBusyOverlay();
+    hideInlinePackView();
+    closePackZoom();
     hideOpenRow();
     setButtonsForIdle();
 }
