@@ -1715,9 +1715,63 @@ input {
 
 .chaos-draft-open-actions {
     display: grid;
-    grid-template-columns: 140px minmax(0, 1fr) 220px;
+    grid-template-columns: 120px minmax(260px, 1fr) 110px 220px;
     gap: 12px;
     align-items: stretch;
+}
+
+.chaos-draft-open-actions > .action-button {
+    min-height: 56px;
+    border-radius: 14px;
+}
+
+.chaos-draft-view-button {
+    width: 120px;
+}
+
+.chaos-draft-open-button {
+    min-height: 56px;
+    font-size: 1.05rem;
+    border-radius: 14px;
+}
+
+.chaos-save-pack-button {
+    width: 110px;
+    min-height: 56px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+.chaos-auto-save-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: 8px;
+    padding-right: 4px;
+}
+
+.chaos-auto-save-inline {
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-height: 24px;
+    padding: 0;
+    font-size: 0.88rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.chaos-auto-save-inline:hover {
+    color: var(--text);
+}
+
+.chaos-auto-save-inline input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
 }
 
 .chaos-export-split {
@@ -2225,6 +2279,13 @@ input {
     .chaos-draft-open-actions {
         grid-template-columns: 1fr;
         gap: 10px;
+    }
+
+    .chaos-auto-save-row {
+        justify-content: flex-start;
+        margin-top: 6px;
+        padding-left: 2px;
+        padding-right: 0;
     }
 
     .chaos-draft-open-actions .action-button,

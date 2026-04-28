@@ -669,6 +669,8 @@ function initializeChaosDraftPage() {
     const spinButton = document.getElementById("chaosSpinButton");
     const viewButton = document.getElementById("chaosViewButton");
     const openButton = document.getElementById("chaosOpenButton");
+    const savePackButton = document.getElementById("chaosSavePackButton");
+    const autoSavePackToggle = document.getElementById("chaosAutoSavePackToggle");
     const nextButton = document.getElementById("chaosNextButton");
     const openRow = document.getElementById("chaosDraftOpenRow");
     const spinnerShell = document.getElementById("chaosDraftSpinner");
@@ -741,6 +743,7 @@ function initializeChaosDraftPage() {
     let currentWinningPack = null;
     let selectedExportAction = "copy";
     let inlinePackViewLoaded = false;
+    let currentPackSavedToDb = false;
 
     const jackpotBoosterTypes = new Set([
         "collector",
@@ -958,6 +961,8 @@ function initializeChaosDraftPage() {
             openButton.classList.remove("action-button-loading");
             openButton.textContent = "Open Pack (PDF)";
         }
+
+        setSavePackButtonState(false);
 
         if (exportMainButton) {
             exportMainButton.disabled = chaosExportFormat === "none";
@@ -1348,6 +1353,71 @@ function initializeChaosDraftPage() {
         }
     }
 
+    function setSavePackButtonState(isBusy, savedText) {
+        if (!savePackButton) {
+            return;
+        }
+
+        savePackButton.disabled = Boolean(isBusy) || !currentSpinResult || currentPackSavedToDb;
+        savePackButton.classList.toggle("action-button-loading", Boolean(isBusy));
+
+        if (savedText) {
+            savePackButton.textContent = savedText;
+        } else if (currentPackSavedToDb) {
+            savePackButton.textContent = "Saved";
+        } else {
+            savePackButton.textContent = "Save";
+        }
+    }
+
+    async function saveCurrentPackToDb(showAlertOnSuccess) {
+        if (!savePackButton) {
+            return null;
+        }
+
+        if (!currentSpinResult || animationInProgress) {
+            throw new Error("No completed Chaos Draft pack is ready to save.");
+        }
+
+        if (currentPackSavedToDb) {
+            return {
+                ok: true,
+                already_saved: true,
+                message: "Pack was already saved."
+            };
+        }
+
+        setSavePackButtonState(true, "Saving...");
+
+        try {
+            const response = await fetch("/chaos-draft/save-pack", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to save pack.");
+            }
+
+            currentPackSavedToDb = true;
+            setSavePackButtonState(false, "Saved");
+
+            if (showAlertOnSuccess) {
+                window.alert(payload.message || "Pack saved to the Pack Tracking Database.");
+            }
+
+            return payload;
+        } catch (error) {
+            currentPackSavedToDb = false;
+            setSavePackButtonState(false, "Save");
+            throw error;
+        }
+    }
+
     async function requestChaosExport(saveToFile) {
         const response = await fetch("/chaos-draft/export", {
             method: "POST",
@@ -1387,6 +1457,12 @@ function initializeChaosDraftPage() {
             openButton.textContent = "Open Pack (PDF)";
         }
 
+        if (savePackButton) {
+            savePackButton.disabled = true;
+            savePackButton.classList.remove("action-button-loading");
+            savePackButton.textContent = "Save";
+        }
+
         if (exportMainButton) {
             exportMainButton.disabled = true;
         }
@@ -1414,6 +1490,8 @@ function initializeChaosDraftPage() {
             openButton.classList.remove("action-button-loading");
             openButton.textContent = "Open Pack (PDF)";
         }
+
+        setSavePackButtonState(false);
 
         if (exportMainButton) {
             exportMainButton.disabled = chaosExportFormat === "none";
@@ -1655,6 +1733,7 @@ function initializeChaosDraftPage() {
         }
 
         currentSpinResult = null;
+        currentPackSavedToDb = false;
         animationInProgress = true;
 
         hideOpenRow();
@@ -1720,6 +1799,7 @@ function initializeChaosDraftPage() {
         hideBusyOverlay();
         currentWinningPack = null;
         currentSpinResult = null;
+        currentPackSavedToDb = false;
 
         try {
             await fetch("/chaos-draft/next", {
@@ -1806,11 +1886,53 @@ function initializeChaosDraftPage() {
                     "We are cracking your pack! Lets see what you opened..."
                 );
 
+                if (autoSavePackToggle && autoSavePackToggle.checked && savePackButton && !currentPackSavedToDb) {
+                    busyTitle.textContent = "Saving Pack";
+                    busyText.textContent = "Saving this pack to the Pack Tracking Database...";
+
+                    try {
+                        await saveCurrentPackToDb(false);
+                    } catch (saveError) {
+                        console.error(saveError);
+                        setSavePackButtonState(false, "Save Failed");
+
+                        setTimeout(function () {
+                            if (!currentPackSavedToDb) {
+                                setSavePackButtonState(false, "Save");
+                            }
+                        }, 2200);
+                    }
+
+                    busyTitle.textContent = "Opening Pack";
+                    busyText.textContent = "We are cracking your pack! Lets see what you opened...";
+                }
+
                 timeoutId = window.setTimeout(function () {
                     if (openAbortController) {
                         openAbortController.abort();
                     }
                 }, openTimeoutMs);
+
+                if (autoSavePackToggle && autoSavePackToggle.checked && savePackButton && !currentPackSavedToDb) {
+                    busyTitle.textContent = "Saving Pack";
+                    busyText.textContent = "Saving this pack to the Pack Tracking Database...";
+
+                    try {
+                        await saveCurrentPackToDb(false);
+                    } catch (saveError) {
+                        console.error(saveError);
+                        setSavePackButtonState(false, "Save Failed");
+
+                        setTimeout(function () {
+                            if (!currentPackSavedToDb) {
+                                setSavePackButtonState(false, "Save");
+                            }
+                        }, 2200);
+                    }
+
+                    busyTitle.textContent = "Opening Pack";
+                    busyText.textContent = "We are cracking your pack! Lets see what you opened...";
+                }
 
                 const response = await fetch("/chaos-draft/open", {
                     method: "POST",
@@ -1856,6 +1978,23 @@ function initializeChaosDraftPage() {
                 if (timeoutId) {
                     window.clearTimeout(timeoutId);
                 }
+            }
+        });
+    }
+
+    if (savePackButton) {
+        savePackButton.addEventListener("click", async function () {
+            try {
+                await saveCurrentPackToDb(false);
+            } catch (error) {
+                console.error(error);
+                setSavePackButtonState(false, "Save Failed");
+
+                setTimeout(function () {
+                    if (!currentPackSavedToDb) {
+                        setSavePackButtonState(false, "Save");
+                    }
+                }, 2200);
             }
         });
     }

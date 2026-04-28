@@ -1202,6 +1202,171 @@ def build_chaos_pack_pdf_from_variant(
         pack_tracking_code=pack_tracking_code,
     )
 
+def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
+    if opened_pack is None:
+        opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
+
+    if not opened_pack:
+        return {
+            "ok": False,
+            "message": "No opened Chaos Draft pack is available to save.",
+            "already_saved": False,
+            "tracked_pack_id": None,
+        }
+
+    pack_tracking_code = (opened_pack.get("pack_tracking_code") or "").strip().upper()
+    set_code = (opened_pack.get("set_code") or "").strip().upper()
+    booster_name = (opened_pack.get("booster_name") or "").strip().lower()
+    display_name = (opened_pack.get("display_name") or "").strip()
+    cards = opened_pack.get("cards") or []
+
+    try:
+        booster_index = int(opened_pack.get("booster_index") or 0)
+    except (TypeError, ValueError):
+        booster_index = 0
+
+    if not pack_tracking_code:
+        return {
+            "ok": False,
+            "message": "Opened Chaos Draft pack does not have a tracking code.",
+            "already_saved": False,
+            "tracked_pack_id": None,
+        }
+
+    if not set_code or not booster_name or not display_name:
+        return {
+            "ok": False,
+            "message": "Opened Chaos Draft pack data is incomplete.",
+            "already_saved": False,
+            "tracked_pack_id": None,
+        }
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "Opened Chaos Draft pack does not contain any cards.",
+            "already_saved": False,
+            "tracked_pack_id": None,
+        }
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT tracked_pack_id
+            FROM tracked_chaos_packs
+            WHERE pack_tracking_code = ?
+            """,
+            (pack_tracking_code,),
+        )
+        existing_row = cursor.fetchone()
+
+        if existing_row:
+            tracked_pack_id = int(existing_row["tracked_pack_id"])
+            conn.commit()
+
+            return {
+                "ok": True,
+                "message": f"Pack {pack_tracking_code} was already saved.",
+                "already_saved": True,
+                "tracked_pack_id": tracked_pack_id,
+                "pack_tracking_code": pack_tracking_code,
+            }
+
+        cursor.execute(
+            """
+            INSERT INTO tracked_chaos_packs (
+                pack_tracking_code,
+                set_code,
+                booster_name,
+                booster_index,
+                pack_display_name,
+                total_cards,
+                bonus_pack_opened,
+                added_at_utc,
+                last_opened_at_utc,
+                opened_count,
+                source_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                pack_tracking_code,
+                set_code,
+                booster_name,
+                booster_index,
+                display_name,
+                int(opened_pack.get("total_cards") or len(cards)),
+                1 if opened_pack.get("bonus_pack_opened") else 0,
+                now_utc,
+                None,
+                0,
+                json.dumps(opened_pack),
+            ),
+        )
+
+        tracked_pack_id = cursor.lastrowid
+
+        for card_order, card in enumerate(cards, start=1):
+            cursor.execute(
+                """
+                INSERT INTO tracked_chaos_pack_cards (
+                    tracked_pack_id,
+                    card_order,
+                    card_uuid,
+                    card_name,
+                    set_code,
+                    booster_name,
+                    booster_index,
+                    sheet_name,
+                    sheet_is_foil,
+                    sheet_has_balance_colors,
+                    sheet_total_weight,
+                    rarity,
+                    type_line,
+                    image_url,
+                    scryfall_id,
+                    collector_number
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tracked_pack_id,
+                    card_order,
+                    (card.get("card_uuid") or "").strip(),
+                    (card.get("card_name") or "").strip(),
+                    (card.get("set_code") or set_code or "").strip().upper(),
+                    (card.get("booster_name") or booster_name or "").strip().lower(),
+                    int(card.get("booster_index") or booster_index),
+                    (card.get("sheet_name") or "").strip(),
+                    int(card.get("sheet_is_foil") or 0),
+                    int(card.get("sheet_has_balance_colors") or 0),
+                    float(card.get("sheet_total_weight") or 0),
+                    (card.get("rarity") or "").strip(),
+                    (card.get("type_line") or "").strip(),
+                    (card.get("image_url") or "").strip(),
+                    (card.get("scryfall_id") or "").strip(),
+                    (card.get("collector_number") or "").strip(),
+                ),
+            )
+
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Saved pack {pack_tracking_code} to the Pack Tracking Database.",
+            "already_saved": False,
+            "tracked_pack_id": tracked_pack_id,
+            "pack_tracking_code": pack_tracking_code,
+        }
+
+    finally:
+        conn.close()
+
 def build_chaos_pack_export_text(opened_pack, export_format):
     if not opened_pack:
         raise ValueError("No opened Chaos Draft pack is available.")

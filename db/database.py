@@ -311,6 +311,74 @@ def initialize_database():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS tracked_chaos_packs (
+            tracked_pack_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pack_tracking_code TEXT NOT NULL UNIQUE,
+            set_code TEXT NOT NULL,
+            booster_name TEXT NOT NULL,
+            booster_index INTEGER NOT NULL,
+            pack_display_name TEXT NOT NULL,
+            total_cards INTEGER NOT NULL DEFAULT 0,
+            bonus_pack_opened INTEGER NOT NULL DEFAULT 0,
+            added_at_utc TEXT NOT NULL,
+            last_opened_at_utc TEXT,
+            opened_count INTEGER NOT NULL DEFAULT 0,
+            source_json TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tracked_chaos_pack_cards (
+            tracked_pack_card_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tracked_pack_id INTEGER NOT NULL,
+            card_order INTEGER NOT NULL,
+            card_uuid TEXT NOT NULL,
+            card_name TEXT NOT NULL,
+            set_code TEXT,
+            booster_name TEXT,
+            booster_index INTEGER,
+            sheet_name TEXT,
+            sheet_is_foil INTEGER NOT NULL DEFAULT 0,
+            sheet_has_balance_colors INTEGER NOT NULL DEFAULT 0,
+            sheet_total_weight REAL NOT NULL DEFAULT 0,
+            rarity TEXT,
+            type_line TEXT,
+            image_url TEXT,
+            scryfall_id TEXT,
+            collector_number TEXT,
+            FOREIGN KEY (tracked_pack_id) REFERENCES tracked_chaos_packs (tracked_pack_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tracked_chaos_pack_openings (
+            opening_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tracked_pack_id INTEGER NOT NULL,
+            opened_at_utc TEXT NOT NULL,
+            opened_by_player_id INTEGER,
+            opening_context TEXT,
+            FOREIGN KEY (tracked_pack_id) REFERENCES tracked_chaos_packs (tracked_pack_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_players (
+            player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL
+        )
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS chaos_session_state (
             state_key TEXT PRIMARY KEY,
             state_value TEXT NOT NULL
@@ -343,6 +411,34 @@ def initialize_database():
         """
         CREATE INDEX IF NOT EXISTS idx_chaos_pack_history_set_booster
         ON chaos_pack_history (set_code, booster_name, booster_index)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_packs_tracking_code
+        ON tracked_chaos_packs (pack_tracking_code)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_packs_set_booster
+        ON tracked_chaos_packs (set_code, booster_name, booster_index)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_pack_cards_pack
+        ON tracked_chaos_pack_cards (tracked_pack_id, card_order)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_pack_openings_pack
+        ON tracked_chaos_pack_openings (tracked_pack_id, opened_at_utc)
         """
     )
 

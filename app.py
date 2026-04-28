@@ -157,6 +157,7 @@ from modes.chaos import (
     open_chaos_pack_with_bonus_rule,
     parse_chaos_pack_types_config,
     record_chaos_pack_history,
+    save_opened_chaos_pack_to_tracking_db,
     set_chaos_session_state,
     sort_opened_chaos_pack_cards,
 )
@@ -449,6 +450,7 @@ def update_config_from_form(form_data):
         "pdf_crop_border",
         "print_front_back_label",
         "print_pack_tracking_code",
+        "enable_track_packs",
         "use_pack_image_for_title",
         "open_print_in_new_tab",
         "sound_enabled",
@@ -4170,6 +4172,7 @@ def result():
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
+            enable_track_packs=(config.get("enable_track_packs") or "0").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
         )
 
@@ -4721,6 +4724,22 @@ def chaos_draft_open():
         write_debug_log,
         safe_filename,
     )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
+
+@app.route("/chaos-draft/save-pack", methods=["POST"])
+def chaos_draft_save_pack():
+    config = get_request_config()
+    if (config.get("enable_track_packs") or "0").strip() != "1":
+        return jsonify({
+            "ok": False,
+            "message": "Pack Tracking Database is disabled in Config."
+        }), 400
+
+    result = save_opened_chaos_pack_to_tracking_db()
 
     if not result.get("ok"):
         return jsonify(result), 400

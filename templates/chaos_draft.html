@@ -61,6 +61,12 @@
                 Open Pack (PDF)
             </button>
 
+            {% if enable_track_packs %}
+            <button type="button" id="chaosSavePackButton" class="action-button secondary-button chaos-save-pack-button" disabled>
+                Save
+            </button>
+            {% endif %}
+
             {% if chaos_draft_export_format in ["archidekt", "moxfield"] %}
             <div class="chaos-export-split" id="chaosExportSplit">
                 <button type="button" id="chaosExportMainButton" class="action-button secondary-button chaos-export-main-button" disabled>
@@ -88,9 +94,22 @@
                         Save {{ chaos_draft_export_format|capitalize }}
                     </button>
                 </div>
-            </div>
             {% endif %}
+
         </div>
+
+        {% if enable_track_packs %}
+        <div class="chaos-auto-save-row">
+            <label class="chaos-auto-save-inline" for="chaosAutoSavePackToggle" title="Automatically save this pack when opening the PDF">
+                <input
+                    type="checkbox"
+                    id="chaosAutoSavePackToggle"
+                    checked
+                >
+                <span>Auto-Save</span>
+            </label>
+        </div>
+        {% endif %}
 
         {% if template_download_links %}
         <div class="chaos-draft-template-links">

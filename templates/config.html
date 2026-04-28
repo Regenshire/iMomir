@@ -336,6 +336,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Enable Pack Tracking</span>
+                        <input
+                            type="checkbox"
+                            name="enable_track_packs"
+                            {% if config.enable_track_packs == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Print Pack Tracking Code</span>
                         <input
                             type="checkbox"
