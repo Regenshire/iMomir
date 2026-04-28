@@ -336,6 +336,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Print Pack Tracking Code</span>
+                        <input
+                            type="checkbox"
+                            name="print_pack_tracking_code"
+                            {% if config.print_pack_tracking_code == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Use Pack Image for Title</span>
                         <input
                             type="checkbox"
@@ -410,6 +419,11 @@
                         <div id="refreshError" class="refresh-error {% if not refresh_status.get('error') %}hidden{% endif %}">
                             {{ refresh_status.get("error", "") }}
                         </div>
+
+                        <pre
+                            id="refreshDetailLines"
+                            class="refresh-detail-lines"
+                        >{% if refresh_status.get("detail_lines") %}{{ refresh_status.get("detail_lines", []) | join('\n') }}{% endif %}</pre>
                     </div>
                 </div>
                 <div class="config-button-row">
@@ -432,6 +446,8 @@
                     </button>
                 </div>
 
+
+                <!-- REMOVE THIS FROM THE CODE - NOT USING THIS ANYMORE
                 <div class="refresh-panel">
                     <div class="refresh-status-row">
                         <div id="imageDownloadSpinner" class="spinner {% if not image_download_status.get('is_running') %}hidden{% endif %}"></div>
@@ -488,6 +504,7 @@
                         </strong>
                     </div>
                 </div>
+                -->
             </div>
         </div>
     </div>

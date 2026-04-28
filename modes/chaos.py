@@ -18,6 +18,75 @@ from settings import (
 )
 from db.database import get_config, get_db_connection, get_selected_set_codes
 
+def get_pack_type_code_for_tracking(booster_name):
+    value = (booster_name or "").strip().lower()
+
+    if not value:
+        return "O"
+
+    if "collector" in value:
+        return "C"
+
+    if "jumpstart" in value:
+        return "J"
+
+    if "vip" in value:
+        return "V"
+
+    if "six" in value:
+        return "6"
+
+    if "premium" in value:
+        return "P"
+
+    if "play" in value:
+        return "P"
+
+    if "draft" in value:
+        return "D"
+
+    if "set" in value:
+        return "S"
+
+    if "booster" in value or "core" in value:
+        return "B"
+
+    if "promo" in value or "sample" in value:
+        return "O"
+
+    return "O"
+
+
+def build_pack_tracking_suffix(set_code, booster_name, booster_index):
+    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    modulus = len(alphabet) ** 4
+
+    seed_text = (
+        f"{(set_code or '').strip().upper()}|"
+        f"{(booster_name or '').strip().lower()}|"
+        f"{int(booster_index or 0)}|"
+        f"{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}|"
+        f"{random.randint(0, 999999999)}"
+    )
+
+    value = 0
+    for character in seed_text:
+        value = ((value * 131) + ord(character)) % modulus
+
+    chars = []
+    for _ in range(4):
+        chars.append(alphabet[value % len(alphabet)])
+        value //= len(alphabet)
+
+    return "".join(reversed(chars))
+
+
+def build_pack_tracking_code(set_code, booster_name, booster_index):
+    clean_set_code = (set_code or "").strip().upper()
+    pack_type_code = get_pack_type_code_for_tracking(booster_name)
+    suffix = build_pack_tracking_suffix(clean_set_code, booster_name, booster_index)
+
+    return f"{clean_set_code}.{pack_type_code}.{suffix}"
 
 def normalize_chaos_booster_key(booster_name):
     value = (booster_name or "").strip().lower()
@@ -988,11 +1057,18 @@ def build_opened_chaos_pack_state(
 
     cards = sort_opened_chaos_pack_cards(cards, booster_name, write_debug_log_fn)
 
+    pack_tracking_code = build_pack_tracking_code(
+        set_code,
+        booster_name,
+        booster_index,
+    )
+
     opened_pack_state = {
         "set_code": (set_code or "").strip().upper(),
         "booster_name": (booster_name or "").strip().lower(),
         "booster_index": int(booster_index),
         "display_name": (pack_display_name or "").strip(),
+        "pack_tracking_code": pack_tracking_code,
         "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
         "total_cards": len(cards),
         "cards": cards,
@@ -1112,11 +1188,18 @@ def build_chaos_pack_pdf_from_variant(
         pack_display_name,
     )
 
+    pack_tracking_code = build_pack_tracking_code(
+        set_code,
+        booster_name,
+        booster_index,
+    )
+
     return build_chaos_pack_pdf_fn(
         cards,
         pack_display_name,
         set_code=set_code,
         booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
     )
 
 def build_chaos_pack_export_text(opened_pack, export_format):
@@ -1186,11 +1269,14 @@ def build_pending_chaos_pack_pdf(
             "message": "Opened Chaos Draft pack did not contain any cards."
         }
 
+    pack_tracking_code = (opened_pack.get("pack_tracking_code") or "").strip().upper()
+
     pdf_buffer = build_chaos_pack_pdf_fn(
         cards,
         display_name,
         set_code=set_code,
         booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
     )
 
     filename_safe = safe_filename_fn(f"{set_code}_{booster_name}".lower())

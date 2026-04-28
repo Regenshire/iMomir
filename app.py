@@ -133,6 +133,7 @@ from modes.tower import (
 from modes.chaos import (
     build_chaos_pack_export_text,
     build_chaos_pack_pdf_from_variant,
+    build_pack_tracking_code,
     build_chaos_pack_types_config_value,
     build_chaos_spin_result,
     build_default_chaos_pack_display_name,
@@ -177,6 +178,7 @@ def _build_pdf_print_settings(config):
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
     crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
     print_front_back_label = (config.get("print_front_back_label") or "1").strip() == "1"
+    print_pack_tracking_code = (config.get("print_pack_tracking_code") or "0").strip() == "1"
 
     try:
         pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
@@ -198,8 +200,8 @@ def _build_pdf_print_settings(config):
         "pdf_height_mm": pdf_height_mm,
         "pdf_crop_border": crop_border,
         "print_front_back_label": print_front_back_label,
+        "print_pack_tracking_code": print_pack_tracking_code,
     }
-
 
 def get_request_pdf_print_settings():
     if not hasattr(g, "_pdf_print_settings_cache"):
@@ -319,6 +321,7 @@ refresh_status = {
     "is_running": False,
     "stage": "Idle",
     "message": "No refresh has been run yet.",
+    "detail_lines": [],
     "started_at": None,
     "finished_at": None,
     "cards_processed": 0,
@@ -377,9 +380,32 @@ def set_refresh_status(**kwargs):
     except Exception:
         pass
 
+def clear_refresh_detail_lines():
+    with refresh_lock:
+        refresh_status["detail_lines"] = []
+
+
+def append_refresh_detail_line(detail_text):
+    detail_text = str(detail_text or "").strip()
+    if not detail_text:
+        return
+
+    with refresh_lock:
+        detail_lines = list(refresh_status.get("detail_lines", []))
+        detail_lines.append(detail_text)
+
+        # Keep the list from growing forever during long refresh jobs.
+        if len(detail_lines) > 150:
+            detail_lines = detail_lines[-150:]
+
+        refresh_status["detail_lines"] = detail_lines
+
 def get_refresh_status_copy():
     with refresh_lock:
-        return dict(refresh_status)
+        return {
+            **refresh_status,
+            "detail_lines": list(refresh_status.get("detail_lines", [])),
+        }
 
 def set_image_download_status(**kwargs):
     with image_download_lock:
@@ -422,6 +448,7 @@ def update_config_from_form(form_data):
         "use_pdf_print",
         "pdf_crop_border",
         "print_front_back_label",
+        "print_pack_tracking_code",
         "use_pack_image_for_title",
         "open_print_in_new_tab",
         "sound_enabled",
@@ -1635,6 +1662,10 @@ def download_all_printings_json(force_download=False):
     print("=== DOWNLOADING ALLPRINTINGS FROM ===", MTGJSON_ALL_PRINTINGS_URL)
     print("=== WRITING GZ TO ===", ALL_PRINTINGS_GZ_PATH)
 
+    append_refresh_detail_line("=== CHAOS DRAFT: BEGIN ALLPRINTINGS DOWNLOAD ===")
+    append_refresh_detail_line(f"=== DOWNLOADING ALLPRINTINGS FROM === {MTGJSON_ALL_PRINTINGS_URL}")
+    append_refresh_detail_line(f"=== WRITING GZ TO === {ALL_PRINTINGS_GZ_PATH}")
+
     with requests.get(
         MTGJSON_ALL_PRINTINGS_URL,
         headers=headers,
@@ -1642,18 +1673,31 @@ def download_all_printings_json(force_download=False):
         stream=True,
     ) as response:
         response.raise_for_status()
+
+        content_type = response.headers.get("Content-Type")
+        content_length = response.headers.get("Content-Length")
+
         print("=== ALLPRINTINGS HTTP STATUS ===", response.status_code)
-        print("=== ALLPRINTINGS CONTENT-TYPE ===", response.headers.get("Content-Type"))
-        print("=== ALLPRINTINGS CONTENT-LENGTH ===", response.headers.get("Content-Length"))
+        print("=== ALLPRINTINGS CONTENT-TYPE ===", content_type)
+        print("=== ALLPRINTINGS CONTENT-LENGTH ===", content_length)
+
+        append_refresh_detail_line(f"=== ALLPRINTINGS HTTP STATUS === {response.status_code}")
+        append_refresh_detail_line(f"=== ALLPRINTINGS CONTENT-TYPE === {content_type}")
+        append_refresh_detail_line(f"=== ALLPRINTINGS CONTENT-LENGTH === {content_length}")
 
         with open(ALL_PRINTINGS_GZ_PATH, "wb") as file_handle:
             for chunk in response.iter_content(chunk_size=1024 * 1024):
                 if chunk:
                     file_handle.write(chunk)
 
-    print("=== GZ EXISTS AFTER DOWNLOAD ===", os.path.exists(ALL_PRINTINGS_GZ_PATH))
-    if os.path.exists(ALL_PRINTINGS_GZ_PATH):
-        print("=== GZ SIZE ===", os.path.getsize(ALL_PRINTINGS_GZ_PATH))
+    gz_exists = os.path.exists(ALL_PRINTINGS_GZ_PATH)
+    print("=== GZ EXISTS AFTER DOWNLOAD ===", gz_exists)
+    append_refresh_detail_line(f"=== GZ EXISTS AFTER DOWNLOAD === {gz_exists}")
+
+    if gz_exists:
+        gz_size = os.path.getsize(ALL_PRINTINGS_GZ_PATH)
+        print("=== GZ SIZE ===", gz_size)
+        append_refresh_detail_line(f"=== GZ SIZE === {gz_size}")
 
     set_refresh_status(
         stage="Extracting All Printings",
@@ -1661,6 +1705,7 @@ def download_all_printings_json(force_download=False):
     )
 
     print("=== EXTRACTING GZ TO ===", ALL_PRINTINGS_PATH)
+    append_refresh_detail_line(f"=== EXTRACTING GZ TO === {ALL_PRINTINGS_PATH}")
 
     with gzip.open(ALL_PRINTINGS_GZ_PATH, "rb") as compressed_file:
         with open(ALL_PRINTINGS_PATH, "wb") as output_file:
@@ -1670,9 +1715,14 @@ def download_all_printings_json(force_download=False):
                     break
                 output_file.write(chunk)
 
-    print("=== JSON EXISTS AFTER EXTRACT ===", os.path.exists(ALL_PRINTINGS_PATH))
-    if os.path.exists(ALL_PRINTINGS_PATH):
-        print("=== JSON SIZE ===", os.path.getsize(ALL_PRINTINGS_PATH))
+    json_exists = os.path.exists(ALL_PRINTINGS_PATH)
+    print("=== JSON EXISTS AFTER EXTRACT ===", json_exists)
+    append_refresh_detail_line(f"=== JSON EXISTS AFTER EXTRACT === {json_exists}")
+
+    if json_exists:
+        json_size = os.path.getsize(ALL_PRINTINGS_PATH)
+        print("=== JSON SIZE ===", json_size)
+        append_refresh_detail_line(f"=== JSON SIZE === {json_size}")
 
     return {
         "downloaded": True,
@@ -2287,20 +2337,44 @@ def build_pdf_image_reader(image_path, print_mode):
 
         return ImageReader(image_buffer)
 
-def draw_front_back_corner_label(pdf_canvas, page_width_mm, page_height_mm, label_text):
+def build_card_corner_label_text(rendered_entry, pack_tracking_code=None, print_front_back_label=False):
+    label_parts = []
+
+    tracking_code = (pack_tracking_code or "").strip().upper()
+    if tracking_code:
+        label_parts.append(tracking_code)
+
+    if print_front_back_label and int(rendered_entry.get("is_dual_faced") or 0) == 1:
+        page_kind = (rendered_entry.get("page_kind") or "").strip().lower()
+
+        if page_kind == "front":
+            label_parts.append("FRONT")
+        elif page_kind == "back":
+            label_parts.append("BACK")
+
+    return " - ".join(label_parts).strip()
+
+
+def draw_card_corner_label(pdf_canvas, slot_x_mm, slot_y_mm, slot_width_mm, slot_height_mm, label_text):
     label_text = (label_text or "").strip().upper()
-    if label_text not in {"FRONT", "BACK"}:
+    if not label_text:
         return
 
-    # Small lower-left white label box similar to the example image.
-    box_x_mm = 0.0
-    box_y_mm = 0.0
-    box_width_mm = 21.0
-    box_height_mm = 5.0
+    # Lower-left label box. Black background, white text.
 
-    pdf_canvas.setFillColorRGB(1, 1, 1)
-    pdf_canvas.setStrokeColorRGB(0, 0, 0)
-    pdf_canvas.setLineWidth(0.4)
+    label_margin_left_mm = 3.3
+    label_margin_bottom_mm = 0.4
+
+    box_x_mm = float(slot_x_mm) #+ label_margin_left_mm
+    box_y_mm = float(slot_y_mm) #+ label_margin_bottom_mm
+    box_height_mm = 4.3
+
+    # Wide enough for FIN.C.26D1 - FRONT, but capped so it does not dominate the card.
+    # box_width_mm = min(float(slot_width_mm) * 0.62, 36.0)
+    # box_width_mm = min(float(slot_width_mm) * 0.46, 36.0)
+    box_width_mm = 31.7
+
+    pdf_canvas.setFillColorRGB(18 / 255.0, 12 / 255.0, 12 / 255.0)
     pdf_canvas.rect(
         box_x_mm * mm,
         box_y_mm * mm,
@@ -2310,14 +2384,25 @@ def draw_front_back_corner_label(pdf_canvas, page_width_mm, page_height_mm, labe
         stroke=0,
     )
 
-    pdf_canvas.setFillColorRGB(0, 0, 0)
-    pdf_canvas.setFont("Helvetica-Bold", 8.5)
+    font_name = "Helvetica-Bold"
+    font_size = 6.4
 
-    text_width_pts = pdf_canvas.stringWidth(label_text, "Helvetica-Bold", 8.5)
-    text_x_pts = (box_x_mm * mm) + ((box_width_mm * mm - text_width_pts) / 2)
-    text_y_pts = (box_y_mm * mm) + (1.55 * mm)
+    pdf_canvas.setFillColorRGB(1, 1, 1)
+    pdf_canvas.setFont(font_name, font_size)
 
-    pdf_canvas.drawString(text_x_pts, text_y_pts, label_text)
+    max_text_width_pts = (box_width_mm * mm) - (1.4 * mm)
+    text_to_draw = label_text
+
+    while text_to_draw and pdf_canvas.stringWidth(text_to_draw, font_name, font_size) > max_text_width_pts:
+        text_to_draw = text_to_draw[:-1].rstrip()
+
+    if text_to_draw != label_text and len(text_to_draw) > 1:
+        text_to_draw = text_to_draw[:-1].rstrip() + "…"
+
+    text_x_pts = (box_x_mm * mm) + (0.7 * mm) + (label_margin_left_mm * mm)
+    text_y_pts = (box_y_mm * mm) + (1.35 * mm) + (label_margin_bottom_mm * mm)
+
+    pdf_canvas.drawString(text_x_pts, text_y_pts, text_to_draw)
 
 def build_single_image_pdf_buffer(image_path):
     pdf_settings = resolve_pdf_print_settings()
@@ -2674,7 +2759,7 @@ def build_chaos_print_pages_for_card(card_row):
 
     return pages
 
-def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=None):
+def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=None, pack_tracking_code=None):
     pdf_settings = resolve_pdf_print_settings()
     pdf_template_layout = resolve_pdf_template_layout()
     crop_border = pdf_settings["pdf_crop_border"]
@@ -2854,13 +2939,30 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 )
 
                 for slot_index, rendered_entry in enumerate(page_entries):
+                    slot_def = slot_defs[slot_index]
+
                     draw_processed_image_into_slot(
                         c,
                         rendered_entry["temp_path"],
                         print_settings["print_mode"],
-                        slot_defs[slot_index],
+                        slot_def,
                         add_edge_bleed_border=True,
                         rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+                    )
+
+                    label_text = build_card_corner_label_text(
+                        rendered_entry,
+                        pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
+                        print_front_back_label=pdf_settings.get("print_front_back_label"),
+                    )
+
+                    draw_card_corner_label(
+                        c,
+                        slot_def["x_mm"],
+                        slot_def["y_mm"],
+                        slot_def["width_mm"],
+                        slot_def["height_mm"],
+                        label_text,
                     )
 
                 if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
@@ -2885,11 +2987,28 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 page_entries = rendered_image_entries[page_start_index:page_start_index + 2]
 
                 for slot_index, rendered_entry in enumerate(page_entries):
+                    slot_def = slot_defs[slot_index]
+
                     draw_processed_image_into_two_card_slot(
                         c,
                         rendered_entry["temp_path"],
                         print_settings["print_mode"],
-                        slot_defs[slot_index],
+                        slot_def,
+                    )
+
+                    label_text = build_card_corner_label_text(
+                        rendered_entry,
+                        pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
+                        print_front_back_label=pdf_settings.get("print_front_back_label"),
+                    )
+
+                    draw_card_corner_label(
+                        c,
+                        slot_def["x_mm"],
+                        slot_def["y_mm"],
+                        slot_def["width_mm"],
+                        slot_def["height_mm"],
+                        label_text,
                     )
 
                 c.showPage()
@@ -2911,11 +3030,20 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                     mask="auto",
                 )
 
-                if pdf_settings.get("print_front_back_label") and rendered_entry["is_dual_faced"]:
-                    if rendered_entry["page_kind"] == "front":
-                        draw_front_back_corner_label(c, width_mm, height_mm, "FRONT")
-                    elif rendered_entry["page_kind"] == "back":
-                        draw_front_back_corner_label(c, width_mm, height_mm, "BACK")
+                label_text = build_card_corner_label_text(
+                    rendered_entry,
+                    pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
+                    print_front_back_label=pdf_settings.get("print_front_back_label"),
+                )
+
+                draw_card_corner_label(
+                    c,
+                    draw_x_mm,
+                    draw_y_mm,
+                    draw_width_mm,
+                    draw_height_mm,
+                    label_text,
+                )
 
                 c.showPage()
                 pages_rendered += 1
@@ -3129,6 +3257,10 @@ def import_scryfall_default_cards_into_database():
     print("=== SCRYFALL IMPORT COMPLETE ===")
     print("Inserted rows:", inserted_count)
     print("Duplicate scryfall_ids seen during import:", duplicate_scryfall_ids)
+
+    append_refresh_detail_line("=== SCRYFALL IMPORT COMPLETE ===")
+    append_refresh_detail_line(f"Inserted rows: {inserted_count}")
+    append_refresh_detail_line(f"Duplicate scryfall_ids seen during import: {duplicate_scryfall_ids}")
 
     write_debug_log(
         f"SCRYFALL IMPORT COMPLETE | inserted={inserted_count} "
@@ -3842,6 +3974,7 @@ def run_refresh_job(force_download=False):
             is_running=True,
             stage="Starting",
             message="Starting refresh...",
+            detail_lines=[],
             started_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             finished_at=None,
             cards_processed=0,
@@ -3891,7 +4024,7 @@ def run_refresh_job(force_download=False):
             sets_represented=summary["sets_represented"],
         )
 
-        import_scryfall_default_cards_into_database()
+        scryfall_rows_imported = import_scryfall_default_cards_into_database()
 
         print("=== CHAOS DRAFT: BEGIN ALLPRINTINGS DOWNLOAD ===")
 
@@ -3909,6 +4042,11 @@ def run_refresh_job(force_download=False):
         if os.path.exists(ALL_PRINTINGS_PATH):
             print("=== CHAOS DRAFT: ALL_PRINTINGS_PATH SIZE ===", os.path.getsize(ALL_PRINTINGS_PATH))
 
+        append_refresh_detail_line(f"=== CHAOS DRAFT: DOWNLOAD RESULT === {all_printings_result}")
+        append_refresh_detail_line(f"=== CHAOS DRAFT: ALL_PRINTINGS_PATH EXISTS === {os.path.exists(ALL_PRINTINGS_PATH)}")
+        if os.path.exists(ALL_PRINTINGS_PATH):
+            append_refresh_detail_line(f"=== CHAOS DRAFT: ALL_PRINTINGS_PATH SIZE === {os.path.getsize(ALL_PRINTINGS_PATH)}")
+
         set_refresh_status(
             stage="Importing Chaos Draft Cards",
             message="Importing AllPrintings.json into Chaos Draft card tables...",
@@ -3919,6 +4057,7 @@ def run_refresh_job(force_download=False):
 
         chaos_cards_imported = import_chaos_cards_from_all_printings()
         print("=== CHAOS DRAFT: IMPORTED CHAOS CARDS ===", chaos_cards_imported)
+        append_refresh_detail_line(f"=== CHAOS DRAFT: IMPORTED CHAOS CARDS === {chaos_cards_imported}")
 
         set_refresh_status(
             stage="Importing Chaos Draft Booster Data",

@@ -75,6 +75,7 @@ DEFAULT_CONFIG = {
     "pdf_height_mm": "85.25",
     "pdf_crop_border": "1",
     "print_front_back_label": "1",
+    "print_pack_tracking_code": "0",
     "use_pack_image_for_title": "0",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",

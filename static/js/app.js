@@ -243,30 +243,20 @@ function initializeRefreshCards() {
     const refreshStage = document.getElementById("refreshStage");
     const refreshMessage = document.getElementById("refreshMessage");
     const refreshError = document.getElementById("refreshError");
+    const refreshDetailLines = document.getElementById("refreshDetailLines");
     const importCardsCount = document.getElementById("importCardsCount");
     const importSetsCount = document.getElementById("importSetsCount");
     const importLastRefresh = document.getElementById("importLastRefresh");
     const importSourceLastUpdated = document.getElementById("importSourceLastUpdated");
 
-    const downloadCardImagesButton = document.getElementById("downloadCardImagesButton");
-    const redownloadCardImagesButton = document.getElementById("redownloadCardImagesButton");
     const clearHistoryButton = document.getElementById("clearHistoryButton");
     const historyCount = document.getElementById("historyCount");
-    const imageDownloadSpinner = document.getElementById("imageDownloadSpinner");
-    const imageDownloadStage = document.getElementById("imageDownloadStage");
-    const imageDownloadMessage = document.getElementById("imageDownloadMessage");
-    const imageDownloadError = document.getElementById("imageDownloadError");
-    const imageCardsProcessed = document.getElementById("imageCardsProcessed");
-    const imageCardsDownloaded = document.getElementById("imageCardsDownloaded");
-    const imageCardsDisabled = document.getElementById("imageCardsDisabled");
-    const imageDownloadFinishedAt = document.getElementById("imageDownloadFinishedAt");
 
     if (!refreshButton) {
         return;
     }
 
     let refreshPollTimer = null;
-    let imagePollTimer = null;
     let lastRefreshFinishedAtPrompted = null;
 
     function setRefreshRunningUi(isRunning) {
@@ -278,20 +268,6 @@ function initializeRefreshCards() {
 
         if (refreshSpinner) {
             refreshSpinner.classList.toggle("hidden", !isRunning);
-        }
-    }
-
-    function setImageRunningUi(isRunning) {
-        if (downloadCardImagesButton) {
-            downloadCardImagesButton.disabled = isRunning;
-        }
-
-        if (redownloadCardImagesButton) {
-            redownloadCardImagesButton.disabled = isRunning;
-        }
-
-        if (imageDownloadSpinner) {
-            imageDownloadSpinner.classList.toggle("hidden", !isRunning);
         }
     }
 
@@ -314,6 +290,25 @@ function initializeRefreshCards() {
             }
         }
 
+        if (refreshDetailLines) {
+            const detailLines = Array.isArray(status.detail_lines) ? status.detail_lines : [];
+
+            if (detailLines.length > 0) {
+                const nextLogText = detailLines.join("\n");
+                const logChanged = refreshDetailLines.textContent !== nextLogText;
+
+                refreshDetailLines.textContent = nextLogText;
+                refreshDetailLines.classList.remove("hidden");
+
+                if (logChanged) {
+                    refreshDetailLines.scrollTop = refreshDetailLines.scrollHeight;
+                }
+            } else {
+                refreshDetailLines.textContent = "";
+                refreshDetailLines.classList.add("hidden");
+            }
+        }
+
         if (importCardsCount && status.cards_imported !== undefined) {
             importCardsCount.textContent = String(status.cards_imported);
         }
@@ -333,44 +328,6 @@ function initializeRefreshCards() {
         setRefreshRunningUi(Boolean(status.is_running));
     }
 
-    function applyImageStatus(status) {
-        if (imageDownloadStage) {
-            imageDownloadStage.textContent = status.stage || "Idle";
-        }
-
-        if (imageDownloadMessage) {
-            imageDownloadMessage.textContent = status.message || "";
-        }
-
-        if (imageDownloadError) {
-            if (status.error) {
-                imageDownloadError.textContent = status.error;
-                imageDownloadError.classList.remove("hidden");
-            } else {
-                imageDownloadError.textContent = "";
-                imageDownloadError.classList.add("hidden");
-            }
-        }
-
-        if (imageCardsProcessed && status.cards_processed !== undefined) {
-            imageCardsProcessed.textContent = String(status.cards_processed);
-        }
-
-        if (imageCardsDownloaded && status.cards_downloaded !== undefined) {
-            imageCardsDownloaded.textContent = String(status.cards_downloaded);
-        }
-
-        if (imageCardsDisabled && status.cards_disabled !== undefined) {
-            imageCardsDisabled.textContent = String(status.cards_disabled);
-        }
-
-        if (imageDownloadFinishedAt && status.finished_at) {
-            imageDownloadFinishedAt.textContent = status.finished_at;
-        }
-
-        setImageRunningUi(Boolean(status.is_running));
-    }
-
     async function fetchRefreshStatus() {
         const response = await fetch("/refresh-cards/status", {
             method: "GET",
@@ -381,21 +338,6 @@ function initializeRefreshCards() {
 
         if (!response.ok) {
             throw new Error("Failed to get refresh status.");
-        }
-
-        return await response.json();
-    }
-
-    async function fetchImageStatus() {
-        const response = await fetch("/download-card-images/status", {
-            method: "GET",
-            headers: {
-                "Accept": "application/json"
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error("Failed to get card image download status.");
         }
 
         return await response.json();
@@ -433,30 +375,6 @@ function initializeRefreshCards() {
             if (refreshPollTimer) {
                 clearInterval(refreshPollTimer);
                 refreshPollTimer = null;
-            }
-        }
-    }
-
-    async function pollImageStatus() {
-        try {
-            const status = await fetchImageStatus();
-            applyImageStatus(status);
-
-            if (!status.is_running && imagePollTimer) {
-                clearInterval(imagePollTimer);
-                imagePollTimer = null;
-            }
-        } catch (error) {
-            if (imageDownloadError) {
-                imageDownloadError.textContent = error.message;
-                imageDownloadError.classList.remove("hidden");
-            }
-
-            setImageRunningUi(false);
-
-            if (imagePollTimer) {
-                clearInterval(imagePollTimer);
-                imagePollTimer = null;
             }
         }
     }
@@ -512,57 +430,6 @@ function initializeRefreshCards() {
         }
     }
 
-    async function startImageDownload(forceRedownload) {
-        try {
-            setImageRunningUi(true);
-
-            if (imageDownloadError) {
-                imageDownloadError.textContent = "";
-                imageDownloadError.classList.add("hidden");
-            }
-
-            if (imageDownloadStage) {
-                imageDownloadStage.textContent = "Starting";
-            }
-
-            if (imageDownloadMessage) {
-                imageDownloadMessage.textContent = forceRedownload
-                    ? "Starting full image redownload..."
-                    : "Starting missing image download...";
-            }
-
-            const response = await fetch("/download-card-images/start", {
-                method: "POST",
-                headers: {
-                    "Accept": "application/json",
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    force_redownload: forceRedownload
-                })
-            });
-
-            const payload = await response.json();
-
-            if (!response.ok || !payload.ok) {
-                throw new Error(payload.message || "Failed to start card image download.");
-            }
-
-            await pollImageStatus();
-
-            if (!imagePollTimer) {
-                imagePollTimer = setInterval(pollImageStatus, 1000);
-            }
-        } catch (error) {
-            setImageRunningUi(false);
-
-            if (imageDownloadError) {
-                imageDownloadError.textContent = error.message;
-                imageDownloadError.classList.remove("hidden");
-            }
-        }
-    }
-
     refreshButton.addEventListener("click", async function () {
         await startRefresh(false);
     });
@@ -570,26 +437,6 @@ function initializeRefreshCards() {
     if (forcedRefreshButton) {
         forcedRefreshButton.addEventListener("click", async function () {
             await startRefresh(true);
-        });
-    }
-
-    if (downloadCardImagesButton) {
-        downloadCardImagesButton.addEventListener("click", async function () {
-            await startImageDownload(false);
-        });
-    }
-
-    if (redownloadCardImagesButton) {
-        redownloadCardImagesButton.addEventListener("click", async function () {
-            const confirmed = window.confirm(
-                "ReDownload Card Images will reprocess all matching cards and can take a long time.\n\nContinue?"
-            );
-
-            if (!confirmed) {
-                return;
-            }
-
-            await startImageDownload(true);
         });
     }
 
@@ -631,7 +478,6 @@ function initializeRefreshCards() {
     }
 
     pollRefreshStatus();
-    pollImageStatus();
 }
 
 function initializeConfigPanels() {

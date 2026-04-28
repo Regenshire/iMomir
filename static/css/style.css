@@ -1006,6 +1006,26 @@ input {
     gap: 4px;
 }
 
+.refresh-detail-lines {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    align-self: stretch;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.18);
+    color: #d7dde8;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 220px;
+    overflow-y: auto;
+    font-family: Consolas, "Courier New", monospace;
+}
+
 .refresh-error {
     color: #ff9b9b;
     font-weight: 700;
