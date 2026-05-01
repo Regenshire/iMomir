@@ -129,6 +129,7 @@ def initialize_database():
     ensure_column_exists(cursor, "chaos_cards", "back_image_url", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "front_face_name", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "back_face_name", "TEXT")
+    ensure_column_exists(cursor, "tracked_chaos_packs", "campaign_enabled", "INTEGER NOT NULL DEFAULT 1")
 
     cursor.execute(
         """
@@ -323,6 +324,7 @@ def initialize_database():
             added_at_utc TEXT NOT NULL,
             last_opened_at_utc TEXT,
             opened_count INTEGER NOT NULL DEFAULT 0,
+            campaign_enabled INTEGER NOT NULL DEFAULT 1,
             source_json TEXT
         )
         """

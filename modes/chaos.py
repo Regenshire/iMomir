@@ -1367,6 +1367,519 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
     finally:
         conn.close()
 
+def get_campaign_pack_art_image_src(set_code, booster_name, static_folder):
+    art_info = get_chaos_pack_art_info(set_code, booster_name, static_folder)
+    image_path = (art_info.get("image_path") or "").strip()
+
+    if not image_path:
+        image_path = "img/pack_art/_fallback/booster_default.png"
+
+    return url_for("static", filename=image_path)
+
+
+def get_tracked_chaos_packs_for_campaign_spin(static_folder):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tracked_pack_id,
+            pack_tracking_code,
+            set_code,
+            booster_name,
+            booster_index,
+            pack_display_name,
+            total_cards,
+            bonus_pack_opened,
+            added_at_utc,
+            last_opened_at_utc,
+            opened_count
+        FROM tracked_chaos_packs
+        WHERE COALESCE(campaign_enabled, 1) = 1
+        ORDER BY added_at_utc DESC, tracked_pack_id DESC
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    packs = []
+
+    for row in rows:
+        set_code = (row["set_code"] or "").strip().upper()
+        booster_name = (row["booster_name"] or "").strip().lower()
+        display_name = (row["pack_display_name"] or "").strip()
+
+        if not display_name:
+            display_name = build_default_chaos_pack_display_name(set_code, booster_name)
+
+        pack_tracking_code = (row["pack_tracking_code"] or "").strip().upper()
+
+        packs.append({
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "pack_tracking_code": pack_tracking_code,
+            "set_code": set_code,
+            "booster_name": booster_name,
+            "booster_index": int(row["booster_index"] or 0),
+            "display_name": display_name,
+            "image_src": get_campaign_pack_art_image_src(set_code, booster_name, static_folder),
+            "variant_count": 1,
+            "total_variant_weight": 1,
+            "total_cards": int(row["total_cards"] or 0),
+            "bonus_pack_opened": bool(row["bonus_pack_opened"]),
+            "added_at_utc": row["added_at_utc"] or "",
+            "last_opened_at_utc": row["last_opened_at_utc"] or "",
+            "opened_count": int(row["opened_count"] or 0),
+        })
+
+    return packs
+
+
+def get_tracked_chaos_pack_cards(tracked_pack_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tracked_pack_card_id,
+            tracked_pack_id,
+            card_order,
+            card_uuid,
+            card_name,
+            set_code,
+            booster_name,
+            booster_index,
+            sheet_name,
+            sheet_is_foil,
+            sheet_has_balance_colors,
+            sheet_total_weight,
+            rarity,
+            type_line,
+            image_url,
+            scryfall_id,
+            collector_number
+        FROM tracked_chaos_pack_cards
+        WHERE tracked_pack_id = ?
+        ORDER BY card_order ASC
+        """,
+        (int(tracked_pack_id),),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    cards = []
+
+    for row in rows:
+        cards.append({
+            "card_uuid": row["card_uuid"],
+            "card_name": row["card_name"],
+            "set_code": row["set_code"],
+            "booster_name": row["booster_name"],
+            "booster_index": int(row["booster_index"] or 0),
+            "sheet_name": row["sheet_name"],
+            "sheet_is_foil": int(row["sheet_is_foil"] or 0),
+            "sheet_has_balance_colors": int(row["sheet_has_balance_colors"] or 0),
+            "sheet_total_weight": float(row["sheet_total_weight"] or 0),
+            "rarity": row["rarity"],
+            "type_line": row["type_line"],
+            "image_url": row["image_url"],
+            "scryfall_id": row["scryfall_id"],
+            "collector_number": row["collector_number"],
+        })
+
+    return cards
+
+
+def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, opening_context="campaign_mode"):
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO tracked_chaos_pack_openings (
+            tracked_pack_id,
+            opened_at_utc,
+            opened_by_player_id,
+            opening_context
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            int(tracked_pack_id),
+            now_utc,
+            opened_by_player_id,
+            opening_context,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_packs
+        SET opened_count = COALESCE(opened_count, 0) + 1,
+            last_opened_at_utc = ?
+        WHERE tracked_pack_id = ?
+        """,
+        (
+            now_utc,
+            int(tracked_pack_id),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+def normalize_tracked_pack_id_list(raw_pack_ids):
+    pack_ids = []
+
+    for raw_pack_id in raw_pack_ids or []:
+        try:
+            parsed_id = int(raw_pack_id)
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_id > 0 and parsed_id not in pack_ids:
+            pack_ids.append(parsed_id)
+
+    return pack_ids
+
+
+def get_tracked_pack_management_rows(static_folder, search_text=""):
+    search_value = (search_text or "").strip().lower()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    params = []
+    where_clause = ""
+
+    if search_value:
+        where_clause = """
+        WHERE LOWER(tcp.pack_tracking_code) LIKE ?
+           OR LOWER(tcp.set_code) LIKE ?
+           OR LOWER(tcp.booster_name) LIKE ?
+           OR LOWER(tcp.pack_display_name) LIKE ?
+           OR EXISTS (
+                SELECT 1
+                FROM tracked_chaos_pack_cards tcpc
+                WHERE tcpc.tracked_pack_id = tcp.tracked_pack_id
+                  AND LOWER(tcpc.card_name) LIKE ?
+           )
+        """
+
+        like_value = f"%{search_value}%"
+        params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    cursor.execute(
+        f"""
+        SELECT
+            tcp.tracked_pack_id,
+            tcp.pack_tracking_code,
+            tcp.set_code,
+            tcp.booster_name,
+            tcp.booster_index,
+            tcp.pack_display_name,
+            tcp.total_cards,
+            tcp.bonus_pack_opened,
+            tcp.added_at_utc,
+            tcp.last_opened_at_utc,
+            tcp.opened_count,
+            COALESCE(tcp.campaign_enabled, 1) AS campaign_enabled
+        FROM tracked_chaos_packs tcp
+        {where_clause}
+        ORDER BY tcp.added_at_utc DESC, tcp.tracked_pack_id DESC
+        """,
+        params,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    packs = []
+
+    for row in rows:
+        set_code = (row["set_code"] or "").strip().upper()
+        booster_name = (row["booster_name"] or "").strip().lower()
+        art_info = get_chaos_pack_art_info(set_code, booster_name, static_folder)
+
+        packs.append({
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
+            "set_code": set_code,
+            "booster_name": booster_name,
+            "booster_index": int(row["booster_index"] or 0),
+            "pack_display_name": (row["pack_display_name"] or "").strip(),
+            "total_cards": int(row["total_cards"] or 0),
+            "bonus_pack_opened": bool(row["bonus_pack_opened"]),
+            "added_at_utc": row["added_at_utc"] or "",
+            "last_opened_at_utc": row["last_opened_at_utc"] or "",
+            "opened_count": int(row["opened_count"] or 0),
+            "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
+            "image_src": url_for("static", filename=art_info["image_path"]),
+        })
+
+    return packs
+
+
+def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled):
+    pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
+
+    if not pack_ids:
+        return 0
+
+    placeholders = ",".join(["?"] * len(pack_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        UPDATE tracked_chaos_packs
+        SET campaign_enabled = ?
+        WHERE tracked_pack_id IN ({placeholders})
+        """,
+        [1 if campaign_enabled else 0] + pack_ids,
+    )
+
+    updated_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return updated_count
+
+def get_tracked_pack_state_by_id(tracked_pack_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tracked_pack_id,
+            pack_tracking_code,
+            set_code,
+            booster_name,
+            booster_index,
+            pack_display_name,
+            total_cards,
+            bonus_pack_opened,
+            added_at_utc,
+            last_opened_at_utc,
+            opened_count,
+            COALESCE(campaign_enabled, 1) AS campaign_enabled
+        FROM tracked_chaos_packs
+        WHERE tracked_pack_id = ?
+        """,
+        (int(tracked_pack_id),),
+    )
+
+    pack_row = cursor.fetchone()
+
+    if not pack_row:
+        conn.close()
+        return None
+
+    cursor.execute(
+        """
+        SELECT
+            card_order,
+            card_uuid,
+            card_name,
+            set_code,
+            booster_name,
+            booster_index,
+            sheet_name,
+            sheet_is_foil,
+            sheet_has_balance_colors,
+            sheet_total_weight,
+            rarity,
+            type_line,
+            image_url,
+            scryfall_id,
+            collector_number
+        FROM tracked_chaos_pack_cards
+        WHERE tracked_pack_id = ?
+        ORDER BY card_order ASC
+        """,
+        (int(tracked_pack_id),),
+    )
+
+    card_rows = cursor.fetchall()
+    conn.close()
+
+    cards = []
+
+    for card_row in card_rows:
+        cards.append({
+            "card_uuid": card_row["card_uuid"],
+            "card_name": card_row["card_name"],
+            "set_code": card_row["set_code"],
+            "booster_name": card_row["booster_name"],
+            "booster_index": int(card_row["booster_index"] or 0),
+            "sheet_name": card_row["sheet_name"],
+            "sheet_is_foil": int(card_row["sheet_is_foil"] or 0),
+            "sheet_has_balance_colors": int(card_row["sheet_has_balance_colors"] or 0),
+            "sheet_total_weight": float(card_row["sheet_total_weight"] or 0),
+            "rarity": card_row["rarity"],
+            "type_line": card_row["type_line"],
+            "image_url": card_row["image_url"],
+            "scryfall_id": card_row["scryfall_id"],
+            "collector_number": card_row["collector_number"],
+        })
+
+    return {
+        "tracked_pack_id": int(pack_row["tracked_pack_id"]),
+        "pack_tracking_code": (pack_row["pack_tracking_code"] or "").strip().upper(),
+        "set_code": (pack_row["set_code"] or "").strip().upper(),
+        "booster_name": (pack_row["booster_name"] or "").strip().lower(),
+        "booster_index": int(pack_row["booster_index"] or 0),
+        "pack_display_name": (pack_row["pack_display_name"] or "").strip(),
+        "display_name": (pack_row["pack_display_name"] or "").strip(),
+        "total_cards": int(pack_row["total_cards"] or len(cards)),
+        "bonus_pack_opened": bool(pack_row["bonus_pack_opened"]),
+        "added_at_utc": pack_row["added_at_utc"] or "",
+        "last_opened_at_utc": pack_row["last_opened_at_utc"] or "",
+        "opened_count": int(pack_row["opened_count"] or 0),
+        "campaign_enabled": int(pack_row["campaign_enabled"] or 0) == 1,
+        "cards": cards,
+    }
+
+def build_tracked_packs_combined_pdf(
+    tracked_pack_ids,
+    build_chaos_pack_pdf_fn,
+    write_debug_log_fn=None,
+):
+    pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
+
+    if not pack_ids:
+        raise ValueError("No packs were selected.")
+
+    merger = PdfWriter()
+    appended_count = 0
+
+    for tracked_pack_id in pack_ids:
+        pack_state = get_tracked_pack_state_by_id(tracked_pack_id)
+
+        if not pack_state:
+            continue
+
+        cards = pack_state.get("cards") or []
+        if not cards:
+            continue
+
+        pack_pdf_buffer = build_chaos_pack_pdf_fn(
+            cards,
+            pack_state["pack_display_name"],
+            set_code=pack_state["set_code"],
+            booster_name=pack_state["booster_name"],
+            pack_tracking_code=pack_state["pack_tracking_code"],
+        )
+
+        merger.append(pack_pdf_buffer)
+        appended_count += 1
+
+        if write_debug_log_fn:
+            write_debug_log_fn(
+                f"MANAGE PACKS PRINT | tracked_pack_id={tracked_pack_id} | "
+                f"tracking_code={pack_state['pack_tracking_code']} | cards={len(cards)}"
+            )
+
+    if appended_count == 0:
+        merger.close()
+        raise ValueError("No selected packs could be printed.")
+
+    output_buffer = BytesIO()
+    merger.write(output_buffer)
+    merger.close()
+    output_buffer.seek(0)
+
+    return {
+        "buffer": output_buffer,
+        "pack_count": appended_count,
+    }
+
+def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None):
+    campaign_packs = get_tracked_chaos_packs_for_campaign_spin(static_folder)
+
+    if not campaign_packs:
+        return None
+
+    shuffled_packs = list(campaign_packs)
+    random.shuffle(shuffled_packs)
+
+    display_packs = shuffled_packs[:15]
+
+    if not display_packs:
+        return None
+
+    winning_stop_index = random.randint(0, len(display_packs) - 1)
+    winning_pack = display_packs[winning_stop_index]
+
+    cards = get_tracked_chaos_pack_cards(winning_pack["tracked_pack_id"])
+
+    if not cards:
+        return None
+
+    opened_pack_state = {
+        "tracked_pack_id": int(winning_pack["tracked_pack_id"]),
+        "set_code": winning_pack["set_code"],
+        "booster_name": winning_pack["booster_name"],
+        "booster_index": int(winning_pack["booster_index"] or 0),
+        "display_name": winning_pack["display_name"],
+        "pack_tracking_code": winning_pack["pack_tracking_code"],
+        "bonus_pack_opened": bool(winning_pack.get("bonus_pack_opened")),
+        "total_cards": len(cards),
+        "cards": cards,
+        "campaign_mode": True,
+    }
+
+    set_chaos_session_state("pending_opened_pack", opened_pack_state)
+    set_chaos_session_state("pending_campaign_pack_opening_recorded", {
+        "tracked_pack_id": int(winning_pack["tracked_pack_id"]),
+        "recorded": False,
+    })
+
+    spin_result = {
+        "display_packs": display_packs,
+        "winning_pack": {
+            "tracked_pack_id": int(winning_pack["tracked_pack_id"]),
+            "pack_tracking_code": winning_pack["pack_tracking_code"],
+            "set_code": winning_pack["set_code"],
+            "booster_name": winning_pack["booster_name"],
+            "display_name": winning_pack["display_name"],
+            "image_src": winning_pack["image_src"],
+            "variant_count": 1,
+            "total_variant_weight": 1,
+            "opened_count": int(winning_pack.get("opened_count") or 0),
+        },
+        "chosen_variant": {
+            "tracked_pack_id": int(winning_pack["tracked_pack_id"]),
+            "set_code": winning_pack["set_code"],
+            "booster_name": winning_pack["booster_name"],
+            "booster_index": int(winning_pack["booster_index"] or 0),
+            "booster_weight": 1,
+        },
+        "winning_stop_index": winning_stop_index,
+        "opened_pack_ready": True,
+        "opened_pack_total_cards": len(cards),
+        "bonus_pack_opened": bool(winning_pack.get("bonus_pack_opened")),
+        "campaign_mode": True,
+    }
+
+    set_chaos_session_state("pending_spin_result", spin_result)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"CAMPAIGN CHAOS SPIN | tracked_pack_id={winning_pack['tracked_pack_id']} | "
+            f"tracking_code={winning_pack['pack_tracking_code']} | cards={len(cards)}"
+        )
+
+    return spin_result
+
 def build_chaos_pack_export_text(opened_pack, export_format):
     if not opened_pack:
         raise ValueError("No opened Chaos Draft pack is available.")

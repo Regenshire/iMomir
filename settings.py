@@ -247,6 +247,12 @@ GAME_MODE_OPTIONS = [
         "image_filename": "img/token_mode_tower_of_power.jpg",
     },
     {
+        "value": "chaos_draft_campaign",
+        "label": "Chaos Draft - Campaign Mode",
+        "description": "Campaign Mode selects from packs that have already been saved to the Pack Tracking Database. Use this mode when you are drafting from physical packs that have printed tracking codes.",
+        "image_filename": "img/token_mode_tower_of_power.jpg",
+    },
+    {
         "value": "preprint_chaos_draft",
         "label": "PRE-PRINT - Chaos Draft",
         "description": "Pre-generate Chaos Draft packs for your next game. Choose how many players and how many packs per player, then combine all generated packs into one printable PDF document.",

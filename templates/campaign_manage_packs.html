@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Manage Packs{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel campaign-manage-packs-header">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">Manage Packs</h1>
+                <p class="page-subtitle">
+                    View and control which saved packs are available in Campaign Mode.
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <form method="get" action="{{ url_for('campaign_chaos_packs') }}" class="campaign-pack-search-form">
+            <input
+                type="text"
+                name="q"
+                value="{{ search_text }}"
+                class="campaign-pack-search-input"
+                placeholder="Search tracking code, set, booster, pack name, or card..."
+                autocomplete="off"
+            >
+
+            <button type="submit" class="action-button campaign-pack-search-button">
+                Search
+            </button>
+
+            {% if search_text %}
+            <a class="action-button secondary-button campaign-pack-clear-button" href="{{ url_for('campaign_chaos_packs') }}">
+                Clear
+            </a>
+            {% endif %}
+        </form>
+    </div>
+
+    <form
+        method="post"
+        action="{{ url_for('campaign_chaos_packs_action') }}"
+        id="campaignManagePacksForm"
+        class="campaign-manage-packs-form"
+    >
+        <div class="page-panel campaign-bulk-actions-panel">
+            <div class="campaign-bulk-actions">
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="print"
+                    class="action-button"
+                    formtarget="_blank"
+                >
+                    Print Selected
+                </button>
+
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="disable"
+                    class="action-button secondary-button"
+                >
+                    Disable Selected
+                </button>
+
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="enable"
+                    class="action-button secondary-button"
+                >
+                    Enable Selected
+                </button>
+            </div>
+
+            <div class="campaign-selection-tools">
+                <button type="button" id="campaignSelectAllPacksButton" class="campaign-small-link-button">
+                    Select All
+                </button>
+                <button type="button" id="campaignClearSelectedPacksButton" class="campaign-small-link-button">
+                    Clear Selection
+                </button>
+            </div>
+        </div>
+
+        <div class="page-panel campaign-pack-list-panel">
+            {% if packs %}
+                <div class="campaign-pack-list">
+                    {% for pack in packs %}
+                    <div class="campaign-pack-row {% if not pack.campaign_enabled %}campaign-pack-row-disabled{% endif %}">
+                        <label class="campaign-pack-select-wrap">
+                            <input
+                                type="checkbox"
+                                name="pack_ids"
+                                value="{{ pack.tracked_pack_id }}"
+                                class="campaign-pack-checkbox"
+                            >
+                        </label>
+
+                        <div class="campaign-pack-image-wrap">
+                            <img
+                                src="{{ pack.image_src }}"
+                                alt="{{ pack.pack_display_name }}"
+                                class="campaign-pack-image"
+                            >
+                        </div>
+
+                        <div class="campaign-pack-main">
+                            <div class="campaign-pack-title-row">
+                                <div class="campaign-pack-title">
+                                    {{ pack.pack_display_name }}
+                                </div>
+
+                                {% if pack.campaign_enabled %}
+                                    <span class="campaign-status-badge campaign-status-enabled">Campaign</span>
+                                {% else %}
+                                    <span class="campaign-status-badge campaign-status-disabled">Disabled</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="campaign-pack-meta">
+                                <span>{{ pack.pack_tracking_code }}</span>
+                                <span>{{ pack.set_code }}</span>
+                                <span>{{ pack.booster_name }}</span>
+                                <span>{{ pack.total_cards }} cards</span>
+                                <span>Opened {{ pack.opened_count }}x</span>
+                            </div>
+
+                            <div class="campaign-pack-date-row">
+                                <span>Added: {{ pack.added_at_utc or "Unknown" }}</span>
+                                <span>Last opened: {{ pack.last_opened_at_utc or "Never" }}</span>
+                            </div>
+                        </div>
+
+                        <div class="campaign-pack-row-actions">
+                            <a
+                                href="{{ url_for('campaign_chaos_pack_detail', tracked_pack_id=pack.tracked_pack_id) }}"
+                                class="action-button secondary-button campaign-row-action-button"
+                            >
+                                View
+                            </a>
+
+                            <a
+                                href="{{ url_for('campaign_chaos_history', tracked_pack_id=pack.tracked_pack_id) }}"
+                                class="action-button secondary-button campaign-row-action-button"
+                            >
+                                History
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="card-placeholder">
+                    No saved packs were found.
+                </div>
+            {% endif %}
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById("campaignManagePacksForm");
+    const selectAllButton = document.getElementById("campaignSelectAllPacksButton");
+    const clearSelectedButton = document.getElementById("campaignClearSelectedPacksButton");
+
+    if (!form) {
+        return;
+    }
+
+    function getAllCheckboxes() {
+        return Array.from(form.querySelectorAll(".campaign-pack-checkbox"));
+    }
+
+    if (selectAllButton) {
+        selectAllButton.addEventListener("click", function () {
+            getAllCheckboxes().forEach(function (checkbox) {
+                checkbox.checked = true;
+            });
+        });
+    }
+
+    if (clearSelectedButton) {
+        clearSelectedButton.addEventListener("click", function () {
+            getAllCheckboxes().forEach(function (checkbox) {
+                checkbox.checked = false;
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}

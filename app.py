@@ -136,6 +136,8 @@ from modes.chaos import (
     build_pack_tracking_code,
     build_chaos_pack_types_config_value,
     build_chaos_spin_result,
+    build_tracked_packs_combined_pdf,
+    build_campaign_chaos_spin_result,
     build_default_chaos_pack_display_name,
     build_pending_chaos_pack_pdf,
     build_preprint_chaos_draft_pdf,
@@ -151,14 +153,19 @@ from modes.chaos import (
     get_eligible_chaos_packs_for_spin,
     get_pending_chaos_spin_result,
     get_selected_chaos_pack_types,
+    get_tracked_pack_management_rows,
+    get_tracked_pack_state_by_id,
     normalize_booster_type_for_filter,
     normalize_chaos_booster_key,
     normalize_chaos_pack_display_name,
+    normalize_tracked_pack_id_list,
     open_chaos_pack_with_bonus_rule,
     parse_chaos_pack_types_config,
     record_chaos_pack_history,
+    record_campaign_pack_opening,
     save_opened_chaos_pack_to_tracking_db,
     set_chaos_session_state,
+    set_tracked_packs_campaign_enabled,
     sort_opened_chaos_pack_cards,
 )
 
@@ -483,6 +490,7 @@ def update_config_from_form(form_data):
         "momir_prime",
         "tower_of_power",
         "chaos_draft",
+        "chaos_draft_campaign",
         "preprint_chaos_draft",
         "planechase",
         "archenemy",
@@ -4176,6 +4184,22 @@ def result():
             template_download_links=active_template_metadata["download_links"],
         )
 
+    if current_game_mode == "chaos_draft_campaign":
+        clear_chaos_session_state("pending_spin_result")
+        clear_chaos_session_state("pending_campaign_pack_opening_recorded")
+
+        active_template_metadata = get_active_print_template_metadata()
+
+        return render_template(
+            "campaign_chaos_draft.html",
+            card_database_ready=card_database_ready,
+            current_game_mode=current_game_mode,
+            open_print_in_new_tab=print_settings["open_in_new_tab"],
+            sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
+            chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
+            template_download_links=active_template_metadata["download_links"],
+        )
+
     if current_game_mode == "preprint_chaos_draft":
         active_template_metadata = get_active_print_template_metadata()
 
@@ -4698,6 +4722,184 @@ def chaos_draft_open_test():
         "total_cards": open_result["total_cards"],
         "cards": open_result["cards"],
     })
+
+@app.route("/campaign-chaos/players", methods=["GET"])
+def campaign_chaos_players():
+    return render_template(
+        "campaign_placeholder.html",
+        page_title="Edit Players",
+        page_subtitle="Player Management will be built next. This screen will let you add, rename, disable, and select Campaign Mode players.",
+    )
+
+
+@app.route("/campaign-chaos/packs", methods=["GET"])
+def campaign_chaos_packs():
+    search_text = (request.args.get("q") or "").strip()
+    packs = get_tracked_pack_management_rows(app.static_folder, search_text=search_text)
+
+    return render_template(
+        "campaign_manage_packs.html",
+        packs=packs,
+        search_text=search_text,
+    )
+
+
+@app.route("/campaign-chaos/history", methods=["GET"])
+def campaign_chaos_history():
+    return render_template(
+        "campaign_placeholder.html",
+        page_title="Campaign History",
+        page_subtitle="Campaign History will be built next. This screen will show pack openings, selected players, timestamps, and campaign/session context.",
+    )
+
+@app.route("/campaign-chaos/packs/<int:tracked_pack_id>", methods=["GET"])
+def campaign_chaos_pack_detail(tracked_pack_id):
+    pack = get_tracked_pack_state_by_id(tracked_pack_id)
+
+    if not pack:
+        return "Tracked pack not found.", 404
+
+    config = get_request_config()
+    display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
+    pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
+
+    cards = enrich_pack_cards_with_prices(
+        pack.get("cards") or [],
+        display_prices=display_pack_prices,
+        price_source=pack_price_source,
+    )
+
+    return render_template(
+        "campaign_pack_detail.html",
+        pack=pack,
+        cards=cards,
+        display_pack_prices=display_pack_prices,
+        pack_price_source=pack_price_source,
+    )
+
+@app.route("/campaign-chaos/packs/<int:tracked_pack_id>/print", methods=["GET"])
+def campaign_chaos_pack_print(tracked_pack_id):
+    try:
+        print_result = build_tracked_packs_combined_pdf(
+            [tracked_pack_id],
+            build_chaos_pack_pdf,
+            write_debug_log,
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return Response(
+        print_result["buffer"].getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="campaign_pack_{tracked_pack_id}.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+@app.route("/campaign-chaos/packs/action", methods=["POST"])
+def campaign_chaos_packs_action():
+    action = (request.form.get("bulk_action") or "").strip().lower()
+    selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+
+    if not selected_pack_ids:
+        flash("No packs were selected.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    if action == "print":
+        try:
+            print_result = build_tracked_packs_combined_pdf(
+                selected_pack_ids,
+                build_chaos_pack_pdf,
+                write_debug_log,
+            )
+        except Exception as exc:
+            return str(exc), 400
+
+        return Response(
+            print_result["buffer"].getvalue(),
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="campaign_saved_packs_{print_result["pack_count"]}.pdf"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    if action == "disable":
+        updated_count = set_tracked_packs_campaign_enabled(selected_pack_ids, False)
+        flash(f"Disabled {updated_count} pack(s) from Campaign Mode.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    if action == "enable":
+        updated_count = set_tracked_packs_campaign_enabled(selected_pack_ids, True)
+        flash(f"Enabled {updated_count} pack(s) for Campaign Mode.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    flash("Unknown pack action.")
+    return redirect(url_for("campaign_chaos_packs"))
+
+@app.route("/campaign-chaos/spin", methods=["POST"])
+def campaign_chaos_spin():
+    spin_result = build_campaign_chaos_spin_result(
+        app.static_folder,
+        write_debug_log,
+    )
+
+    if not spin_result:
+        return jsonify({
+            "ok": False,
+            "message": "No saved packs were found in the Pack Tracking Database.",
+        }), 404
+
+    return jsonify({
+        "ok": True,
+        "spin_result": spin_result,
+    })
+
+
+@app.route("/campaign-chaos/open", methods=["POST"])
+def campaign_chaos_open():
+    opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
+    if not opened_pack:
+        return jsonify({
+            "ok": False,
+            "message": "No Campaign Mode pack is ready to open."
+        }), 400
+
+    tracked_pack_id = opened_pack.get("tracked_pack_id")
+    if tracked_pack_id:
+        opening_state = get_chaos_session_state(
+            "pending_campaign_pack_opening_recorded",
+            default_value=None,
+        )
+
+        already_recorded = bool(opening_state and opening_state.get("recorded"))
+
+        if not already_recorded:
+            record_campaign_pack_opening(
+                tracked_pack_id,
+                opened_by_player_id=None,
+                opening_context="campaign_mode_pdf_open",
+            )
+
+            set_chaos_session_state(
+                "pending_campaign_pack_opening_recorded",
+                {
+                    "tracked_pack_id": int(tracked_pack_id),
+                    "recorded": True,
+                },
+            )
+
+    result = build_pending_chaos_pack_pdf(
+        build_chaos_pack_pdf,
+        write_debug_log,
+        safe_filename,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
 
 @app.route("/chaos-draft/spin", methods=["POST"])
 def chaos_draft_spin():

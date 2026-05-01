@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - {{ page_title }}{% endblock %}
+
+{% block content %}
+<div class="screen screen-medium">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">{{ page_title }}</h1>
+                <p class="page-subtitle">{{ page_subtitle }}</p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

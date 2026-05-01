@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}iMomir - Chaos Draft{% endblock %}
+{% block title %}iMomir - Chaos Draft Campaign Mode{% endblock %}
 
 {% block content %}
 <div
@@ -9,21 +9,50 @@
     data-open-print-in-new-tab="{{ '1' if open_print_in_new_tab else '0' }}"
     data-sound-enabled="{{ '1' if sound_enabled else '0' }}"
     data-chaos-export-format="{{ chaos_draft_export_format }}"
-    data-chaos-spin-url="{{ url_for('chaos_draft_spin') }}"
-    data-chaos-open-url="{{ url_for('chaos_draft_open') }}"
+    data-chaos-spin-url="{{ url_for('campaign_chaos_spin') }}"
+    data-chaos-open-url="{{ url_for('campaign_chaos_open') }}"
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
 >
     <div class="page-panel chaos-draft-header-panel">
         <div class="chaos-draft-header-layout">
             <div class="chaos-draft-header-copy">
-                <h1 class="page-title">Chaos Draft</h1>
+                <h1 class="page-title">Chaos Draft - Campaign Mode</h1>
                 <p class="page-subtitle">
-                    Spin to select a random booster pack from the currently enabled sets.
+                    Spin to select a random booster pack from the specific packs you have configured for the campaign.
                 </p>
             </div>
 
-            <div class="chaos-draft-top-actions">
+            <div class="chaos-draft-top-actions campaign-top-actions">
+                <div class="campaign-icon-actions" aria-label="Campaign tools">
+                    <a
+                        class="campaign-icon-button"
+                        href="{{ url_for('campaign_chaos_players') }}"
+                        title="Edit Players"
+                        aria-label="Edit Players"
+                    >
+                        <i class="fa-solid fa-users"></i>
+                    </a>
+
+                    <a
+                        class="campaign-icon-button"
+                        href="{{ url_for('campaign_chaos_packs') }}"
+                        title="Manage Packs"
+                        aria-label="Manage Packs"
+                    >
+                        <i class="fa-solid fa-box-archive"></i>
+                    </a>
+
+                    <a
+                        class="campaign-icon-button"
+                        href="{{ url_for('campaign_chaos_history') }}"
+                        title="History"
+                        aria-label="History"
+                    >
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                    </a>
+                </div>
+
                 <button type="button" id="chaosNextButton" class="chaos-draft-next-button" disabled>
                     <span class="chaos-draft-next-button-label">Next Pack</span>
                     <span class="chaos-draft-next-button-arrow">▷</span>

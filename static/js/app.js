@@ -680,6 +680,10 @@ function initializeChaosDraftPage() {
     const pointer = document.getElementById("chaosDraftPointer");
     const message = document.getElementById("chaosDraftMessage");
     const chaosDraftScreen = document.getElementById("chaosDraftScreen");
+    const chaosSpinUrl = chaosDraftScreen.dataset.chaosSpinUrl || "/chaos-draft/spin";
+    const chaosOpenUrl = chaosDraftScreen.dataset.chaosOpenUrl || "/chaos-draft/open";
+    const chaosViewDataUrl = chaosDraftScreen.dataset.chaosViewDataUrl || "/chaos-draft/view-data";
+    const chaosExportUrl = chaosDraftScreen.dataset.chaosExportUrl || "/chaos-draft/export";
     const busyOverlay = document.getElementById("chaosDraftBusyOverlay");
     const busyTitle = document.getElementById("chaosDraftBusyTitle");
     const busyText = document.getElementById("chaosDraftBusyText");
@@ -928,7 +932,7 @@ function initializeChaosDraftPage() {
     }
 
     async function loadInlinePackView() {
-        const response = await fetch("/chaos-draft/view-data", {
+        const response = await fetch(chaosViewDataUrl, {
             method: "GET",
             headers: {
                 "Accept": "application/json"
@@ -1419,7 +1423,7 @@ function initializeChaosDraftPage() {
     }
 
     async function requestChaosExport(saveToFile) {
-        const response = await fetch("/chaos-draft/export", {
+        const response = await fetch(chaosExportUrl, {
             method: "POST",
             headers: {
                 "Accept": "application/json"
@@ -1611,7 +1615,7 @@ function initializeChaosDraftPage() {
         return 1 - Math.pow(1 - t, 3);
     }
 
-    function animateTrackToTarget(finalAbsoluteIndex) {
+    function animateTrackToTarget(finalAbsoluteIndex, visiblePackCount) {
         const spinnerWindow = spinnerShell.querySelector(".chaos-draft-spinner-window");
         const allCards = spinnerTrack.querySelectorAll(".chaos-pack-card");
         const finalCard = spinnerTrack.querySelector(`[data-chaos-card-index="${finalAbsoluteIndex}"]`);
@@ -1641,7 +1645,17 @@ function initializeChaosDraftPage() {
         const approachTranslate = finalTranslate + jostleOffsetPx;
 
         const startTranslate = 0;
-        const durationMs = 7600 + Math.round(Math.random() * 1100);
+        const packCount = Number(visiblePackCount || 0);
+
+        let durationMs = 7600 + Math.round(Math.random() * 1100);
+
+        if (packCount > 0 && packCount <= 3) {
+            durationMs = 1800 + Math.round(Math.random() * 350);
+        } else if (packCount <= 6) {
+            durationMs = 2600 + Math.round(Math.random() * 500);
+        } else if (packCount <= 10) {
+            durationMs = 4200 + Math.round(Math.random() * 700);
+        }
 
         startRouletteTicks(oneCardTravel, startTranslate);
 
@@ -1756,7 +1770,7 @@ function initializeChaosDraftPage() {
                 spinnerTrack.classList.remove("hidden");
                 pointer.classList.remove("hidden");
 
-                const response = await fetch("/chaos-draft/spin", {
+                const response = await fetch(chaosSpinUrl, {
                     method: "POST",
                     headers: {
                         "Accept": "application/json"
@@ -1934,7 +1948,7 @@ function initializeChaosDraftPage() {
                     busyText.textContent = "We are cracking your pack! Lets see what you opened...";
                 }
 
-                const response = await fetch("/chaos-draft/open", {
+                const response = await fetch(chaosOpenUrl, {
                     method: "POST",
                     headers: {
                         "Accept": "application/json"

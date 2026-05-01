@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Pack {{ pack.pack_tracking_code }}{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel chaos-pack-view-header-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">{{ pack.pack_display_name }}</h1>
+                <p class="page-subtitle">
+                    {{ pack.pack_tracking_code }} • {{ pack.total_cards }} cards • Opened {{ pack.opened_count }}x
+                    {% if not pack.campaign_enabled %} • Disabled from Campaign Mode{% endif %}
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a
+                    class="action-button secondary-button chaos-pack-view-back-button"
+                    href="{{ url_for('campaign_chaos_packs') }}"
+                >
+                    Back
+                </a>
+
+                <a
+                    class="action-button chaos-pack-view-back-button"
+                    href="{{ url_for('campaign_chaos_pack_print', tracked_pack_id=pack.tracked_pack_id) }}"
+                    target="_blank"
+                >
+                    Print
+                </a>
+
+                <a
+                    class="action-button secondary-button chaos-pack-view-back-button"
+                    href="{{ url_for('campaign_chaos_history', tracked_pack_id=pack.tracked_pack_id) }}"
+                >
+                    History
+                </a>
+                
+            </div>
+        </div>
+    </div>
+
+    <div class="chaos-pack-view-grid">
+        {% for card in cards %}
+        <div class="chaos-pack-view-card">
+            <div class="chaos-pack-view-image-wrap">
+                <img
+                    src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                    alt="{{ card.card_name }}"
+                    class="chaos-pack-view-image campaign-pack-detail-zoomable"
+                    role="button"
+                    tabindex="0"
+                    data-zoom-src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                    data-zoom-alt="{{ card.card_name }}"
+                    aria-label="Zoom {{ card.card_name }}"
+                >
+            </div>
+
+            <div class="chaos-pack-view-info">
+                <div class="chaos-pack-view-name">{{ card.card_name }}</div>
+
+                {% if display_pack_prices %}
+                <div class="chaos-pack-view-price">
+                    {% if card.price_info.price is not none %}
+                        ${{ "%.2f"|format(card.price_info.price) }}
+                    {% else %}
+                        Price unavailable
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if card.special_badges %}
+                <div class="chaos-pack-view-badges">
+                    {% for badge in card.special_badges %}
+                    <span class="chaos-pack-view-badge">{{ badge }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div id="campaignPackZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
+        <div id="campaignPackZoomBackdrop" class="card-zoom-backdrop"></div>
+        <div class="card-zoom-content">
+            <img
+                id="campaignPackZoomImage"
+                src=""
+                alt=""
+                class="card-zoom-image"
+            >
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const zoomOverlay = document.getElementById("campaignPackZoomOverlay");
+    const zoomBackdrop = document.getElementById("campaignPackZoomBackdrop");
+    const zoomImage = document.getElementById("campaignPackZoomImage");
+    const zoomableImages = Array.from(document.querySelectorAll(".campaign-pack-detail-zoomable"));
+
+    if (!zoomOverlay || !zoomBackdrop || !zoomImage || !zoomableImages.length) {
+        return;
+    }
+
+    function openZoom(imageElement) {
+        const imageSrc = imageElement.getAttribute("data-zoom-src") || imageElement.src || "";
+        const imageAlt = imageElement.getAttribute("data-zoom-alt") || imageElement.alt || "";
+
+        if (!imageSrc) {
+            return;
+        }
+
+        zoomImage.src = imageSrc;
+        zoomImage.alt = imageAlt;
+        zoomOverlay.classList.remove("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function closeZoom() {
+        zoomOverlay.classList.add("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "true");
+        zoomImage.src = "";
+        zoomImage.alt = "";
+    }
+
+    zoomableImages.forEach(function (imageElement) {
+        imageElement.addEventListener("click", function () {
+            openZoom(imageElement);
+        });
+
+        imageElement.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openZoom(imageElement);
+            }
+        });
+    });
+
+    zoomBackdrop.addEventListener("click", closeZoom);
+    zoomImage.addEventListener("click", closeZoom);
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !zoomOverlay.classList.contains("hidden")) {
+            closeZoom();
+        }
+    });
+})();
+</script>
+{% endblock %}
