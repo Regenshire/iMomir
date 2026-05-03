@@ -14,6 +14,10 @@
             </div>
 
             <div class="chaos-pack-view-header-actions">
+                <button type="button" id="campaignAddPackButton" class="action-button campaign-header-action-button">
+                    Add Pack
+                </button>
+
                 <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
                     Back
                 </a>
@@ -28,6 +32,187 @@
             </div>
         {% endif %}
     {% endwith %}
+
+    <div id="campaignAddPackModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignAddPackBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignAddPackTitle">
+            <div class="campaign-add-pack-header">
+                <div>
+                    <h2 id="campaignAddPackTitle" class="campaign-add-pack-title">Add Pack</h2>
+                    <p class="campaign-add-pack-subtitle">
+                        Add a new saved pack to the Pack Tracking Database.
+                    </p>
+                </div>
+
+                <button type="button" id="campaignAddPackCloseButton" class="campaign-add-pack-close-button" aria-label="Close Add Pack">
+                    ×
+                </button>
+            </div>
+
+            <div id="campaignAddPackStatus" class="campaign-add-pack-status hidden"></div>
+
+                        <div id="campaignAddPackPreview" class="campaign-add-pack-preview hidden">
+                <div class="campaign-add-pack-preview-main">
+                    <div class="campaign-add-pack-preview-title" id="campaignAddPackPreviewTitle"></div>
+                    <div class="campaign-add-pack-preview-meta" id="campaignAddPackPreviewMeta"></div>
+                </div>
+
+                <div class="campaign-add-pack-preview-actions">
+                    <a
+                        id="campaignAddPackPreviewViewLink"
+                        class="action-button secondary-button campaign-add-pack-preview-button"
+                        href="#"
+                        target="_blank"
+                    >
+                        View
+                    </a>
+
+                    <a
+                        id="campaignAddPackPreviewPrintLink"
+                        class="action-button secondary-button campaign-add-pack-preview-button"
+                        href="#"
+                        target="_blank"
+                    >
+                        Print
+                    </a>
+
+                    <button
+                        type="button"
+                        id="campaignAddPackPreviewSaveButton"
+                        class="action-button campaign-add-pack-preview-button"
+                    >
+                        Save
+                    </button>
+                </div>
+            </div>
+
+            <div class="campaign-add-pack-options">
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card campaign-add-pack-mode-card-active" data-add-pack-mode="random">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Random</div>
+                        <div class="campaign-add-pack-option-pill">Ready</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Generate a random eligible Chaos Draft pack to add to the campaign.
+                    </p>
+
+                    <button type="button" id="campaignAddRandomPackButton" class="action-button campaign-add-pack-mode-button" data-add-pack-mode-button="random">
+                        Add Random Pack
+                    </button>
+                </div>
+
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="search">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Search</div>
+                        <div class="campaign-add-pack-option-pill">Ready</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Search by set code, set name, or pack name, then generate a random pack from the selected result.
+                    </p>
+
+                    <button type="button" id="campaignShowSearchPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="search">
+                        Search and Add Pack
+                    </button>
+                </div>
+
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="custom">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Custom Pack</div>
+                        <div class="campaign-add-pack-option-pill">Ready</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Create a custom pack using a Set Code, Pack Name, and pasted decklist.
+                    </p>
+
+                    <button type="button" id="campaignShowCustomPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="custom">
+                        Create Custom Pack
+                    </button>
+                </div>
+            </div>
+
+            <div id="campaignAddPackSearchPanel" class="campaign-add-pack-search-panel hidden">
+                <div class="campaign-add-pack-search-panel-header">
+                    <div>
+                        <h3 class="campaign-add-pack-search-panel-title">Search and Add Pack</h3>
+                        <p class="campaign-add-pack-search-panel-subtitle">
+                            Search by set code, set name, booster type, or pack name. Use Random Pack to generate a pack from a specific result.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="campaign-add-pack-search-controls">
+                    <input
+                        type="text"
+                        id="campaignAddPackSearchInput"
+                        class="campaign-add-pack-search-input"
+                        placeholder="Search set code, set name, or pack name..."
+                        autocomplete="off"
+                    >
+
+                    <button type="button" id="campaignAddPackSearchButton" class="action-button secondary-button">
+                        Search
+                    </button>
+                </div>
+
+                <div id="campaignAddPackSearchResults" class="campaign-add-pack-search-results hidden"></div>
+            </div>
+
+            <div id="campaignAddPackCustomPanel" class="campaign-add-pack-custom-panel hidden">
+                <div class="campaign-add-pack-custom-panel-header">
+                    <div>
+                        <h3 class="campaign-add-pack-custom-panel-title">Custom Pack</h3>
+                        <p class="campaign-add-pack-custom-panel-subtitle">
+                            Create a custom pack by entering a Set Code, Pack Name, and pasted Archidekt/Moxfield-style decklist.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="campaign-add-pack-custom-grid">
+                    <label class="campaign-add-pack-custom-field" for="campaignCustomSetCodeInput">
+                        <span>Set Code</span>
+                        <input
+                            type="text"
+                            id="campaignCustomSetCodeInput"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="FIN"
+                            maxlength="12"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field" for="campaignCustomPackNameInput">
+                        <span>Pack Name</span>
+                        <input
+                            type="text"
+                            id="campaignCustomPackNameInput"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Custom Final Fantasy Pack"
+                            autocomplete="off"
+                        >
+                    </label>
+                </div>
+
+                <label class="campaign-add-pack-custom-field campaign-add-pack-custom-textarea-field" for="campaignCustomDecklistInput">
+                    <span>Decklist</span>
+                    <textarea
+                        id="campaignCustomDecklistInput"
+                        class="campaign-add-pack-custom-textarea"
+                        placeholder="1 Lightning Bolt&#10;1 Counterspell&#10;2 Llanowar Elves"
+                    ></textarea>
+                </label>
+
+                <div class="campaign-add-pack-custom-actions">
+                    <button type="button" id="campaignGenerateCustomPackButton" class="action-button">
+                        Generate Preview
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="page-panel">
         <form method="get" action="{{ url_for('campaign_chaos_packs') }}" class="campaign-pack-search-form">
@@ -180,6 +365,29 @@
     const form = document.getElementById("campaignManagePacksForm");
     const selectAllButton = document.getElementById("campaignSelectAllPacksButton");
     const clearSelectedButton = document.getElementById("campaignClearSelectedPacksButton");
+    const addPackButton = document.getElementById("campaignAddPackButton");
+    const addPackModal = document.getElementById("campaignAddPackModal");
+    const addPackBackdrop = document.getElementById("campaignAddPackBackdrop");
+    const addPackCloseButton = document.getElementById("campaignAddPackCloseButton");
+    const addRandomPackButton = document.getElementById("campaignAddRandomPackButton");
+    const addPackStatus = document.getElementById("campaignAddPackStatus");
+    const addPackPreview = document.getElementById("campaignAddPackPreview");
+    const addPackPreviewTitle = document.getElementById("campaignAddPackPreviewTitle");
+    const addPackPreviewMeta = document.getElementById("campaignAddPackPreviewMeta");
+    const addPackPreviewViewLink = document.getElementById("campaignAddPackPreviewViewLink");
+    const addPackPreviewPrintLink = document.getElementById("campaignAddPackPreviewPrintLink");
+    const addPackPreviewSaveButton = document.getElementById("campaignAddPackPreviewSaveButton");
+    const showSearchPanelButton = document.getElementById("campaignShowSearchPanelButton");
+    const addPackSearchPanel = document.getElementById("campaignAddPackSearchPanel");
+    const addPackSearchInput = document.getElementById("campaignAddPackSearchInput");
+    const addPackSearchButton = document.getElementById("campaignAddPackSearchButton");
+    const addPackSearchResults = document.getElementById("campaignAddPackSearchResults");
+    const showCustomPanelButton = document.getElementById("campaignShowCustomPanelButton");
+    const addPackCustomPanel = document.getElementById("campaignAddPackCustomPanel");
+    const customSetCodeInput = document.getElementById("campaignCustomSetCodeInput");
+    const customPackNameInput = document.getElementById("campaignCustomPackNameInput");
+    const customDecklistInput = document.getElementById("campaignCustomDecklistInput");
+    const generateCustomPackButton = document.getElementById("campaignGenerateCustomPackButton");
 
     if (!form) {
         return;
@@ -204,6 +412,532 @@
             });
         });
     }
+    function openAddPackModal() {
+        if (!addPackModal) {
+            return;
+        }
+
+        if (addPackStatus) {
+            addPackStatus.classList.add("hidden");
+            addPackStatus.textContent = "";
+        }
+
+        setActiveAddPackMode("random");
+
+        if (addPackPreview) {
+            addPackPreview.classList.add("hidden");
+        }
+
+        if (addPackSearchPanel) {
+            addPackSearchPanel.classList.add("hidden");
+        }
+
+        if (addPackSearchInput) {
+            addPackSearchInput.value = "";
+        }
+
+        if (addPackSearchResults) {
+            addPackSearchResults.classList.add("hidden");
+            addPackSearchResults.innerHTML = "";
+        }
+
+        if (addPackCustomPanel) {
+            addPackCustomPanel.classList.add("hidden");
+        }
+
+        if (customSetCodeInput) {
+            customSetCodeInput.value = "";
+        }
+
+        if (customPackNameInput) {
+            customPackNameInput.value = "";
+        }
+
+        if (customDecklistInput) {
+            customDecklistInput.value = "";
+        }
+
+        addPackModal.classList.remove("hidden");
+        addPackModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeAddPackModal() {
+        if (!addPackModal) {
+            return;
+        }
+
+        addPackModal.classList.add("hidden");
+        addPackModal.setAttribute("aria-hidden", "true");
+    }
+
+    function setActiveAddPackMode(activeMode) {
+        const modeCards = Array.from(document.querySelectorAll(".campaign-add-pack-mode-card"));
+        const modeButtons = Array.from(document.querySelectorAll(".campaign-add-pack-mode-button"));
+
+        modeCards.forEach(function (card) {
+            const cardMode = card.dataset.addPackMode || "";
+            card.classList.toggle("campaign-add-pack-mode-card-active", cardMode === activeMode);
+        });
+
+        modeButtons.forEach(function (button) {
+            const buttonMode = button.dataset.addPackModeButton || "";
+            const isActive = buttonMode === activeMode;
+
+            button.classList.toggle("secondary-button", !isActive);
+        });
+    }
+
+    function setAddPackStatus(messageText, isError) {
+        if (!addPackStatus) {
+            return;
+        }
+
+        addPackStatus.textContent = messageText || "";
+        addPackStatus.classList.toggle("campaign-add-pack-status-error", Boolean(isError));
+        addPackStatus.classList.remove("hidden");
+    }
+
+    function showGeneratedPackPreview(payload) {
+        if (!addPackPreview || !addPackPreviewTitle || !addPackPreviewMeta) {
+            return;
+        }
+
+        addPackPreviewTitle.textContent = payload.pack_display_name || "Generated Pack";
+
+        addPackPreviewMeta.textContent = [
+            payload.pack_tracking_code || "",
+            payload.set_code || "",
+            payload.booster_name || "",
+            (payload.total_cards || 0) + " cards"
+        ].filter(Boolean).join(" • ");
+
+        if (addPackPreviewViewLink) {
+            addPackPreviewViewLink.href = payload.view_url || "#";
+        }
+
+        if (addPackPreviewPrintLink) {
+            addPackPreviewPrintLink.href = payload.print_url || "#";
+        }
+
+        if (addPackPreviewSaveButton) {
+            addPackPreviewSaveButton.disabled = false;
+            addPackPreviewSaveButton.textContent = "Save";
+            addPackPreviewSaveButton.dataset.saveUrl = payload.save_url || "";
+        }
+
+        addPackPreview.classList.remove("hidden");
+    }
+
+    function renderAddPackSearchResults(results) {
+        if (!addPackSearchResults) {
+            return;
+        }
+
+        addPackSearchResults.innerHTML = "";
+
+        if (!results || !results.length) {
+            const emptyRow = document.createElement("div");
+            emptyRow.className = "campaign-add-pack-search-empty";
+            emptyRow.textContent = "No matching packs found.";
+            addPackSearchResults.appendChild(emptyRow);
+            addPackSearchResults.classList.remove("hidden");
+            return;
+        }
+
+        results.forEach(function (pack) {
+            const row = document.createElement("div");
+            row.className = "campaign-add-pack-search-result";
+
+            const imageWrap = document.createElement("div");
+            imageWrap.className = "campaign-add-pack-search-image-wrap";
+
+            const image = document.createElement("img");
+            image.className = "campaign-add-pack-search-image";
+            image.src = pack.image_src || "";
+            image.alt = pack.display_name || "Pack";
+
+            imageWrap.appendChild(image);
+
+            const info = document.createElement("div");
+            info.className = "campaign-add-pack-search-info";
+
+            const title = document.createElement("div");
+            title.className = "campaign-add-pack-search-title";
+            title.textContent = pack.display_name || "Pack";
+
+            const meta = document.createElement("div");
+            meta.className = "campaign-add-pack-search-meta";
+            meta.textContent = [
+                pack.set_code || "",
+                pack.booster_name || "",
+                (pack.variant_count || 0) + " variant(s)"
+            ].filter(Boolean).join(" • ");
+
+            info.appendChild(title);
+            info.appendChild(meta);
+
+            const actions = document.createElement("div");
+            actions.className = "campaign-add-pack-search-actions";
+
+            const randomButton = document.createElement("button");
+            randomButton.type = "button";
+            randomButton.className = "action-button secondary-button campaign-add-pack-search-action-button";
+            randomButton.textContent = "Random Pack";
+            randomButton.dataset.setCode = pack.set_code || "";
+            randomButton.dataset.boosterName = pack.booster_name || "";
+
+            const importButton = document.createElement("button");
+            importButton.type = "button";
+            importButton.className = "action-button secondary-button campaign-add-pack-search-action-button";
+            importButton.textContent = "Import Pack";
+            importButton.disabled = true;
+            importButton.title = "Import Pack will be added next.";
+
+            actions.appendChild(randomButton);
+            actions.appendChild(importButton);
+
+            row.appendChild(imageWrap);
+            row.appendChild(info);
+            row.appendChild(actions);
+
+            addPackSearchResults.appendChild(row);
+        });
+
+        addPackSearchResults.classList.remove("hidden");
+    }
+
+    async function runAddPackSearch() {
+        if (!addPackSearchInput || !addPackSearchButton) {
+            return;
+        }
+
+        const query = (addPackSearchInput.value || "").trim();
+
+        if (!query) {
+            setAddPackStatus("Enter a set code, set name, or pack name to search.", true);
+            return;
+        }
+
+        addPackSearchButton.disabled = true;
+        addPackSearchButton.classList.add("action-button-loading");
+        addPackSearchButton.textContent = "Searching...";
+
+        try {
+            const searchUrl = "{{ url_for('campaign_chaos_packs_search_options') }}" + "?q=" + encodeURIComponent(query);
+
+            const response = await fetch(searchUrl, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Search failed.");
+            }
+
+            setAddPackStatus("Search complete.", false);
+            renderAddPackSearchResults(payload.results || []);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Search failed.", true);
+        } finally {
+            addPackSearchButton.disabled = false;
+            addPackSearchButton.classList.remove("action-button-loading");
+            addPackSearchButton.textContent = "Search";
+        }
+    }
+
+    async function generateSearchedRandomPack(setCode, boosterName, buttonElement) {
+        if (!setCode || !boosterName) {
+            setAddPackStatus("Selected pack was missing set or booster information.", true);
+            return;
+        }
+
+        const originalText = buttonElement ? buttonElement.textContent : "Random Pack";
+
+        if (buttonElement) {
+            buttonElement.disabled = true;
+            buttonElement.classList.add("action-button-loading");
+            buttonElement.textContent = "Generating...";
+        }
+
+        setAddPackStatus("Generating selected pack...", false);
+
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_packs_add_specific_random') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    set_code: setCode,
+                    booster_name: boosterName
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to generate selected pack.");
+            }
+
+            setAddPackStatus(payload.message || "Pack generated. Review it before saving.", false);
+            showGeneratedPackPreview(payload);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to generate selected pack.", true);
+        } finally {
+            if (buttonElement) {
+                buttonElement.disabled = false;
+                buttonElement.classList.remove("action-button-loading");
+                buttonElement.textContent = originalText;
+            }
+        }
+    }
+
+    async function generateCustomPackPreview() {
+        if (!customSetCodeInput || !customPackNameInput || !customDecklistInput || !generateCustomPackButton) {
+            return;
+        }
+
+        const setCode = (customSetCodeInput.value || "").trim();
+        const packName = (customPackNameInput.value || "").trim();
+        const decklistText = customDecklistInput.value || "";
+
+        if (!setCode) {
+            setAddPackStatus("Set Code is required.", true);
+            customSetCodeInput.focus();
+            return;
+        }
+
+        if (!packName) {
+            setAddPackStatus("Pack Name is required.", true);
+            customPackNameInput.focus();
+            return;
+        }
+
+        if (!decklistText.trim()) {
+            setAddPackStatus("Decklist text is required.", true);
+            customDecklistInput.focus();
+            return;
+        }
+
+        generateCustomPackButton.disabled = true;
+        generateCustomPackButton.classList.add("action-button-loading");
+        generateCustomPackButton.textContent = "Generating...";
+
+        setAddPackStatus("Generating custom pack preview...", false);
+
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_packs_add_custom_preview') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    set_code: setCode,
+                    pack_name: packName,
+                    decklist_text: decklistText
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to generate custom pack.");
+            }
+
+            setAddPackStatus(payload.message || "Custom pack generated. Review it before saving.", false);
+            showGeneratedPackPreview(payload);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to generate custom pack.", true);
+        } finally {
+            generateCustomPackButton.disabled = false;
+            generateCustomPackButton.classList.remove("action-button-loading");
+            generateCustomPackButton.textContent = "Generate Preview";
+        }
+    }
+
+    if (addPackButton) {
+        addPackButton.addEventListener("click", openAddPackModal);
+    }
+
+    if (addPackBackdrop) {
+        addPackBackdrop.addEventListener("click", closeAddPackModal);
+    }
+
+    if (addPackCloseButton) {
+        addPackCloseButton.addEventListener("click", closeAddPackModal);
+    }
+
+    if (addRandomPackButton) {
+        addRandomPackButton.addEventListener("click", async function () {
+            setActiveAddPackMode("random");
+            addRandomPackButton.disabled = true;
+            addRandomPackButton.classList.add("action-button-loading");
+            addRandomPackButton.textContent = "Adding...";
+
+            setAddPackStatus("Generating and saving a random pack...", false);
+
+            try {
+                const response = await fetch("{{ url_for('campaign_chaos_packs_add_random') }}", {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to add random pack.");
+                }
+
+                setAddPackStatus(payload.message || "Random pack generated. Review it before saving.", false);
+                showGeneratedPackPreview(payload);
+
+                addRandomPackButton.disabled = false;
+                addRandomPackButton.classList.remove("action-button-loading");
+                addRandomPackButton.textContent = "Add Random Pack";
+            } catch (error) {
+                console.error(error);
+                setAddPackStatus(error.message || "Failed to add random pack.", true);
+
+                addRandomPackButton.disabled = false;
+                addRandomPackButton.classList.remove("action-button-loading");
+                addRandomPackButton.textContent = "Add Random Pack";
+            }
+        });
+    }
+
+    if (showSearchPanelButton) {
+        showSearchPanelButton.addEventListener("click", function () {
+            setActiveAddPackMode("search");
+            if (addPackSearchPanel) {
+                addPackSearchPanel.classList.remove("hidden");
+            }
+
+            if (addPackSearchInput) {
+                addPackSearchInput.focus();
+            }
+
+            if (addPackStatus) {
+                addPackStatus.classList.add("hidden");
+                addPackStatus.textContent = "";
+            }
+        });
+    }
+
+    if (showCustomPanelButton) {
+        showCustomPanelButton.addEventListener("click", function () {
+            setActiveAddPackMode("custom");
+            if (addPackCustomPanel) {
+                addPackCustomPanel.classList.remove("hidden");
+            }
+
+            if (customSetCodeInput) {
+                customSetCodeInput.focus();
+            }
+
+            if (addPackStatus) {
+                addPackStatus.classList.add("hidden");
+                addPackStatus.textContent = "";
+            }
+        });
+    }
+
+    if (generateCustomPackButton) {
+        generateCustomPackButton.addEventListener("click", function () {
+            generateCustomPackPreview();
+        });
+    }
+
+    if (addPackSearchButton) {
+        addPackSearchButton.addEventListener("click", function () {
+            runAddPackSearch();
+        });
+    }
+
+    if (addPackSearchInput) {
+        addPackSearchInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                runAddPackSearch();
+            }
+        });
+    }
+
+    if (addPackSearchResults) {
+        addPackSearchResults.addEventListener("click", function (event) {
+            const randomButton = event.target.closest(".campaign-add-pack-search-action-button");
+
+            if (!randomButton || randomButton.disabled || randomButton.textContent !== "Random Pack") {
+                return;
+            }
+
+            generateSearchedRandomPack(
+                randomButton.dataset.setCode || "",
+                randomButton.dataset.boosterName || "",
+                randomButton
+            );
+        });
+    }
+
+    if (addPackPreviewSaveButton) {
+        addPackPreviewSaveButton.addEventListener("click", async function () {
+            const saveUrl = addPackPreviewSaveButton.dataset.saveUrl || "";
+
+            if (!saveUrl) {
+                setAddPackStatus("No generated pack is available to save.", true);
+                return;
+            }
+
+            addPackPreviewSaveButton.disabled = true;
+            addPackPreviewSaveButton.classList.add("action-button-loading");
+            addPackPreviewSaveButton.textContent = "Saving...";
+
+            try {
+                const response = await fetch(saveUrl, {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to save pack.");
+                }
+
+                setAddPackStatus(payload.message || "Pack saved.", false);
+                addPackPreviewSaveButton.textContent = "Saved";
+
+                window.setTimeout(function () {
+                    window.location.href = "{{ url_for('campaign_chaos_packs') }}";
+                }, 600);
+            } catch (error) {
+                console.error(error);
+                setAddPackStatus(error.message || "Failed to save pack.", true);
+
+                addPackPreviewSaveButton.disabled = false;
+                addPackPreviewSaveButton.classList.remove("action-button-loading");
+                addPackPreviewSaveButton.textContent = "Save";
+            }
+        });
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && addPackModal && !addPackModal.classList.contains("hidden")) {
+            closeAddPackModal();
+        }
+    });
 })();
 </script>
 {% endblock %}

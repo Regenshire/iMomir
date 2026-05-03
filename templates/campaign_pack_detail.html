@@ -9,8 +9,13 @@
             <div class="chaos-pack-view-header-copy">
                 <h1 class="page-title">{{ pack.pack_display_name }}</h1>
                 <p class="page-subtitle">
-                    {{ pack.pack_tracking_code }} • {{ pack.total_cards }} cards • Opened {{ pack.opened_count }}x
-                    {% if not pack.campaign_enabled %} • Disabled from Campaign Mode{% endif %}
+                    {{ pack.pack_tracking_code }} • {{ pack.total_cards }} cards
+                    {% if pack.is_preview %}
+                        • Preview - not saved yet
+                    {% else %}
+                        • Opened {{ pack.opened_count }}x
+                        {% if not pack.campaign_enabled %} • Disabled from Campaign Mode{% endif %}
+                    {% endif %}
                 </p>
             </div>
 
@@ -22,6 +27,15 @@
                     Back
                 </a>
 
+                {% if pack.is_preview %}
+                <a
+                    class="action-button chaos-pack-view-back-button"
+                    href="{{ url_for('campaign_chaos_pack_preview_print') }}"
+                    target="_blank"
+                >
+                    Print
+                </a>
+                {% else %}
                 <a
                     class="action-button chaos-pack-view-back-button"
                     href="{{ url_for('campaign_chaos_pack_print', tracked_pack_id=pack.tracked_pack_id) }}"
@@ -29,13 +43,16 @@
                 >
                     Print
                 </a>
+                {% endif %}
 
+                {% if not pack.is_preview %}
                 <a
                     class="action-button secondary-button chaos-pack-view-back-button"
                     href="{{ url_for('campaign_chaos_history', tracked_pack_id=pack.tracked_pack_id) }}"
                 >
                     History
                 </a>
+                {% endif %}
                 
             </div>
         </div>

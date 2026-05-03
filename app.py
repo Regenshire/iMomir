@@ -143,6 +143,9 @@ from modes.chaos import (
     build_preprint_chaos_draft_pdf,
     clear_chaos_pack_history,
     clear_chaos_session_state,
+    create_random_pack_preview_for_manage_packs,
+    create_specific_pack_preview_for_manage_packs,
+    create_custom_pack_preview_for_manage_packs,
     get_chaos_opened_pack_keys,
     get_chaos_pack_art_info,
     get_chaos_pack_art_relpath,
@@ -165,6 +168,7 @@ from modes.chaos import (
     record_campaign_pack_opening,
     save_opened_chaos_pack_to_tracking_db,
     set_chaos_session_state,
+    search_manage_pack_options,
     set_tracked_packs_campaign_enabled,
     sort_opened_chaos_pack_cards,
 )
@@ -4796,6 +4800,167 @@ def campaign_chaos_pack_print(tracked_pack_id):
             "Cache-Control": "no-store",
         },
     )
+
+@app.route("/campaign-chaos/packs/search-options", methods=["GET"])
+def campaign_chaos_packs_search_options():
+    search_text = (request.args.get("q") or "").strip()
+
+    results = search_manage_pack_options(
+        app.static_folder,
+        search_text,
+        limit=30,
+    )
+
+    return jsonify({
+        "ok": True,
+        "results": results,
+    })
+
+@app.route("/campaign-chaos/packs/add-random", methods=["POST"])
+def campaign_chaos_packs_add_random():
+    result = create_random_pack_preview_for_manage_packs(
+        app.static_folder,
+        write_debug_log,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify({
+        **result,
+        "view_url": url_for("campaign_chaos_pack_preview_view"),
+        "print_url": url_for("campaign_chaos_pack_preview_print"),
+        "save_url": url_for("campaign_chaos_pack_preview_save"),
+    })
+
+@app.route("/campaign-chaos/packs/add-specific-random", methods=["POST"])
+def campaign_chaos_packs_add_specific_random():
+    payload = request.get_json(silent=True) or {}
+
+    set_code = (payload.get("set_code") or "").strip()
+    booster_name = (payload.get("booster_name") or "").strip()
+
+    result = create_specific_pack_preview_for_manage_packs(
+        set_code,
+        booster_name,
+        app.static_folder,
+        write_debug_log,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify({
+        **result,
+        "view_url": url_for("campaign_chaos_pack_preview_view"),
+        "print_url": url_for("campaign_chaos_pack_preview_print"),
+        "save_url": url_for("campaign_chaos_pack_preview_save"),
+    })
+
+@app.route("/campaign-chaos/packs/add-custom-preview", methods=["POST"])
+def campaign_chaos_packs_add_custom_preview():
+    payload = request.get_json(silent=True) or {}
+
+    set_code = (payload.get("set_code") or "").strip()
+    pack_name = (payload.get("pack_name") or "").strip()
+    decklist_text = payload.get("decklist_text") or ""
+
+    result = create_custom_pack_preview_for_manage_packs(
+        set_code,
+        pack_name,
+        decklist_text,
+        write_debug_log,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify({
+        **result,
+        "view_url": url_for("campaign_chaos_pack_preview_view"),
+        "print_url": url_for("campaign_chaos_pack_preview_print"),
+        "save_url": url_for("campaign_chaos_pack_preview_save"),
+    })
+
+@app.route("/campaign-chaos/packs/preview/view", methods=["GET"])
+def campaign_chaos_pack_preview_view():
+    preview_pack = get_chaos_session_state("pending_manage_pack_preview", default_value=None)
+
+    if not preview_pack:
+        return "No generated pack preview is available.", 404
+
+    config = get_request_config()
+    display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
+    pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
+
+    cards = enrich_pack_cards_with_prices(
+        preview_pack.get("cards") or [],
+        display_prices=display_pack_prices,
+        price_source=pack_price_source,
+    )
+
+    return render_template(
+        "campaign_pack_detail.html",
+        pack={
+            "tracked_pack_id": 0,
+            "pack_tracking_code": preview_pack.get("pack_tracking_code") or "",
+            "pack_display_name": preview_pack.get("pack_display_name") or preview_pack.get("display_name") or "",
+            "total_cards": int(preview_pack.get("total_cards") or 0),
+            "opened_count": 0,
+            "campaign_enabled": True,
+            "is_preview": True,
+        },
+        cards=cards,
+        display_pack_prices=display_pack_prices,
+        pack_price_source=pack_price_source,
+    )
+
+
+@app.route("/campaign-chaos/packs/preview/print", methods=["GET"])
+def campaign_chaos_pack_preview_print():
+    preview_pack = get_chaos_session_state("pending_manage_pack_preview", default_value=None)
+
+    if not preview_pack:
+        return "No generated pack preview is available.", 404
+
+    try:
+        pdf_buffer = build_chaos_pack_pdf(
+            preview_pack.get("cards") or [],
+            preview_pack.get("pack_display_name") or preview_pack.get("display_name") or "Generated Pack",
+            set_code=preview_pack.get("set_code"),
+            booster_name=preview_pack.get("booster_name"),
+            pack_tracking_code=preview_pack.get("pack_tracking_code"),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return Response(
+        pdf_buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="campaign_pack_preview.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+@app.route("/campaign-chaos/packs/preview/save", methods=["POST"])
+def campaign_chaos_pack_preview_save():
+    preview_pack = get_chaos_session_state("pending_manage_pack_preview", default_value=None)
+
+    if not preview_pack:
+        return jsonify({
+            "ok": False,
+            "message": "No generated pack preview is available to save.",
+        }), 400
+
+    result = save_opened_chaos_pack_to_tracking_db(preview_pack)
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    clear_chaos_session_state("pending_manage_pack_preview")
+
+    return jsonify(result)
 
 @app.route("/campaign-chaos/packs/action", methods=["POST"])
 def campaign_chaos_packs_action():

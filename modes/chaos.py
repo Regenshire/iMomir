@@ -1158,6 +1158,546 @@ def build_chaos_spin_result(static_folder, write_debug_log_fn=None):
 
     return spin_result
 
+def parse_custom_pack_decklist_text(decklist_text):
+    parsed_cards = []
+
+    for raw_line in (decklist_text or "").splitlines():
+        line = (raw_line or "").strip()
+
+        if not line:
+            continue
+
+        if line.startswith("#") or line.startswith("//"):
+            continue
+
+        if line.lower().startswith("sideboard"):
+            continue
+
+        if line.lower().startswith("sb:"):
+            line = line[3:].strip()
+
+        quantity = 1
+        quantity_match = re.match(r"^(\d+)\s*x?\s+(.+)$", line, flags=re.IGNORECASE)
+
+        if quantity_match:
+            try:
+                quantity = int(quantity_match.group(1))
+            except ValueError:
+                quantity = 1
+
+            line = quantity_match.group(2).strip()
+
+        requested_set_code = ""
+        requested_collector_number = ""
+
+        specific_printing_match = re.match(
+            r"^(.*?)\s+\(([A-Za-z0-9]{2,8})\)\s+([A-Za-z0-9\-]+)\s*$",
+            line,
+        )
+
+        if specific_printing_match:
+            line = specific_printing_match.group(1).strip()
+            requested_set_code = specific_printing_match.group(2).strip().upper()
+            requested_collector_number = specific_printing_match.group(3).strip()
+        else:
+            set_only_match = re.match(
+                r"^(.*?)\s+\(([A-Za-z0-9]{2,8})\)\s*$",
+                line,
+            )
+
+            if set_only_match:
+                line = set_only_match.group(1).strip()
+                requested_set_code = set_only_match.group(2).strip().upper()
+
+            bracket_set_match = re.match(
+                r"^(.*?)\s+\[([A-Za-z0-9]{2,8})\]\s*$",
+                line,
+            )
+
+            if bracket_set_match:
+                line = bracket_set_match.group(1).strip()
+                requested_set_code = bracket_set_match.group(2).strip().upper()
+
+        # Remove Arena-style trailing annotations if present.
+        line = re.sub(r"\s+\*\w+\*$", "", line).strip()
+
+        if not line:
+            continue
+
+        if quantity < 1:
+            quantity = 1
+
+        if quantity > 99:
+            quantity = 99
+
+        parsed_cards.append({
+            "card_name": line,
+            "quantity": quantity,
+            "set_code": requested_set_code,
+            "collector_number": requested_collector_number,
+        })
+
+    return parsed_cards
+
+def resolve_custom_pack_card_by_name(
+    card_name,
+    preferred_set_code=None,
+    requested_set_code=None,
+    requested_collector_number=None,
+):
+    clean_name = (card_name or "").strip()
+    clean_preferred_set_code = (preferred_set_code or "").strip().upper()
+    clean_requested_set_code = (requested_set_code or "").strip().upper()
+    clean_collector_number = (requested_collector_number or "").strip()
+
+    if not clean_name:
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if clean_requested_set_code and clean_collector_number:
+        cursor.execute(
+            """
+            SELECT
+                card_uuid,
+                set_code,
+                card_name,
+                rarity,
+                type_line,
+                image_url,
+                scryfall_id,
+                collector_number
+            FROM chaos_cards
+            WHERE set_code = ?
+              AND LOWER(COALESCE(collector_number, '')) = LOWER(?)
+            ORDER BY
+                CASE WHEN LOWER(card_name) = LOWER(?) THEN 0 ELSE 1 END,
+                is_booster DESC,
+                collector_number ASC
+            LIMIT 1
+            """,
+            (
+                clean_requested_set_code,
+                clean_collector_number,
+                clean_name,
+            ),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return row
+
+    if clean_requested_set_code:
+        cursor.execute(
+            """
+            SELECT
+                card_uuid,
+                set_code,
+                card_name,
+                rarity,
+                type_line,
+                image_url,
+                scryfall_id,
+                collector_number
+            FROM chaos_cards
+            WHERE set_code = ?
+              AND LOWER(card_name) = LOWER(?)
+            ORDER BY is_booster DESC, collector_number ASC
+            LIMIT 1
+            """,
+            (
+                clean_requested_set_code,
+                clean_name,
+            ),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return row
+
+    if clean_preferred_set_code:
+        cursor.execute(
+            """
+            SELECT
+                card_uuid,
+                set_code,
+                card_name,
+                rarity,
+                type_line,
+                image_url,
+                scryfall_id,
+                collector_number
+            FROM chaos_cards
+            WHERE set_code = ?
+              AND LOWER(card_name) = LOWER(?)
+            ORDER BY is_booster DESC, collector_number ASC
+            LIMIT 1
+            """,
+            (
+                clean_preferred_set_code,
+                clean_name,
+            ),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return row
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            set_code,
+            card_name,
+            rarity,
+            type_line,
+            image_url,
+            scryfall_id,
+            collector_number
+        FROM chaos_cards
+        WHERE LOWER(card_name) = LOWER(?)
+        ORDER BY set_code ASC, is_booster DESC, collector_number ASC
+        LIMIT 1
+        """,
+        (clean_name,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+
+def create_custom_pack_preview_for_manage_packs(set_code, pack_name, decklist_text, write_debug_log_fn=None):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_pack_name = (pack_name or "").strip()
+
+    if not clean_set_code:
+        return {
+            "ok": False,
+            "message": "Set Code is required.",
+        }
+
+    if not clean_pack_name:
+        return {
+            "ok": False,
+            "message": "Pack Name is required.",
+        }
+
+    parsed_lines = parse_custom_pack_decklist_text(decklist_text)
+
+    if not parsed_lines:
+        return {
+            "ok": False,
+            "message": "Decklist text did not contain any cards.",
+        }
+
+    cards = []
+    unresolved_cards = []
+
+    for parsed_line in parsed_lines:
+        requested_card_name = parsed_line["card_name"]
+        quantity = int(parsed_line["quantity"] or 1)
+
+        resolved_row = resolve_custom_pack_card_by_name(
+            requested_card_name,
+            preferred_set_code=clean_set_code,
+            requested_set_code=parsed_line.get("set_code"),
+            requested_collector_number=parsed_line.get("collector_number"),
+        )
+
+        if not resolved_row:
+            unresolved_cards.append(requested_card_name)
+            continue
+
+        for _ in range(quantity):
+            cards.append({
+                "set_code": (resolved_row["set_code"] or clean_set_code or "").strip().upper(),
+                "booster_name": "custom",
+                "booster_index": 0,
+                "sheet_name": "custom_import",
+                "sheet_is_foil": 0,
+                "sheet_has_balance_colors": 0,
+                "sheet_total_weight": 0,
+                "card_uuid": resolved_row["card_uuid"],
+                "card_name": resolved_row["card_name"],
+                "rarity": resolved_row["rarity"],
+                "type_line": resolved_row["type_line"],
+                "image_url": resolved_row["image_url"],
+                "scryfall_id": resolved_row["scryfall_id"],
+                "collector_number": resolved_row["collector_number"],
+            })
+
+    if unresolved_cards:
+        unresolved_preview = ", ".join(unresolved_cards[:10])
+        if len(unresolved_cards) > 10:
+            unresolved_preview += f", and {len(unresolved_cards) - 10} more"
+
+        return {
+            "ok": False,
+            "message": f"Could not resolve these card name(s): {unresolved_preview}",
+        }
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "No cards could be resolved from the decklist.",
+        }
+
+    pack_tracking_code = build_pack_tracking_code(
+        clean_set_code,
+        "custom",
+        0,
+    )
+
+    display_name = f"{clean_pack_name} ({clean_set_code})"
+
+    preview_pack_state = {
+        "set_code": clean_set_code,
+        "booster_name": "custom",
+        "booster_index": 0,
+        "display_name": display_name,
+        "pack_display_name": display_name,
+        "pack_tracking_code": pack_tracking_code,
+        "bonus_pack_opened": False,
+        "total_cards": len(cards),
+        "cards": cards,
+        "manage_pack_preview": True,
+        "custom_pack": True,
+    }
+
+    set_chaos_session_state("pending_manage_pack_preview", preview_pack_state)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"MANAGE PACKS CUSTOM PREVIEW | tracking_code={pack_tracking_code} | "
+            f"set={clean_set_code} | pack_name={clean_pack_name} | cards={len(cards)}"
+        )
+
+    return {
+        "ok": True,
+        "message": "Custom pack generated. Review it before saving.",
+        "pack_tracking_code": pack_tracking_code,
+        "set_code": clean_set_code,
+        "booster_name": "custom",
+        "booster_index": 0,
+        "pack_display_name": display_name,
+        "total_cards": len(cards),
+        "bonus_pack_opened": False,
+    }
+
+def search_manage_pack_options(static_folder, search_text, limit=30):
+    search_value = (search_text or "").strip().lower()
+
+    if not search_value:
+        return []
+
+    eligible_packs = get_eligible_chaos_packs(static_folder)
+    matched_packs = []
+
+    for pack in eligible_packs:
+        set_code = (pack.get("set_code") or "").strip().upper()
+        booster_name = (pack.get("booster_name") or "").strip().lower()
+        display_name = (pack.get("display_name") or "").strip()
+        booster_type = (pack.get("booster_type") or "").strip().lower()
+
+        haystack = " ".join([
+            set_code.lower(),
+            booster_name,
+            display_name.lower(),
+            booster_type,
+        ])
+
+        if search_value not in haystack:
+            continue
+
+        matched_packs.append({
+            "set_code": set_code,
+            "booster_name": booster_name,
+            "display_name": display_name,
+            "image_src": pack.get("image_src") or "",
+            "variant_count": int(pack.get("variant_count") or 0),
+            "total_variant_weight": float(pack.get("total_variant_weight") or 0),
+            "booster_type": booster_type,
+        })
+
+        if len(matched_packs) >= int(limit or 30):
+            break
+
+    return matched_packs
+
+def create_random_pack_preview_for_manage_packs(static_folder, write_debug_log_fn=None):
+    chosen_result = choose_random_eligible_chaos_pack_variant(static_folder)
+
+    if not chosen_result:
+        return {
+            "ok": False,
+            "message": "No eligible Chaos Draft packs were available to add.",
+        }
+
+    chosen_pack = chosen_result["pack"]
+    chosen_variant = chosen_result["variant"]
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    cards = open_result["cards"]
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "The selected pack generated no cards.",
+        }
+
+    cards = sort_opened_chaos_pack_cards(
+        cards,
+        chosen_variant["booster_name"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    pack_tracking_code = build_pack_tracking_code(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+    )
+
+    preview_pack_state = {
+        "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+        "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+        "booster_index": int(chosen_variant["booster_index"] or 0),
+        "display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_tracking_code": pack_tracking_code,
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+        "total_cards": len(cards),
+        "cards": cards,
+        "manage_pack_preview": True,
+    }
+
+    set_chaos_session_state("pending_manage_pack_preview", preview_pack_state)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"MANAGE PACKS RANDOM PREVIEW | tracking_code={pack_tracking_code} | "
+            f"set={chosen_variant['set_code']} | booster={chosen_variant['booster_name']} | "
+            f"booster_index={chosen_variant['booster_index']} | cards={len(cards)}"
+        )
+
+    return {
+        "ok": True,
+        "message": "Random pack generated. Review it before saving.",
+        "pack_tracking_code": pack_tracking_code,
+        "set_code": chosen_variant["set_code"],
+        "booster_name": chosen_variant["booster_name"],
+        "booster_index": chosen_variant["booster_index"],
+        "pack_display_name": chosen_pack["display_name"],
+        "total_cards": len(cards),
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+    }
+
+def create_specific_pack_preview_for_manage_packs(set_code, booster_name, static_folder, write_debug_log_fn=None):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_booster_name = (booster_name or "").strip().lower()
+
+    if not clean_set_code or not clean_booster_name:
+        return {
+            "ok": False,
+            "message": "Set code and booster name are required.",
+        }
+
+    eligible_packs = get_eligible_chaos_packs(static_folder)
+
+    chosen_pack = None
+    for pack in eligible_packs:
+        if (
+            (pack.get("set_code") or "").strip().upper() == clean_set_code
+            and (pack.get("booster_name") or "").strip().lower() == clean_booster_name
+        ):
+            chosen_pack = pack
+            break
+
+    if not chosen_pack:
+        return {
+            "ok": False,
+            "message": "The selected pack is not currently eligible.",
+        }
+
+    variants = get_chaos_pack_variants(clean_set_code, clean_booster_name)
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return {
+            "ok": False,
+            "message": "No eligible variants were found for the selected pack.",
+        }
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    cards = open_result["cards"]
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "The selected pack generated no cards.",
+        }
+
+    cards = sort_opened_chaos_pack_cards(
+        cards,
+        chosen_variant["booster_name"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    pack_tracking_code = build_pack_tracking_code(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+    )
+
+    preview_pack_state = {
+        "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+        "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+        "booster_index": int(chosen_variant["booster_index"] or 0),
+        "display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_tracking_code": pack_tracking_code,
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+        "total_cards": len(cards),
+        "cards": cards,
+        "manage_pack_preview": True,
+    }
+
+    set_chaos_session_state("pending_manage_pack_preview", preview_pack_state)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"MANAGE PACKS SEARCH RANDOM PREVIEW | tracking_code={pack_tracking_code} | "
+            f"set={chosen_variant['set_code']} | booster={chosen_variant['booster_name']} | "
+            f"booster_index={chosen_variant['booster_index']} | cards={len(cards)}"
+        )
+
+    return {
+        "ok": True,
+        "message": "Pack generated. Review it before saving.",
+        "pack_tracking_code": pack_tracking_code,
+        "set_code": chosen_variant["set_code"],
+        "booster_name": chosen_variant["booster_name"],
+        "booster_index": chosen_variant["booster_index"],
+        "pack_display_name": chosen_pack["display_name"],
+        "total_cards": len(cards),
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+    }
 
 def build_chaos_pack_pdf_from_variant(
     set_code,
