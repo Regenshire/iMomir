@@ -14,16 +14,60 @@
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
 >
-    <div class="page-panel chaos-draft-header-panel">
-        <div class="chaos-draft-header-layout">
-            <div class="chaos-draft-header-copy">
-                <h1 class="page-title">Chaos Draft - Campaign Mode</h1>
-                <p class="page-subtitle">
-                    Spin to select a random booster pack from the specific packs you have configured for the campaign.
-                </p>
+    {% set selected_player = namespace(item=None) %}
+    {% for player in campaign_players %}
+        {% if selected_campaign_player_id == player.player_id %}
+            {% set selected_player.item = player %}
+        {% endif %}
+    {% endfor %}
+
+    <h1 class="campaign-mode-external-title">Chaos Draft - Campaign Mode</h1>
+
+    <div class="page-panel chaos-draft-header-panel campaign-chaos-header-panel">
+        <div class="campaign-chaos-toolbar">
+            <div
+                id="campaignCurrentPlayerCard"
+                class="campaign-current-player-card{% if not selected_player.item %} campaign-current-player-card-empty{% endif %}"
+            >
+                <div id="campaignCurrentPlayerPortraitWrap" class="campaign-current-player-portrait-wrap">
+                    {% if selected_player.item and selected_player.item.portrait_image_path %}
+                    <img
+                        id="campaignCurrentPlayerPortrait"
+                        src="{{ url_for('campaign_chaos_player_portrait', filename=selected_player.item.portrait_image_path) }}"
+                        alt="{{ selected_player.item.player_name }}"
+                        class="campaign-current-player-portrait"
+                    >
+                    {% else %}
+                    <div id="campaignCurrentPlayerPlaceholder" class="campaign-current-player-placeholder">
+                        {{ selected_player.item.player_name[:1]|upper if selected_player.item else "?" }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="campaign-current-player-copy">
+                    <div class="campaign-current-player-eyebrow">Current Player</div>
+                    <div id="campaignCurrentPlayerName" class="campaign-current-player-name">
+                        {{ selected_player.item.player_name if selected_player.item else "No Player Selected" }}
+                    </div>
+                </div>
             </div>
 
-            <div class="chaos-draft-top-actions campaign-top-actions">
+            <div class="campaign-chaos-controls-wrap">
+                <div class="chaos-draft-top-actions campaign-top-actions campaign-top-actions-row">
+                    <select id="campaignPlayerSelect" class="campaign-player-select campaign-player-select-compact">
+                    <option value="" data-player-name="" data-portrait="">No Player</option>
+                    {% for player in campaign_players %}
+                    <option
+                        value="{{ player.player_id }}"
+                        data-player-name="{{ player.player_name }}"
+                        data-portrait="{{ url_for('campaign_chaos_player_portrait', filename=player.portrait_image_path) if player.portrait_image_path else '' }}"
+                        {% if selected_campaign_player_id == player.player_id %}selected{% endif %}
+                    >
+                        {{ player.player_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+
                 <div class="campaign-icon-actions" aria-label="Campaign tools">
                     <a
                         class="campaign-icon-button"
@@ -57,6 +101,7 @@
                     <span class="chaos-draft-next-button-label">Next Pack</span>
                     <span class="chaos-draft-next-button-arrow">▷</span>
                 </button>
+                </div>
             </div>
         </div>
     </div>
@@ -175,4 +220,106 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    const playerSelect = document.getElementById("campaignPlayerSelect");
+
+    if (!playerSelect) {
+        return;
+    }
+
+    playerSelect.addEventListener("change", async function () {
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_select_player') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    player_id: playerSelect.value || ""
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to select player.");
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    });
+})();
+
+(function () {
+    const playerSelect = document.getElementById("campaignPlayerSelect");
+    const currentPlayerCard = document.getElementById("campaignCurrentPlayerCard");
+    const currentPlayerPortraitWrap = document.getElementById("campaignCurrentPlayerPortraitWrap");
+    const currentPlayerName = document.getElementById("campaignCurrentPlayerName");
+
+    if (!playerSelect || !currentPlayerPortraitWrap || !currentPlayerName) {
+        return;
+    }
+
+    function renderCurrentPlayer() {
+        const selectedOption = playerSelect.options[playerSelect.selectedIndex];
+        const playerName = (selectedOption?.dataset.playerName || "").trim();
+        const portraitUrl = (selectedOption?.dataset.portrait || "").trim();
+
+        if (!playerName) {
+            if (currentPlayerCard) {
+                currentPlayerCard.classList.add("campaign-current-player-card-empty");
+            }
+
+            currentPlayerPortraitWrap.innerHTML = '<div id="campaignCurrentPlayerPlaceholder" class="campaign-current-player-placeholder">?</div>';
+            currentPlayerName.textContent = "No Player Selected";
+            return;
+        }
+
+        if (currentPlayerCard) {
+            currentPlayerCard.classList.remove("campaign-current-player-card-empty");
+        }
+
+        if (portraitUrl) {
+            currentPlayerPortraitWrap.innerHTML =
+                '<img id="campaignCurrentPlayerPortrait" src="' + portraitUrl + '" alt="' + playerName.replace(/"/g, '&quot;') + '" class="campaign-current-player-portrait">';
+        } else {
+            currentPlayerPortraitWrap.innerHTML =
+                '<div id="campaignCurrentPlayerPlaceholder" class="campaign-current-player-placeholder">' +
+                playerName.charAt(0).toUpperCase() +
+                "</div>";
+        }
+
+        currentPlayerName.textContent = playerName;
+    }
+
+    playerSelect.addEventListener("change", async function () {
+        renderCurrentPlayer();
+
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_select_player') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    player_id: playerSelect.value || ""
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to select player.");
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    });
+
+    renderCurrentPlayer();
+})();
+</script>
 {% endblock %}

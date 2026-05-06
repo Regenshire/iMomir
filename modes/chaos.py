@@ -1370,6 +1370,216 @@ def resolve_custom_pack_card_by_name(
     conn.close()
     return row
 
+def get_custom_pack_populate_options_for_set(set_code):
+    clean_set_code = (set_code or "").strip().upper()
+
+    if not clean_set_code:
+        return []
+
+    config = get_config()
+    selected_pack_types = get_selected_chaos_pack_types(config)
+    booster_label_map = get_chaos_pack_type_label_map()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            booster_name,
+            COUNT(*) AS variant_count,
+            SUM(booster_weight) AS total_variant_weight
+        FROM chaos_booster_variants
+        WHERE set_code = ?
+        GROUP BY booster_name
+        ORDER BY booster_name ASC
+        """,
+        (clean_set_code,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    options = []
+
+    for row in rows:
+        booster_name = (row["booster_name"] or "").strip().lower()
+        booster_type = normalize_booster_type_for_filter(booster_name)
+
+        if booster_type not in ALLOWED_CHAOS_BOOSTER_TYPES:
+            continue
+
+        if booster_type not in selected_pack_types:
+            continue
+
+        display_label = booster_label_map.get(
+            booster_type,
+            " ".join(word.capitalize() for word in booster_name.split()) if booster_name else "Booster"
+        )
+
+        options.append({
+            "set_code": clean_set_code,
+            "booster_name": booster_name,
+            "booster_type": booster_type,
+            "label": display_label,
+            "variant_count": int(row["variant_count"] or 0),
+            "total_variant_weight": float(row["total_variant_weight"] or 0),
+        })
+
+    return options
+
+
+def build_custom_pack_decklist_line(card_entry):
+    card_name = (card_entry.get("card_name") or "").strip()
+    set_code = (card_entry.get("set_code") or "").strip().upper()
+    collector_number = (card_entry.get("collector_number") or "").strip()
+
+    if not card_name:
+        return ""
+
+    if set_code and collector_number:
+        return f"1 {card_name} ({set_code}) {collector_number}"
+
+    if set_code:
+        return f"1 {card_name} ({set_code})"
+
+    return f"1 {card_name}"
+
+
+def populate_custom_pack_decklist_from_booster(set_code, booster_name, existing_decklist_text, write_debug_log_fn=None):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_booster_name = (booster_name or "").strip().lower()
+
+    if not clean_set_code:
+        return {
+            "ok": False,
+            "message": "Set Code is required.",
+        }
+
+    if not clean_booster_name:
+        return {
+            "ok": False,
+            "message": "Booster type is required.",
+        }
+
+    available_options = get_custom_pack_populate_options_for_set(clean_set_code)
+    allowed_booster_names = {
+        (option.get("booster_name") or "").strip().lower()
+        for option in available_options
+    }
+
+    if clean_booster_name not in allowed_booster_names:
+        return {
+            "ok": False,
+            "message": "That booster type is not available for this set with the current Chaos Draft filters.",
+        }
+
+    variants = get_chaos_pack_variants(clean_set_code, clean_booster_name)
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return {
+            "ok": False,
+            "message": "No eligible variants were found for that set and booster type.",
+        }
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    generated_cards = open_result.get("cards") or []
+
+    if not generated_cards:
+        return {
+            "ok": False,
+            "message": "The selected booster generated no cards.",
+        }
+
+    generated_cards = sort_opened_chaos_pack_cards(
+        generated_cards,
+        clean_booster_name,
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    existing_lines = []
+    for raw_line in (existing_decklist_text or "").splitlines():
+        clean_line = (raw_line or "").strip()
+        if clean_line:
+            existing_lines.append(clean_line)
+
+    parsed_existing = parse_custom_pack_decklist_text("\n".join(existing_lines))
+    existing_total = sum(int(item.get("quantity") or 1) for item in parsed_existing)
+
+    target_total = len(generated_cards)
+    missing_count = max(0, target_total - existing_total)
+
+    if missing_count <= 0:
+        return {
+            "ok": True,
+            "message": "Decklist already has enough cards for this booster.",
+            "decklist_text": "\n".join(existing_lines).strip(),
+            "added_count": 0,
+            "generated_pack_total": target_total,
+            "booster_name": clean_booster_name,
+            "set_code": clean_set_code,
+        }
+
+    existing_names = {
+        (item.get("card_name") or "").strip().lower()
+        for item in parsed_existing
+    }
+
+    added_lines = []
+
+    # First pass: prefer cards not already present by name.
+    for card in generated_cards:
+        if len(added_lines) >= missing_count:
+            break
+
+        card_name = (card.get("card_name") or "").strip()
+        if not card_name:
+            continue
+
+        if card_name.lower() in existing_names:
+            continue
+
+        decklist_line = build_custom_pack_decklist_line(card)
+        if decklist_line:
+            added_lines.append(decklist_line)
+
+    # Second pass: if the generated pack overlaps with existing cards, allow duplicates to fill count.
+    if len(added_lines) < missing_count:
+        for card in generated_cards:
+            if len(added_lines) >= missing_count:
+                break
+
+            decklist_line = build_custom_pack_decklist_line(card)
+            if decklist_line:
+                added_lines.append(decklist_line)
+
+    combined_lines = list(existing_lines)
+    combined_lines.extend(added_lines[:missing_count])
+
+    decklist_text = "\n".join(combined_lines).strip()
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"CUSTOM PACK POPULATE | set={clean_set_code} | booster={clean_booster_name} | "
+            f"target_total={target_total} | existing_total={existing_total} | added={len(added_lines[:missing_count])}"
+        )
+
+    return {
+        "ok": True,
+        "message": f"Populated {len(added_lines[:missing_count])} card(s) from {clean_set_code} {clean_booster_name}.",
+        "decklist_text": decklist_text,
+        "added_count": len(added_lines[:missing_count]),
+        "generated_pack_total": target_total,
+        "booster_name": clean_booster_name,
+        "set_code": clean_set_code,
+    }
 
 def create_custom_pack_preview_for_manage_packs(set_code, pack_name, decklist_text, write_debug_log_fn=None):
     clean_set_code = (set_code or "").strip().upper()
@@ -2032,6 +2242,339 @@ def get_tracked_chaos_pack_cards(tracked_pack_id):
 
     return cards
 
+def ensure_campaign_player_schema():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_players (
+            player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_name TEXT NOT NULL UNIQUE,
+            portrait_image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL
+        )
+        """
+    )
+
+    cursor.execute("PRAGMA table_info(chaos_players)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    if "portrait_image_path" not in existing_columns:
+        cursor.execute("ALTER TABLE chaos_players ADD COLUMN portrait_image_path TEXT")
+
+    if "is_active" not in existing_columns:
+        cursor.execute("ALTER TABLE chaos_players ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+
+    if "created_at_utc" not in existing_columns:
+        cursor.execute("ALTER TABLE chaos_players ADD COLUMN created_at_utc TEXT")
+
+    conn.commit()
+    conn.close()
+
+
+def get_campaign_players(include_disabled=True):
+    ensure_campaign_player_schema()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    where_clause = ""
+    if not include_disabled:
+        where_clause = "WHERE is_active = 1"
+
+    cursor.execute(
+        f"""
+        SELECT
+            player_id,
+            player_name,
+            portrait_image_path,
+            is_active,
+            created_at_utc
+        FROM chaos_players
+        {where_clause}
+        ORDER BY is_active DESC, player_name COLLATE NOCASE ASC
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    players = []
+
+    for row in rows:
+        players.append({
+            "player_id": int(row["player_id"]),
+            "player_name": row["player_name"] or "",
+            "portrait_image_path": row["portrait_image_path"] or "",
+            "is_active": int(row["is_active"] or 0) == 1,
+            "created_at_utc": row["created_at_utc"] or "",
+        })
+
+    return players
+
+
+def get_campaign_player_by_id(player_id):
+    ensure_campaign_player_schema()
+
+    try:
+        parsed_player_id = int(player_id)
+    except (TypeError, ValueError):
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            player_id,
+            player_name,
+            portrait_image_path,
+            is_active,
+            created_at_utc
+        FROM chaos_players
+        WHERE player_id = ?
+        """,
+        (parsed_player_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "player_id": int(row["player_id"]),
+        "player_name": row["player_name"] or "",
+        "portrait_image_path": row["portrait_image_path"] or "",
+        "is_active": int(row["is_active"] or 0) == 1,
+        "created_at_utc": row["created_at_utc"] or "",
+    }
+
+
+def create_campaign_player(player_name, portrait_image_path=""):
+    ensure_campaign_player_schema()
+
+    clean_player_name = (player_name or "").strip()
+
+    if not clean_player_name:
+        return {
+            "ok": False,
+            "message": "Screen Name is required.",
+            "player_id": None,
+        }
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO chaos_players (
+                player_name,
+                portrait_image_path,
+                is_active,
+                created_at_utc
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                clean_player_name,
+                (portrait_image_path or "").strip(),
+                1,
+                now_utc,
+            ),
+        )
+
+        player_id = cursor.lastrowid
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Added player {clean_player_name}.",
+            "player_id": int(player_id),
+        }
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+            "player_id": None,
+        }
+    finally:
+        conn.close()
+
+
+def update_campaign_player(player_id, player_name=None, portrait_image_path=None, is_active=None):
+    ensure_campaign_player_schema()
+
+    try:
+        parsed_player_id = int(player_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid player ID.",
+        }
+
+    existing_player = get_campaign_player_by_id(parsed_player_id)
+    if not existing_player:
+        return {
+            "ok": False,
+            "message": "Player was not found.",
+        }
+
+    new_player_name = existing_player["player_name"]
+    if player_name is not None:
+        new_player_name = (player_name or "").strip()
+
+    if not new_player_name:
+        return {
+            "ok": False,
+            "message": "Screen Name is required.",
+        }
+
+    new_portrait_image_path = existing_player["portrait_image_path"]
+    if portrait_image_path is not None:
+        new_portrait_image_path = (portrait_image_path or "").strip()
+
+    new_is_active = 1 if existing_player["is_active"] else 0
+    if is_active is not None:
+        new_is_active = 1 if is_active else 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE chaos_players
+            SET player_name = ?,
+                portrait_image_path = ?,
+                is_active = ?
+            WHERE player_id = ?
+            """,
+            (
+                new_player_name,
+                new_portrait_image_path,
+                new_is_active,
+                parsed_player_id,
+            ),
+        )
+
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Updated player {new_player_name}.",
+        }
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+        }
+    finally:
+        conn.close()
+
+
+def delete_campaign_player(player_id):
+    ensure_campaign_player_schema()
+
+    try:
+        parsed_player_id = int(player_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid player ID.",
+        }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_pack_openings
+        SET opened_by_player_id = NULL
+        WHERE opened_by_player_id = ?
+        """,
+        (parsed_player_id,),
+    )
+
+    cursor.execute(
+        """
+        DELETE FROM chaos_players
+        WHERE player_id = ?
+        """,
+        (parsed_player_id,),
+    )
+
+    deleted_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    if deleted_count <= 0:
+        return {
+            "ok": False,
+            "message": "Player was not found.",
+        }
+
+    selected_player_id = get_selected_campaign_player_id()
+    if selected_player_id == parsed_player_id:
+        clear_chaos_session_state("selected_campaign_player_id")
+
+    return {
+        "ok": True,
+        "message": "Player deleted.",
+    }
+
+
+def get_selected_campaign_player_id():
+    raw_value = get_chaos_session_state("selected_campaign_player_id", default_value=None)
+
+    try:
+        parsed_player_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+    player = get_campaign_player_by_id(parsed_player_id)
+    if not player or not player["is_active"]:
+        clear_chaos_session_state("selected_campaign_player_id")
+        return None
+
+    return parsed_player_id
+
+
+def set_selected_campaign_player_id(player_id):
+    try:
+        parsed_player_id = int(player_id)
+    except (TypeError, ValueError):
+        clear_chaos_session_state("selected_campaign_player_id")
+        return {
+            "ok": True,
+            "selected_campaign_player_id": None,
+        }
+
+    player = get_campaign_player_by_id(parsed_player_id)
+    if not player or not player["is_active"]:
+        return {
+            "ok": False,
+            "message": "Selected player is not active.",
+            "selected_campaign_player_id": None,
+        }
+
+    set_chaos_session_state("selected_campaign_player_id", parsed_player_id)
+
+    return {
+        "ok": True,
+        "selected_campaign_player_id": parsed_player_id,
+        "player_name": player["player_name"],
+    }
 
 def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, opening_context="campaign_mode"):
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -2191,6 +2734,48 @@ def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled):
     conn.close()
 
     return updated_count
+
+def delete_tracked_packs(tracked_pack_ids):
+    pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
+
+    if not pack_ids:
+        return 0
+
+    placeholders = ",".join(["?"] * len(pack_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        DELETE FROM tracked_chaos_pack_openings
+        WHERE tracked_pack_id IN ({placeholders})
+        """,
+        pack_ids,
+    )
+
+    cursor.execute(
+        f"""
+        DELETE FROM tracked_chaos_pack_cards
+        WHERE tracked_pack_id IN ({placeholders})
+        """,
+        pack_ids,
+    )
+
+    cursor.execute(
+        f"""
+        DELETE FROM tracked_chaos_packs
+        WHERE tracked_pack_id IN ({placeholders})
+        """,
+        pack_ids,
+    )
+
+    deleted_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return deleted_count
 
 def get_tracked_pack_state_by_id(tracked_pack_id):
     conn = get_db_connection()

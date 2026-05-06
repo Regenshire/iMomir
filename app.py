@@ -25,6 +25,7 @@ from paths import (
     BUNDLE_BASE_DIR,
     CHAOS_IMAGE_CACHE_DIR,
     CHAOS_TEMP_CACHE_DIR,
+    CAMPAIGN_PLAYER_PORTRAIT_DIR,
     DATA_DOWNLOAD_DIR,
     IMAGE_CACHE_DIR,
     LOG_PATH,
@@ -145,7 +146,14 @@ from modes.chaos import (
     clear_chaos_session_state,
     create_random_pack_preview_for_manage_packs,
     create_specific_pack_preview_for_manage_packs,
+    create_campaign_player,
     create_custom_pack_preview_for_manage_packs,
+    delete_tracked_packs,
+    get_custom_pack_populate_options_for_set,
+    populate_custom_pack_decklist_from_booster,
+    get_campaign_players,
+    get_campaign_player_by_id,
+    get_selected_campaign_player_id,
     get_chaos_opened_pack_keys,
     get_chaos_pack_art_info,
     get_chaos_pack_art_relpath,
@@ -166,7 +174,10 @@ from modes.chaos import (
     parse_chaos_pack_types_config,
     record_chaos_pack_history,
     record_campaign_pack_opening,
+    set_selected_campaign_player_id,
     save_opened_chaos_pack_to_tracking_db,
+    update_campaign_player,
+    delete_campaign_player,
     set_chaos_session_state,
     search_manage_pack_options,
     set_tracked_packs_campaign_enabled,
@@ -1517,6 +1528,39 @@ def ensure_download_directories():
     os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
     os.makedirs(CHAOS_IMAGE_CACHE_DIR, exist_ok=True)
     os.makedirs(CHAOS_TEMP_CACHE_DIR, exist_ok=True)
+    os.makedirs(CAMPAIGN_PLAYER_PORTRAIT_DIR, exist_ok=True)
+
+def save_campaign_player_portrait_file(uploaded_file, player_id):
+    if not uploaded_file:
+        return ""
+
+    original_filename = (uploaded_file.filename or "").strip()
+    if not original_filename:
+        return ""
+
+    ensure_download_directories()
+
+    safe_ext = os.path.splitext(original_filename)[1].strip().lower()
+    if safe_ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+        safe_ext = ".png"
+
+    output_filename = f"player_{int(player_id)}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}.png"
+    output_path = os.path.join(CAMPAIGN_PLAYER_PORTRAIT_DIR, output_filename)
+
+    with Image.open(uploaded_file.stream) as source_image:
+        image = source_image.convert("RGB")
+
+        square_size = min(image.size)
+        left = int((image.width - square_size) / 2)
+        top = int((image.height - square_size) / 2)
+        right = left + square_size
+        bottom = top + square_size
+
+        image = image.crop((left, top, right, bottom))
+        image = image.resize((512, 512), Image.LANCZOS)
+        image.save(output_path, format="PNG")
+
+    return output_filename
 
 def parse_remote_last_modified(raw_value):
     raw_value = (raw_value or "").strip()
@@ -4194,6 +4238,9 @@ def result():
 
         active_template_metadata = get_active_print_template_metadata()
 
+        campaign_players = get_campaign_players(include_disabled=False)
+        selected_campaign_player_id = get_selected_campaign_player_id()
+
         return render_template(
             "campaign_chaos_draft.html",
             card_database_ready=card_database_ready,
@@ -4202,6 +4249,8 @@ def result():
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
             template_download_links=active_template_metadata["download_links"],
+            campaign_players=campaign_players,
+            selected_campaign_player_id=selected_campaign_player_id,
         )
 
     if current_game_mode == "preprint_chaos_draft":
@@ -4729,12 +4778,103 @@ def chaos_draft_open_test():
 
 @app.route("/campaign-chaos/players", methods=["GET"])
 def campaign_chaos_players():
+    players = get_campaign_players(include_disabled=True)
+    selected_campaign_player_id = get_selected_campaign_player_id()
+
     return render_template(
-        "campaign_placeholder.html",
-        page_title="Edit Players",
-        page_subtitle="Player Management will be built next. This screen will let you add, rename, disable, and select Campaign Mode players.",
+        "campaign_players.html",
+        players=players,
+        selected_campaign_player_id=selected_campaign_player_id,
     )
 
+@app.route("/campaign-chaos/player-portrait/<filename>", methods=["GET"])
+def campaign_chaos_player_portrait(filename):
+    safe_name = safe_filename(filename)
+    portrait_path = os.path.join(CAMPAIGN_PLAYER_PORTRAIT_DIR, safe_name)
+
+    if not os.path.exists(portrait_path):
+        return ("Not found", 404)
+
+    return send_file(portrait_path)
+
+
+@app.route("/campaign-chaos/players/add", methods=["POST"])
+def campaign_chaos_players_add():
+    player_name = (request.form.get("player_name") or "").strip()
+
+    create_result = create_campaign_player(player_name)
+
+    if not create_result.get("ok"):
+        flash(create_result.get("message") or "Could not add player.")
+        return redirect(url_for("campaign_chaos_players"))
+
+    player_id = create_result.get("player_id")
+    portrait_file = request.files.get("portrait_file")
+
+    if portrait_file and portrait_file.filename:
+        try:
+            portrait_filename = save_campaign_player_portrait_file(portrait_file, player_id)
+            if portrait_filename:
+                update_campaign_player(player_id, portrait_image_path=portrait_filename)
+        except Exception as exc:
+            flash(f"Player added, but portrait upload failed: {str(exc)}")
+            return redirect(url_for("campaign_chaos_players"))
+
+    flash(create_result.get("message") or "Player added.")
+    return redirect(url_for("campaign_chaos_players"))
+
+
+@app.route("/campaign-chaos/players/<int:player_id>/update", methods=["POST"])
+def campaign_chaos_players_update(player_id):
+    player_name = (request.form.get("player_name") or "").strip()
+    is_active = request.form.get("is_active") == "on"
+    portrait_file = request.files.get("portrait_file")
+
+    portrait_filename = None
+
+    if portrait_file and portrait_file.filename:
+        try:
+            portrait_filename = save_campaign_player_portrait_file(portrait_file, player_id)
+        except Exception as exc:
+            flash(f"Portrait upload failed: {str(exc)}")
+            return redirect(url_for("campaign_chaos_players"))
+
+    update_result = update_campaign_player(
+        player_id,
+        player_name=player_name,
+        portrait_image_path=portrait_filename if portrait_filename else None,
+        is_active=is_active,
+    )
+
+    flash(update_result.get("message") or "Player updated.")
+    return redirect(url_for("campaign_chaos_players"))
+
+
+@app.route("/campaign-chaos/players/<int:player_id>/delete", methods=["POST"])
+def campaign_chaos_players_delete(player_id):
+    delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if delete_confirmation != "DELETE":
+        flash("Delete cancelled. To delete a player, type DELETE in the confirmation prompt.")
+        return redirect(url_for("campaign_chaos_players"))
+
+    delete_result = delete_campaign_player(player_id)
+
+    flash(delete_result.get("message") or "Player deleted.")
+    return redirect(url_for("campaign_chaos_players"))
+
+
+@app.route("/campaign-chaos/select-player", methods=["POST"])
+def campaign_chaos_select_player():
+    payload = request.get_json(silent=True) or {}
+    player_id = payload.get("player_id")
+
+    result = set_selected_campaign_player_id(player_id)
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
 
 @app.route("/campaign-chaos/packs", methods=["GET"])
 def campaign_chaos_packs():
@@ -4856,6 +4996,37 @@ def campaign_chaos_packs_add_specific_random():
         "print_url": url_for("campaign_chaos_pack_preview_print"),
         "save_url": url_for("campaign_chaos_pack_preview_save"),
     })
+
+@app.route("/campaign-chaos/packs/custom-populate-options", methods=["GET"])
+def campaign_chaos_packs_custom_populate_options():
+    set_code = (request.args.get("set_code") or "").strip()
+
+    options = get_custom_pack_populate_options_for_set(set_code)
+
+    return jsonify({
+        "ok": True,
+        "options": options,
+    })
+
+@app.route("/campaign-chaos/packs/custom-populate", methods=["POST"])
+def campaign_chaos_packs_custom_populate():
+    payload = request.get_json(silent=True) or {}
+
+    set_code = (payload.get("set_code") or "").strip()
+    booster_name = (payload.get("booster_name") or "").strip()
+    existing_decklist_text = payload.get("existing_decklist_text") or ""
+
+    result = populate_custom_pack_decklist_from_booster(
+        set_code,
+        booster_name,
+        existing_decklist_text,
+        write_debug_log,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
 
 @app.route("/campaign-chaos/packs/add-custom-preview", methods=["POST"])
 def campaign_chaos_packs_add_custom_preview():
@@ -5000,6 +5171,17 @@ def campaign_chaos_packs_action():
         flash(f"Enabled {updated_count} pack(s) for Campaign Mode.")
         return redirect(url_for("campaign_chaos_packs"))
 
+    if action == "delete":
+        delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+        if delete_confirmation != "DELETE":
+            flash("Delete cancelled. To delete packs, type DELETE in the confirmation prompt.")
+            return redirect(url_for("campaign_chaos_packs"))
+
+        deleted_count = delete_tracked_packs(selected_pack_ids)
+        flash(f"Deleted {deleted_count} pack(s).")
+        return redirect(url_for("campaign_chaos_packs"))
+
     flash("Unknown pack action.")
     return redirect(url_for("campaign_chaos_packs"))
 
@@ -5015,6 +5197,25 @@ def campaign_chaos_spin():
             "ok": False,
             "message": "No saved packs were found in the Pack Tracking Database.",
         }), 404
+
+    chosen_variant = spin_result.get("chosen_variant") or {}
+    tracked_pack_id = chosen_variant.get("tracked_pack_id")
+
+    if tracked_pack_id:
+        record_campaign_pack_opening(
+            tracked_pack_id,
+            opened_by_player_id=get_selected_campaign_player_id(),
+            opening_context="campaign_mode_spin_selected",
+        )
+
+        set_chaos_session_state(
+            "pending_campaign_pack_opening_recorded",
+            {
+                "tracked_pack_id": int(tracked_pack_id),
+                "recorded": True,
+                "recorded_at": "spin",
+            },
+        )
 
     return jsonify({
         "ok": True,
@@ -5043,7 +5244,7 @@ def campaign_chaos_open():
         if not already_recorded:
             record_campaign_pack_opening(
                 tracked_pack_id,
-                opened_by_player_id=None,
+                opened_by_player_id=get_selected_campaign_player_id(),
                 opening_context="campaign_mode_pdf_open",
             )
 

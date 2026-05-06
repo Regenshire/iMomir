@@ -50,9 +50,56 @@
                 </button>
             </div>
 
+            <div class="campaign-add-pack-options">
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card campaign-add-pack-mode-card-active" data-add-pack-mode="random">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Random</div>
+                        <div class="campaign-add-pack-option-pill">Auto</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Generate a random eligible Chaos Draft pack to add to the campaign.
+                    </p>
+
+                    <button type="button" id="campaignAddRandomPackButton" class="action-button campaign-add-pack-mode-button" data-add-pack-mode-button="random">
+                        Add Random Pack
+                    </button>
+                </div>
+
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="search">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Search</div>
+                        <div class="campaign-add-pack-option-pill">Find</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Search by set code, set name, or pack name, then generate a random pack from the selected result.
+                    </p>
+
+                    <button type="button" id="campaignShowSearchPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="search">
+                        Search and Add Pack
+                    </button>
+                </div>
+
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="custom">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Custom Pack</div>
+                        <div class="campaign-add-pack-option-pill">Import</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Create a custom pack using a Set Code, Pack Name, and pasted decklist.
+                    </p>
+
+                    <button type="button" id="campaignShowCustomPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="custom">
+                        Create Custom Pack
+                    </button>
+                </div>
+            </div>
+
             <div id="campaignAddPackStatus" class="campaign-add-pack-status hidden"></div>
 
-                        <div id="campaignAddPackPreview" class="campaign-add-pack-preview hidden">
+            <div id="campaignAddPackPreview" class="campaign-add-pack-preview hidden">
                 <div class="campaign-add-pack-preview-main">
                     <div class="campaign-add-pack-preview-title" id="campaignAddPackPreviewTitle"></div>
                     <div class="campaign-add-pack-preview-meta" id="campaignAddPackPreviewMeta"></div>
@@ -83,53 +130,6 @@
                         class="action-button campaign-add-pack-preview-button"
                     >
                         Save
-                    </button>
-                </div>
-            </div>
-
-            <div class="campaign-add-pack-options">
-                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card campaign-add-pack-mode-card-active" data-add-pack-mode="random">
-                    <div class="campaign-add-pack-option-header">
-                        <div class="campaign-add-pack-option-title">Random</div>
-                        <div class="campaign-add-pack-option-pill">Ready</div>
-                    </div>
-
-                    <p class="campaign-add-pack-option-text">
-                        Generate a random eligible Chaos Draft pack to add to the campaign.
-                    </p>
-
-                    <button type="button" id="campaignAddRandomPackButton" class="action-button campaign-add-pack-mode-button" data-add-pack-mode-button="random">
-                        Add Random Pack
-                    </button>
-                </div>
-
-                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="search">
-                    <div class="campaign-add-pack-option-header">
-                        <div class="campaign-add-pack-option-title">Search</div>
-                        <div class="campaign-add-pack-option-pill">Ready</div>
-                    </div>
-
-                    <p class="campaign-add-pack-option-text">
-                        Search by set code, set name, or pack name, then generate a random pack from the selected result.
-                    </p>
-
-                    <button type="button" id="campaignShowSearchPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="search">
-                        Search and Add Pack
-                    </button>
-                </div>
-
-                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="custom">
-                    <div class="campaign-add-pack-option-header">
-                        <div class="campaign-add-pack-option-title">Custom Pack</div>
-                        <div class="campaign-add-pack-option-pill">Ready</div>
-                    </div>
-
-                    <p class="campaign-add-pack-option-text">
-                        Create a custom pack using a Set Code, Pack Name, and pasted decklist.
-                    </p>
-
-                    <button type="button" id="campaignShowCustomPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="custom">
-                        Create Custom Pack
                     </button>
                 </div>
             </div>
@@ -166,7 +166,7 @@
                     <div>
                         <h3 class="campaign-add-pack-custom-panel-title">Custom Pack</h3>
                         <p class="campaign-add-pack-custom-panel-subtitle">
-                            Create a custom pack by entering a Set Code, Pack Name, and pasted Archidekt/Moxfield-style decklist.
+                            Create a custom pack by entering a Set Code, Pack Name, and pasted Archidekt/Moxfield-style decklist. Can auto-populate card names for real set codes.
                         </p>
                     </div>
                 </div>
@@ -185,7 +185,7 @@
                     </label>
 
                     <label class="campaign-add-pack-custom-field" for="campaignCustomPackNameInput">
-                        <span>Pack Name</span>
+                        <span>Custom Pack Name</span>
                         <input
                             type="text"
                             id="campaignCustomPackNameInput"
@@ -194,6 +194,35 @@
                             autocomplete="off"
                         >
                     </label>
+
+                    <div class="campaign-add-pack-custom-populate-wrap">
+                        <span class="campaign-add-pack-custom-populate-label">Auto-Populate Pack</span>
+
+                        <div class="campaign-custom-populate-split">
+                            <button
+                                type="button"
+                                id="campaignCustomPopulateMainButton"
+                                class="action-button secondary-button campaign-custom-populate-main-button"
+                                disabled
+                            >
+                                
+                            </button>
+
+                            <button
+                                type="button"
+                                id="campaignCustomPopulateMenuButton"
+                                class="action-button secondary-button campaign-custom-populate-menu-button"
+                                disabled
+                                aria-expanded="false"
+                                aria-haspopup="true"
+                            >
+                                ▾
+                            </button>
+
+                            <div id="campaignCustomPopulateMenu" class="campaign-custom-populate-menu hidden"></div>
+                        </div>
+                    </div>
+
                 </div>
 
                 <label class="campaign-add-pack-custom-field campaign-add-pack-custom-textarea-field" for="campaignCustomDecklistInput">
@@ -243,6 +272,9 @@
         id="campaignManagePacksForm"
         class="campaign-manage-packs-form"
     >
+
+        <input type="hidden" name="delete_confirmation" id="campaignDeleteConfirmation" value="">
+
         <div class="page-panel campaign-bulk-actions-panel">
             <div class="campaign-bulk-actions">
                 <button
@@ -271,6 +303,16 @@
                     class="action-button secondary-button"
                 >
                     Enable Selected
+                </button>
+
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="delete"
+                    id="campaignDeleteSelectedButton"
+                    class="action-button secondary-button campaign-danger-button"
+                >
+                    Delete Selected
                 </button>
             </div>
 
@@ -365,6 +407,8 @@
     const form = document.getElementById("campaignManagePacksForm");
     const selectAllButton = document.getElementById("campaignSelectAllPacksButton");
     const clearSelectedButton = document.getElementById("campaignClearSelectedPacksButton");
+    const deleteSelectedButton = document.getElementById("campaignDeleteSelectedButton");
+    const deleteConfirmationInput = document.getElementById("campaignDeleteConfirmation");
     const addPackButton = document.getElementById("campaignAddPackButton");
     const addPackModal = document.getElementById("campaignAddPackModal");
     const addPackBackdrop = document.getElementById("campaignAddPackBackdrop");
@@ -385,6 +429,9 @@
     const showCustomPanelButton = document.getElementById("campaignShowCustomPanelButton");
     const addPackCustomPanel = document.getElementById("campaignAddPackCustomPanel");
     const customSetCodeInput = document.getElementById("campaignCustomSetCodeInput");
+    const customPopulateMainButton = document.getElementById("campaignCustomPopulateMainButton");
+    const customPopulateMenuButton = document.getElementById("campaignCustomPopulateMenuButton");
+    const customPopulateMenu = document.getElementById("campaignCustomPopulateMenu");
     const customPackNameInput = document.getElementById("campaignCustomPackNameInput");
     const customDecklistInput = document.getElementById("campaignCustomDecklistInput");
     const generateCustomPackButton = document.getElementById("campaignGenerateCustomPackButton");
@@ -395,6 +442,10 @@
 
     function getAllCheckboxes() {
         return Array.from(form.querySelectorAll(".campaign-pack-checkbox"));
+    }
+
+    function getSelectedCheckboxes() {
+        return Array.from(form.querySelectorAll(".campaign-pack-checkbox:checked"));
     }
 
     if (selectAllButton) {
@@ -412,6 +463,29 @@
             });
         });
     }
+
+    if (deleteSelectedButton && deleteConfirmationInput) {
+        deleteSelectedButton.addEventListener("click", function (event) {
+            const selectedCount = getSelectedCheckboxes().length;
+
+            if (selectedCount <= 0) {
+                return;
+            }
+
+            const confirmation = window.prompt(
+                "You are about to permanently delete " + selectedCount + " saved pack(s). Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                deleteConfirmationInput.value = "";
+                return;
+            }
+
+            deleteConfirmationInput.value = "DELETE";
+        });
+    }
+
     function openAddPackModal() {
         if (!addPackModal) {
             return;
@@ -449,6 +523,8 @@
             customSetCodeInput.value = "";
         }
 
+        resetCustomPopulateOptions();
+
         if (customPackNameInput) {
             customPackNameInput.value = "";
         }
@@ -485,6 +561,28 @@
 
             button.classList.toggle("secondary-button", !isActive);
         });
+    }
+
+    function hideAddPackModePanels() {
+        if (addPackSearchPanel) {
+            addPackSearchPanel.classList.add("hidden");
+        }
+
+        if (addPackCustomPanel) {
+            addPackCustomPanel.classList.add("hidden");
+        }
+
+        if (addPackSearchResults) {
+            addPackSearchResults.classList.add("hidden");
+        }
+
+        if (customPopulateMenu) {
+            customPopulateMenu.classList.add("hidden");
+        }
+
+        if (customPopulateMenuButton) {
+            customPopulateMenuButton.setAttribute("aria-expanded", "false");
+        }
     }
 
     function setAddPackStatus(messageText, isError) {
@@ -699,6 +797,148 @@
         }
     }
 
+        function resetCustomPopulateOptions() {
+        if (customPopulateMainButton) {
+            customPopulateMainButton.disabled = true;
+            customPopulateMainButton.textContent = "Populate";
+            customPopulateMainButton.dataset.boosterName = "";
+        }
+
+        if (customPopulateMenuButton) {
+            customPopulateMenuButton.disabled = true;
+            customPopulateMenuButton.setAttribute("aria-expanded", "false");
+        }
+
+        if (customPopulateMenu) {
+            customPopulateMenu.classList.add("hidden");
+            customPopulateMenu.innerHTML = "";
+        }
+    }
+
+    function setCustomPopulateOptions(options) {
+        resetCustomPopulateOptions();
+
+        if (!options || !options.length || !customPopulateMainButton || !customPopulateMenuButton || !customPopulateMenu) {
+            return;
+        }
+
+        const firstOption = options[0];
+
+        customPopulateMainButton.disabled = false;
+        customPopulateMainButton.textContent = firstOption.label || firstOption.booster_name || "Booster";
+        customPopulateMainButton.dataset.boosterName = firstOption.booster_name || "";
+
+        customPopulateMenuButton.disabled = false;
+
+        options.forEach(function (option) {
+            const itemButton = document.createElement("button");
+            itemButton.type = "button";
+            itemButton.className = "campaign-custom-populate-menu-item";
+            itemButton.textContent = option.label || option.booster_name || "Booster";
+            itemButton.dataset.boosterName = option.booster_name || "";
+
+            customPopulateMenu.appendChild(itemButton);
+        });
+    }
+
+    async function refreshCustomPopulateOptions() {
+        if (!customSetCodeInput) {
+            return;
+        }
+
+        const setCode = (customSetCodeInput.value || "").trim();
+
+        if (!setCode) {
+            resetCustomPopulateOptions();
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                "{{ url_for('campaign_chaos_packs_custom_populate_options') }}" + "?set_code=" + encodeURIComponent(setCode),
+                {
+                    method: "GET",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                }
+            );
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                resetCustomPopulateOptions();
+                return;
+            }
+
+            setCustomPopulateOptions(payload.options || []);
+        } catch (error) {
+            console.error(error);
+            resetCustomPopulateOptions();
+        }
+    }
+
+    async function populateCustomDecklist(boosterName) {
+        if (!customSetCodeInput || !customDecklistInput || !boosterName) {
+            return;
+        }
+
+        const setCode = (customSetCodeInput.value || "").trim();
+
+        if (!setCode) {
+            setAddPackStatus("Enter a Set Code before using Populate.", true);
+            customSetCodeInput.focus();
+            return;
+        }
+
+        if (customPopulateMainButton) {
+            customPopulateMainButton.disabled = true;
+            customPopulateMainButton.classList.add("action-button-loading");
+        }
+
+        if (customPopulateMenuButton) {
+            customPopulateMenuButton.disabled = true;
+        }
+
+        setAddPackStatus("Populating custom pack decklist...", false);
+
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_packs_custom_populate') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    set_code: setCode,
+                    booster_name: boosterName,
+                    existing_decklist_text: customDecklistInput.value || ""
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to populate custom pack.");
+            }
+
+            customDecklistInput.value = payload.decklist_text || "";
+            setAddPackStatus(payload.message || "Custom pack decklist populated.", false);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to populate custom pack.", true);
+        } finally {
+            if (customPopulateMainButton) {
+                customPopulateMainButton.disabled = false;
+                customPopulateMainButton.classList.remove("action-button-loading");
+            }
+
+            if (customPopulateMenuButton) {
+                customPopulateMenuButton.disabled = false;
+            }
+        }
+    }
+
     async function generateCustomPackPreview() {
         if (!customSetCodeInput || !customPackNameInput || !customDecklistInput || !generateCustomPackButton) {
             return;
@@ -779,6 +1019,8 @@
     if (addRandomPackButton) {
         addRandomPackButton.addEventListener("click", async function () {
             setActiveAddPackMode("random");
+            hideAddPackModePanels();
+
             addRandomPackButton.disabled = true;
             addRandomPackButton.classList.add("action-button-loading");
             addRandomPackButton.textContent = "Adding...";
@@ -819,6 +1061,8 @@
     if (showSearchPanelButton) {
         showSearchPanelButton.addEventListener("click", function () {
             setActiveAddPackMode("search");
+            hideAddPackModePanels();
+
             if (addPackSearchPanel) {
                 addPackSearchPanel.classList.remove("hidden");
             }
@@ -837,6 +1081,8 @@
     if (showCustomPanelButton) {
         showCustomPanelButton.addEventListener("click", function () {
             setActiveAddPackMode("custom");
+            hideAddPackModePanels();
+
             if (addPackCustomPanel) {
                 addPackCustomPanel.classList.remove("hidden");
             }
@@ -849,6 +1095,57 @@
                 addPackStatus.classList.add("hidden");
                 addPackStatus.textContent = "";
             }
+        });
+    }
+
+        if (customSetCodeInput) {
+        customSetCodeInput.addEventListener("input", function () {
+            resetCustomPopulateOptions();
+        });
+
+        customSetCodeInput.addEventListener("change", function () {
+            refreshCustomPopulateOptions();
+        });
+
+        customSetCodeInput.addEventListener("blur", function () {
+            refreshCustomPopulateOptions();
+        });
+    }
+
+    if (customPopulateMainButton) {
+        customPopulateMainButton.addEventListener("click", function () {
+            const boosterName = customPopulateMainButton.dataset.boosterName || "";
+            populateCustomDecklist(boosterName);
+        });
+    }
+
+    if (customPopulateMenuButton) {
+        customPopulateMenuButton.addEventListener("click", function () {
+            if (!customPopulateMenu) {
+                return;
+            }
+
+            const isHidden = customPopulateMenu.classList.contains("hidden");
+            customPopulateMenu.classList.toggle("hidden", !isHidden);
+            customPopulateMenuButton.setAttribute("aria-expanded", isHidden ? "true" : "false");
+        });
+    }
+
+    if (customPopulateMenu) {
+        customPopulateMenu.addEventListener("click", function (event) {
+            const itemButton = event.target.closest(".campaign-custom-populate-menu-item");
+
+            if (!itemButton) {
+                return;
+            }
+
+            customPopulateMenu.classList.add("hidden");
+
+            if (customPopulateMenuButton) {
+                customPopulateMenuButton.setAttribute("aria-expanded", "false");
+            }
+
+            populateCustomDecklist(itemButton.dataset.boosterName || "");
         });
     }
 

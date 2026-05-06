@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Edit Players{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">Edit Players</h1>
+                <p class="page-subtitle">
+                    Add, rename, disable, delete, and select Campaign Mode players.
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <h2>Add Player</h2>
+
+        <form
+            method="post"
+            action="{{ url_for('campaign_chaos_players_add') }}"
+            enctype="multipart/form-data"
+            class="campaign-player-add-form"
+        >
+            <label class="campaign-player-field">
+                <span>Screen Name</span>
+                <input
+                    type="text"
+                    name="player_name"
+                    class="campaign-player-input"
+                    placeholder="Player name"
+                    autocomplete="off"
+                    required
+                >
+            </label>
+
+            <label class="campaign-player-field">
+                <span>Portrait</span>
+                <input
+                    type="file"
+                    name="portrait_file"
+                    class="campaign-player-file"
+                    accept="image/png,image/jpeg,image/webp"
+                >
+            </label>
+
+            <button type="submit" class="action-button campaign-player-add-button">
+                Add Player
+            </button>
+        </form>
+    </div>
+
+    <div class="page-panel">
+        <h2>Players</h2>
+
+        {% if players %}
+        <div class="campaign-player-list">
+            {% for player in players %}
+            <div class="campaign-player-row {% if not player.is_active %}campaign-player-row-disabled{% endif %}">
+                <div class="campaign-player-portrait-wrap">
+                    {% if player.portrait_image_path %}
+                    <img
+                        src="{{ url_for('campaign_chaos_player_portrait', filename=player.portrait_image_path) }}"
+                        alt="{{ player.player_name }}"
+                        class="campaign-player-portrait"
+                    >
+                    {% else %}
+                    <div class="campaign-player-portrait-placeholder">
+                        {{ player.player_name[:1]|upper }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <form
+                    method="post"
+                    action="{{ url_for('campaign_chaos_players_update', player_id=player.player_id) }}"
+                    enctype="multipart/form-data"
+                    class="campaign-player-edit-form"
+                >
+                    <label class="campaign-player-field">
+                        <span>Screen Name</span>
+                        <input
+                            type="text"
+                            name="player_name"
+                            class="campaign-player-input"
+                            value="{{ player.player_name }}"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="campaign-player-field">
+                        <span>Replace Portrait</span>
+                        <input
+                            type="file"
+                            name="portrait_file"
+                            class="campaign-player-file"
+                            accept="image/png,image/jpeg,image/webp"
+                        >
+                    </label>
+
+                    <label class="campaign-player-active-toggle">
+                        <input
+                            type="checkbox"
+                            name="is_active"
+                            {% if player.is_active %}checked{% endif %}
+                        >
+                        <span>Active</span>
+                    </label>
+
+                    <button type="submit" class="action-button secondary-button campaign-player-row-button">
+                        Save
+                    </button>
+                </form>
+
+                <form
+                    method="post"
+                    action="{{ url_for('campaign_chaos_players_delete', player_id=player.player_id) }}"
+                    class="campaign-player-delete-form"
+                    data-player-name="{{ player.player_name }}"
+                >
+                    <input type="hidden" name="delete_confirmation" value="">
+                    <button type="submit" class="action-button secondary-button campaign-danger-button campaign-player-row-button">
+                        Delete
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card-placeholder">
+            No players have been added yet.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    const deleteForms = Array.from(document.querySelectorAll(".campaign-player-delete-form"));
+
+    deleteForms.forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+            const playerName = form.dataset.playerName || "this player";
+            const confirmation = window.prompt(
+                "You are about to permanently delete " + playerName + ". Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                return;
+            }
+
+            const hiddenInput = form.querySelector("input[name='delete_confirmation']");
+            if (hiddenInput) {
+                hiddenInput.value = "DELETE";
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}
