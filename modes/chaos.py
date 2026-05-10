@@ -2025,10 +2025,17 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None, campaign_id=None):
         if existing_row:
             tracked_pack_id = int(existing_row["tracked_pack_id"])
             conn.commit()
+            conn.close()
+
+            link_tracked_pack_to_campaign(
+                tracked_pack_id,
+                campaign_id=parsed_campaign_id,
+                campaign_enabled=True,
+            )
 
             return {
                 "ok": True,
-                "message": f"Pack {pack_tracking_code} was already saved.",
+                "message": f"Pack {pack_tracking_code} was already saved and linked to this campaign.",
                 "already_saved": True,
                 "tracked_pack_id": tracked_pack_id,
                 "pack_tracking_code": pack_tracking_code,
@@ -2114,6 +2121,13 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None, campaign_id=None):
             )
 
         conn.commit()
+        conn.close()
+
+        link_tracked_pack_to_campaign(
+            tracked_pack_id,
+            campaign_id=parsed_campaign_id,
+            campaign_enabled=True,
+        )
 
         return {
             "ok": True,
@@ -2123,6 +2137,350 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None, campaign_id=None):
             "pack_tracking_code": pack_tracking_code,
         }
 
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+def get_campaign_membership_key(campaign_id=None):
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+
+    if parsed_campaign_id is None:
+        return "__none__"
+
+    return str(parsed_campaign_id)
+
+
+def ensure_tracked_pack_campaign_schema():
+    ensure_chaos_campaign_schema()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS tracked_chaos_pack_campaigns (
+            tracked_pack_campaign_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tracked_pack_id INTEGER NOT NULL,
+            campaign_key TEXT NOT NULL,
+            campaign_id INTEGER NULL,
+            campaign_enabled INTEGER NOT NULL DEFAULT 1,
+            added_at_utc TEXT NOT NULL,
+            UNIQUE (tracked_pack_id, campaign_key),
+            FOREIGN KEY (tracked_pack_id) REFERENCES tracked_chaos_packs (tracked_pack_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_pack_campaigns_campaign
+        ON tracked_chaos_pack_campaigns (campaign_key, campaign_enabled, tracked_pack_id)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_pack_campaigns_pack
+        ON tracked_chaos_pack_campaigns (tracked_pack_id, campaign_key)
+        """
+    )
+
+    cursor.execute("PRAGMA table_info(tracked_chaos_packs)")
+    tracked_pack_columns = {row[1] for row in cursor.fetchall()}
+
+    # Migration bridge:
+    # Existing installs stored campaign membership directly on tracked_chaos_packs.campaign_id.
+    # Copy that into the new membership table without changing tracking codes.
+    if "campaign_id" in tracked_pack_columns:
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO tracked_chaos_pack_campaigns (
+                tracked_pack_id,
+                campaign_key,
+                campaign_id,
+                campaign_enabled,
+                added_at_utc
+            )
+            SELECT
+                tracked_pack_id,
+                CASE
+                    WHEN campaign_id IS NULL THEN '__none__'
+                    ELSE CAST(campaign_id AS TEXT)
+                END AS campaign_key,
+                campaign_id,
+                COALESCE(campaign_enabled, 1),
+                COALESCE(added_at_utc, strftime('%Y-%m-%d %H:%M:%S UTC', 'now'))
+            FROM tracked_chaos_packs
+            """
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def link_tracked_pack_to_campaign(tracked_pack_id, campaign_id=None, campaign_enabled=True):
+    ensure_tracked_pack_campaign_schema()
+
+    parsed_tracked_pack_id = normalize_optional_int(tracked_pack_id)
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+
+    if parsed_tracked_pack_id is None:
+        return False
+
+    campaign_key = get_campaign_membership_key(parsed_campaign_id)
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO tracked_chaos_pack_campaigns (
+            tracked_pack_id,
+            campaign_key,
+            campaign_id,
+            campaign_enabled,
+            added_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(tracked_pack_id, campaign_key) DO UPDATE SET
+            campaign_enabled = excluded.campaign_enabled
+        """,
+        (
+            parsed_tracked_pack_id,
+            campaign_key,
+            parsed_campaign_id,
+            1 if campaign_enabled else 0,
+            now_utc,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return True
+
+
+def get_campaign_pack_import_options(current_campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
+
+    parsed_current_campaign_id = normalize_optional_int(current_campaign_id)
+    current_campaign_key = get_campaign_membership_key(parsed_current_campaign_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    options = []
+
+    cursor.execute(
+        """
+        SELECT
+            tpc.campaign_key,
+            tpc.campaign_id,
+            COALESCE(cc.campaign_name, 'No Campaign') AS campaign_name,
+            COUNT(DISTINCT tpc.tracked_pack_id) AS pack_count
+        FROM tracked_chaos_pack_campaigns tpc
+        LEFT JOIN chaos_campaigns cc
+            ON cc.campaign_id = tpc.campaign_id
+        WHERE tpc.campaign_key <> ?
+          AND COALESCE(tpc.campaign_enabled, 1) = 1
+        GROUP BY
+            tpc.campaign_key,
+            tpc.campaign_id,
+            COALESCE(cc.campaign_name, 'No Campaign')
+        HAVING COUNT(DISTINCT tpc.tracked_pack_id) > 0
+        ORDER BY
+            CASE WHEN tpc.campaign_id IS NULL THEN 0 ELSE 1 END,
+            campaign_name COLLATE NOCASE ASC
+        """,
+        (current_campaign_key,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    for row in rows:
+        options.append({
+            "campaign_id": "__none__" if row["campaign_id"] is None else int(row["campaign_id"]),
+            "campaign_name": row["campaign_name"] or "No Campaign",
+            "pack_count": int(row["pack_count"] or 0),
+        })
+
+    return options
+
+
+def get_importable_campaign_pack_rows(static_folder, source_campaign_id=None, target_campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
+
+    source_campaign_key = get_campaign_membership_key(
+        None if source_campaign_id in {None, "", "__none__"} else source_campaign_id
+    )
+    target_campaign_key = get_campaign_membership_key(target_campaign_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tcp.tracked_pack_id,
+            tcp.pack_tracking_code,
+            tcp.set_code,
+            tcp.booster_name,
+            tcp.booster_index,
+            tcp.pack_display_name,
+            tcp.total_cards,
+            tcp.bonus_pack_opened,
+            tcp.added_at_utc,
+            tcp.last_opened_at_utc,
+            tcp.opened_count,
+            COALESCE(source_membership.campaign_enabled, 1) AS campaign_enabled,
+            CASE
+                WHEN target_membership.tracked_pack_id IS NOT NULL THEN 1
+                ELSE 0
+            END AS already_in_target
+        FROM tracked_chaos_pack_campaigns source_membership
+        INNER JOIN tracked_chaos_packs tcp
+            ON tcp.tracked_pack_id = source_membership.tracked_pack_id
+        LEFT JOIN tracked_chaos_pack_campaigns target_membership
+            ON target_membership.tracked_pack_id = tcp.tracked_pack_id
+           AND target_membership.campaign_key = ?
+        WHERE source_membership.campaign_key = ?
+          AND COALESCE(source_membership.campaign_enabled, 1) = 1
+        ORDER BY tcp.added_at_utc DESC, tcp.tracked_pack_id DESC
+        """,
+        (
+            target_campaign_key,
+            source_campaign_key,
+        ),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    packs = []
+
+    for row in rows:
+        set_code = (row["set_code"] or "").strip().upper()
+        booster_name = (row["booster_name"] or "").strip().lower()
+        art_info = get_chaos_pack_art_info(set_code, booster_name, static_folder)
+
+        packs.append({
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
+            "set_code": set_code,
+            "booster_name": booster_name,
+            "booster_index": int(row["booster_index"] or 0),
+            "pack_display_name": (row["pack_display_name"] or "").strip(),
+            "total_cards": int(row["total_cards"] or 0),
+            "bonus_pack_opened": bool(row["bonus_pack_opened"]),
+            "added_at_utc": row["added_at_utc"] or "",
+            "last_opened_at_utc": row["last_opened_at_utc"] or "",
+            "opened_count": int(row["opened_count"] or 0),
+            "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
+            "already_in_target": int(row["already_in_target"] or 0) == 1,
+            "image_src": url_for("static", filename=art_info["image_path"]),
+        })
+
+    return packs
+
+
+def import_tracked_packs_from_campaign(source_pack_ids, target_campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
+
+    pack_ids = normalize_tracked_pack_id_list(source_pack_ids)
+
+    if not pack_ids:
+        return {
+            "ok": False,
+            "message": "No packs were selected.",
+            "imported_count": 0,
+            "skipped_count": 0,
+        }
+
+    target_campaign_key = get_campaign_membership_key(target_campaign_id)
+    parsed_target_campaign_id = normalize_optional_int(target_campaign_id)
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    imported_count = 0
+    skipped_count = 0
+
+    try:
+        for tracked_pack_id in pack_ids:
+            cursor.execute(
+                """
+                SELECT tracked_pack_id
+                FROM tracked_chaos_packs
+                WHERE tracked_pack_id = ?
+                """,
+                (tracked_pack_id,),
+            )
+
+            if not cursor.fetchone():
+                skipped_count += 1
+                continue
+
+            cursor.execute(
+                """
+                SELECT tracked_pack_campaign_id
+                FROM tracked_chaos_pack_campaigns
+                WHERE tracked_pack_id = ?
+                  AND campaign_key = ?
+                """,
+                (
+                    tracked_pack_id,
+                    target_campaign_key,
+                ),
+            )
+
+            if cursor.fetchone():
+                skipped_count += 1
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO tracked_chaos_pack_campaigns (
+                    tracked_pack_id,
+                    campaign_key,
+                    campaign_id,
+                    campaign_enabled,
+                    added_at_utc
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    tracked_pack_id,
+                    target_campaign_key,
+                    parsed_target_campaign_id,
+                    1,
+                    now_utc,
+                ),
+            )
+
+            imported_count += 1
+
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Imported {imported_count} pack(s). Skipped {skipped_count} already-linked or missing pack(s).",
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+        }
+
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+        }
     finally:
         conn.close()
 
@@ -2136,20 +2494,14 @@ def get_campaign_pack_art_image_src(set_code, booster_name, static_folder):
     return url_for("static", filename=image_path)
 
 def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, excluded_tracked_pack_ids=None):
+    ensure_tracked_pack_campaign_schema()
+
+    campaign_key = get_campaign_membership_key(campaign_id)
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    try:
-        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
-    except (TypeError, ValueError):
-        parsed_campaign_id = None
-
-    campaign_filter_sql = "campaign_id IS NULL"
-    params = []
-
-    if parsed_campaign_id is not None:
-        campaign_filter_sql = "campaign_id = ?"
-        params.append(parsed_campaign_id)
+    params = [campaign_key]
 
     excluded_ids = []
     for raw_pack_id in excluded_tracked_pack_ids or []:
@@ -2164,29 +2516,32 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, e
     excluded_sql = ""
     if excluded_ids:
         placeholders = ",".join(["?"] * len(excluded_ids))
-        excluded_sql = f"AND tracked_pack_id NOT IN ({placeholders})"
+        excluded_sql = f"AND tcp.tracked_pack_id NOT IN ({placeholders})"
         params.extend(excluded_ids)
 
     cursor.execute(
         f"""
         SELECT
-            tracked_pack_id,
-            pack_tracking_code,
-            set_code,
-            booster_name,
-            booster_index,
-            pack_display_name,
-            total_cards,
-            bonus_pack_opened,
-            added_at_utc,
-            last_opened_at_utc,
-            opened_count,
-            campaign_id
-        FROM tracked_chaos_packs
-        WHERE COALESCE(campaign_enabled, 1) = 1
-          AND {campaign_filter_sql}
+            tcp.tracked_pack_id,
+            tcp.pack_tracking_code,
+            tcp.set_code,
+            tcp.booster_name,
+            tcp.booster_index,
+            tcp.pack_display_name,
+            tcp.total_cards,
+            tcp.bonus_pack_opened,
+            tcp.added_at_utc,
+            tcp.last_opened_at_utc,
+            tcp.opened_count,
+            tpc.campaign_id,
+            COALESCE(tpc.campaign_enabled, 1) AS campaign_enabled
+        FROM tracked_chaos_pack_campaigns tpc
+        INNER JOIN tracked_chaos_packs tcp
+            ON tcp.tracked_pack_id = tpc.tracked_pack_id
+        WHERE tpc.campaign_key = ?
+          AND COALESCE(tpc.campaign_enabled, 1) = 1
           {excluded_sql}
-        ORDER BY added_at_utc DESC, tracked_pack_id DESC
+        ORDER BY tpc.added_at_utc DESC, tcp.tracked_pack_id DESC
         """,
         params,
     )
@@ -2204,11 +2559,9 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, e
         if not display_name:
             display_name = build_default_chaos_pack_display_name(set_code, booster_name)
 
-        pack_tracking_code = (row["pack_tracking_code"] or "").strip().upper()
-
         packs.append({
             "tracked_pack_id": int(row["tracked_pack_id"]),
-            "pack_tracking_code": pack_tracking_code,
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
             "set_code": set_code,
             "booster_name": booster_name,
             "booster_index": int(row["booster_index"] or 0),
@@ -2564,6 +2917,14 @@ def delete_chaos_campaign(campaign_id):
         WHERE campaign_id = ?
         """,
         (parsed_campaign_id,),
+    )
+
+    cursor.execute(
+        """
+        DELETE FROM tracked_chaos_pack_campaigns
+        WHERE campaign_key = ?
+        """,
+        (str(parsed_campaign_id),),
     )
 
     cursor.execute(
@@ -3825,6 +4186,461 @@ def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, open
     conn.commit()
     conn.close()
 
+def delete_all_campaign_history():
+    ensure_chaos_draft_game_schema()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM tracked_chaos_pack_openings")
+    deleted_openings = cursor.rowcount
+
+    cursor.execute("DELETE FROM chaos_draft_games")
+    deleted_drafts = cursor.rowcount
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_packs
+        SET opened_count = 0,
+            last_opened_at_utc = NULL
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+    clear_chaos_session_state("selected_chaos_draft_game_id")
+    clear_chaos_session_state("pending_campaign_pack_opening_recorded")
+
+    return {
+        "deleted_openings": int(deleted_openings or 0),
+        "deleted_drafts": int(deleted_drafts or 0),
+    }
+
+def delete_selected_campaign_history(opening_ids):
+    ensure_chaos_draft_game_schema()
+
+    parsed_opening_ids = []
+
+    for raw_opening_id in opening_ids or []:
+        try:
+            parsed_opening_id = int(raw_opening_id)
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_opening_id > 0 and parsed_opening_id not in parsed_opening_ids:
+            parsed_opening_ids.append(parsed_opening_id)
+
+    if not parsed_opening_ids:
+        return 0
+
+    placeholders = ",".join(["?"] * len(parsed_opening_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT DISTINCT tracked_pack_id
+        FROM tracked_chaos_pack_openings
+        WHERE opening_id IN ({placeholders})
+          AND tracked_pack_id IS NOT NULL
+        """,
+        parsed_opening_ids,
+    )
+
+    affected_pack_ids = [
+        int(row["tracked_pack_id"])
+        for row in cursor.fetchall()
+        if row["tracked_pack_id"] is not None
+    ]
+
+    cursor.execute(
+        f"""
+        DELETE FROM tracked_chaos_pack_openings
+        WHERE opening_id IN ({placeholders})
+        """,
+        parsed_opening_ids,
+    )
+
+    deleted_count = cursor.rowcount
+
+    for tracked_pack_id in affected_pack_ids:
+        cursor.execute(
+            """
+            SELECT
+                COUNT(*) AS opened_count,
+                MAX(opened_at_utc) AS last_opened_at_utc
+            FROM tracked_chaos_pack_openings
+            WHERE tracked_pack_id = ?
+            """,
+            (tracked_pack_id,),
+        )
+
+        summary_row = cursor.fetchone()
+        opened_count = int(summary_row["opened_count"] or 0) if summary_row else 0
+        last_opened_at_utc = summary_row["last_opened_at_utc"] if summary_row else None
+
+        cursor.execute(
+            """
+            UPDATE tracked_chaos_packs
+            SET opened_count = ?,
+                last_opened_at_utc = ?
+            WHERE tracked_pack_id = ?
+            """,
+            (
+                opened_count,
+                last_opened_at_utc,
+                tracked_pack_id,
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+
+    return int(deleted_count or 0)
+
+def get_campaign_history_filter_options(static_folder, campaign_id=None, tracked_pack_id=None):
+    ensure_chaos_campaign_schema()
+    ensure_campaign_player_schema()
+    ensure_chaos_draft_game_schema()
+
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+    parsed_tracked_pack_id = normalize_optional_int(tracked_pack_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    campaign_options = [{
+        "campaign_id": "",
+        "campaign_name": "No Campaign",
+    }]
+
+    cursor.execute(
+        """
+        SELECT
+            campaign_id,
+            campaign_name
+        FROM chaos_campaigns
+        WHERE is_active = 1
+        ORDER BY campaign_name COLLATE NOCASE ASC
+        """
+    )
+
+    for row in cursor.fetchall():
+        campaign_options.append({
+            "campaign_id": int(row["campaign_id"]),
+            "campaign_name": row["campaign_name"] or "",
+        })
+
+    if parsed_campaign_id is None:
+        player_where = "WHERE campaign_id IS NULL"
+        player_params = []
+        draft_where = "WHERE campaign_id IS NULL"
+        draft_params = []
+        pack_where = "WHERE campaign_id IS NULL"
+        pack_params = []
+    else:
+        player_where = "WHERE campaign_id = ?"
+        player_params = [parsed_campaign_id]
+        draft_where = "WHERE campaign_id = ?"
+        draft_params = [parsed_campaign_id]
+        pack_where = "WHERE campaign_id = ?"
+        pack_params = [parsed_campaign_id]
+
+    cursor.execute(
+        f"""
+        SELECT
+            player_id,
+            player_name
+        FROM chaos_players
+        {player_where}
+        ORDER BY player_name COLLATE NOCASE ASC
+        """,
+        player_params,
+    )
+
+    player_options = []
+    for row in cursor.fetchall():
+        player_options.append({
+            "player_id": int(row["player_id"]),
+            "player_name": row["player_name"] or "",
+        })
+
+    cursor.execute(
+        f"""
+        SELECT
+            draft_game_id,
+            campaign_id,
+            draft_name,
+            started_at_utc,
+            completed_at_utc,
+            packs_per_player,
+            is_active
+        FROM chaos_draft_games
+        {draft_where}
+        ORDER BY started_at_utc DESC, draft_game_id DESC
+        """,
+        draft_params,
+    )
+
+    draft_options = []
+    for row in cursor.fetchall():
+        draft_game = {
+            "draft_game_id": int(row["draft_game_id"]),
+            "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
+            "draft_name": row["draft_name"] or "",
+            "started_at_utc": row["started_at_utc"] or "",
+            "completed_at_utc": row["completed_at_utc"] or "",
+            "packs_per_player": int(row["packs_per_player"] or 3),
+            "is_active": int(row["is_active"] or 0) == 1,
+        }
+
+        draft_options.append({
+            "draft_game_id": draft_game["draft_game_id"],
+            "draft_label": get_chaos_draft_game_display_label(draft_game),
+            "started_at_utc": draft_game["started_at_utc"],
+        })
+
+    if parsed_tracked_pack_id is not None:
+        pack_where = "WHERE tracked_pack_id = ?"
+        pack_params = [parsed_tracked_pack_id]
+
+    cursor.execute(
+        f"""
+        SELECT
+            tracked_pack_id,
+            pack_tracking_code,
+            set_code,
+            booster_name,
+            pack_display_name
+        FROM tracked_chaos_packs
+        {pack_where}
+        ORDER BY added_at_utc DESC, tracked_pack_id DESC
+        """,
+        pack_params,
+    )
+
+    pack_options = []
+    for row in cursor.fetchall():
+        pack_options.append({
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
+            "pack_display_name": row["pack_display_name"] or "",
+            "set_code": (row["set_code"] or "").strip().upper(),
+            "booster_name": (row["booster_name"] or "").strip().lower(),
+            "image_src": get_campaign_pack_art_image_src(row["set_code"], row["booster_name"], static_folder),
+        })
+
+    conn.close()
+
+    return {
+        "campaign_options": campaign_options,
+        "player_options": player_options,
+        "draft_options": draft_options,
+        "pack_options": pack_options,
+    }
+
+def get_campaign_history_rows(static_folder, campaign_id=None, draft_game_id=None, player_id=None, tracked_pack_id=None, page=1, per_page=50):
+    ensure_chaos_campaign_schema()
+    ensure_campaign_player_schema()
+    ensure_chaos_draft_game_schema()
+
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+    parsed_draft_game_id = normalize_optional_int(draft_game_id)
+    parsed_player_id = normalize_optional_int(player_id)
+    parsed_tracked_pack_id = normalize_optional_int(tracked_pack_id)
+
+    try:
+        parsed_page = int(page)
+    except (TypeError, ValueError):
+        parsed_page = 1
+
+    if parsed_page < 1:
+        parsed_page = 1
+
+    try:
+        parsed_per_page = int(per_page)
+    except (TypeError, ValueError):
+        parsed_per_page = 50
+
+    if parsed_per_page < 1:
+        parsed_per_page = 50
+
+    if parsed_per_page > 50:
+        parsed_per_page = 50
+
+    where_conditions = []
+    params = []
+
+    if parsed_campaign_id is None:
+        where_conditions.append("tco.campaign_id IS NULL")
+    else:
+        where_conditions.append("tco.campaign_id = ?")
+        params.append(parsed_campaign_id)
+
+    if parsed_draft_game_id is not None:
+        where_conditions.append("tco.draft_game_id = ?")
+        params.append(parsed_draft_game_id)
+
+    if parsed_player_id is not None:
+        where_conditions.append("tco.opened_by_player_id = ?")
+        params.append(parsed_player_id)
+
+    if parsed_tracked_pack_id is not None:
+        where_conditions.append("tco.tracked_pack_id = ?")
+        params.append(parsed_tracked_pack_id)
+
+    where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) AS total_count
+        FROM tracked_chaos_pack_openings tco
+        INNER JOIN tracked_chaos_packs tcp
+            ON tcp.tracked_pack_id = tco.tracked_pack_id
+        {where_clause}
+        """,
+        params,
+    )
+
+    total_row = cursor.fetchone()
+    total_count = int(total_row["total_count"] or 0) if total_row else 0
+    total_pages = max(1, (total_count + parsed_per_page - 1) // parsed_per_page)
+
+    if parsed_page > total_pages:
+        parsed_page = total_pages
+
+    offset_rows = (parsed_page - 1) * parsed_per_page
+
+    cursor.execute(
+        f"""
+        SELECT
+            tco.opening_id,
+            tco.tracked_pack_id,
+            tco.opened_at_utc,
+            tco.opened_by_player_id,
+            tco.opening_context,
+            tco.campaign_id,
+            tco.draft_game_id,
+
+            tcp.pack_tracking_code,
+            tcp.set_code,
+            tcp.booster_name,
+            tcp.booster_index,
+            tcp.pack_display_name,
+            tcp.total_cards,
+            tcp.bonus_pack_opened,
+
+            cp.player_name,
+            cc.campaign_name,
+
+            cdg.started_at_utc AS draft_started_at_utc,
+            cdg.completed_at_utc AS draft_completed_at_utc,
+            cdg.packs_per_player,
+            cdg.is_active AS draft_is_active
+        FROM tracked_chaos_pack_openings tco
+        INNER JOIN tracked_chaos_packs tcp
+            ON tcp.tracked_pack_id = tco.tracked_pack_id
+        LEFT JOIN chaos_players cp
+            ON cp.player_id = tco.opened_by_player_id
+        LEFT JOIN chaos_campaigns cc
+            ON cc.campaign_id = tco.campaign_id
+        LEFT JOIN chaos_draft_games cdg
+            ON cdg.draft_game_id = tco.draft_game_id
+        {where_clause}
+        ORDER BY
+            COALESCE(cdg.started_at_utc, tco.opened_at_utc) DESC,
+            tco.draft_game_id DESC,
+            tco.opened_at_utc DESC,
+            tco.opening_id DESC
+        LIMIT ?
+        OFFSET ?
+        """,
+        params + [parsed_per_page, offset_rows],
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    history_rows = []
+
+    for row in rows:
+        draft_game = None
+
+        if row["draft_game_id"] is not None:
+            draft_game = {
+                "draft_game_id": int(row["draft_game_id"]),
+                "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
+                "draft_name": "",
+                "started_at_utc": row["draft_started_at_utc"] or "",
+                "completed_at_utc": row["draft_completed_at_utc"] or "",
+                "packs_per_player": int(row["packs_per_player"] or 3),
+                "is_active": int(row["draft_is_active"] or 0) == 1,
+            }
+
+        draft_label = get_chaos_draft_game_display_label(draft_game) if draft_game else "Unknown Draft"
+        set_code = (row["set_code"] or "").strip().upper()
+        booster_name = (row["booster_name"] or "").strip().lower()
+
+        history_rows.append({
+            "opening_id": int(row["opening_id"]),
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "opened_at_utc": row["opened_at_utc"] or "",
+            "opened_by_player_id": int(row["opened_by_player_id"]) if row["opened_by_player_id"] is not None else None,
+            "opening_context": row["opening_context"] or "",
+            "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
+            "campaign_name": row["campaign_name"] or "No Campaign",
+            "draft_game_id": int(row["draft_game_id"]) if row["draft_game_id"] is not None else None,
+            "draft_label": draft_label,
+            "draft_started_at_utc": row["draft_started_at_utc"] or "",
+            "player_name": row["player_name"] or "No Player",
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
+            "set_code": set_code,
+            "booster_name": booster_name,
+            "booster_index": int(row["booster_index"] or 0),
+            "pack_display_name": row["pack_display_name"] or "",
+            "total_cards": int(row["total_cards"] or 0),
+            "bonus_pack_opened": int(row["bonus_pack_opened"] or 0) == 1,
+            "image_src": get_campaign_pack_art_image_src(set_code, booster_name, static_folder),
+        })
+
+    grouped_drafts = []
+    grouped_lookup = {}
+
+    for history_row in history_rows:
+        group_key = history_row["draft_game_id"] if history_row["draft_game_id"] is not None else f"opening-{history_row['opening_id']}"
+
+        if group_key not in grouped_lookup:
+            grouped_lookup[group_key] = {
+                "draft_game_id": history_row["draft_game_id"],
+                "draft_label": history_row["draft_label"],
+                "campaign_name": history_row["campaign_name"],
+                "draft_started_at_utc": history_row["draft_started_at_utc"] or history_row["opened_at_utc"],
+                "rows": [],
+            }
+            grouped_drafts.append(grouped_lookup[group_key])
+
+        grouped_lookup[group_key]["rows"].append(history_row)
+
+    return {
+        "rows": history_rows,
+        "grouped_drafts": grouped_drafts,
+        "pagination": {
+            "page": parsed_page,
+            "per_page": parsed_per_page,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "has_previous": parsed_page > 1,
+            "has_next": parsed_page < total_pages,
+            "previous_page": parsed_page - 1 if parsed_page > 1 else 1,
+            "next_page": parsed_page + 1 if parsed_page < total_pages else total_pages,
+        },
+    }
+
 def normalize_tracked_pack_id_list(raw_pack_ids):
     pack_ids = []
 
@@ -3839,29 +4655,17 @@ def normalize_tracked_pack_id_list(raw_pack_ids):
 
     return pack_ids
 
-
 def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
+
     search_value = (search_text or "").strip().lower()
+    campaign_key = get_campaign_membership_key(campaign_id)
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    params = []
-    where_clause = ""
-
-    params = []
-    where_conditions = []
-
-    try:
-        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
-    except (TypeError, ValueError):
-        parsed_campaign_id = None
-
-    if parsed_campaign_id is None:
-        where_conditions.append("tcp.campaign_id IS NULL")
-    else:
-        where_conditions.append("tcp.campaign_id = ?")
-        params.append(parsed_campaign_id)
+    params = [campaign_key]
+    where_conditions = ["tpc.campaign_key = ?"]
 
     if search_value:
         where_conditions.append(
@@ -3900,11 +4704,13 @@ def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=
             tcp.added_at_utc,
             tcp.last_opened_at_utc,
             tcp.opened_count,
-            tcp.campaign_id,
-            COALESCE(tcp.campaign_enabled, 1) AS campaign_enabled
-        FROM tracked_chaos_packs tcp
+            tpc.campaign_id,
+            COALESCE(tpc.campaign_enabled, 1) AS campaign_enabled
+        FROM tracked_chaos_pack_campaigns tpc
+        INNER JOIN tracked_chaos_packs tcp
+            ON tcp.tracked_pack_id = tpc.tracked_pack_id
         {where_clause}
-        ORDER BY tcp.added_at_utc DESC, tcp.tracked_pack_id DESC
+        ORDER BY tpc.added_at_utc DESC, tcp.tracked_pack_id DESC
         """,
         params,
     )
@@ -3938,13 +4744,15 @@ def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=
 
     return packs
 
+def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled, campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
 
-def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled):
     pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
 
     if not pack_ids:
         return 0
 
+    campaign_key = get_campaign_membership_key(campaign_id)
     placeholders = ",".join(["?"] * len(pack_ids))
 
     conn = get_db_connection()
@@ -3952,11 +4760,12 @@ def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled):
 
     cursor.execute(
         f"""
-        UPDATE tracked_chaos_packs
+        UPDATE tracked_chaos_pack_campaigns
         SET campaign_enabled = ?
-        WHERE tracked_pack_id IN ({placeholders})
+        WHERE campaign_key = ?
+          AND tracked_pack_id IN ({placeholders})
         """,
-        [1 if campaign_enabled else 0] + pack_ids,
+        [1 if campaign_enabled else 0, campaign_key] + pack_ids,
     )
 
     updated_count = cursor.rowcount
@@ -3966,12 +4775,15 @@ def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled):
 
     return updated_count
 
-def delete_tracked_packs(tracked_pack_ids):
+def delete_tracked_packs(tracked_pack_ids, campaign_id=None):
+    ensure_tracked_pack_campaign_schema()
+
     pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
 
     if not pack_ids:
         return 0
 
+    campaign_key = get_campaign_membership_key(campaign_id)
     placeholders = ",".join(["?"] * len(pack_ids))
 
     conn = get_db_connection()
@@ -3979,26 +4791,11 @@ def delete_tracked_packs(tracked_pack_ids):
 
     cursor.execute(
         f"""
-        DELETE FROM tracked_chaos_pack_openings
-        WHERE tracked_pack_id IN ({placeholders})
+        DELETE FROM tracked_chaos_pack_campaigns
+        WHERE campaign_key = ?
+          AND tracked_pack_id IN ({placeholders})
         """,
-        pack_ids,
-    )
-
-    cursor.execute(
-        f"""
-        DELETE FROM tracked_chaos_pack_cards
-        WHERE tracked_pack_id IN ({placeholders})
-        """,
-        pack_ids,
-    )
-
-    cursor.execute(
-        f"""
-        DELETE FROM tracked_chaos_packs
-        WHERE tracked_pack_id IN ({placeholders})
-        """,
-        pack_ids,
+        [campaign_key] + pack_ids,
     )
 
     deleted_count = cursor.rowcount

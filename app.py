@@ -157,6 +157,14 @@ from modes.chaos import (
     get_selected_or_create_chaos_draft_game,
     get_chaos_draft_game_display_label,
     get_campaign_player_import_options,
+    get_campaign_pack_import_options,
+    get_importable_campaign_pack_rows,
+    import_tracked_packs_from_campaign,
+    get_campaign_history_filter_options,
+    get_campaign_history_rows,
+    get_active_chaos_draft_game,
+    delete_all_campaign_history,
+    delete_selected_campaign_history,
     get_chaos_campaigns,
     get_chaos_campaign_by_id,
     get_campaign_player_by_id,
@@ -5013,6 +5021,10 @@ def campaign_chaos_packs():
     selected_chaos_campaign_id = get_selected_chaos_campaign_id()
     selected_chaos_campaign = get_chaos_campaign_by_id(selected_chaos_campaign_id) if selected_chaos_campaign_id else None
 
+    pack_import_campaign_options = get_campaign_pack_import_options(
+        current_campaign_id=selected_chaos_campaign_id,
+    )
+
     packs = get_tracked_pack_management_rows(
         app.static_folder,
         search_text=search_text,
@@ -5024,16 +5036,138 @@ def campaign_chaos_packs():
         packs=packs,
         search_text=search_text,
         selected_chaos_campaign=selected_chaos_campaign,
+        pack_import_campaign_options=pack_import_campaign_options,
     )
-
 
 @app.route("/campaign-chaos/history", methods=["GET"])
 def campaign_chaos_history():
-    return render_template(
-        "campaign_placeholder.html",
-        page_title="Campaign History",
-        page_subtitle="Campaign History will be built next. This screen will show pack openings, selected players, timestamps, and campaign/session context.",
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+
+    raw_campaign_id = request.args.get("campaign_id")
+    raw_draft_game_id = request.args.get("draft_game_id")
+    raw_player_id = request.args.get("player_id")
+    raw_tracked_pack_id = request.args.get("tracked_pack_id")
+    raw_page = request.args.get("page", "1")
+
+    if raw_campaign_id is None:
+        selected_filter_campaign_id = selected_chaos_campaign_id
+    else:
+        selected_filter_campaign_id = raw_campaign_id.strip() or None
+
+    selected_filter_tracked_pack_id = raw_tracked_pack_id.strip() if raw_tracked_pack_id else None
+
+    if raw_draft_game_id is None and not selected_filter_tracked_pack_id:
+        active_draft_game = get_active_chaos_draft_game(
+            campaign_id=selected_filter_campaign_id,
+        )
+        selected_filter_draft_game_id = str(active_draft_game["draft_game_id"]) if active_draft_game else None
+    else:
+        selected_filter_draft_game_id = raw_draft_game_id.strip() if raw_draft_game_id else None
+
+    selected_filter_player_id = raw_player_id.strip() if raw_player_id else None
+
+    filter_options = get_campaign_history_filter_options(
+        app.static_folder,
+        campaign_id=selected_filter_campaign_id,
+        tracked_pack_id=selected_filter_tracked_pack_id,
     )
+
+    history_result = get_campaign_history_rows(
+        app.static_folder,
+        campaign_id=selected_filter_campaign_id,
+        draft_game_id=selected_filter_draft_game_id,
+        player_id=selected_filter_player_id,
+        tracked_pack_id=selected_filter_tracked_pack_id,
+        page=raw_page,
+        per_page=50,
+    )
+
+    selected_campaign = get_chaos_campaign_by_id(selected_filter_campaign_id) if selected_filter_campaign_id else None
+
+    tracked_pack_context = None
+    if selected_filter_tracked_pack_id:
+        tracked_pack_context = get_tracked_pack_state_by_id(selected_filter_tracked_pack_id)
+
+    return render_template(
+        "campaign_history.html",
+        selected_campaign=selected_campaign,
+        selected_campaign_id=int(selected_filter_campaign_id) if selected_filter_campaign_id else None,
+        selected_draft_game_id=int(selected_filter_draft_game_id) if selected_filter_draft_game_id else None,
+        selected_player_id=int(selected_filter_player_id) if selected_filter_player_id else None,
+        selected_tracked_pack_id=int(selected_filter_tracked_pack_id) if selected_filter_tracked_pack_id else None,
+        tracked_pack_context=tracked_pack_context,
+        campaign_options=filter_options["campaign_options"],
+        draft_options=filter_options["draft_options"],
+        player_options=filter_options["player_options"],
+        pack_options=filter_options["pack_options"],
+        history_rows=history_result["rows"],
+        grouped_drafts=history_result["grouped_drafts"],
+        pagination=history_result["pagination"],
+    )
+
+@app.route("/campaign-chaos/history/action", methods=["POST"])
+def campaign_chaos_history_action():
+    action = (request.form.get("bulk_action") or "").strip().lower()
+    selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+    selected_opening_ids = request.form.getlist("opening_ids")
+
+    if action == "print" and not selected_pack_ids:
+        flash("No packs were selected.")
+        return redirect(url_for("campaign_chaos_history"))
+
+    if action == "delete" and not selected_opening_ids:
+        flash("No history rows were selected.")
+        return redirect(url_for("campaign_chaos_history"))
+
+    if action == "print":
+        try:
+            print_result = build_tracked_packs_combined_pdf(
+                selected_pack_ids,
+                build_chaos_pack_pdf,
+                write_debug_log,
+            )
+        except Exception as exc:
+            return str(exc), 400
+
+        return Response(
+            print_result["buffer"].getvalue(),
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f'inline; filename="campaign_history_selected_packs_{print_result["pack_count"]}.pdf"',
+                "Cache-Control": "no-store",
+            },
+        )
+    
+    if action == "delete":
+        delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+        if delete_confirmation != "DELETE":
+            flash("Delete cancelled. To delete selected history rows, type DELETE in the confirmation prompt.")
+            return redirect(url_for("campaign_chaos_history"))
+
+        deleted_count = delete_selected_campaign_history(selected_opening_ids)
+        flash(f"Deleted {deleted_count} history row(s).")
+        return redirect(url_for("campaign_chaos_history"))
+    
+    flash("Unknown history action.")
+    return redirect(url_for("campaign_chaos_history"))
+
+
+@app.route("/campaign-chaos/history/delete-all", methods=["POST"])
+def campaign_chaos_history_delete_all():
+    delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if delete_confirmation != "DELETE":
+        flash("Delete cancelled. To delete all Campaign History, type DELETE in the confirmation prompt.")
+        return redirect(url_for("campaign_chaos_history"))
+
+    result = delete_all_campaign_history()
+
+    flash(
+        f"Deleted Campaign History. Removed {result['deleted_openings']} pack selection(s) and {result['deleted_drafts']} draft record(s)."
+    )
+
+    return redirect(url_for("campaign_chaos_history"))
 
 @app.route("/campaign-chaos/packs/<int:tracked_pack_id>", methods=["GET"])
 def campaign_chaos_pack_detail(tracked_pack_id):
@@ -5079,6 +5213,55 @@ def campaign_chaos_pack_print(tracked_pack_id):
             "Cache-Control": "no-store",
         },
     )
+
+@app.route("/campaign-chaos/packs/import-campaign-packs", methods=["GET"])
+def campaign_chaos_packs_import_campaign_packs():
+    source_campaign_id = (request.args.get("source_campaign_id") or "").strip()
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+
+    if not source_campaign_id:
+        return jsonify({
+            "ok": False,
+            "message": "Source campaign is required.",
+            "packs": [],
+        }), 400
+
+    packs = get_importable_campaign_pack_rows(
+        app.static_folder,
+        source_campaign_id=source_campaign_id,
+        target_campaign_id=selected_chaos_campaign_id,
+    )
+
+    return jsonify({
+        "ok": True,
+        "packs": packs,
+    })
+
+
+@app.route("/campaign-chaos/packs/import-campaign-packs", methods=["POST"])
+def campaign_chaos_packs_import_campaign_packs_post():
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    payload = request.get_json(silent=True) or {}
+
+    selected_pack_ids = normalize_tracked_pack_id_list(payload.get("pack_ids") or [])
+
+    if not selected_pack_ids:
+        return jsonify({
+            "ok": False,
+            "message": "No packs were selected.",
+            "imported_count": 0,
+            "skipped_count": 0,
+        }), 400
+
+    result = import_tracked_packs_from_campaign(
+        selected_pack_ids,
+        target_campaign_id=selected_chaos_campaign_id,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
 
 @app.route("/campaign-chaos/packs/search-options", methods=["GET"])
 def campaign_chaos_packs_search_options():
@@ -5279,6 +5462,7 @@ def campaign_chaos_pack_preview_save():
 def campaign_chaos_packs_action():
     action = (request.form.get("bulk_action") or "").strip().lower()
     selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
 
     if not selected_pack_ids:
         flash("No packs were selected.")
@@ -5304,12 +5488,20 @@ def campaign_chaos_packs_action():
         )
 
     if action == "disable":
-        updated_count = set_tracked_packs_campaign_enabled(selected_pack_ids, False)
+        updated_count = set_tracked_packs_campaign_enabled(
+            selected_pack_ids,
+            False,
+            campaign_id=selected_chaos_campaign_id,
+        )
         flash(f"Disabled {updated_count} pack(s) from Campaign Mode.")
         return redirect(url_for("campaign_chaos_packs"))
 
     if action == "enable":
-        updated_count = set_tracked_packs_campaign_enabled(selected_pack_ids, True)
+        updated_count = set_tracked_packs_campaign_enabled(
+            selected_pack_ids,
+            True,
+            campaign_id=selected_chaos_campaign_id,
+        )
         flash(f"Enabled {updated_count} pack(s) for Campaign Mode.")
         return redirect(url_for("campaign_chaos_packs"))
 
@@ -5320,8 +5512,11 @@ def campaign_chaos_packs_action():
             flash("Delete cancelled. To delete packs, type DELETE in the confirmation prompt.")
             return redirect(url_for("campaign_chaos_packs"))
 
-        deleted_count = delete_tracked_packs(selected_pack_ids)
-        flash(f"Deleted {deleted_count} pack(s).")
+        deleted_count = delete_tracked_packs(
+            selected_pack_ids,
+            campaign_id=selected_chaos_campaign_id,
+        )
+        flash(f"Removed {deleted_count} pack(s) from this campaign.")
         return redirect(url_for("campaign_chaos_packs"))
 
     flash("Unknown pack action.")

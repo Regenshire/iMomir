@@ -100,6 +100,20 @@
                         Create Custom Pack
                     </button>
                 </div>
+                <div class="campaign-add-pack-option campaign-add-pack-option-active campaign-add-pack-mode-card" data-add-pack-mode="import-campaign">
+                    <div class="campaign-add-pack-option-header">
+                        <div class="campaign-add-pack-option-title">Import Packs from Campaign</div>
+                        <div class="campaign-add-pack-option-pill">Sync</div>
+                    </div>
+
+                    <p class="campaign-add-pack-option-text">
+                        Link saved packs from another campaign into the current campaign while keeping the same tracking codes.
+                    </p>
+
+                    <button type="button" id="campaignShowImportCampaignPanelButton" class="action-button secondary-button campaign-add-pack-mode-button" data-add-pack-mode-button="import-campaign">
+                        Import Packs
+                    </button>
+                </div>
             </div>
 
             <div id="campaignAddPackStatus" class="campaign-add-pack-status hidden"></div>
@@ -165,7 +179,69 @@
 
                 <div id="campaignAddPackSearchResults" class="campaign-add-pack-search-results hidden"></div>
             </div>
+            <div id="campaignAddPackImportCampaignPanel" class="campaign-add-pack-import-campaign-panel hidden">
+                <div class="campaign-add-pack-search-panel-header">
+                    <div>
+                        <h3 class="campaign-add-pack-search-panel-title">Import Packs from Campaign</h3>
+                        <p class="campaign-add-pack-search-panel-subtitle">
+                            Choose another campaign, select packs, and link those same tracking-code packs to the current campaign.
+                        </p>
+                    </div>
+                </div>
 
+                <div class="campaign-add-pack-import-controls">
+                    <label class="campaign-add-pack-custom-field" for="campaignImportSourceCampaignSelect">
+                        <span>Source Campaign</span>
+                        <select
+                            id="campaignImportSourceCampaignSelect"
+                            class="campaign-add-pack-custom-input"
+                            {% if not pack_import_campaign_options %}disabled{% endif %}
+                        >
+                            {% if pack_import_campaign_options %}
+                                <option value="">Choose a campaign...</option>
+                                {% for campaign in pack_import_campaign_options %}
+                                <option value="{{ campaign.campaign_id }}">
+                                    {{ campaign.campaign_name }} — {{ campaign.pack_count }} pack(s)
+                                </option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="">No other campaigns with packs</option>
+                            {% endif %}
+                        </select>
+                    </label>
+
+                    <button
+                        type="button"
+                        id="campaignLoadImportCampaignPacksButton"
+                        class="action-button secondary-button"
+                        {% if not pack_import_campaign_options %}disabled{% endif %}
+                    >
+                        Load Packs
+                    </button>
+                </div>
+
+                <div id="campaignImportPackTools" class="campaign-import-pack-tools hidden">
+                    <button type="button" id="campaignImportSelectAllButton" class="campaign-small-link-button">
+                        Select All
+                    </button>
+                    <button type="button" id="campaignImportClearSelectionButton" class="campaign-small-link-button">
+                        Clear Selection
+                    </button>
+                </div>
+
+                <div id="campaignImportPackResults" class="campaign-import-pack-results hidden"></div>
+
+                <div class="campaign-add-pack-custom-actions campaign-import-pack-actions">
+                    <button
+                        type="button"
+                        id="campaignImportSelectedPacksButton"
+                        class="action-button"
+                        disabled
+                    >
+                        Import Selected Packs
+                    </button>
+                </div>
+            </div>
             <div id="campaignAddPackCustomPanel" class="campaign-add-pack-custom-panel hidden">
                 <div class="campaign-add-pack-custom-panel-header">
                     <div>
@@ -432,7 +508,16 @@
     const addPackSearchButton = document.getElementById("campaignAddPackSearchButton");
     const addPackSearchResults = document.getElementById("campaignAddPackSearchResults");
     const showCustomPanelButton = document.getElementById("campaignShowCustomPanelButton");
+    const showImportCampaignPanelButton = document.getElementById("campaignShowImportCampaignPanelButton");
     const addPackCustomPanel = document.getElementById("campaignAddPackCustomPanel");
+    const addPackImportCampaignPanel = document.getElementById("campaignAddPackImportCampaignPanel");
+    const importSourceCampaignSelect = document.getElementById("campaignImportSourceCampaignSelect");
+    const loadImportCampaignPacksButton = document.getElementById("campaignLoadImportCampaignPacksButton");
+    const importPackTools = document.getElementById("campaignImportPackTools");
+    const importPackResults = document.getElementById("campaignImportPackResults");
+    const importSelectAllButton = document.getElementById("campaignImportSelectAllButton");
+    const importClearSelectionButton = document.getElementById("campaignImportClearSelectionButton");
+    const importSelectedPacksButton = document.getElementById("campaignImportSelectedPacksButton");
     const customSetCodeInput = document.getElementById("campaignCustomSetCodeInput");
     const customPopulateMainButton = document.getElementById("campaignCustomPopulateMainButton");
     const customPopulateMenuButton = document.getElementById("campaignCustomPopulateMenuButton");
@@ -524,6 +609,8 @@
             addPackCustomPanel.classList.add("hidden");
         }
 
+        resetImportCampaignPanel();
+
         if (customSetCodeInput) {
             customSetCodeInput.value = "";
         }
@@ -577,6 +664,10 @@
             addPackCustomPanel.classList.add("hidden");
         }
 
+        if (addPackImportCampaignPanel) {
+            addPackImportCampaignPanel.classList.add("hidden");
+        }
+
         if (addPackSearchResults) {
             addPackSearchResults.classList.add("hidden");
         }
@@ -598,6 +689,255 @@
         addPackStatus.textContent = messageText || "";
         addPackStatus.classList.toggle("campaign-add-pack-status-error", Boolean(isError));
         addPackStatus.classList.remove("hidden");
+    }
+
+    function resetImportCampaignPanel() {
+        if (addPackImportCampaignPanel) {
+            addPackImportCampaignPanel.classList.add("hidden");
+        }
+
+        if (importSourceCampaignSelect) {
+            importSourceCampaignSelect.value = "";
+        }
+
+        if (importPackTools) {
+            importPackTools.classList.add("hidden");
+        }
+
+        if (importPackResults) {
+            importPackResults.classList.add("hidden");
+            importPackResults.innerHTML = "";
+        }
+
+        if (importSelectedPacksButton) {
+            importSelectedPacksButton.disabled = true;
+            importSelectedPacksButton.textContent = "Import Selected Packs";
+        }
+    }
+
+    function getImportCampaignCheckboxes() {
+        if (!importPackResults) {
+            return [];
+        }
+
+        return Array.from(importPackResults.querySelectorAll(".campaign-import-pack-checkbox"));
+    }
+
+    function updateImportSelectedButtonState() {
+        if (!importSelectedPacksButton) {
+            return;
+        }
+
+        const selectedCount = getImportCampaignCheckboxes().filter(function (checkbox) {
+            return checkbox.checked && !checkbox.disabled;
+        }).length;
+
+        importSelectedPacksButton.disabled = selectedCount <= 0;
+        importSelectedPacksButton.textContent = selectedCount > 0
+            ? "Import Selected Packs (" + selectedCount + ")"
+            : "Import Selected Packs";
+    }
+
+    function renderImportCampaignPacks(packs) {
+        if (!importPackResults) {
+            return;
+        }
+
+        importPackResults.innerHTML = "";
+
+        if (!packs || !packs.length) {
+            const emptyRow = document.createElement("div");
+            emptyRow.className = "campaign-add-pack-search-empty";
+            emptyRow.textContent = "No packs were found for that campaign.";
+            importPackResults.appendChild(emptyRow);
+            importPackResults.classList.remove("hidden");
+
+            if (importPackTools) {
+                importPackTools.classList.add("hidden");
+            }
+
+            updateImportSelectedButtonState();
+            return;
+        }
+
+        packs.forEach(function (pack) {
+            const row = document.createElement("label");
+            row.className = "campaign-import-pack-row";
+
+            if (pack.already_in_target) {
+                row.classList.add("campaign-import-pack-row-disabled");
+            }
+
+            const checkboxWrap = document.createElement("div");
+            checkboxWrap.className = "campaign-pack-select-wrap";
+
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "campaign-pack-checkbox campaign-import-pack-checkbox";
+            checkbox.value = pack.tracked_pack_id || "";
+            checkbox.disabled = Boolean(pack.already_in_target);
+
+            checkboxWrap.appendChild(checkbox);
+
+            const imageWrap = document.createElement("div");
+            imageWrap.className = "campaign-pack-image-wrap";
+
+            const image = document.createElement("img");
+            image.className = "campaign-pack-image";
+            image.src = pack.image_src || "";
+            image.alt = pack.pack_display_name || "Pack";
+
+            imageWrap.appendChild(image);
+
+            const main = document.createElement("div");
+            main.className = "campaign-pack-main";
+
+            const titleRow = document.createElement("div");
+            titleRow.className = "campaign-pack-title-row";
+
+            const title = document.createElement("div");
+            title.className = "campaign-pack-title";
+            title.textContent = pack.pack_display_name || "Pack";
+
+            titleRow.appendChild(title);
+
+            if (pack.already_in_target) {
+                const badge = document.createElement("span");
+                badge.className = "campaign-status-badge campaign-status-disabled";
+                badge.textContent = "Already Linked";
+                titleRow.appendChild(badge);
+            }
+
+            const meta = document.createElement("div");
+            meta.className = "campaign-pack-meta";
+            meta.textContent = [
+                pack.pack_tracking_code || "",
+                pack.set_code || "",
+                pack.booster_name || "",
+                (pack.total_cards || 0) + " cards"
+            ].filter(Boolean).join(" • ");
+
+            main.appendChild(titleRow);
+            main.appendChild(meta);
+
+            row.appendChild(checkboxWrap);
+            row.appendChild(imageWrap);
+            row.appendChild(main);
+
+            importPackResults.appendChild(row);
+        });
+
+        importPackResults.classList.remove("hidden");
+
+        if (importPackTools) {
+            importPackTools.classList.remove("hidden");
+        }
+
+        getImportCampaignCheckboxes().forEach(function (checkbox) {
+            checkbox.addEventListener("change", updateImportSelectedButtonState);
+        });
+
+        updateImportSelectedButtonState();
+    }
+
+    async function loadImportCampaignPacks() {
+        if (!importSourceCampaignSelect || !loadImportCampaignPacksButton) {
+            return;
+        }
+
+        const sourceCampaignId = importSourceCampaignSelect.value || "";
+
+        if (!sourceCampaignId) {
+            setAddPackStatus("Choose a source campaign first.", true);
+            return;
+        }
+
+        loadImportCampaignPacksButton.disabled = true;
+        loadImportCampaignPacksButton.classList.add("action-button-loading");
+        loadImportCampaignPacksButton.textContent = "Loading...";
+
+        try {
+            const loadUrl = "{{ url_for('campaign_chaos_packs_import_campaign_packs') }}" +
+                "?source_campaign_id=" + encodeURIComponent(sourceCampaignId);
+
+            const response = await fetch(loadUrl, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to load campaign packs.");
+            }
+
+            setAddPackStatus("Loaded " + (payload.packs || []).length + " pack(s).", false);
+            renderImportCampaignPacks(payload.packs || []);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to load campaign packs.", true);
+        } finally {
+            loadImportCampaignPacksButton.disabled = false;
+            loadImportCampaignPacksButton.classList.remove("action-button-loading");
+            loadImportCampaignPacksButton.textContent = "Load Packs";
+        }
+    }
+
+    async function importSelectedCampaignPacks() {
+        if (!importSelectedPacksButton) {
+            return;
+        }
+
+        const selectedPackIds = getImportCampaignCheckboxes()
+            .filter(function (checkbox) {
+                return checkbox.checked && !checkbox.disabled;
+            })
+            .map(function (checkbox) {
+                return checkbox.value;
+            });
+
+        if (!selectedPackIds.length) {
+            setAddPackStatus("Select at least one pack to import.", true);
+            return;
+        }
+
+        importSelectedPacksButton.disabled = true;
+        importSelectedPacksButton.classList.add("action-button-loading");
+        importSelectedPacksButton.textContent = "Importing...";
+
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_packs_import_campaign_packs_post') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    pack_ids: selectedPackIds
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to import selected packs.");
+            }
+
+            setAddPackStatus(payload.message || "Packs imported.", false);
+            importSelectedPacksButton.textContent = "Imported";
+
+            window.setTimeout(function () {
+                window.location.href = "{{ url_for('campaign_chaos_packs') }}";
+            }, 800);
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to import selected packs.", true);
+            importSelectedPacksButton.disabled = false;
+            importSelectedPacksButton.classList.remove("action-button-loading");
+            updateImportSelectedButtonState();
+        }
     }
 
     function showGeneratedPackPreview(payload) {
@@ -1103,7 +1443,70 @@
         });
     }
 
-        if (customSetCodeInput) {
+    if (showImportCampaignPanelButton) {
+        showImportCampaignPanelButton.addEventListener("click", function () {
+            setActiveAddPackMode("import-campaign");
+            hideAddPackModePanels();
+
+            if (addPackPreview) {
+                addPackPreview.classList.add("hidden");
+            }
+
+            if (addPackImportCampaignPanel) {
+                addPackImportCampaignPanel.classList.remove("hidden");
+            }
+        });
+    }
+
+    if (loadImportCampaignPacksButton) {
+        loadImportCampaignPacksButton.addEventListener("click", function () {
+            loadImportCampaignPacks();
+        });
+    }
+
+    if (importSourceCampaignSelect) {
+        importSourceCampaignSelect.addEventListener("change", function () {
+            if (importPackResults) {
+                importPackResults.classList.add("hidden");
+                importPackResults.innerHTML = "";
+            }
+
+            if (importPackTools) {
+                importPackTools.classList.add("hidden");
+            }
+
+            updateImportSelectedButtonState();
+        });
+    }
+
+    if (importSelectAllButton) {
+        importSelectAllButton.addEventListener("click", function () {
+            getImportCampaignCheckboxes().forEach(function (checkbox) {
+                if (!checkbox.disabled) {
+                    checkbox.checked = true;
+                }
+            });
+
+            updateImportSelectedButtonState();
+        });
+    }
+
+    if (importClearSelectionButton) {
+        importClearSelectionButton.addEventListener("click", function () {
+            getImportCampaignCheckboxes().forEach(function (checkbox) {
+                checkbox.checked = false;
+            });
+
+            updateImportSelectedButtonState();
+        });
+    }
+
+    if (importSelectedPacksButton) {
+        importSelectedPacksButton.addEventListener("click", function () {
+            importSelectedCampaignPacks();
+        });
+    }
+    if (customSetCodeInput) {
         customSetCodeInput.addEventListener("input", function () {
             resetCustomPopulateOptions();
         });

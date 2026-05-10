@@ -1,0 +1,493 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Campaign History{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">
+                    {% if tracked_pack_context %}
+                        Pack History
+                    {% else %}
+                        Campaign History
+                    {% endif %}
+                </h1>
+
+                <p class="page-subtitle">
+                    {% if tracked_pack_context %}
+                        {{ tracked_pack_context.pack_display_name }} • {{ tracked_pack_context.pack_tracking_code }}
+                    {% elif selected_campaign %}
+                        Pack selections for {{ selected_campaign.campaign_name }}.
+                    {% else %}
+                        Pack selections for No Campaign.
+                    {% endif %}
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                {% if tracked_pack_context %}
+                <a
+                    class="action-button secondary-button chaos-pack-view-back-button"
+                    href="{{ url_for('campaign_chaos_pack_detail', tracked_pack_id=tracked_pack_context.tracked_pack_id) }}"
+                >
+                    Back to Pack
+                </a>
+                {% endif %}
+
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-panel campaign-history-filter-panel">
+        <form method="get" action="{{ url_for('campaign_chaos_history') }}" class="campaign-history-filter-form">
+            <label class="campaign-history-filter-field">
+                <span>Campaign</span>
+                <select name="campaign_id" class="campaign-history-filter-input">
+                    {% for campaign in campaign_options %}
+                    <option
+                        value="{{ campaign.campaign_id }}"
+                        {% if (not selected_campaign_id and campaign.campaign_id == "") or selected_campaign_id == campaign.campaign_id %}selected{% endif %}
+                    >
+                        {{ campaign.campaign_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="campaign-history-filter-field">
+                <span>Draft</span>
+                <select name="draft_game_id" class="campaign-history-filter-input">
+                    <option value="">All Drafts</option>
+                    {% for draft in draft_options %}
+                    <option
+                        value="{{ draft.draft_game_id }}"
+                        {% if selected_draft_game_id == draft.draft_game_id %}selected{% endif %}
+                    >
+                        {{ draft.draft_label }}{% if draft.started_at_utc %} — {{ draft.started_at_utc }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="campaign-history-filter-field">
+                <span>Player</span>
+                <select name="player_id" class="campaign-history-filter-input">
+                    <option value="">All Players</option>
+                    {% for player in player_options %}
+                    <option
+                        value="{{ player.player_id }}"
+                        {% if selected_player_id == player.player_id %}selected{% endif %}
+                    >
+                        {{ player.player_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="campaign-history-filter-field">
+                <span>Pack</span>
+                <select name="tracked_pack_id" class="campaign-history-filter-input">
+                    <option value="">All Packs</option>
+                    {% for pack in pack_options %}
+                    <option
+                        value="{{ pack.tracked_pack_id }}"
+                        {% if selected_tracked_pack_id == pack.tracked_pack_id %}selected{% endif %}
+                    >
+                        {{ pack.pack_tracking_code }} — {{ pack.pack_display_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <div class="campaign-history-filter-actions">
+                <button type="submit" class="action-button campaign-history-filter-button">
+                    Filter
+                </button>
+
+                <a class="action-button secondary-button campaign-history-filter-button" href="{{ url_for('campaign_chaos_history') }}">
+                    Clear
+                </a>
+            </div>
+        </form>
+    </div>
+
+    {% if grouped_drafts %}
+    <form
+        method="post"
+        action="{{ url_for('campaign_chaos_history_action') }}"
+        id="campaignHistoryForm"
+        class="campaign-history-form"
+    >
+        <input type="hidden" name="delete_confirmation" id="campaignHistoryDeleteConfirmation" value="">
+        <div class="page-panel campaign-bulk-actions-panel">
+            <div class="campaign-bulk-actions campaign-history-bulk-actions">
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="print"
+                    class="action-button"
+                    formtarget="_blank"
+                >
+                    Print Selected
+                </button>
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="delete"
+                    id="campaignHistoryDeleteSelectedButton"
+                    class="action-button secondary-button campaign-danger-button"
+                >
+                    Delete Selected History
+                </button>
+            </div>
+
+            <div class="campaign-selection-tools">
+                <button type="button" id="campaignHistorySelectAllButton" class="campaign-small-link-button">
+                    Select All on Page
+                </button>
+                <button type="button" id="campaignHistoryClearSelectedButton" class="campaign-small-link-button">
+                    Clear Selection
+                </button>
+            </div>
+        </div>
+
+        <div class="campaign-history-list">
+            {% for draft_group in grouped_drafts %}
+            <div class="page-panel campaign-history-draft-group">
+                <div class="campaign-history-draft-header">
+                    <div>
+                        <h2 class="campaign-history-draft-title">{{ draft_group.draft_label }}</h2>
+                        <div class="campaign-history-draft-meta">
+                            <span>{{ draft_group.campaign_name }}</span>
+                            {% if draft_group.draft_started_at_utc %}
+                            <span>
+                                Started:
+                                <span class="js-local-time" data-utc="{{ draft_group.draft_started_at_utc }}">
+                                    {{ draft_group.draft_started_at_utc }}
+                                </span>
+                            </span>
+                            {% endif %}
+                            <span>{{ draft_group.rows|length }} pack selection(s)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="campaign-history-row-list">
+                    {% for row in draft_group.rows %}
+                    <div class="campaign-history-row">
+                        <label class="campaign-pack-select-wrap campaign-history-select-wrap">
+                            <input
+                                type="checkbox"
+                                name="pack_ids"
+                                value="{{ row.tracked_pack_id }}"
+                                class="campaign-pack-checkbox campaign-history-checkbox"
+                                data-opening-id="{{ row.opening_id }}"
+                            >
+                            <input
+                                type="hidden"
+                                name="opening_ids"
+                                value="{{ row.opening_id }}"
+                                class="campaign-history-opening-id-input"
+                                disabled
+                            >
+                        </label>
+
+                        <div class="campaign-history-pack-image-wrap">
+                            <img
+                                src="{{ row.image_src }}"
+                                alt="{{ row.pack_display_name }}"
+                                class="campaign-history-pack-image"
+                            >
+                        </div>
+
+                        <div class="campaign-history-main">
+                            <div class="campaign-history-title-row">
+                                <a
+                                    href="{{ url_for('campaign_chaos_pack_detail', tracked_pack_id=row.tracked_pack_id) }}"
+                                    class="campaign-history-pack-title"
+                                >
+                                    {{ row.pack_display_name }}
+                                </a>
+
+                                <span class="campaign-status-badge campaign-status-enabled">
+                                    {{ row.pack_tracking_code }}
+                                </span>
+                            </div>
+
+                            <div class="campaign-history-meta">
+                                <span>Player: {{ row.player_name }}</span>
+                                <span>Campaign: {{ row.campaign_name }}</span>
+                                <span>{{ row.set_code }}</span>
+                                <span>{{ row.booster_name }}</span>
+                                <span>{{ row.total_cards }} cards</span>
+                            </div>
+
+                            <div class="campaign-history-date-row">
+                                <span>
+                                    Selected:
+                                    <span class="js-local-time" data-utc="{{ row.opened_at_utc }}">
+                                        {{ row.opened_at_utc }}
+                                    </span>
+                                </span>
+
+                                {% if row.bonus_pack_opened %}
+                                <span>Bonus pack opened</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="campaign-history-actions">
+                            <a
+                                href="{{ url_for('campaign_chaos_pack_detail', tracked_pack_id=row.tracked_pack_id) }}"
+                                class="action-button secondary-button campaign-row-action-button"
+                            >
+                                View
+                            </a>
+
+                            <a
+                                href="{{ url_for('campaign_chaos_history', tracked_pack_id=row.tracked_pack_id) }}"
+                                class="action-button secondary-button campaign-row-action-button"
+                            >
+                                Pack History
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </form>
+    {% else %}
+        <div class="page-panel">
+            <div class="card-placeholder">
+                No Campaign Mode pack selections were found for the current filters.
+            </div>
+        </div>
+    {% endif %}
+    {% if pagination and pagination.total_pages > 1 %}
+    <div class="page-panel campaign-history-pagination-panel">
+        <div class="campaign-history-pagination">
+            {% set previous_args = request.args.to_dict() %}
+            {% set _ = previous_args.update({'page': pagination.previous_page}) %}
+
+            {% set next_args = request.args.to_dict() %}
+            {% set _ = next_args.update({'page': pagination.next_page}) %}
+
+            {% if pagination.has_previous %}
+            <a
+                class="action-button secondary-button campaign-history-page-button"
+                href="{{ url_for('campaign_chaos_history', **previous_args) }}"
+            >
+                Previous
+            </a>
+            {% else %}
+            <button type="button" class="action-button secondary-button campaign-history-page-button" disabled>
+                Previous
+            </button>
+            {% endif %}
+
+            <div class="campaign-history-page-status">
+                Page {{ pagination.page }} of {{ pagination.total_pages }}
+                <span>{{ pagination.total_count }} total selection(s)</span>
+            </div>
+
+            {% if pagination.has_next %}
+            <a
+                class="action-button secondary-button campaign-history-page-button"
+                href="{{ url_for('campaign_chaos_history', **next_args) }}"
+            >
+                Next
+            </a>
+            {% else %}
+            <button type="button" class="action-button secondary-button campaign-history-page-button" disabled>
+                Next
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="page-panel campaign-history-danger-panel">
+        <form
+            method="post"
+            action="{{ url_for('campaign_chaos_history_delete_all') }}"
+            id="campaignHistoryDeleteAllForm"
+            class="campaign-history-delete-all-form"
+        >
+            <input type="hidden" name="delete_confirmation" value="">
+
+            <div class="campaign-history-danger-copy">
+                <h2>Delete All History</h2>
+                <p>
+                    This removes all Campaign Mode draft history and pack selection history. Saved packs are not deleted.
+                </p>
+            </div>
+
+            <button type="submit" class="action-button secondary-button campaign-danger-button campaign-history-delete-all-button">
+                Delete All History
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function () {
+    const localTimeElements = Array.from(document.querySelectorAll(".js-local-time"));
+
+    function parseUtcDate(rawValue) {
+        const value = (rawValue || "").trim();
+
+        if (!value) {
+            return null;
+        }
+
+        const normalizedValue = value
+            .replace(" UTC", "Z")
+            .replace(" ", "T");
+
+        const parsedDate = new Date(normalizedValue);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+            return null;
+        }
+
+        return parsedDate;
+    }
+
+    localTimeElements.forEach(function (element) {
+        const parsedDate = parseUtcDate(element.dataset.utc || element.textContent);
+
+        if (!parsedDate) {
+            return;
+        }
+
+        element.textContent = parsedDate.toLocaleString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "2-digit",
+            hour: "numeric",
+            minute: "2-digit"
+        });
+
+        element.title = element.dataset.utc || "";
+    });
+    const historyForm = document.getElementById("campaignHistoryForm");
+    const selectAllButton = document.getElementById("campaignHistorySelectAllButton");
+    const clearSelectedButton = document.getElementById("campaignHistoryClearSelectedButton");
+    const deleteSelectedButton = document.getElementById("campaignHistoryDeleteSelectedButton");
+    const deleteConfirmationInput = document.getElementById("campaignHistoryDeleteConfirmation");
+    const deleteAllForm = document.getElementById("campaignHistoryDeleteAllForm");
+
+    function getHistoryCheckboxes() {
+        if (!historyForm) {
+            return [];
+        }
+
+        return Array.from(historyForm.querySelectorAll(".campaign-history-checkbox"));
+    }
+
+    function syncHistoryOpeningInputs() {
+        getHistoryCheckboxes().forEach(function (checkbox) {
+            const rowLabel = checkbox.closest(".campaign-history-select-wrap");
+            const openingInput = rowLabel ? rowLabel.querySelector(".campaign-history-opening-id-input") : null;
+
+            if (openingInput) {
+                openingInput.disabled = !checkbox.checked;
+            }
+        });
+    }
+
+    if (selectAllButton) {
+        selectAllButton.addEventListener("click", function () {
+            getHistoryCheckboxes().forEach(function (checkbox) {
+                checkbox.checked = true;
+            });
+
+            syncHistoryOpeningInputs();
+        });
+    }
+
+    if (clearSelectedButton) {
+        clearSelectedButton.addEventListener("click", function () {
+            getHistoryCheckboxes().forEach(function (checkbox) {
+                checkbox.checked = false;
+            });
+
+            syncHistoryOpeningInputs();
+        });
+    }
+
+    if (historyForm) {
+        getHistoryCheckboxes().forEach(function (checkbox) {
+            checkbox.addEventListener("change", syncHistoryOpeningInputs);
+        });
+
+        historyForm.addEventListener("submit", function (event) {
+            syncHistoryOpeningInputs();
+
+            const submitter = event.submitter;
+            const action = submitter ? (submitter.value || "") : "";
+            const selectedCount = getHistoryCheckboxes().filter(function (checkbox) {
+                return checkbox.checked;
+            }).length;
+
+            if (selectedCount <= 0) {
+                event.preventDefault();
+
+                if (action === "delete") {
+                    window.alert("Select at least one history row to delete.");
+                } else {
+                    window.alert("Select at least one pack to print.");
+                }
+
+                return;
+            }
+
+            if (action === "delete") {
+                const confirmation = window.prompt(
+                    "You are about to permanently delete " + selectedCount + " selected history row(s). Saved packs will not be deleted. Type DELETE to confirm."
+                );
+
+                if (confirmation !== "DELETE") {
+                    event.preventDefault();
+
+                    if (deleteConfirmationInput) {
+                        deleteConfirmationInput.value = "";
+                    }
+
+                    return;
+                }
+
+                if (deleteConfirmationInput) {
+                    deleteConfirmationInput.value = "DELETE";
+                }
+            }
+        });
+    }
+
+    if (deleteAllForm) {
+        deleteAllForm.addEventListener("submit", function (event) {
+            const confirmation = window.prompt(
+                "You are about to permanently delete all Campaign History. Saved packs will not be deleted. Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                return;
+            }
+
+            const hiddenInput = deleteAllForm.querySelector("input[name='delete_confirmation']");
+            if (hiddenInput) {
+                hiddenInput.value = "DELETE";
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

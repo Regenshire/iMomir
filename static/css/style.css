@@ -4201,3 +4201,412 @@ input {
     font-size: 0.92rem;
     white-space: nowrap;
 }
+
+/* ==========================================
+   Campaign History
+   ========================================== */
+
+.campaign-history-filter-panel {
+    padding: 16px;
+}
+
+.campaign-history-filter-form {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.campaign-history-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.campaign-history-filter-field span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.campaign-history-filter-input {
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 9px 12px;
+}
+
+.campaign-history-filter-actions {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+}
+
+.campaign-history-filter-button {
+    width: auto;
+    min-width: 94px;
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    padding: 9px 12px;
+}
+
+.campaign-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.campaign-history-draft-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.campaign-history-draft-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.campaign-history-draft-title {
+    margin: 0 0 6px 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+}
+
+.campaign-history-draft-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.campaign-history-row-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.campaign-history-row {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel-2);
+    padding: 12px;
+}
+
+.campaign-history-pack-image-wrap {
+    width: 76px;
+    height: 94px;
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.campaign-history-pack-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.campaign-history-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.campaign-history-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.campaign-history-pack-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.campaign-history-pack-title:hover {
+    color: #bcd0ff;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.campaign-history-meta,
+.campaign-history-date-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.campaign-history-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+@media (max-width: 920px) {
+    .campaign-history-filter-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .campaign-history-filter-actions {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 700px) {
+    .campaign-history-filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-history-filter-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .campaign-history-row {
+        grid-template-columns: 68px minmax(0, 1fr);
+    }
+
+    .campaign-history-pack-image-wrap {
+        width: 68px;
+        height: 86px;
+    }
+
+    .campaign-history-actions {
+        grid-column: 1 / -1;
+        justify-content: stretch;
+    }
+
+    .campaign-history-actions .campaign-row-action-button {
+        flex: 1 1 auto;
+    }
+}
+
+.campaign-history-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.campaign-history-bulk-actions {
+    grid-template-columns: minmax(160px, 220px) minmax(190px, 260px);
+}
+
+.campaign-history-select-wrap {
+    align-self: center;
+}
+
+.campaign-history-row {
+    grid-template-columns: 34px 76px minmax(0, 1fr) auto;
+}
+
+.campaign-history-pagination-panel {
+    padding: 16px;
+}
+
+.campaign-history-pagination {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr) 130px;
+    gap: 14px;
+    align-items: center;
+}
+
+.campaign-history-page-button {
+    width: 100%;
+    min-height: 46px;
+    border-radius: 12px;
+}
+
+.campaign-history-page-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.campaign-history-page-status {
+    text-align: center;
+    color: var(--text);
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.campaign-history-page-status span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.campaign-history-danger-panel {
+    border-color: rgba(255, 120, 120, 0.35);
+    background: linear-gradient(180deg, rgba(52, 26, 30, 0.96), rgba(34, 24, 26, 0.96));
+}
+
+.campaign-history-delete-all-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 210px;
+    gap: 16px;
+    align-items: center;
+}
+
+.campaign-history-danger-copy h2 {
+    margin: 0 0 6px 0;
+    color: #ffd0d0;
+}
+
+.campaign-history-danger-copy p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.campaign-history-delete-all-button {
+    width: 100%;
+}
+
+@media (max-width: 700px) {
+    .campaign-history-row {
+        grid-template-columns: 34px 68px minmax(0, 1fr);
+    }
+
+    .campaign-history-actions {
+        grid-column: 1 / -1;
+    }
+
+    .campaign-history-pagination {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-history-delete-all-form {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================
+   Manage Packs - Import Packs from Campaign
+   ========================================== */
+
+.campaign-add-pack-options {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.campaign-add-pack-mode-card[data-add-pack-mode="import-campaign"] {
+    grid-column: 1 / -1;
+}
+
+
+
+.campaign-add-pack-import-campaign-panel {
+    margin-top: 16px;
+    border: 1px solid rgba(110, 156, 255, 0.45);
+    border-radius: 18px;
+    background: rgba(0, 0, 0, 0.14);
+    padding: 16px;
+}
+
+.campaign-add-pack-import-campaign-panel.hidden {
+    display: none !important;
+}
+
+.campaign-add-pack-import-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 150px;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 14px;
+}
+
+.campaign-import-pack-tools {
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.campaign-import-pack-tools.hidden {
+    display: none !important;
+}
+
+.campaign-import-pack-results {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 520px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.campaign-import-pack-results.hidden {
+    display: none !important;
+}
+
+.campaign-import-pack-row {
+    display: grid;
+    grid-template-columns: 34px 78px minmax(0, 1fr);
+    gap: 14px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel-2);
+    padding: 12px;
+    cursor: pointer;
+}
+
+.campaign-import-pack-row:hover {
+    background: var(--button);
+}
+
+.campaign-import-pack-row-disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
+.campaign-import-pack-actions {
+    margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+    .campaign-add-pack-options {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 760px) {
+    .campaign-add-pack-options {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-add-pack-import-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-import-pack-tools {
+        justify-content: flex-start;
+    }
+
+    .campaign-import-pack-row {
+        grid-template-columns: 34px 68px minmax(0, 1fr);
+    }
+}
