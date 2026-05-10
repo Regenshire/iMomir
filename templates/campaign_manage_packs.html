@@ -9,7 +9,12 @@
             <div class="chaos-pack-view-header-copy">
                 <h1 class="page-title">Manage Packs</h1>
                 <p class="page-subtitle">
-                    View and control which saved packs are available in Campaign Mode.
+                    View and control saved packs 
+                    {% if selected_chaos_campaign %}
+                        for {{ selected_chaos_campaign.campaign_name }}.
+                    {% else %}
+                        that are available in Campaign Mode.
+                    {% endif %}
                 </p>
             </div>
 

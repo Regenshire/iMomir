@@ -1952,7 +1952,7 @@ def build_chaos_pack_pdf_from_variant(
         pack_tracking_code=pack_tracking_code,
     )
 
-def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
+def save_opened_chaos_pack_to_tracking_db(opened_pack=None, campaign_id=None):
     if opened_pack is None:
         opened_pack = get_chaos_session_state("pending_opened_pack", default_value=None)
 
@@ -2001,6 +2001,13 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
+    opened_pack["campaign_id"] = parsed_campaign_id
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -2040,9 +2047,10 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
                 added_at_utc,
                 last_opened_at_utc,
                 opened_count,
+                campaign_id,
                 source_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 pack_tracking_code,
@@ -2055,6 +2063,7 @@ def save_opened_chaos_pack_to_tracking_db(opened_pack=None):
                 now_utc,
                 None,
                 0,
+                parsed_campaign_id,
                 json.dumps(opened_pack),
             ),
         )
@@ -2126,13 +2135,40 @@ def get_campaign_pack_art_image_src(set_code, booster_name, static_folder):
 
     return url_for("static", filename=image_path)
 
-
-def get_tracked_chaos_packs_for_campaign_spin(static_folder):
+def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, excluded_tracked_pack_ids=None):
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
+    campaign_filter_sql = "campaign_id IS NULL"
+    params = []
+
+    if parsed_campaign_id is not None:
+        campaign_filter_sql = "campaign_id = ?"
+        params.append(parsed_campaign_id)
+
+    excluded_ids = []
+    for raw_pack_id in excluded_tracked_pack_ids or []:
+        try:
+            parsed_pack_id = int(raw_pack_id)
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_pack_id > 0 and parsed_pack_id not in excluded_ids:
+            excluded_ids.append(parsed_pack_id)
+
+    excluded_sql = ""
+    if excluded_ids:
+        placeholders = ",".join(["?"] * len(excluded_ids))
+        excluded_sql = f"AND tracked_pack_id NOT IN ({placeholders})"
+        params.extend(excluded_ids)
+
     cursor.execute(
-        """
+        f"""
         SELECT
             tracked_pack_id,
             pack_tracking_code,
@@ -2144,11 +2180,15 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder):
             bonus_pack_opened,
             added_at_utc,
             last_opened_at_utc,
-            opened_count
+            opened_count,
+            campaign_id
         FROM tracked_chaos_packs
         WHERE COALESCE(campaign_enabled, 1) = 1
+          AND {campaign_filter_sql}
+          {excluded_sql}
         ORDER BY added_at_utc DESC, tracked_pack_id DESC
-        """
+        """,
+        params,
     )
 
     rows = cursor.fetchall()
@@ -2181,10 +2221,10 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder):
             "added_at_utc": row["added_at_utc"] or "",
             "last_opened_at_utc": row["last_opened_at_utc"] or "",
             "opened_count": int(row["opened_count"] or 0),
+            "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
         })
 
     return packs
-
 
 def get_tracked_chaos_pack_cards(tracked_pack_id):
     conn = get_db_connection()
@@ -2242,6 +2282,441 @@ def get_tracked_chaos_pack_cards(tracked_pack_id):
 
     return cards
 
+def ensure_chaos_campaign_schema():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_campaigns (
+            campaign_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_name TEXT NOT NULL UNIQUE,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL
+        )
+        """
+    )
+
+    tables_to_patch = {
+        "chaos_players": "campaign_id INTEGER NULL",
+        "tracked_chaos_packs": "campaign_id INTEGER NULL",
+        "tracked_chaos_pack_openings": "campaign_id INTEGER NULL",
+    }
+
+    for table_name, column_definition in tables_to_patch.items():
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        if "campaign_id" not in existing_columns:
+            cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_definition}")
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_campaigns_active
+        ON chaos_campaigns (is_active, campaign_name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_players_campaign
+        ON chaos_players (campaign_id, is_active, player_name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_packs_campaign
+        ON tracked_chaos_packs (campaign_id, campaign_enabled, added_at_utc)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_chaos_pack_openings_campaign
+        ON tracked_chaos_pack_openings (campaign_id, opened_at_utc)
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def get_chaos_campaigns(include_disabled=True):
+    ensure_chaos_campaign_schema()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    where_clause = ""
+    if not include_disabled:
+        where_clause = "WHERE is_active = 1"
+
+    cursor.execute(
+        f"""
+        SELECT
+            campaign_id,
+            campaign_name,
+            is_active,
+            created_at_utc
+        FROM chaos_campaigns
+        {where_clause}
+        ORDER BY is_active DESC, campaign_name COLLATE NOCASE ASC
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    campaigns = []
+
+    for row in rows:
+        campaigns.append({
+            "campaign_id": int(row["campaign_id"]),
+            "campaign_name": row["campaign_name"] or "",
+            "is_active": int(row["is_active"] or 0) == 1,
+            "created_at_utc": row["created_at_utc"] or "",
+        })
+
+    return campaigns
+
+
+def get_chaos_campaign_by_id(campaign_id):
+    ensure_chaos_campaign_schema()
+
+    try:
+        parsed_campaign_id = int(campaign_id)
+    except (TypeError, ValueError):
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            campaign_id,
+            campaign_name,
+            is_active,
+            created_at_utc
+        FROM chaos_campaigns
+        WHERE campaign_id = ?
+        """,
+        (parsed_campaign_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "campaign_id": int(row["campaign_id"]),
+        "campaign_name": row["campaign_name"] or "",
+        "is_active": int(row["is_active"] or 0) == 1,
+        "created_at_utc": row["created_at_utc"] or "",
+    }
+
+
+def create_chaos_campaign(campaign_name):
+    ensure_chaos_campaign_schema()
+
+    clean_campaign_name = (campaign_name or "").strip()
+
+    if not clean_campaign_name:
+        return {
+            "ok": False,
+            "message": "Campaign Name is required.",
+            "campaign_id": None,
+        }
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            INSERT INTO chaos_campaigns (
+                campaign_name,
+                is_active,
+                created_at_utc
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                clean_campaign_name,
+                1,
+                now_utc,
+            ),
+        )
+
+        campaign_id = cursor.lastrowid
+        conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Added campaign {clean_campaign_name}.",
+            "campaign_id": int(campaign_id),
+        }
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+            "campaign_id": None,
+        }
+    finally:
+        conn.close()
+
+
+def update_chaos_campaign(campaign_id, campaign_name=None, is_active=None):
+    ensure_chaos_campaign_schema()
+
+    try:
+        parsed_campaign_id = int(campaign_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid campaign ID.",
+        }
+
+    existing_campaign = get_chaos_campaign_by_id(parsed_campaign_id)
+    if not existing_campaign:
+        return {
+            "ok": False,
+            "message": "Campaign was not found.",
+        }
+
+    new_campaign_name = existing_campaign["campaign_name"]
+    if campaign_name is not None:
+        new_campaign_name = (campaign_name or "").strip()
+
+    if not new_campaign_name:
+        return {
+            "ok": False,
+            "message": "Campaign Name is required.",
+        }
+
+    new_is_active = 1 if existing_campaign["is_active"] else 0
+    if is_active is not None:
+        new_is_active = 1 if is_active else 0
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE chaos_campaigns
+            SET campaign_name = ?,
+                is_active = ?
+            WHERE campaign_id = ?
+            """,
+            (
+                new_campaign_name,
+                new_is_active,
+                parsed_campaign_id,
+            ),
+        )
+
+        conn.commit()
+
+        if new_is_active == 0:
+            selected_campaign_id = get_selected_chaos_campaign_id()
+            if selected_campaign_id == parsed_campaign_id:
+                clear_chaos_session_state("selected_chaos_campaign_id")
+
+        return {
+            "ok": True,
+            "message": f"Updated campaign {new_campaign_name}.",
+        }
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+        }
+    finally:
+        conn.close()
+
+
+def delete_chaos_campaign(campaign_id):
+    ensure_chaos_campaign_schema()
+
+    try:
+        parsed_campaign_id = int(campaign_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid campaign ID.",
+        }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE chaos_players
+        SET campaign_id = NULL
+        WHERE campaign_id = ?
+        """,
+        (parsed_campaign_id,),
+    )
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_packs
+        SET campaign_id = NULL
+        WHERE campaign_id = ?
+        """,
+        (parsed_campaign_id,),
+    )
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_pack_openings
+        SET campaign_id = NULL
+        WHERE campaign_id = ?
+        """,
+        (parsed_campaign_id,),
+    )
+
+    cursor.execute(
+        """
+        DELETE FROM chaos_campaigns
+        WHERE campaign_id = ?
+        """,
+        (parsed_campaign_id,),
+    )
+
+    deleted_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    if deleted_count <= 0:
+        return {
+            "ok": False,
+            "message": "Campaign was not found.",
+        }
+
+    selected_campaign_id = get_selected_chaos_campaign_id()
+    if selected_campaign_id == parsed_campaign_id:
+        clear_chaos_session_state("selected_chaos_campaign_id")
+
+    return {
+        "ok": True,
+        "message": "Campaign deleted. Linked players, packs, and openings were moved to No Campaign.",
+    }
+
+
+def get_selected_chaos_campaign_id():
+    raw_value = get_chaos_session_state("selected_chaos_campaign_id", default_value=None)
+
+    try:
+        parsed_campaign_id = int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+    campaign = get_chaos_campaign_by_id(parsed_campaign_id)
+    if not campaign or not campaign["is_active"]:
+        clear_chaos_session_state("selected_chaos_campaign_id")
+        return None
+
+    return parsed_campaign_id
+
+
+def set_selected_chaos_campaign_id(campaign_id):
+    try:
+        parsed_campaign_id = int(campaign_id)
+    except (TypeError, ValueError):
+        clear_chaos_session_state("selected_chaos_campaign_id")
+        return {
+            "ok": True,
+            "selected_chaos_campaign_id": None,
+            "campaign_name": "No Campaign",
+        }
+
+    campaign = get_chaos_campaign_by_id(parsed_campaign_id)
+    if not campaign or not campaign["is_active"]:
+        return {
+            "ok": False,
+            "message": "Selected campaign is not active.",
+            "selected_chaos_campaign_id": None,
+        }
+
+    set_chaos_session_state("selected_chaos_campaign_id", parsed_campaign_id)
+
+    return {
+        "ok": True,
+        "selected_chaos_campaign_id": parsed_campaign_id,
+        "campaign_name": campaign["campaign_name"],
+    }
+
+def migrate_chaos_players_remove_global_unique_constraint(cursor):
+    cursor.execute(
+        """
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'chaos_players'
+        """
+    )
+
+    table_row = cursor.fetchone()
+    table_sql = (table_row["sql"] or "") if table_row else ""
+
+    if "player_name TEXT NOT NULL UNIQUE" not in table_sql:
+        return
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_players_new (
+            player_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_name TEXT NOT NULL,
+            portrait_image_path TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at_utc TEXT NOT NULL,
+            campaign_id INTEGER NULL
+        )
+        """
+    )
+
+    cursor.execute("PRAGMA table_info(chaos_players)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    campaign_select_sql = "campaign_id" if "campaign_id" in existing_columns else "NULL AS campaign_id"
+    portrait_select_sql = "portrait_image_path" if "portrait_image_path" in existing_columns else "NULL AS portrait_image_path"
+    active_select_sql = "is_active" if "is_active" in existing_columns else "1 AS is_active"
+    created_select_sql = "created_at_utc" if "created_at_utc" in existing_columns else "'1970-01-01 00:00:00 UTC' AS created_at_utc"
+
+    cursor.execute(
+        f"""
+        INSERT INTO chaos_players_new (
+            player_id,
+            player_name,
+            portrait_image_path,
+            is_active,
+            created_at_utc,
+            campaign_id
+        )
+        SELECT
+            player_id,
+            player_name,
+            {portrait_select_sql},
+            {active_select_sql},
+            {created_select_sql},
+            {campaign_select_sql}
+        FROM chaos_players
+        """
+    )
+
+    cursor.execute("DROP TABLE chaos_players")
+    cursor.execute("ALTER TABLE chaos_players_new RENAME TO chaos_players")
+
 def ensure_campaign_player_schema():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2250,13 +2725,16 @@ def ensure_campaign_player_schema():
         """
         CREATE TABLE IF NOT EXISTS chaos_players (
             player_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            player_name TEXT NOT NULL UNIQUE,
+            player_name TEXT NOT NULL,
             portrait_image_path TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            created_at_utc TEXT NOT NULL
+            created_at_utc TEXT NOT NULL,
+            campaign_id INTEGER NULL
         )
         """
     )
+
+    migrate_chaos_players_remove_global_unique_constraint(cursor)
 
     cursor.execute("PRAGMA table_info(chaos_players)")
     existing_columns = {row[1] for row in cursor.fetchall()}
@@ -2270,19 +2748,51 @@ def ensure_campaign_player_schema():
     if "created_at_utc" not in existing_columns:
         cursor.execute("ALTER TABLE chaos_players ADD COLUMN created_at_utc TEXT")
 
+    if "campaign_id" not in existing_columns:
+        cursor.execute("ALTER TABLE chaos_players ADD COLUMN campaign_id INTEGER NULL")
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_players_campaign_name
+        ON chaos_players (campaign_id, player_name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_players_campaign_active
+        ON chaos_players (campaign_id, is_active, player_name)
+        """
+    )
+
     conn.commit()
     conn.close()
 
 
-def get_campaign_players(include_disabled=True):
+def get_campaign_players(include_disabled=True, campaign_id=None):
     ensure_campaign_player_schema()
+
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    where_clause = ""
+    where_conditions = []
+    params = []
+
+    if parsed_campaign_id is None:
+        where_conditions.append("campaign_id IS NULL")
+    else:
+        where_conditions.append("campaign_id = ?")
+        params.append(parsed_campaign_id)
+
     if not include_disabled:
-        where_clause = "WHERE is_active = 1"
+        where_conditions.append("is_active = 1")
+
+    where_clause = "WHERE " + " AND ".join(where_conditions)
 
     cursor.execute(
         f"""
@@ -2291,11 +2801,13 @@ def get_campaign_players(include_disabled=True):
             player_name,
             portrait_image_path,
             is_active,
-            created_at_utc
+            created_at_utc,
+            campaign_id
         FROM chaos_players
         {where_clause}
         ORDER BY is_active DESC, player_name COLLATE NOCASE ASC
-        """
+        """,
+        params,
     )
 
     rows = cursor.fetchall()
@@ -2310,10 +2822,59 @@ def get_campaign_players(include_disabled=True):
             "portrait_image_path": row["portrait_image_path"] or "",
             "is_active": int(row["is_active"] or 0) == 1,
             "created_at_utc": row["created_at_utc"] or "",
+            "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
         })
 
     return players
 
+def campaign_player_name_exists(player_name, campaign_id=None, exclude_player_id=None):
+    ensure_campaign_player_schema()
+
+    clean_player_name = (player_name or "").strip()
+
+    if not clean_player_name:
+        return False
+
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
+    try:
+        parsed_exclude_player_id = int(exclude_player_id) if exclude_player_id is not None else None
+    except (TypeError, ValueError):
+        parsed_exclude_player_id = None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    where_conditions = ["LOWER(player_name) = LOWER(?)"]
+    params = [clean_player_name]
+
+    if parsed_campaign_id is None:
+        where_conditions.append("campaign_id IS NULL")
+    else:
+        where_conditions.append("campaign_id = ?")
+        params.append(parsed_campaign_id)
+
+    if parsed_exclude_player_id is not None:
+        where_conditions.append("player_id <> ?")
+        params.append(parsed_exclude_player_id)
+
+    cursor.execute(
+        f"""
+        SELECT player_id
+        FROM chaos_players
+        WHERE {" AND ".join(where_conditions)}
+        LIMIT 1
+        """,
+        params,
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row is not None
 
 def get_campaign_player_by_id(player_id):
     ensure_campaign_player_schema()
@@ -2333,7 +2894,8 @@ def get_campaign_player_by_id(player_id):
             player_name,
             portrait_image_path,
             is_active,
-            created_at_utc
+            created_at_utc,
+            campaign_id
         FROM chaos_players
         WHERE player_id = ?
         """,
@@ -2352,10 +2914,11 @@ def get_campaign_player_by_id(player_id):
         "portrait_image_path": row["portrait_image_path"] or "",
         "is_active": int(row["is_active"] or 0) == 1,
         "created_at_utc": row["created_at_utc"] or "",
+        "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
     }
 
 
-def create_campaign_player(player_name, portrait_image_path=""):
+def create_campaign_player(player_name, portrait_image_path="", campaign_id=None):
     ensure_campaign_player_schema()
 
     clean_player_name = (player_name or "").strip()
@@ -2366,8 +2929,25 @@ def create_campaign_player(player_name, portrait_image_path=""):
             "message": "Screen Name is required.",
             "player_id": None,
         }
+    
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
+    if campaign_player_name_exists(clean_player_name, campaign_id=parsed_campaign_id):
+        return {
+            "ok": False,
+            "message": f"Player {clean_player_name} already exists in this campaign.",
+            "player_id": None,
+        }
 
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2379,15 +2959,17 @@ def create_campaign_player(player_name, portrait_image_path=""):
                 player_name,
                 portrait_image_path,
                 is_active,
-                created_at_utc
+                created_at_utc,
+                campaign_id
             )
-            VALUES (?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 clean_player_name,
                 (portrait_image_path or "").strip(),
                 1,
                 now_utc,
+                parsed_campaign_id,
             ),
         )
 
@@ -2436,6 +3018,16 @@ def update_campaign_player(player_id, player_name=None, portrait_image_path=None
         return {
             "ok": False,
             "message": "Screen Name is required.",
+        }
+
+    if campaign_player_name_exists(
+        new_player_name,
+        campaign_id=existing_player.get("campaign_id"),
+        exclude_player_id=parsed_player_id,
+    ):
+        return {
+            "ok": False,
+            "message": f"Player {new_player_name} already exists in this campaign.",
         }
 
     new_portrait_image_path = existing_player["portrait_image_path"]
@@ -2534,7 +3126,7 @@ def delete_campaign_player(player_id):
     }
 
 
-def get_selected_campaign_player_id():
+def get_selected_campaign_player_id(campaign_id=None):
     raw_value = get_chaos_session_state("selected_campaign_player_id", default_value=None)
 
     try:
@@ -2542,15 +3134,24 @@ def get_selected_campaign_player_id():
     except (TypeError, ValueError):
         return None
 
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
     player = get_campaign_player_by_id(parsed_player_id)
     if not player or not player["is_active"]:
+        clear_chaos_session_state("selected_campaign_player_id")
+        return None
+
+    if player.get("campaign_id") != parsed_campaign_id:
         clear_chaos_session_state("selected_campaign_player_id")
         return None
 
     return parsed_player_id
 
 
-def set_selected_campaign_player_id(player_id):
+def set_selected_campaign_player_id(player_id, campaign_id=None):
     try:
         parsed_player_id = int(player_id)
     except (TypeError, ValueError):
@@ -2560,11 +3161,23 @@ def set_selected_campaign_player_id(player_id):
             "selected_campaign_player_id": None,
         }
 
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
     player = get_campaign_player_by_id(parsed_player_id)
     if not player or not player["is_active"]:
         return {
             "ok": False,
             "message": "Selected player is not active.",
+            "selected_campaign_player_id": None,
+        }
+
+    if player.get("campaign_id") != parsed_campaign_id:
+        return {
+            "ok": False,
+            "message": "Selected player does not belong to the current campaign.",
             "selected_campaign_player_id": None,
         }
 
@@ -2576,7 +3189,599 @@ def set_selected_campaign_player_id(player_id):
         "player_name": player["player_name"],
     }
 
-def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, opening_context="campaign_mode"):
+def get_campaign_player_import_options(current_campaign_id=None):
+    ensure_chaos_campaign_schema()
+
+    try:
+        parsed_current_campaign_id = int(current_campaign_id) if current_campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_current_campaign_id = None
+
+    options = []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if parsed_current_campaign_id is not None:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS player_count
+            FROM chaos_players
+            WHERE campaign_id IS NULL
+            """
+        )
+
+        no_campaign_row = cursor.fetchone()
+        no_campaign_count = int(no_campaign_row["player_count"] or 0) if no_campaign_row else 0
+
+        if no_campaign_count > 0:
+            options.append({
+                "campaign_id": "__none__",
+                "campaign_name": "No Campaign",
+                "player_count": no_campaign_count,
+            })
+
+    cursor.execute(
+        """
+        SELECT
+            c.campaign_id,
+            c.campaign_name,
+            COUNT(p.player_id) AS player_count
+        FROM chaos_campaigns c
+        LEFT JOIN chaos_players p
+            ON p.campaign_id = c.campaign_id
+        WHERE c.is_active = 1
+        GROUP BY c.campaign_id, c.campaign_name
+        ORDER BY c.campaign_name COLLATE NOCASE ASC
+        """
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    for row in rows:
+        source_campaign_id = int(row["campaign_id"])
+
+        if parsed_current_campaign_id is not None and source_campaign_id == parsed_current_campaign_id:
+            continue
+
+        player_count = int(row["player_count"] or 0)
+        if player_count <= 0:
+            continue
+
+        options.append({
+            "campaign_id": source_campaign_id,
+            "campaign_name": row["campaign_name"] or "",
+            "player_count": player_count,
+        })
+
+    return options
+
+
+def import_campaign_players_from_campaign(source_campaign_id=None, target_campaign_id=None):
+    ensure_campaign_player_schema()
+
+    try:
+        parsed_source_campaign_id = int(source_campaign_id) if source_campaign_id not in {None, ""} else None
+    except (TypeError, ValueError):
+        parsed_source_campaign_id = None
+
+    try:
+        parsed_target_campaign_id = int(target_campaign_id) if target_campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_target_campaign_id = None
+
+    if parsed_source_campaign_id == parsed_target_campaign_id:
+        return {
+            "ok": False,
+            "message": "Source and target campaign are the same.",
+            "imported_count": 0,
+            "skipped_count": 0,
+        }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    source_where = "campaign_id IS NULL"
+    source_params = []
+
+    if parsed_source_campaign_id is not None:
+        source_where = "campaign_id = ?"
+        source_params.append(parsed_source_campaign_id)
+
+    cursor.execute(
+        f"""
+        SELECT
+            player_name,
+            portrait_image_path,
+            is_active
+        FROM chaos_players
+        WHERE {source_where}
+        ORDER BY player_name COLLATE NOCASE ASC
+        """,
+        source_params,
+    )
+
+    source_rows = cursor.fetchall()
+
+    imported_count = 0
+    skipped_count = 0
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    try:
+        for row in source_rows:
+            player_name = (row["player_name"] or "").strip()
+            if not player_name:
+                skipped_count += 1
+                continue
+
+            target_where = "campaign_id IS NULL"
+            target_params = [player_name]
+
+            if parsed_target_campaign_id is not None:
+                target_where = "campaign_id = ?"
+                target_params = [player_name, parsed_target_campaign_id]
+
+            cursor.execute(
+                f"""
+                SELECT player_id
+                FROM chaos_players
+                WHERE LOWER(player_name) = LOWER(?)
+                  AND {target_where}
+                LIMIT 1
+                """,
+                target_params,
+            )
+
+            existing_target_row = cursor.fetchone()
+            if existing_target_row:
+                skipped_count += 1
+                continue
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_players (
+                    player_name,
+                    portrait_image_path,
+                    is_active,
+                    created_at_utc,
+                    campaign_id
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    player_name,
+                    row["portrait_image_path"] or "",
+                    int(row["is_active"] or 0),
+                    now_utc,
+                    parsed_target_campaign_id,
+                ),
+            )
+
+            imported_count += 1
+
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        return {
+            "ok": False,
+            "message": str(exc),
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+        }
+    finally:
+        conn.close()
+
+    return {
+        "ok": True,
+        "message": f"Imported {imported_count} player(s). Skipped {skipped_count} duplicate player(s).",
+        "imported_count": imported_count,
+        "skipped_count": skipped_count,
+    }
+
+def ensure_chaos_draft_game_schema():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chaos_draft_games (
+            draft_game_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NULL,
+            draft_name TEXT,
+            started_at_utc TEXT NOT NULL,
+            completed_at_utc TEXT,
+            packs_per_player INTEGER NOT NULL DEFAULT 3,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute("PRAGMA table_info(tracked_chaos_pack_openings)")
+    opening_columns = {row[1] for row in cursor.fetchall()}
+
+    if "draft_game_id" not in opening_columns:
+        cursor.execute("ALTER TABLE tracked_chaos_pack_openings ADD COLUMN draft_game_id INTEGER NULL")
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_draft_games_campaign_active
+        ON chaos_draft_games (campaign_id, is_active, started_at_utc)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_tracked_openings_draft_game_pack
+        ON tracked_chaos_pack_openings (draft_game_id, tracked_pack_id)
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def normalize_optional_int(value):
+    try:
+        return int(value) if value is not None and value != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def get_selected_chaos_draft_game_id():
+    raw_value = get_chaos_session_state("selected_chaos_draft_game_id", default_value=None)
+    return normalize_optional_int(raw_value)
+
+
+def set_selected_chaos_draft_game_id(draft_game_id):
+    parsed_draft_game_id = normalize_optional_int(draft_game_id)
+
+    if parsed_draft_game_id is None:
+        clear_chaos_session_state("selected_chaos_draft_game_id")
+        return {
+            "ok": True,
+            "selected_chaos_draft_game_id": None,
+        }
+
+    set_chaos_session_state("selected_chaos_draft_game_id", parsed_draft_game_id)
+
+    return {
+        "ok": True,
+        "selected_chaos_draft_game_id": parsed_draft_game_id,
+    }
+
+
+def get_chaos_draft_game_by_id(draft_game_id):
+    ensure_chaos_draft_game_schema()
+
+    parsed_draft_game_id = normalize_optional_int(draft_game_id)
+    if parsed_draft_game_id is None:
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            draft_game_id,
+            campaign_id,
+            draft_name,
+            started_at_utc,
+            completed_at_utc,
+            packs_per_player,
+            is_active
+        FROM chaos_draft_games
+        WHERE draft_game_id = ?
+        """,
+        (parsed_draft_game_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "draft_game_id": int(row["draft_game_id"]),
+        "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
+        "draft_name": row["draft_name"] or "",
+        "started_at_utc": row["started_at_utc"] or "",
+        "completed_at_utc": row["completed_at_utc"] or "",
+        "packs_per_player": int(row["packs_per_player"] or 3),
+        "is_active": int(row["is_active"] or 0) == 1,
+    }
+
+
+def get_active_chaos_draft_game(campaign_id=None):
+    ensure_chaos_draft_game_schema()
+
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if parsed_campaign_id is None:
+        cursor.execute(
+            """
+            SELECT
+                draft_game_id,
+                campaign_id,
+                draft_name,
+                started_at_utc,
+                completed_at_utc,
+                packs_per_player,
+                is_active
+            FROM chaos_draft_games
+            WHERE campaign_id IS NULL
+              AND is_active = 1
+            ORDER BY started_at_utc DESC, draft_game_id DESC
+            LIMIT 1
+            """
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT
+                draft_game_id,
+                campaign_id,
+                draft_name,
+                started_at_utc,
+                completed_at_utc,
+                packs_per_player,
+                is_active
+            FROM chaos_draft_games
+            WHERE campaign_id = ?
+              AND is_active = 1
+            ORDER BY started_at_utc DESC, draft_game_id DESC
+            LIMIT 1
+            """,
+            (parsed_campaign_id,),
+        )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "draft_game_id": int(row["draft_game_id"]),
+        "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
+        "draft_name": row["draft_name"] or "",
+        "started_at_utc": row["started_at_utc"] or "",
+        "completed_at_utc": row["completed_at_utc"] or "",
+        "packs_per_player": int(row["packs_per_player"] or 3),
+        "is_active": int(row["is_active"] or 0) == 1,
+    }
+
+
+def create_chaos_draft_game(campaign_id=None, packs_per_player=3):
+    ensure_chaos_draft_game_schema()
+
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+
+    try:
+        parsed_packs_per_player = int(packs_per_player)
+    except (TypeError, ValueError):
+        parsed_packs_per_player = 3
+
+    if parsed_packs_per_player < 1:
+        parsed_packs_per_player = 1
+
+    if parsed_packs_per_player > 12:
+        parsed_packs_per_player = 12
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if parsed_campaign_id is None:
+        cursor.execute(
+            """
+            UPDATE chaos_draft_games
+            SET is_active = 0,
+                completed_at_utc = COALESCE(completed_at_utc, ?)
+            WHERE campaign_id IS NULL
+              AND is_active = 1
+            """,
+            (now_utc,),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE chaos_draft_games
+            SET is_active = 0,
+                completed_at_utc = COALESCE(completed_at_utc, ?)
+            WHERE campaign_id = ?
+              AND is_active = 1
+            """,
+            (
+                now_utc,
+                parsed_campaign_id,
+            ),
+        )
+
+    cursor.execute(
+        """
+        INSERT INTO chaos_draft_games (
+            campaign_id,
+            draft_name,
+            started_at_utc,
+            completed_at_utc,
+            packs_per_player,
+            is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            parsed_campaign_id,
+            None,
+            now_utc,
+            None,
+            parsed_packs_per_player,
+            1,
+        ),
+    )
+
+    draft_game_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    set_selected_chaos_draft_game_id(draft_game_id)
+
+    return {
+        "ok": True,
+        "message": "New draft started.",
+        "draft_game_id": int(draft_game_id),
+        "campaign_id": parsed_campaign_id,
+        "started_at_utc": now_utc,
+        "packs_per_player": parsed_packs_per_player,
+    }
+
+
+def get_selected_or_create_chaos_draft_game(campaign_id=None):
+    ensure_chaos_draft_game_schema()
+
+    parsed_campaign_id = normalize_optional_int(campaign_id)
+    selected_draft_game_id = get_selected_chaos_draft_game_id()
+
+    if selected_draft_game_id is not None:
+        selected_game = get_chaos_draft_game_by_id(selected_draft_game_id)
+
+        if (
+            selected_game
+            and selected_game["is_active"]
+            and selected_game.get("campaign_id") == parsed_campaign_id
+        ):
+            return selected_game
+
+        clear_chaos_session_state("selected_chaos_draft_game_id")
+
+    active_game = get_active_chaos_draft_game(campaign_id=parsed_campaign_id)
+
+    if active_game:
+        set_selected_chaos_draft_game_id(active_game["draft_game_id"])
+        return active_game
+
+    create_result = create_chaos_draft_game(
+        campaign_id=parsed_campaign_id,
+        packs_per_player=3,
+    )
+
+    return {
+        "draft_game_id": int(create_result["draft_game_id"]),
+        "campaign_id": parsed_campaign_id,
+        "draft_name": "",
+        "started_at_utc": create_result["started_at_utc"],
+        "completed_at_utc": "",
+        "packs_per_player": int(create_result["packs_per_player"] or 3),
+        "is_active": True,
+    }
+
+
+def get_draft_game_selected_pack_ids(draft_game_id):
+    ensure_chaos_draft_game_schema()
+
+    parsed_draft_game_id = normalize_optional_int(draft_game_id)
+
+    if parsed_draft_game_id is None:
+        return set()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT DISTINCT tracked_pack_id
+        FROM tracked_chaos_pack_openings
+        WHERE draft_game_id = ?
+          AND tracked_pack_id IS NOT NULL
+        """,
+        (parsed_draft_game_id,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        int(row["tracked_pack_id"])
+        for row in rows
+        if row["tracked_pack_id"] is not None
+    }
+
+def get_chaos_draft_game_display_label(draft_game):
+    if not draft_game:
+        return "Draft #1"
+
+    draft_game_id = normalize_optional_int(draft_game.get("draft_game_id"))
+    campaign_id = normalize_optional_int(draft_game.get("campaign_id"))
+    started_at_utc = (draft_game.get("started_at_utc") or "").strip()
+
+    if draft_game_id is None or not started_at_utc:
+        return "Draft #1"
+
+    draft_date_utc = started_at_utc[:10]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if campaign_id is None:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS draft_number
+            FROM chaos_draft_games
+            WHERE campaign_id IS NULL
+              AND SUBSTR(started_at_utc, 1, 10) = ?
+              AND (
+                    started_at_utc < ?
+                    OR (started_at_utc = ? AND draft_game_id <= ?)
+              )
+            """,
+            (
+                draft_date_utc,
+                started_at_utc,
+                started_at_utc,
+                draft_game_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS draft_number
+            FROM chaos_draft_games
+            WHERE campaign_id = ?
+              AND SUBSTR(started_at_utc, 1, 10) = ?
+              AND (
+                    started_at_utc < ?
+                    OR (started_at_utc = ? AND draft_game_id <= ?)
+              )
+            """,
+            (
+                campaign_id,
+                draft_date_utc,
+                started_at_utc,
+                started_at_utc,
+                draft_game_id,
+            ),
+        )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    draft_number = int(row["draft_number"] or 1) if row else 1
+
+    if draft_number < 1:
+        draft_number = 1
+
+    return f"Draft #{draft_number}"
+
+def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, opening_context="campaign_mode", campaign_id=None, draft_game_id=None):
+    ensure_chaos_draft_game_schema()
+
     now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     conn = get_db_connection()
@@ -2588,15 +3793,19 @@ def record_campaign_pack_opening(tracked_pack_id, opened_by_player_id=None, open
             tracked_pack_id,
             opened_at_utc,
             opened_by_player_id,
-            opening_context
+            opening_context,
+            campaign_id,
+            draft_game_id
         )
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             int(tracked_pack_id),
             now_utc,
             opened_by_player_id,
             opening_context,
+            int(campaign_id) if campaign_id is not None else None,
+            normalize_optional_int(draft_game_id),
         ),
     )
 
@@ -2631,7 +3840,7 @@ def normalize_tracked_pack_id_list(raw_pack_ids):
     return pack_ids
 
 
-def get_tracked_pack_management_rows(static_folder, search_text=""):
+def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=None):
     search_value = (search_text or "").strip().lower()
 
     conn = get_db_connection()
@@ -2640,22 +3849,42 @@ def get_tracked_pack_management_rows(static_folder, search_text=""):
     params = []
     where_clause = ""
 
+    params = []
+    where_conditions = []
+
+    try:
+        parsed_campaign_id = int(campaign_id) if campaign_id is not None else None
+    except (TypeError, ValueError):
+        parsed_campaign_id = None
+
+    if parsed_campaign_id is None:
+        where_conditions.append("tcp.campaign_id IS NULL")
+    else:
+        where_conditions.append("tcp.campaign_id = ?")
+        params.append(parsed_campaign_id)
+
     if search_value:
-        where_clause = """
-        WHERE LOWER(tcp.pack_tracking_code) LIKE ?
-           OR LOWER(tcp.set_code) LIKE ?
-           OR LOWER(tcp.booster_name) LIKE ?
-           OR LOWER(tcp.pack_display_name) LIKE ?
-           OR EXISTS (
-                SELECT 1
-                FROM tracked_chaos_pack_cards tcpc
-                WHERE tcpc.tracked_pack_id = tcp.tracked_pack_id
-                  AND LOWER(tcpc.card_name) LIKE ?
-           )
-        """
+        where_conditions.append(
+            """
+            (
+                LOWER(tcp.pack_tracking_code) LIKE ?
+                OR LOWER(tcp.set_code) LIKE ?
+                OR LOWER(tcp.booster_name) LIKE ?
+                OR LOWER(tcp.pack_display_name) LIKE ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM tracked_chaos_pack_cards tcpc
+                    WHERE tcpc.tracked_pack_id = tcp.tracked_pack_id
+                      AND LOWER(tcpc.card_name) LIKE ?
+                )
+            )
+            """
+        )
 
         like_value = f"%{search_value}%"
         params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    where_clause = "WHERE " + " AND ".join(where_conditions)
 
     cursor.execute(
         f"""
@@ -2671,6 +3900,7 @@ def get_tracked_pack_management_rows(static_folder, search_text=""):
             tcp.added_at_utc,
             tcp.last_opened_at_utc,
             tcp.opened_count,
+            tcp.campaign_id,
             COALESCE(tcp.campaign_enabled, 1) AS campaign_enabled
         FROM tracked_chaos_packs tcp
         {where_clause}
@@ -2701,6 +3931,7 @@ def get_tracked_pack_management_rows(static_folder, search_text=""):
             "added_at_utc": row["added_at_utc"] or "",
             "last_opened_at_utc": row["last_opened_at_utc"] or "",
             "opened_count": int(row["opened_count"] or 0),
+            "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
             "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
             "image_src": url_for("static", filename=art_info["image_path"]),
         })
@@ -2927,8 +4158,14 @@ def build_tracked_packs_combined_pdf(
         "pack_count": appended_count,
     }
 
-def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None):
-    campaign_packs = get_tracked_chaos_packs_for_campaign_spin(static_folder)
+def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None, campaign_id=None, draft_game_id=None):
+    excluded_pack_ids = get_draft_game_selected_pack_ids(draft_game_id)
+
+    campaign_packs = get_tracked_chaos_packs_for_campaign_spin(
+        static_folder,
+        campaign_id=campaign_id,
+        excluded_tracked_pack_ids=excluded_pack_ids,
+    )
 
     if not campaign_packs:
         return None
@@ -2960,6 +4197,8 @@ def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None):
         "total_cards": len(cards),
         "cards": cards,
         "campaign_mode": True,
+        "campaign_id": int(campaign_id) if campaign_id is not None else None,
+        "draft_game_id": normalize_optional_int(draft_game_id),
     }
 
     set_chaos_session_state("pending_opened_pack", opened_pack_state)
@@ -2980,6 +4219,7 @@ def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None):
             "variant_count": 1,
             "total_variant_weight": 1,
             "opened_count": int(winning_pack.get("opened_count") or 0),
+            "campaign_id": int(winning_pack["campaign_id"]) if winning_pack.get("campaign_id") is not None else None,
         },
         "chosen_variant": {
             "tracked_pack_id": int(winning_pack["tracked_pack_id"]),
@@ -2987,12 +4227,14 @@ def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None):
             "booster_name": winning_pack["booster_name"],
             "booster_index": int(winning_pack["booster_index"] or 0),
             "booster_weight": 1,
+            "campaign_id": int(campaign_id) if campaign_id is not None else None,
         },
         "winning_stop_index": winning_stop_index,
         "opened_pack_ready": True,
         "opened_pack_total_cards": len(cards),
         "bonus_pack_opened": bool(winning_pack.get("bonus_pack_opened")),
         "campaign_mode": True,
+        "draft_game_id": normalize_optional_int(draft_game_id),
     }
 
     set_chaos_session_state("pending_spin_result", spin_result)

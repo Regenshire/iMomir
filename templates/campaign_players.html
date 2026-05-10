@@ -9,7 +9,12 @@
             <div class="chaos-pack-view-header-copy">
                 <h1 class="page-title">Edit Players</h1>
                 <p class="page-subtitle">
-                    Add, rename, disable, delete, and select Campaign Mode players.
+                    Add, rename, disable, delete, and select 
+                    {% if selected_chaos_campaign %}
+                        players for {{ selected_chaos_campaign.campaign_name }}.
+                    {% else %}
+                        Campaign Mode players.
+                    {% endif %}
                 </p>
             </div>
 
@@ -28,6 +33,44 @@
             </div>
         {% endif %}
     {% endwith %}
+
+        <div class="page-panel">
+        <h2>Import Players</h2>
+
+        <form
+            method="post"
+            action="{{ url_for('campaign_chaos_players_import') }}"
+            class="campaign-player-import-form"
+        >
+            <label class="campaign-player-field">
+                <span>Import Players From</span>
+                <select
+                    name="source_campaign_id"
+                    class="campaign-player-input"
+                    {% if not import_campaign_options %}disabled{% endif %}
+                    required
+                >
+                    {% if import_campaign_options %}
+                        {% for campaign in import_campaign_options %}
+                        <option value="{{ campaign.campaign_id }}">
+                            {{ campaign.campaign_name }} — {{ campaign.player_count }} player(s)
+                        </option>
+                        {% endfor %}
+                    {% else %}
+                        <option value="">No other campaigns with players</option>
+                    {% endif %}
+                </select>
+            </label>
+
+            <button
+                type="submit"
+                class="action-button campaign-player-import-button"
+                {% if not import_campaign_options %}disabled{% endif %}
+            >
+                Import Players
+            </button>
+        </form>
+    </div>
 
     <div class="page-panel">
         <h2>Add Player</h2>

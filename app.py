@@ -147,13 +147,22 @@ from modes.chaos import (
     create_random_pack_preview_for_manage_packs,
     create_specific_pack_preview_for_manage_packs,
     create_campaign_player,
+    create_chaos_campaign,
+    create_chaos_draft_game,
     create_custom_pack_preview_for_manage_packs,
     delete_tracked_packs,
     get_custom_pack_populate_options_for_set,
     populate_custom_pack_decklist_from_booster,
     get_campaign_players,
+    get_selected_or_create_chaos_draft_game,
+    get_chaos_draft_game_display_label,
+    get_campaign_player_import_options,
+    get_chaos_campaigns,
+    get_chaos_campaign_by_id,
     get_campaign_player_by_id,
     get_selected_campaign_player_id,
+    import_campaign_players_from_campaign,
+    get_selected_chaos_campaign_id,
     get_chaos_opened_pack_keys,
     get_chaos_pack_art_info,
     get_chaos_pack_art_relpath,
@@ -175,9 +184,12 @@ from modes.chaos import (
     record_chaos_pack_history,
     record_campaign_pack_opening,
     set_selected_campaign_player_id,
+    set_selected_chaos_campaign_id,
     save_opened_chaos_pack_to_tracking_db,
     update_campaign_player,
+    update_chaos_campaign,
     delete_campaign_player,
+    delete_chaos_campaign,
     set_chaos_session_state,
     search_manage_pack_options,
     set_tracked_packs_campaign_enabled,
@@ -4238,8 +4250,19 @@ def result():
 
         active_template_metadata = get_active_print_template_metadata()
 
-        campaign_players = get_campaign_players(include_disabled=False)
-        selected_campaign_player_id = get_selected_campaign_player_id()
+        selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+        campaign_players = get_campaign_players(
+            include_disabled=False,
+            campaign_id=selected_chaos_campaign_id,
+        )
+        selected_campaign_player_id = get_selected_campaign_player_id(
+            campaign_id=selected_chaos_campaign_id,
+        )
+        chaos_campaigns = get_chaos_campaigns(include_disabled=False)
+        active_draft_game = get_selected_or_create_chaos_draft_game(
+            campaign_id=selected_chaos_campaign_id,
+        )
+        active_draft_game_label = get_chaos_draft_game_display_label(active_draft_game)
 
         return render_template(
             "campaign_chaos_draft.html",
@@ -4251,6 +4274,10 @@ def result():
             template_download_links=active_template_metadata["download_links"],
             campaign_players=campaign_players,
             selected_campaign_player_id=selected_campaign_player_id,
+            chaos_campaigns=chaos_campaigns,
+            selected_chaos_campaign_id=selected_chaos_campaign_id,
+            active_draft_game=active_draft_game,
+            active_draft_game_label=active_draft_game_label,
         )
 
     if current_game_mode == "preprint_chaos_draft":
@@ -4776,15 +4803,97 @@ def chaos_draft_open_test():
         "cards": open_result["cards"],
     })
 
+@app.route("/campaign-chaos/campaigns", methods=["GET"])
+def campaign_chaos_campaigns():
+    campaigns = get_chaos_campaigns(include_disabled=True)
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+
+    return render_template(
+        "campaign_campaigns.html",
+        campaigns=campaigns,
+        selected_chaos_campaign_id=selected_chaos_campaign_id,
+    )
+
+
+@app.route("/campaign-chaos/campaigns/add", methods=["POST"])
+def campaign_chaos_campaigns_add():
+    campaign_name = (request.form.get("campaign_name") or "").strip()
+
+    create_result = create_chaos_campaign(campaign_name)
+
+    flash(create_result.get("message") or "Campaign added.")
+    return redirect(url_for("campaign_chaos_campaigns"))
+
+
+@app.route("/campaign-chaos/campaigns/<int:campaign_id>/update", methods=["POST"])
+def campaign_chaos_campaigns_update(campaign_id):
+    campaign_name = (request.form.get("campaign_name") or "").strip()
+    is_active = request.form.get("is_active") == "on"
+
+    update_result = update_chaos_campaign(
+        campaign_id,
+        campaign_name=campaign_name,
+        is_active=is_active,
+    )
+
+    flash(update_result.get("message") or "Campaign updated.")
+    return redirect(url_for("campaign_chaos_campaigns"))
+
+
+@app.route("/campaign-chaos/campaigns/<int:campaign_id>/delete", methods=["POST"])
+def campaign_chaos_campaigns_delete(campaign_id):
+    delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if delete_confirmation != "DELETE":
+        flash("Delete cancelled. To delete a campaign, type DELETE in the confirmation prompt.")
+        return redirect(url_for("campaign_chaos_campaigns"))
+
+    delete_result = delete_chaos_campaign(campaign_id)
+
+    flash(delete_result.get("message") or "Campaign deleted.")
+    return redirect(url_for("campaign_chaos_campaigns"))
+
+
+@app.route("/campaign-chaos/select-campaign", methods=["POST"])
+def campaign_chaos_select_campaign():
+    payload = request.get_json(silent=True) or {}
+    campaign_id = payload.get("campaign_id")
+
+    result = set_selected_chaos_campaign_id(campaign_id)
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    clear_chaos_session_state("selected_campaign_player_id")
+    clear_chaos_session_state("selected_chaos_draft_game_id")
+    clear_chaos_session_state("pending_spin_result")
+    clear_chaos_session_state("pending_opened_pack")
+    clear_chaos_session_state("pending_campaign_pack_opening_recorded")
+    return jsonify(result)
+
 @app.route("/campaign-chaos/players", methods=["GET"])
 def campaign_chaos_players():
-    players = get_campaign_players(include_disabled=True)
-    selected_campaign_player_id = get_selected_campaign_player_id()
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    selected_chaos_campaign = get_chaos_campaign_by_id(selected_chaos_campaign_id) if selected_chaos_campaign_id else None
+
+    players = get_campaign_players(
+        include_disabled=True,
+        campaign_id=selected_chaos_campaign_id,
+    )
+    selected_campaign_player_id = get_selected_campaign_player_id(
+        campaign_id=selected_chaos_campaign_id,
+    )
+
+    import_campaign_options = get_campaign_player_import_options(
+        current_campaign_id=selected_chaos_campaign_id,
+    )
 
     return render_template(
         "campaign_players.html",
         players=players,
         selected_campaign_player_id=selected_campaign_player_id,
+        selected_chaos_campaign=selected_chaos_campaign,
+        import_campaign_options=import_campaign_options,
     )
 
 @app.route("/campaign-chaos/player-portrait/<filename>", methods=["GET"])
@@ -4797,12 +4906,31 @@ def campaign_chaos_player_portrait(filename):
 
     return send_file(portrait_path)
 
+@app.route("/campaign-chaos/players/import", methods=["POST"])
+def campaign_chaos_players_import():
+    source_campaign_id = request.form.get("source_campaign_id")
+
+    if source_campaign_id == "__none__":
+        source_campaign_id = None
+
+    target_campaign_id = get_selected_chaos_campaign_id()
+
+    import_result = import_campaign_players_from_campaign(
+        source_campaign_id=source_campaign_id,
+        target_campaign_id=target_campaign_id,
+    )
+
+    flash(import_result.get("message") or "Player import complete.")
+    return redirect(url_for("campaign_chaos_players"))
 
 @app.route("/campaign-chaos/players/add", methods=["POST"])
 def campaign_chaos_players_add():
     player_name = (request.form.get("player_name") or "").strip()
 
-    create_result = create_campaign_player(player_name)
+    create_result = create_campaign_player(
+        player_name,
+        campaign_id=get_selected_chaos_campaign_id(),
+    )
 
     if not create_result.get("ok"):
         flash(create_result.get("message") or "Could not add player.")
@@ -4869,7 +4997,10 @@ def campaign_chaos_select_player():
     payload = request.get_json(silent=True) or {}
     player_id = payload.get("player_id")
 
-    result = set_selected_campaign_player_id(player_id)
+    result = set_selected_campaign_player_id(
+        player_id,
+        campaign_id=get_selected_chaos_campaign_id(),
+    )
 
     if not result.get("ok"):
         return jsonify(result), 400
@@ -4879,12 +5010,20 @@ def campaign_chaos_select_player():
 @app.route("/campaign-chaos/packs", methods=["GET"])
 def campaign_chaos_packs():
     search_text = (request.args.get("q") or "").strip()
-    packs = get_tracked_pack_management_rows(app.static_folder, search_text=search_text)
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    selected_chaos_campaign = get_chaos_campaign_by_id(selected_chaos_campaign_id) if selected_chaos_campaign_id else None
+
+    packs = get_tracked_pack_management_rows(
+        app.static_folder,
+        search_text=search_text,
+        campaign_id=selected_chaos_campaign_id,
+    )
 
     return render_template(
         "campaign_manage_packs.html",
         packs=packs,
         search_text=search_text,
+        selected_chaos_campaign=selected_chaos_campaign,
     )
 
 
@@ -5124,7 +5263,10 @@ def campaign_chaos_pack_preview_save():
             "message": "No generated pack preview is available to save.",
         }), 400
 
-    result = save_opened_chaos_pack_to_tracking_db(preview_pack)
+    result = save_opened_chaos_pack_to_tracking_db(
+        preview_pack,
+        campaign_id=get_selected_chaos_campaign_id(),
+    )
 
     if not result.get("ok"):
         return jsonify(result), 400
@@ -5185,11 +5327,36 @@ def campaign_chaos_packs_action():
     flash("Unknown pack action.")
     return redirect(url_for("campaign_chaos_packs"))
 
+@app.route("/campaign-chaos/draft/new", methods=["POST"])
+def campaign_chaos_new_draft():
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+
+    result = create_chaos_draft_game(
+        campaign_id=selected_chaos_campaign_id,
+        packs_per_player=3,
+    )
+
+    clear_chaos_session_state("pending_spin_result")
+    clear_chaos_session_state("pending_opened_pack")
+    clear_chaos_session_state("pending_opened_pack_pdf")
+    clear_chaos_session_state("pending_opened_pack_export")
+    clear_chaos_session_state("pending_campaign_pack_opening_recorded")
+
+    return jsonify(result)
+
 @app.route("/campaign-chaos/spin", methods=["POST"])
 def campaign_chaos_spin():
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    active_draft_game = get_selected_or_create_chaos_draft_game(
+        campaign_id=selected_chaos_campaign_id,
+    )
+    active_draft_game_id = active_draft_game["draft_game_id"] if active_draft_game else None
+
     spin_result = build_campaign_chaos_spin_result(
         app.static_folder,
         write_debug_log,
+        campaign_id=selected_chaos_campaign_id,
+        draft_game_id=active_draft_game_id,
     )
 
     if not spin_result:
@@ -5204,8 +5371,10 @@ def campaign_chaos_spin():
     if tracked_pack_id:
         record_campaign_pack_opening(
             tracked_pack_id,
-            opened_by_player_id=get_selected_campaign_player_id(),
+            opened_by_player_id=get_selected_campaign_player_id(campaign_id=selected_chaos_campaign_id),
             opening_context="campaign_mode_spin_selected",
+            campaign_id=selected_chaos_campaign_id,
+            draft_game_id=active_draft_game_id,
         )
 
         set_chaos_session_state(
@@ -5242,10 +5411,14 @@ def campaign_chaos_open():
         already_recorded = bool(opening_state and opening_state.get("recorded"))
 
         if not already_recorded:
+            selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+
             record_campaign_pack_opening(
                 tracked_pack_id,
-                opened_by_player_id=get_selected_campaign_player_id(),
+                opened_by_player_id=get_selected_campaign_player_id(campaign_id=selected_chaos_campaign_id),
                 opening_context="campaign_mode_pdf_open",
+                campaign_id=selected_chaos_campaign_id,
+                draft_game_id=opened_pack.get("draft_game_id"),
             )
 
             set_chaos_session_state(

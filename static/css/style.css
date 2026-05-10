@@ -3932,3 +3932,272 @@ input {
     font-weight: 700;
     color: var(--text);
 }
+
+/* Campaign Mode selected campaign row */
+.campaign-mode-title-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    margin: 0 0 -8px 4px;
+}
+
+.campaign-mode-title-row .campaign-mode-external-title {
+    margin: 0;
+}
+
+.campaign-selector-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.campaign-selector {
+    min-width: 220px;
+    max-width: 320px;
+    min-height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--button);
+    color: var(--text);
+    padding: 6px 10px;
+    font-weight: 700;
+}
+
+.campaign-manage-campaign-button {
+    width: 38px;
+    height: 38px;
+}
+
+/* Campaign Save Management */
+.campaign-save-add-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 12px;
+    align-items: end;
+}
+
+.campaign-save-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.campaign-save-field span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.campaign-save-input {
+    width: 100%;
+    min-height: 46px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 10px 12px;
+}
+
+.campaign-save-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.campaign-save-default-row,
+.campaign-save-row {
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--panel-2);
+    padding: 12px;
+}
+
+.campaign-save-default-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.campaign-save-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.campaign-save-meta {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.campaign-save-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px;
+    gap: 14px;
+    align-items: center;
+}
+
+.campaign-save-row-disabled {
+    opacity: 0.58;
+}
+
+.campaign-save-edit-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 110px 110px 100px;
+    gap: 12px;
+    align-items: end;
+}
+
+.campaign-save-active-toggle {
+    min-height: 46px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-weight: 700;
+}
+
+.campaign-save-active-toggle input {
+    width: 18px;
+    height: 18px;
+}
+
+.campaign-save-selected-badge {
+    align-self: center;
+    justify-self: center;
+}
+
+.campaign-save-selected-placeholder {
+    display: block;
+}
+
+.campaign-save-row-button {
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.95rem;
+    padding: 8px 12px;
+}
+
+.campaign-save-delete-form {
+    display: flex;
+    align-items: flex-end;
+    height: 100%;
+}
+
+.campaign-save-delete-form .campaign-save-row-button {
+    width: 100%;
+}
+
+@media (max-width: 760px) {
+    .campaign-mode-title-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: -4px;
+    }
+
+    .campaign-selector-wrap {
+        width: 100%;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) 38px 104px;
+        gap: 8px;
+    }
+
+    .campaign-selector {
+        width: 100%;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .campaign-draft-number-chip {
+        padding-left: 10px;
+        padding-right: 10px;
+        font-size: 0.86rem;
+    }
+
+    .campaign-new-draft-title-button {
+        width: 104px;
+        min-width: 104px;
+        font-size: 0.86rem;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .campaign-save-add-form,
+    .campaign-save-row,
+    .campaign-save-edit-form {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-save-add-button,
+    .campaign-save-row-button {
+        width: 100%;
+    }
+
+    .campaign-save-selected-badge {
+        justify-self: flex-start;
+    }
+}
+
+/* Campaign Player Import */
+.campaign-player-import-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 180px;
+    gap: 12px;
+    align-items: end;
+}
+
+.campaign-player-import-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+    .campaign-player-import-form {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-player-import-button {
+        width: 100%;
+    }
+}
+
+/* Campaign title row: draft selector + campaign selector */
+.campaign-selector-wrap {
+    display: inline-grid;
+    grid-template-columns: auto minmax(220px, 320px) 38px 118px;
+    align-items: center;
+    gap: 8px;
+}
+
+.campaign-draft-number-chip {
+    min-height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(72, 127, 255, 0.12);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 12px;
+    font-size: 0.92rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.campaign-new-draft-title-button {
+    width: 118px;
+    min-width: 118px;
+    min-height: 38px;
+    border-radius: 12px;
+    padding: 6px 12px;
+    font-size: 0.92rem;
+    white-space: nowrap;
+}

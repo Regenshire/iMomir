@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Manage Campaigns{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">Manage Campaigns</h1>
+                <p class="page-subtitle">
+                    Add, rename, disable, delete, and select Campaign Mode campaign saves.
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <h2>Add Campaign</h2>
+
+        <form
+            method="post"
+            action="{{ url_for('campaign_chaos_campaigns_add') }}"
+            class="campaign-save-add-form"
+        >
+            <label class="campaign-save-field">
+                <span>Campaign Name</span>
+                <input
+                    type="text"
+                    name="campaign_name"
+                    class="campaign-save-input"
+                    placeholder="Campaign name"
+                    autocomplete="off"
+                    required
+                >
+            </label>
+
+            <button type="submit" class="action-button campaign-save-add-button">
+                Add Campaign
+            </button>
+        </form>
+    </div>
+
+    <div class="page-panel">
+        <h2>Campaign Saves</h2>
+
+        <div class="campaign-save-default-row">
+            <div>
+                <div class="campaign-save-title">No Campaign</div>
+                <div class="campaign-save-meta">Default unscoped campaign mode.</div>
+            </div>
+
+            {% if not selected_chaos_campaign_id %}
+            <span class="campaign-status-badge campaign-status-enabled">Selected</span>
+            {% endif %}
+        </div>
+
+        {% if campaigns %}
+        <div class="campaign-save-list">
+            {% for campaign in campaigns %}
+            <div class="campaign-save-row {% if not campaign.is_active %}campaign-save-row-disabled{% endif %}">
+                <form
+                    method="post"
+                    action="{{ url_for('campaign_chaos_campaigns_update', campaign_id=campaign.campaign_id) }}"
+                    class="campaign-save-edit-form"
+                >
+                    <label class="campaign-save-field">
+                        <span>Campaign Name</span>
+                        <input
+                            type="text"
+                            name="campaign_name"
+                            class="campaign-save-input"
+                            value="{{ campaign.campaign_name }}"
+                            autocomplete="off"
+                            required
+                        >
+                    </label>
+
+                    <label class="campaign-save-active-toggle">
+                        <input
+                            type="checkbox"
+                            name="is_active"
+                            {% if campaign.is_active %}checked{% endif %}
+                        >
+                        <span>Active</span>
+                    </label>
+
+                    {% if selected_chaos_campaign_id == campaign.campaign_id %}
+                    <span class="campaign-status-badge campaign-status-enabled campaign-save-selected-badge">
+                        Selected
+                    </span>
+                    {% else %}
+                    <span class="campaign-save-selected-placeholder"></span>
+                    {% endif %}
+
+                    <button type="submit" class="action-button secondary-button campaign-save-row-button">
+                        Save
+                    </button>
+                </form>
+
+                <form
+                    method="post"
+                    action="{{ url_for('campaign_chaos_campaigns_delete', campaign_id=campaign.campaign_id) }}"
+                    class="campaign-save-delete-form"
+                    data-campaign-name="{{ campaign.campaign_name }}"
+                >
+                    <input type="hidden" name="delete_confirmation" value="">
+                    <button type="submit" class="action-button secondary-button campaign-danger-button campaign-save-row-button">
+                        Delete
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card-placeholder">
+            No campaign saves have been added yet.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+(function () {
+    const deleteForms = Array.from(document.querySelectorAll(".campaign-save-delete-form"));
+
+    deleteForms.forEach(function (form) {
+        form.addEventListener("submit", function (event) {
+            const campaignName = form.dataset.campaignName || "this campaign";
+            const confirmation = window.prompt(
+                "You are about to permanently delete " + campaignName + ". Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                return;
+            }
+
+            const hiddenInput = form.querySelector("input[name='delete_confirmation']");
+            if (hiddenInput) {
+                hiddenInput.value = "DELETE";
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

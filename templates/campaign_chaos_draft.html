@@ -11,6 +11,7 @@
     data-chaos-export-format="{{ chaos_draft_export_format }}"
     data-chaos-spin-url="{{ url_for('campaign_chaos_spin') }}"
     data-chaos-open-url="{{ url_for('campaign_chaos_open') }}"
+    data-chaos-new-draft-url="{{ url_for('campaign_chaos_new_draft') }}"
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
 >
@@ -21,7 +22,45 @@
         {% endif %}
     {% endfor %}
 
-    <h1 class="campaign-mode-external-title">Chaos Draft - Campaign Mode</h1>
+    <div class="campaign-mode-title-row">
+        <h1 class="campaign-mode-external-title">Chaos Draft - Campaign Mode</h1>
+
+        <div class="campaign-selector-wrap">
+            <div class="campaign-draft-number-chip">
+                {{ active_draft_game_label or "Draft #1" }}
+            </div>
+
+            <select id="chaosCampaignSelect" class="campaign-selector">
+                <option value="" {% if not selected_chaos_campaign_id %}selected{% endif %}>No Campaign</option>
+                {% for campaign in chaos_campaigns %}
+                <option
+                    value="{{ campaign.campaign_id }}"
+                    {% if selected_chaos_campaign_id == campaign.campaign_id %}selected{% endif %}
+                >
+                    {{ campaign.campaign_name }}
+                </option>
+                {% endfor %}
+            </select>
+
+            <a
+                class="campaign-icon-button campaign-manage-campaign-button"
+                href="{{ url_for('campaign_chaos_campaigns') }}"
+                title="Manage Campaigns"
+                aria-label="Manage Campaigns"
+            >
+                <i class="fa-solid fa-flag"></i>
+            </a>
+
+            <button
+                type="button"
+                id="campaignNewDraftButton"
+                class="action-button secondary-button campaign-new-draft-title-button"
+                title="Start New Draft"
+            >
+                New Draft
+            </button>
+        </div>
+    </div>
 
     <div class="page-panel chaos-draft-header-panel campaign-chaos-header-panel">
         <div class="campaign-chaos-toolbar">
@@ -221,6 +260,81 @@
     </div>
 </div>
 <script>
+(function () {
+    const screen = document.getElementById("chaosDraftScreen");
+    const newDraftButton = document.getElementById("campaignNewDraftButton");
+
+    if (!screen || !newDraftButton) {
+        return;
+    }
+
+    newDraftButton.addEventListener("click", async function () {
+        const confirmed = window.confirm("Start a new draft? This resets pack availability for this draft.");
+
+        if (!confirmed) {
+            return;
+        }
+
+        newDraftButton.disabled = true;
+        newDraftButton.classList.add("action-button-loading");
+        newDraftButton.textContent = "Starting...";
+
+        try {
+            const response = await fetch(screen.dataset.chaosNewDraftUrl || "", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to start new draft.");
+            }
+
+            window.location.reload();
+        } catch (error) {
+            console.error(error);
+            newDraftButton.disabled = false;
+            newDraftButton.classList.remove("action-button-loading");
+            newDraftButton.textContent = "New Draft";
+            window.alert(error.message || "Failed to start new draft.");
+        }
+    });
+})();
+(function () {
+    const campaignSelect = document.getElementById("chaosCampaignSelect");
+
+    if (!campaignSelect) {
+        return;
+    }
+
+    campaignSelect.addEventListener("change", async function () {
+        try {
+            const response = await fetch("{{ url_for('campaign_chaos_select_campaign') }}", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    campaign_id: campaignSelect.value || ""
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to select campaign.");
+            }
+
+            window.location.reload();
+        } catch (error) {
+            console.error(error);
+        }
+    });
+})();
 (function () {
     const playerSelect = document.getElementById("campaignPlayerSelect");
 
