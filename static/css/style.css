@@ -4610,3 +4610,180 @@ input {
         grid-template-columns: 34px 68px minmax(0, 1fr);
     }
 }
+
+/* ==========================================
+   Manage Packs - Summary Modal
+   ========================================== */
+
+.campaign-summary-dialog {
+    max-width: min(100%, 920px);
+}
+
+.campaign-summary-header {
+    align-items: center;
+}
+
+.campaign-summary-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.campaign-summary-refresh-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.campaign-summary-refresh-toggle input {
+    width: 18px;
+    height: 18px;
+}
+
+.campaign-summary-total-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-height: 48px;
+    border: 1px solid rgba(110, 156, 255, 0.45);
+    border-radius: 14px;
+    background: rgba(72, 127, 255, 0.10);
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+
+.campaign-summary-total-label {
+    color: var(--muted);
+    font-weight: 700;
+}
+
+.campaign-summary-total-value {
+    color: #ffffff;
+    font-size: 1.25rem;
+    font-weight: 800;
+}
+
+.campaign-summary-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 12px;
+}
+
+.campaign-summary-sort-field {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    min-width: 220px;
+}
+
+.campaign-summary-sort-field span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.campaign-summary-sort-select {
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+    color: var(--text);
+    padding: 8px 12px;
+}
+
+.campaign-summary-selection-tools {
+    display: flex;
+    gap: 14px;
+    justify-content: flex-end;
+}
+
+.campaign-summary-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.campaign-summary-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 430px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.campaign-summary-row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px 12px;
+    align-items: center;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel-2);
+    padding: 12px 14px;
+    cursor: pointer;
+}
+
+.campaign-summary-row:hover {
+    background: var(--button);
+}
+
+.campaign-summary-checkbox {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.campaign-summary-row-title {
+    color: var(--text);
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.campaign-summary-row-meta {
+    grid-column: 2;
+    color: var(--muted);
+    font-size: 0.9rem;
+    line-height: 1.25;
+}
+
+.campaign-summary-action-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 12px;
+    margin-top: 4px;
+}
+
+@media (max-width: 760px) {
+    .campaign-summary-header {
+        align-items: flex-start;
+    }
+
+    .campaign-summary-header-actions {
+        flex-direction: column-reverse;
+        align-items: flex-end;
+    }
+
+    .campaign-summary-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .campaign-summary-sort-field {
+        min-width: 0;
+    }
+
+    .campaign-summary-selection-tools {
+        justify-content: flex-start;
+    }
+
+    .campaign-summary-action-row {
+        grid-template-columns: 1fr;
+    }
+}

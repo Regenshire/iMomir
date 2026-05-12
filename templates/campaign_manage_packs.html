@@ -23,6 +23,10 @@
                     Add Pack
                 </button>
 
+                <button type="button" id="campaignSummaryButton" class="action-button secondary-button campaign-header-action-button">
+                    Summary
+                </button>
+
                 <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
                     Back
                 </a>
@@ -37,6 +41,149 @@
             </div>
         {% endif %}
     {% endwith %}
+
+    <div id="campaignSummaryModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignSummaryBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog campaign-summary-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignSummaryTitle">
+            <div class="campaign-add-pack-header campaign-summary-header">
+                <div>
+                    <h2 id="campaignSummaryTitle" class="campaign-add-pack-title">Pack Summary</h2>
+                    <p class="campaign-add-pack-subtitle">
+                        Enabled packs currently available in this campaign.
+                    </p>
+                </div>
+
+                <div class="campaign-summary-header-actions">
+                    <label class="campaign-summary-refresh-toggle">
+                        <input type="checkbox" id="campaignSummaryRefreshOnClose" checked>
+                        <span>Refresh view on close</span>
+                    </label>
+
+                    <button type="button" id="campaignSummaryCloseButton" class="campaign-add-pack-close-button" aria-label="Close Pack Summary">
+                        ×
+                    </button>
+                </div>
+            </div>
+
+            <div class="campaign-summary-total-row">
+                <div class="campaign-summary-total-label">Total Packs:</div>
+                <div class="campaign-summary-total-value">{{ pack_summary.total_enabled_packs if pack_summary else 0 }}</div>
+            </div>
+
+            <div class="campaign-summary-toolbar">
+                <label class="campaign-summary-sort-field" for="campaignSummarySortSelect">
+                    <span>Sort By</span>
+                    <select id="campaignSummarySortSelect" class="campaign-summary-sort-select">
+                        <option value="quantity">Quantity</option>
+                        <option value="release_date">Date Released</option>
+                        <option value="name">Name</option>
+                        <option value="set_code">Set Code</option>
+                    </select>
+                </label>
+
+                <div class="campaign-summary-selection-tools">
+                    <button type="button" id="campaignSummarySelectAllButton" class="campaign-small-link-button">
+                        Select All
+                    </button>
+                    <button type="button" id="campaignSummaryClearSelectionButton" class="campaign-small-link-button">
+                        Clear Selection
+                    </button>
+                </div>
+            </div>
+
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_packs_action') }}"
+                id="campaignSummaryForm"
+                class="campaign-summary-form"
+            >
+                <input type="hidden" name="delete_confirmation" id="campaignSummaryDeleteConfirmation" value="">
+
+                {% if pack_summary and pack_summary.rows %}
+                    <div id="campaignSummaryList" class="campaign-summary-list">
+                        {% for row in pack_summary.rows %}
+                        <label
+                            class="campaign-summary-row"
+                            data-quantity="{{ row.quantity }}"
+                            data-release-date="{{ row.release_date }}"
+                            data-name="{{ row.pack_display_name|lower }}"
+                            data-set-code="{{ row.set_code }}"
+                        >
+                            <input
+                                type="checkbox"
+                                class="campaign-summary-checkbox"
+                            >
+
+                            <span class="campaign-summary-row-title">
+                                {{ row.quantity }}x {{ row.pack_display_name }}
+                            </span>
+
+                            <span class="campaign-summary-row-meta">
+                                {{ row.set_code }} • {{ row.booster_name }}
+                                {% if row.release_date %} • {{ row.release_date }}{% endif %}
+                            </span>
+
+                            {% for pack_id in row.pack_ids %}
+                            <input
+                                type="hidden"
+                                name="pack_ids"
+                                value="{{ pack_id }}"
+                                class="campaign-summary-pack-id"
+                                disabled
+                            >
+                            {% endfor %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="card-placeholder">
+                        No enabled packs were found for this campaign.
+                    </div>
+                {% endif %}
+
+                <div class="campaign-summary-action-row">
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="print"
+                        class="action-button"
+                        formtarget="_blank"
+                    >
+                        Print Selected
+                    </button>
+
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="disable"
+                        class="action-button secondary-button"
+                    >
+                        Disable Selected
+                    </button>
+
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="enable"
+                        class="action-button secondary-button"
+                    >
+                        Enable Selected
+                    </button>
+
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="delete"
+                        id="campaignSummaryDeleteSelectedButton"
+                        class="action-button secondary-button campaign-danger-button"
+                    >
+                        Delete Selected
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <div id="campaignAddPackModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
         <div id="campaignAddPackBackdrop" class="campaign-add-pack-backdrop"></div>
@@ -486,6 +633,17 @@
 <script>
 (function () {
     const form = document.getElementById("campaignManagePacksForm");
+    const summaryButton = document.getElementById("campaignSummaryButton");
+    const summaryModal = document.getElementById("campaignSummaryModal");
+    const summaryBackdrop = document.getElementById("campaignSummaryBackdrop");
+    const summaryCloseButton = document.getElementById("campaignSummaryCloseButton");
+    const summaryRefreshOnClose = document.getElementById("campaignSummaryRefreshOnClose");
+    const summaryForm = document.getElementById("campaignSummaryForm");
+    const summarySortSelect = document.getElementById("campaignSummarySortSelect");
+    const summaryList = document.getElementById("campaignSummaryList");
+    const summarySelectAllButton = document.getElementById("campaignSummarySelectAllButton");
+    const summaryClearSelectionButton = document.getElementById("campaignSummaryClearSelectionButton");
+    const summaryDeleteConfirmationInput = document.getElementById("campaignSummaryDeleteConfirmation");
     const selectAllButton = document.getElementById("campaignSelectAllPacksButton");
     const clearSelectedButton = document.getElementById("campaignClearSelectedPacksButton");
     const deleteSelectedButton = document.getElementById("campaignDeleteSelectedButton");
@@ -525,6 +683,8 @@
     const customPackNameInput = document.getElementById("campaignCustomPackNameInput");
     const customDecklistInput = document.getElementById("campaignCustomDecklistInput");
     const generateCustomPackButton = document.getElementById("campaignGenerateCustomPackButton");
+
+    let addPackModalHasSavedChanges = false;
 
     if (!form) {
         return;
@@ -576,10 +736,111 @@
         });
     }
 
+    function openSummaryModal() {
+        if (!summaryModal) {
+            return;
+        }
+
+        summaryModal.classList.remove("hidden");
+        summaryModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeSummaryModal() {
+        if (!summaryModal) {
+            return;
+        }
+
+        summaryModal.classList.add("hidden");
+        summaryModal.setAttribute("aria-hidden", "true");
+
+        if (summaryRefreshOnClose && summaryRefreshOnClose.checked) {
+            window.location.href = "{{ url_for('campaign_chaos_packs') }}";
+        }
+    }
+
+    function getSummaryRows() {
+        if (!summaryList) {
+            return [];
+        }
+
+        return Array.from(summaryList.querySelectorAll(".campaign-summary-row"));
+    }
+
+    function getSummaryCheckedRows() {
+        return getSummaryRows().filter(function (row) {
+            const checkbox = row.querySelector(".campaign-summary-checkbox");
+            return checkbox && checkbox.checked;
+        });
+    }
+
+    function syncSummaryPackInputs() {
+        getSummaryRows().forEach(function (row) {
+            const checkbox = row.querySelector(".campaign-summary-checkbox");
+            const hiddenPackInputs = Array.from(row.querySelectorAll(".campaign-summary-pack-id"));
+            const isChecked = checkbox && checkbox.checked;
+
+            hiddenPackInputs.forEach(function (input) {
+                input.disabled = !isChecked;
+            });
+        });
+    }
+
+    function sortSummaryRows(sortMode) {
+        if (!summaryList) {
+            return;
+        }
+
+        const rows = getSummaryRows();
+
+        rows.sort(function (left, right) {
+            if (sortMode === "release_date") {
+                const leftDate = left.dataset.releaseDate || "";
+                const rightDate = right.dataset.releaseDate || "";
+
+                if (leftDate !== rightDate) {
+                    return rightDate.localeCompare(leftDate);
+                }
+            }
+
+            if (sortMode === "name") {
+                const leftName = left.dataset.name || "";
+                const rightName = right.dataset.name || "";
+
+                if (leftName !== rightName) {
+                    return leftName.localeCompare(rightName);
+                }
+            }
+
+            if (sortMode === "set_code") {
+                const leftSet = left.dataset.setCode || "";
+                const rightSet = right.dataset.setCode || "";
+
+                if (leftSet !== rightSet) {
+                    return leftSet.localeCompare(rightSet);
+                }
+            }
+
+            const leftQuantity = parseInt(left.dataset.quantity || "0", 10);
+            const rightQuantity = parseInt(right.dataset.quantity || "0", 10);
+
+            if (leftQuantity !== rightQuantity) {
+                return rightQuantity - leftQuantity;
+            }
+
+            return (left.dataset.name || "").localeCompare(right.dataset.name || "");
+        });
+
+        rows.forEach(function (row) {
+            summaryList.appendChild(row);
+        });
+    }
+
     function openAddPackModal() {
         if (!addPackModal) {
             return;
         }
+
+        addPackModalHasSavedChanges = false;
 
         if (addPackStatus) {
             addPackStatus.classList.add("hidden");
@@ -636,6 +897,10 @@
 
         addPackModal.classList.add("hidden");
         addPackModal.setAttribute("aria-hidden", "true");
+
+        if (addPackModalHasSavedChanges) {
+            window.location.href = "{{ url_for('campaign_chaos_packs') }}";
+        }
     }
 
     function setActiveAddPackMode(activeMode) {
@@ -937,6 +1202,35 @@
             importSelectedPacksButton.disabled = false;
             importSelectedPacksButton.classList.remove("action-button-loading");
             updateImportSelectedButtonState();
+        }
+    }
+
+    function clearGeneratedPackPreview() {
+        if (addPackPreview) {
+            addPackPreview.classList.add("hidden");
+        }
+
+        if (addPackPreviewTitle) {
+            addPackPreviewTitle.textContent = "";
+        }
+
+        if (addPackPreviewMeta) {
+            addPackPreviewMeta.textContent = "";
+        }
+
+        if (addPackPreviewViewLink) {
+            addPackPreviewViewLink.href = "#";
+        }
+
+        if (addPackPreviewPrintLink) {
+            addPackPreviewPrintLink.href = "#";
+        }
+
+        if (addPackPreviewSaveButton) {
+            addPackPreviewSaveButton.disabled = true;
+            addPackPreviewSaveButton.classList.remove("action-button-loading");
+            addPackPreviewSaveButton.textContent = "Save";
+            addPackPreviewSaveButton.dataset.saveUrl = "";
         }
     }
 
@@ -1349,6 +1643,100 @@
         }
     }
 
+    if (summaryButton) {
+        summaryButton.addEventListener("click", openSummaryModal);
+    }
+
+    if (summaryBackdrop) {
+        summaryBackdrop.addEventListener("click", closeSummaryModal);
+    }
+
+    if (summaryCloseButton) {
+        summaryCloseButton.addEventListener("click", closeSummaryModal);
+    }
+
+    if (summarySortSelect) {
+        summarySortSelect.addEventListener("change", function () {
+            sortSummaryRows(summarySortSelect.value || "quantity");
+        });
+    }
+
+    if (summarySelectAllButton) {
+        summarySelectAllButton.addEventListener("click", function () {
+            getSummaryRows().forEach(function (row) {
+                const checkbox = row.querySelector(".campaign-summary-checkbox");
+
+                if (checkbox) {
+                    checkbox.checked = true;
+                }
+            });
+
+            syncSummaryPackInputs();
+        });
+    }
+
+    if (summaryClearSelectionButton) {
+        summaryClearSelectionButton.addEventListener("click", function () {
+            getSummaryRows().forEach(function (row) {
+                const checkbox = row.querySelector(".campaign-summary-checkbox");
+
+                if (checkbox) {
+                    checkbox.checked = false;
+                }
+            });
+
+            syncSummaryPackInputs();
+        });
+    }
+
+    if (summaryList) {
+        summaryList.addEventListener("change", function (event) {
+            if (event.target && event.target.classList.contains("campaign-summary-checkbox")) {
+                syncSummaryPackInputs();
+            }
+        });
+
+        sortSummaryRows("quantity");
+    }
+
+    if (summaryForm) {
+        summaryForm.addEventListener("submit", function (event) {
+            syncSummaryPackInputs();
+
+            const selectedRows = getSummaryCheckedRows();
+            const submitter = event.submitter;
+            const action = submitter ? (submitter.value || "") : "";
+
+            if (selectedRows.length <= 0) {
+                event.preventDefault();
+                window.alert("Select at least one pack summary row first.");
+                return;
+            }
+
+            if (action === "delete") {
+                const selectedPackInputCount = Array.from(summaryForm.querySelectorAll(".campaign-summary-pack-id:not(:disabled)")).length;
+
+                const confirmation = window.prompt(
+                    "You are about to delete " + selectedPackInputCount + " selected pack(s). Type DELETE to confirm."
+                );
+
+                if (confirmation !== "DELETE") {
+                    event.preventDefault();
+
+                    if (summaryDeleteConfirmationInput) {
+                        summaryDeleteConfirmationInput.value = "";
+                    }
+
+                    return;
+                }
+
+                if (summaryDeleteConfirmationInput) {
+                    summaryDeleteConfirmationInput.value = "DELETE";
+                }
+            }
+        });
+    }
+
     if (addPackButton) {
         addPackButton.addEventListener("click", openAddPackModal);
     }
@@ -1621,12 +2009,9 @@
                     throw new Error(payload.message || "Failed to save pack.");
                 }
 
-                setAddPackStatus(payload.message || "Pack saved.", false);
-                addPackPreviewSaveButton.textContent = "Saved";
-
-                window.setTimeout(function () {
-                    window.location.href = "{{ url_for('campaign_chaos_packs') }}";
-                }, 600);
+                addPackModalHasSavedChanges = true;
+                setAddPackStatus(payload.message || "Pack saved. You can add another pack.", false);
+                clearGeneratedPackPreview();
             } catch (error) {
                 console.error(error);
                 setAddPackStatus(error.message || "Failed to save pack.", true);
@@ -1639,7 +2024,16 @@
     }
 
     document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && addPackModal && !addPackModal.classList.contains("hidden")) {
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        if (summaryModal && !summaryModal.classList.contains("hidden")) {
+            closeSummaryModal();
+            return;
+        }
+
+        if (addPackModal && !addPackModal.classList.contains("hidden")) {
             closeAddPackModal();
         }
     });

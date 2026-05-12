@@ -1582,6 +1582,281 @@ def save_campaign_player_portrait_file(uploaded_file, player_id):
 
     return output_filename
 
+def format_download_size(byte_count):
+    try:
+        byte_count = int(byte_count or 0)
+    except (TypeError, ValueError):
+        byte_count = 0
+
+    if byte_count >= 1024 * 1024 * 1024:
+        return f"{byte_count / (1024 * 1024 * 1024):.2f} GB"
+
+    if byte_count >= 1024 * 1024:
+        return f"{byte_count / (1024 * 1024):.2f} MB"
+
+    if byte_count >= 1024:
+        return f"{byte_count / 1024:.2f} KB"
+
+    return f"{byte_count} bytes"
+
+
+def remove_file_if_exists(file_path):
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        pass
+
+
+def download_file_with_retries(
+    url,
+    destination_path,
+    headers=None,
+    label="Download",
+    force_download=True,
+    expected_min_bytes=1,
+    attempts=3,
+    connect_timeout=30,
+    read_timeout=60,
+    chunk_size=1024 * 1024,
+):
+    ensure_download_directories()
+
+    destination_path = os.path.abspath(destination_path)
+    temp_path = f"{destination_path}.part"
+
+    if (
+        not force_download
+        and os.path.exists(destination_path)
+        and os.path.getsize(destination_path) >= int(expected_min_bytes or 1)
+    ):
+        existing_size = os.path.getsize(destination_path)
+        append_refresh_detail_line(
+            f"=== {label}: USING EXISTING FILE === {destination_path} ({format_download_size(existing_size)})"
+        )
+
+        return {
+            "downloaded": False,
+            "path": destination_path,
+            "size": existing_size,
+            "message": "Existing file is valid.",
+        }
+
+    remove_file_if_exists(temp_path)
+
+    headers = headers or {}
+
+    last_error = None
+
+    for attempt_number in range(1, int(attempts or 1) + 1):
+        downloaded_bytes = 0
+        content_length = None
+        last_log_at = time.monotonic()
+
+        try:
+            append_refresh_detail_line(
+                f"=== {label}: DOWNLOAD ATTEMPT {attempt_number}/{attempts} ==="
+            )
+            append_refresh_detail_line(f"=== {label}: URL === {url}")
+            append_refresh_detail_line(f"=== {label}: TEMP PATH === {temp_path}")
+
+            set_refresh_status(
+                stage=f"Downloading {label}",
+                message=f"Starting {label} download attempt {attempt_number}/{attempts}...",
+            )
+
+            with requests.get(
+                url,
+                headers=headers,
+                timeout=(connect_timeout, read_timeout),
+                stream=True,
+            ) as response:
+                response.raise_for_status()
+
+                raw_content_length = response.headers.get("Content-Length")
+                try:
+                    content_length = int(raw_content_length) if raw_content_length else None
+                except (TypeError, ValueError):
+                    content_length = None
+
+                append_refresh_detail_line(f"=== {label}: HTTP STATUS === {response.status_code}")
+                append_refresh_detail_line(f"=== {label}: CONTENT-TYPE === {response.headers.get('Content-Type')}")
+                append_refresh_detail_line(f"=== {label}: CONTENT-LENGTH === {raw_content_length or 'Unknown'}")
+
+                if content_length is not None and content_length < int(expected_min_bytes or 1):
+                    raise ValueError(
+                        f"{label} returned a suspiciously small Content-Length: {content_length} bytes."
+                    )
+
+                with open(temp_path, "wb") as file_handle:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        if not chunk:
+                            continue
+
+                        file_handle.write(chunk)
+                        downloaded_bytes += len(chunk)
+
+                        now = time.monotonic()
+                        if now - last_log_at >= 5:
+                            if content_length:
+                                message = (
+                                    f"{label}: downloaded {format_download_size(downloaded_bytes)} "
+                                    f"of {format_download_size(content_length)}"
+                                )
+                            else:
+                                message = f"{label}: downloaded {format_download_size(downloaded_bytes)}"
+
+                            append_refresh_detail_line(f"=== {message} ===")
+                            set_refresh_status(
+                                stage=f"Downloading {label}",
+                                message=message,
+                            )
+
+                            try:
+                                file_handle.flush()
+                            except Exception:
+                                pass
+
+                            last_log_at = now
+
+                if downloaded_bytes < int(expected_min_bytes or 1):
+                    raise ValueError(
+                        f"{label} downloaded only {downloaded_bytes} bytes; expected at least {expected_min_bytes} bytes."
+                    )
+
+                if content_length is not None and downloaded_bytes != content_length:
+                    raise ValueError(
+                        f"{label} download size mismatch. Expected {content_length} bytes, got {downloaded_bytes} bytes."
+                    )
+
+                os.replace(temp_path, destination_path)
+
+                append_refresh_detail_line(
+                    f"=== {label}: DOWNLOAD COMPLETE === {format_download_size(downloaded_bytes)}"
+                )
+
+                set_refresh_status(
+                    stage=f"Downloading {label}",
+                    message=f"{label} download complete: {format_download_size(downloaded_bytes)}.",
+                )
+
+                return {
+                    "downloaded": True,
+                    "path": destination_path,
+                    "size": downloaded_bytes,
+                    "message": "Download complete.",
+                }
+
+        except Exception as exc:
+            last_error = exc
+            remove_file_if_exists(temp_path)
+
+            append_refresh_detail_line(
+                f"=== {label}: DOWNLOAD ATTEMPT {attempt_number}/{attempts} FAILED === {str(exc)}"
+            )
+
+            set_refresh_status(
+                stage=f"Downloading {label}",
+                message=f"{label} download attempt {attempt_number}/{attempts} failed.",
+                error=str(exc) if attempt_number >= int(attempts or 1) else "",
+            )
+
+            if attempt_number < int(attempts or 1):
+                sleep_seconds = min(10, attempt_number * 3)
+                append_refresh_detail_line(
+                    f"=== {label}: RETRYING IN {sleep_seconds} SECOND(S) ==="
+                )
+                time.sleep(sleep_seconds)
+
+    raise RuntimeError(f"{label} failed after {attempts} attempt(s): {last_error}")
+
+
+def extract_gzip_file_with_progress(
+    gzip_path,
+    destination_path,
+    label="Gzip Extract",
+    expected_min_bytes=1,
+    chunk_size=1024 * 1024,
+):
+    gzip_path = os.path.abspath(gzip_path)
+    destination_path = os.path.abspath(destination_path)
+    temp_path = f"{destination_path}.part"
+
+    remove_file_if_exists(temp_path)
+
+    if not os.path.exists(gzip_path):
+        raise FileNotFoundError(f"{label} source file was not found: {gzip_path}")
+
+    gzip_size = os.path.getsize(gzip_path)
+    if gzip_size <= 0:
+        raise ValueError(f"{label} source file is empty: {gzip_path}")
+
+    append_refresh_detail_line(
+        f"=== {label}: EXTRACT BEGIN === source={gzip_path} size={format_download_size(gzip_size)}"
+    )
+    append_refresh_detail_line(f"=== {label}: TEMP PATH === {temp_path}")
+
+    set_refresh_status(
+        stage=f"Extracting {label}",
+        message=f"Extracting {label}...",
+    )
+
+    extracted_bytes = 0
+    last_log_at = time.monotonic()
+
+    try:
+        with gzip.open(gzip_path, "rb") as compressed_file:
+            with open(temp_path, "wb") as output_file:
+                while True:
+                    chunk = compressed_file.read(chunk_size)
+                    if not chunk:
+                        break
+
+                    output_file.write(chunk)
+                    extracted_bytes += len(chunk)
+
+                    now = time.monotonic()
+                    if now - last_log_at >= 5:
+                        message = f"{label}: extracted {format_download_size(extracted_bytes)}"
+                        append_refresh_detail_line(f"=== {message} ===")
+                        set_refresh_status(
+                            stage=f"Extracting {label}",
+                            message=message,
+                        )
+
+                        try:
+                            output_file.flush()
+                        except Exception:
+                            pass
+
+                        last_log_at = now
+
+        if extracted_bytes < int(expected_min_bytes or 1):
+            raise ValueError(
+                f"{label} extracted only {extracted_bytes} bytes; expected at least {expected_min_bytes} bytes."
+            )
+
+        os.replace(temp_path, destination_path)
+
+        append_refresh_detail_line(
+            f"=== {label}: EXTRACT COMPLETE === {format_download_size(extracted_bytes)}"
+        )
+
+        set_refresh_status(
+            stage=f"Extracting {label}",
+            message=f"{label} extract complete: {format_download_size(extracted_bytes)}.",
+        )
+
+        return {
+            "extracted": True,
+            "path": destination_path,
+            "size": extracted_bytes,
+        }
+
+    except Exception:
+        remove_file_if_exists(temp_path)
+        raise
+
 def parse_remote_last_modified(raw_value):
     raw_value = (raw_value or "").strip()
     if not raw_value:
@@ -1669,11 +1944,23 @@ def download_atomic_cards_json(force_download=False):
         message=f"Downloading AtomicCards.json from MTGJSON... {reason}",
     )
 
-    response = requests.get(MTGJSON_ATOMIC_URL, timeout=180)
-    response.raise_for_status()
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "application/json;q=0.9,*/*;q=0.8",
+    }
 
-    with open(ATOMIC_CARDS_PATH, "wb") as file_handle:
-        file_handle.write(response.content)
+    download_file_with_retries(
+        MTGJSON_ATOMIC_URL,
+        ATOMIC_CARDS_PATH,
+        headers=headers,
+        label="AtomicCards.json",
+        force_download=True,
+        expected_min_bytes=50 * 1024 * 1024,
+        attempts=3,
+        connect_timeout=30,
+        read_timeout=60,
+        chunk_size=1024 * 1024,
+    )
 
     remote_timestamp_text = get_remote_atomic_cards_timestamp_text()
 
@@ -1689,47 +1976,48 @@ def download_atomic_cards_json(force_download=False):
 def download_set_list_json(force_download=False):
     ensure_download_directories()
 
-    set_refresh_status(
-        stage="Downloading Set List",
-        message="Downloading SetList.json from MTGJSON...",
-    )
-
     headers = {
         "User-Agent": "iMomir/1.0",
         "Accept": "application/json;q=0.9,*/*;q=0.8",
     }
 
-    response = requests.get(
+    result = download_file_with_retries(
         MTGJSON_SET_LIST_URL,
+        SET_LIST_PATH,
         headers=headers,
-        timeout=600,
+        label="SetList.json",
+        force_download=force_download,
+        expected_min_bytes=100 * 1024,
+        attempts=3,
+        connect_timeout=30,
+        read_timeout=45,
+        chunk_size=512 * 1024,
     )
-    response.raise_for_status()
-
-    with open(SET_LIST_PATH, "wb") as file_handle:
-        file_handle.write(response.content)
 
     return {
-        "downloaded": True,
-        "message": "Downloaded SetList.json successfully.",
+        "downloaded": result["downloaded"],
+        "message": "Downloaded SetList.json successfully." if result["downloaded"] else result["message"],
     }
 
 def download_all_printings_json(force_download=False):
     ensure_download_directories()
 
-    if (
-        not force_download
-        and os.path.exists(ALL_PRINTINGS_PATH)
-        and os.path.getsize(ALL_PRINTINGS_PATH) > 0
-    ):
+    existing_json_is_valid = (
+        os.path.exists(ALL_PRINTINGS_PATH)
+        and os.path.getsize(ALL_PRINTINGS_PATH) > 100 * 1024 * 1024
+    )
+
+    if not force_download and existing_json_is_valid:
+        existing_size = os.path.getsize(ALL_PRINTINGS_PATH)
         return {
             "downloaded": False,
-            "message": "Local AllPrintings.json already exists.",
+            "message": f"Local AllPrintings.json already exists and appears valid ({format_download_size(existing_size)}).",
         }
 
     set_refresh_status(
         stage="Downloading All Printings",
         message="Downloading AllPrintings.json.gz from MTGJSON...",
+        error="",
     )
 
     headers = {
@@ -1737,84 +2025,71 @@ def download_all_printings_json(force_download=False):
         "Accept": "application/gzip,application/octet-stream;q=0.9,*/*;q=0.8",
     }
 
-    print("=== DOWNLOADING ALLPRINTINGS FROM ===", MTGJSON_ALL_PRINTINGS_URL)
-    print("=== WRITING GZ TO ===", ALL_PRINTINGS_GZ_PATH)
-
     append_refresh_detail_line("=== CHAOS DRAFT: BEGIN ALLPRINTINGS DOWNLOAD ===")
     append_refresh_detail_line(f"=== DOWNLOADING ALLPRINTINGS FROM === {MTGJSON_ALL_PRINTINGS_URL}")
     append_refresh_detail_line(f"=== WRITING GZ TO === {ALL_PRINTINGS_GZ_PATH}")
 
-    with requests.get(
-        MTGJSON_ALL_PRINTINGS_URL,
-        headers=headers,
-        timeout=1200,
-        stream=True,
-    ) as response:
-        response.raise_for_status()
+    try:
+        download_result = download_file_with_retries(
+            MTGJSON_ALL_PRINTINGS_URL,
+            ALL_PRINTINGS_GZ_PATH,
+            headers=headers,
+            label="AllPrintings.json.gz",
+            force_download=True,
+            expected_min_bytes=50 * 1024 * 1024,
+            attempts=4,
+            connect_timeout=30,
+            read_timeout=60,
+            chunk_size=1024 * 1024,
+        )
+    except Exception as exc:
+        append_refresh_detail_line(f"=== ALLPRINTINGS DOWNLOAD FAILED === {str(exc)}")
 
-        content_type = response.headers.get("Content-Type")
-        content_length = response.headers.get("Content-Length")
+        if existing_json_is_valid:
+            existing_size = os.path.getsize(ALL_PRINTINGS_PATH)
+            append_refresh_detail_line(
+                f"=== ALLPRINTINGS FALLBACK === Using existing AllPrintings.json ({format_download_size(existing_size)})"
+            )
 
-        print("=== ALLPRINTINGS HTTP STATUS ===", response.status_code)
-        print("=== ALLPRINTINGS CONTENT-TYPE ===", content_type)
-        print("=== ALLPRINTINGS CONTENT-LENGTH ===", content_length)
+            return {
+                "downloaded": False,
+                "fallback_used": True,
+                "message": f"AllPrintings download failed, but existing AllPrintings.json appears valid ({format_download_size(existing_size)}).",
+            }
 
-        append_refresh_detail_line(f"=== ALLPRINTINGS HTTP STATUS === {response.status_code}")
-        append_refresh_detail_line(f"=== ALLPRINTINGS CONTENT-TYPE === {content_type}")
-        append_refresh_detail_line(f"=== ALLPRINTINGS CONTENT-LENGTH === {content_length}")
+        raise
 
-        with open(ALL_PRINTINGS_GZ_PATH, "wb") as file_handle:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    file_handle.write(chunk)
+    gz_size = os.path.getsize(ALL_PRINTINGS_GZ_PATH) if os.path.exists(ALL_PRINTINGS_GZ_PATH) else 0
+    append_refresh_detail_line(f"=== ALLPRINTINGS GZ SIZE === {format_download_size(gz_size)}")
 
-    gz_exists = os.path.exists(ALL_PRINTINGS_GZ_PATH)
-    print("=== GZ EXISTS AFTER DOWNLOAD ===", gz_exists)
-    append_refresh_detail_line(f"=== GZ EXISTS AFTER DOWNLOAD === {gz_exists}")
-
-    if gz_exists:
-        gz_size = os.path.getsize(ALL_PRINTINGS_GZ_PATH)
-        print("=== GZ SIZE ===", gz_size)
-        append_refresh_detail_line(f"=== GZ SIZE === {gz_size}")
-
-    set_refresh_status(
-        stage="Extracting All Printings",
-        message="Extracting AllPrintings.json from AllPrintings.json.gz...",
+    extract_result = extract_gzip_file_with_progress(
+        ALL_PRINTINGS_GZ_PATH,
+        ALL_PRINTINGS_PATH,
+        label="AllPrintings.json",
+        expected_min_bytes=100 * 1024 * 1024,
+        chunk_size=1024 * 1024,
     )
 
-    print("=== EXTRACTING GZ TO ===", ALL_PRINTINGS_PATH)
-    append_refresh_detail_line(f"=== EXTRACTING GZ TO === {ALL_PRINTINGS_PATH}")
-
-    with gzip.open(ALL_PRINTINGS_GZ_PATH, "rb") as compressed_file:
-        with open(ALL_PRINTINGS_PATH, "wb") as output_file:
-            while True:
-                chunk = compressed_file.read(1024 * 1024)
-                if not chunk:
-                    break
-                output_file.write(chunk)
-
-    json_exists = os.path.exists(ALL_PRINTINGS_PATH)
-    print("=== JSON EXISTS AFTER EXTRACT ===", json_exists)
-    append_refresh_detail_line(f"=== JSON EXISTS AFTER EXTRACT === {json_exists}")
-
-    if json_exists:
-        json_size = os.path.getsize(ALL_PRINTINGS_PATH)
-        print("=== JSON SIZE ===", json_size)
-        append_refresh_detail_line(f"=== JSON SIZE === {json_size}")
+    json_size = os.path.getsize(ALL_PRINTINGS_PATH) if os.path.exists(ALL_PRINTINGS_PATH) else 0
+    append_refresh_detail_line(f"=== ALLPRINTINGS JSON SIZE === {format_download_size(json_size)}")
 
     return {
         "downloaded": True,
-        "message": "Downloaded and extracted AllPrintings.json successfully.",
+        "message": (
+            "Downloaded and extracted AllPrintings.json successfully. "
+            f"GZ={format_download_size(download_result['size'])}; "
+            f"JSON={format_download_size(extract_result['size'])}."
+        ),
     }
 
 def download_chaos_booster_csvs(force_download=False):
     ensure_download_directories()
 
     files_to_download = [
-        (MTGJSON_SET_BOOSTER_CONTENTS_URL, SET_BOOSTER_CONTENTS_CSV_PATH),
-        (MTGJSON_SET_BOOSTER_CONTENT_WEIGHTS_URL, SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH),
-        (MTGJSON_SET_BOOSTER_SHEET_CARDS_URL, SET_BOOSTER_SHEET_CARDS_CSV_PATH),
-        (MTGJSON_SET_BOOSTER_SHEETS_URL, SET_BOOSTER_SHEETS_CSV_PATH),
+        (MTGJSON_SET_BOOSTER_CONTENTS_URL, SET_BOOSTER_CONTENTS_CSV_PATH, "setBoosterContents.csv", 10 * 1024),
+        (MTGJSON_SET_BOOSTER_CONTENT_WEIGHTS_URL, SET_BOOSTER_CONTENT_WEIGHTS_CSV_PATH, "setBoosterContentWeights.csv", 10 * 1024),
+        (MTGJSON_SET_BOOSTER_SHEET_CARDS_URL, SET_BOOSTER_SHEET_CARDS_CSV_PATH, "setBoosterSheetCards.csv", 1 * 1024 * 1024),
+        (MTGJSON_SET_BOOSTER_SHEETS_URL, SET_BOOSTER_SHEETS_CSV_PATH, "setBoosterSheets.csv", 10 * 1024),
     ]
 
     headers = {
@@ -1822,20 +2097,19 @@ def download_chaos_booster_csvs(force_download=False):
         "Accept": "text/csv,application/octet-stream;q=0.9,*/*;q=0.8",
     }
 
-    for url, file_path in files_to_download:
-        if not force_download and os.path.exists(file_path):
-            continue
-
-        set_refresh_status(
-            stage="Downloading Chaos Draft Data",
-            message=f"Downloading {os.path.basename(file_path)}...",
+    for url, file_path, label, expected_min_bytes in files_to_download:
+        download_file_with_retries(
+            url,
+            file_path,
+            headers=headers,
+            label=label,
+            force_download=force_download,
+            expected_min_bytes=expected_min_bytes,
+            attempts=3,
+            connect_timeout=30,
+            read_timeout=45,
+            chunk_size=512 * 1024,
         )
-
-        response = requests.get(url, headers=headers, timeout=180)
-        response.raise_for_status()
-
-        with open(file_path, "wb") as file_handle:
-            file_handle.write(response.content)
 
 def safe_list(value):
     if isinstance(value, list):
@@ -4115,6 +4389,7 @@ def run_refresh_job(force_download=False):
         )
 
         all_printings_result = download_all_printings_json(force_download=True)
+        append_refresh_detail_line(f"=== ALLPRINTINGS RESULT MESSAGE === {all_printings_result.get('message', '')}")
         print("=== CHAOS DRAFT: DOWNLOAD RESULT ===", all_printings_result)
         print("=== CHAOS DRAFT: ALL_PRINTINGS_PATH EXISTS ===", os.path.exists(ALL_PRINTINGS_PATH))
         if os.path.exists(ALL_PRINTINGS_PATH):
@@ -5015,6 +5290,91 @@ def campaign_chaos_select_player():
 
     return jsonify(result)
 
+def build_manage_pack_summary_rows(packs):
+    summary_lookup = {}
+
+    for pack in packs or []:
+        if not pack.get("campaign_enabled"):
+            continue
+
+        group_key = (
+            (pack.get("pack_display_name") or "").strip(),
+            (pack.get("set_code") or "").strip().upper(),
+            (pack.get("booster_name") or "").strip().lower(),
+        )
+
+        if group_key not in summary_lookup:
+            summary_lookup[group_key] = {
+                "pack_display_name": (pack.get("pack_display_name") or "").strip(),
+                "set_code": (pack.get("set_code") or "").strip().upper(),
+                "booster_name": (pack.get("booster_name") or "").strip().lower(),
+                "quantity": 0,
+                "pack_ids": [],
+                "first_added_at_utc": pack.get("added_at_utc") or "",
+                "latest_added_at_utc": pack.get("added_at_utc") or "",
+                "release_date": "",
+            }
+
+        summary_row = summary_lookup[group_key]
+        summary_row["quantity"] += 1
+        summary_row["pack_ids"].append(int(pack["tracked_pack_id"]))
+
+        added_at_utc = pack.get("added_at_utc") or ""
+        if added_at_utc and (not summary_row["first_added_at_utc"] or added_at_utc < summary_row["first_added_at_utc"]):
+            summary_row["first_added_at_utc"] = added_at_utc
+
+        if added_at_utc and (not summary_row["latest_added_at_utc"] or added_at_utc > summary_row["latest_added_at_utc"]):
+            summary_row["latest_added_at_utc"] = added_at_utc
+
+    summary_rows = list(summary_lookup.values())
+
+    if summary_rows:
+        set_codes = sorted({
+            row["set_code"]
+            for row in summary_rows
+            if row.get("set_code")
+        })
+
+        if set_codes:
+            placeholders = ",".join(["?"] * len(set_codes))
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            cursor.execute(
+                f"""
+                SELECT
+                    set_code,
+                    release_date
+                FROM sets
+                WHERE set_code IN ({placeholders})
+                """,
+                set_codes,
+            )
+
+            release_lookup = {
+                (row["set_code"] or "").strip().upper(): row["release_date"] or ""
+                for row in cursor.fetchall()
+            }
+
+            conn.close()
+
+            for summary_row in summary_rows:
+                summary_row["release_date"] = release_lookup.get(summary_row["set_code"], "")
+
+    summary_rows.sort(
+        key=lambda row: (
+            -int(row["quantity"] or 0),
+            (row["pack_display_name"] or "").lower(),
+            row["set_code"],
+        )
+    )
+
+    return {
+        "total_enabled_packs": sum(int(row["quantity"] or 0) for row in summary_rows),
+        "rows": summary_rows,
+    }
+
 @app.route("/campaign-chaos/packs", methods=["GET"])
 def campaign_chaos_packs():
     search_text = (request.args.get("q") or "").strip()
@@ -5031,12 +5391,16 @@ def campaign_chaos_packs():
         campaign_id=selected_chaos_campaign_id,
     )
 
+    pack_summary = build_manage_pack_summary_rows(packs)
+
     return render_template(
         "campaign_manage_packs.html",
         packs=packs,
         search_text=search_text,
         selected_chaos_campaign=selected_chaos_campaign,
+        selected_chaos_campaign_id=selected_chaos_campaign_id,
         pack_import_campaign_options=pack_import_campaign_options,
+        pack_summary=pack_summary,
     )
 
 @app.route("/campaign-chaos/history", methods=["GET"])
