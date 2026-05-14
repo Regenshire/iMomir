@@ -2353,6 +2353,42 @@ def download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url):
 
     return cache_paths
 
+def try_download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url, context_label="CHAOS IMAGE"):
+    try:
+        return download_chaos_image_to_cache(
+            card_uuid,
+            page_kind,
+            face_name,
+            image_url,
+        )
+    except requests.exceptions.HTTPError as exc:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+
+        write_debug_log(
+            f"{context_label} DOWNLOAD HTTP ERROR | "
+            f"card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | "
+            f"status={status_code} | url={image_url} | error={str(exc)}"
+        )
+
+        return None
+    except requests.exceptions.RequestException as exc:
+        write_debug_log(
+            f"{context_label} DOWNLOAD REQUEST ERROR | "
+            f"card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | "
+            f"url={image_url} | error={str(exc)}"
+        )
+
+        return None
+    except Exception as exc:
+        write_debug_log(
+            f"{context_label} DOWNLOAD ERROR | "
+            f"card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | "
+            f"url={image_url} | error={str(exc)}"
+        )
+
+        return None
+
 def get_two_card_borderless_slots_mm():
     # 3.5" x 5" portrait page
     # Two rotated cards, stacked vertically, no margins.
@@ -3597,6 +3633,96 @@ def draw_selective_rounded_rectangle(draw, box, radius, corners, fill):
     else:
         draw.rectangle((left, bottom - radius, left + radius, bottom), fill=fill)
 
+def draw_overlay_mask_shape(mask_draw, box, radius, corners, fill=255):
+    left, top, right, bottom = box
+    radius = int(max(0, radius or 0))
+
+    if radius <= 0:
+        mask_draw.rectangle(box, fill=fill)
+        return
+
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+    radius = min(radius, width // 2, height // 2)
+
+    top_left = bool((corners or {}).get("top_left"))
+    top_right = bool((corners or {}).get("top_right"))
+    bottom_right = bool((corners or {}).get("bottom_right"))
+    bottom_left = bool((corners or {}).get("bottom_left"))
+
+    mask_draw.rectangle((left + radius, top, right - radius, bottom), fill=fill)
+    mask_draw.rectangle((left, top + radius, right, bottom - radius), fill=fill)
+
+    if top_left:
+        mask_draw.pieslice((left, top, left + radius * 2, top + radius * 2), 180, 270, fill=fill)
+    else:
+        mask_draw.rectangle((left, top, left + radius, top + radius), fill=fill)
+
+    if top_right:
+        mask_draw.pieslice((right - radius * 2, top, right, top + radius * 2), 270, 360, fill=fill)
+    else:
+        mask_draw.rectangle((right - radius, top, right, top + radius), fill=fill)
+
+    if bottom_right:
+        mask_draw.pieslice((right - radius * 2, bottom - radius * 2, right, bottom), 0, 90, fill=fill)
+    else:
+        mask_draw.rectangle((right - radius, bottom - radius, right, bottom), fill=fill)
+
+    if bottom_left:
+        mask_draw.pieslice((left, bottom - radius * 2, left + radius * 2, bottom), 90, 180, fill=fill)
+    else:
+        mask_draw.rectangle((left, bottom - radius, left + radius, bottom), fill=fill)
+
+def apply_overlay_with_cutouts(image, box, radius_px, corners, fill_rgb, cutouts, image_width, image_height):
+    mask = Image.new("L", (image_width, image_height), 0)
+    mask_draw = ImageDraw.Draw(mask)
+
+    draw_overlay_mask_shape(
+        mask_draw,
+        box,
+        radius_px,
+        corners,
+        fill=255,
+    )
+
+    for cutout in cutouts or []:
+        shape = (cutout.get("shape") or "").strip().lower()
+
+        if shape == "circle":
+            cx = int(image_width * float(cutout.get("cx", 0.0)))
+            cy = int(image_height * float(cutout.get("cy", 0.0)))
+            radius = int(min(image_width, image_height) * float(cutout.get("r", 0.0)))
+
+            if radius > 0:
+                mask_draw.ellipse(
+                    (cx - radius, cy - radius, cx + radius, cy + radius),
+                    fill=0,
+                )
+
+        elif shape == "ellipse":
+            cx = int(image_width * float(cutout.get("cx", 0.0)))
+            cy = int(image_height * float(cutout.get("cy", 0.0)))
+            rx = int(image_width * float(cutout.get("rx", 0.0)))
+            ry = int(image_height * float(cutout.get("ry", 0.0)))
+
+            if rx > 0 and ry > 0:
+                mask_draw.ellipse(
+                    (cx - rx, cy - ry, cx + rx, cy + ry),
+                    fill=0,
+                )
+
+        elif shape == "rect":
+            x1 = int(image_width * float(cutout.get("x1", 0.0)))
+            y1 = int(image_height * float(cutout.get("y1", 0.0)))
+            x2 = int(image_width * float(cutout.get("x2", 0.0)))
+            y2 = int(image_height * float(cutout.get("y2", 0.0)))
+
+            mask_draw.rectangle((x1, y1, x2, y2), fill=0)
+
+    overlay_layer = Image.new("RGB", (image_width, image_height), fill_rgb)
+    image.paste(overlay_layer, mask=mask)
+
+    return image
 
 def draw_image_export_corner_label(image, label_text, template_config, matte_rgb):
     label_text = (label_text or "").strip().upper()
@@ -3619,13 +3745,25 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     overlay_radius_pct = float(template_config.get("overlay_corner_radius_pct") or 0.0)
     overlay_radius_px = int(min(image_width, image_height) * overlay_radius_pct)
 
-    draw_selective_rounded_rectangle(
-        draw,
-        (overlay_left, overlay_top, overlay_right, overlay_bottom),
-        overlay_radius_px,
-        template_config.get("overlay_round_corners") or {},
-        fill=tuple(matte_rgb or template_config.get("fallback_rgb") or (18, 12, 12)),
+    overlay_fill_rgb = tuple(
+        template_config.get("overlay_fill_rgb_override")
+        or matte_rgb
+        or template_config.get("fallback_rgb")
+        or (18, 12, 12)
     )
+
+    source_image = apply_overlay_with_cutouts(
+        image=source_image,
+        box=(overlay_left, overlay_top, overlay_right, overlay_bottom),
+        radius_px=overlay_radius_px,
+        corners=template_config.get("overlay_round_corners") or {},
+        fill_rgb=overlay_fill_rgb,
+        cutouts=template_config.get("overlay_cutouts") or [],
+        image_width=image_width,
+        image_height=image_height,
+    )
+
+    draw = ImageDraw.Draw(source_image)
 
     text_left = int(image_width * float(text_box.get("x1", 0.025)))
     text_top = int(image_height * float(text_box.get("y1", 0.962)))
@@ -3916,6 +4054,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
 
     regular_xml_cards = []
     foil_xml_cards = []
+    export_warnings = []
 
     exported_filename_counts = {}
 
@@ -3972,25 +4111,36 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
         front_filename = f"{base_filename}.jpg"
         front_output_path = os.path.join(finish_output_dir, front_filename)
 
-        front_cached_result = download_chaos_image_to_cache(
+        front_cached_result = try_download_chaos_image_to_cache(
             front_page_entry.get("card_uuid"),
             front_page_entry.get("page_kind"),
             front_page_entry.get("face_name"),
             front_page_entry.get("image_url"),
+            context_label="IMAGE EXPORT FRONT",
         )
 
         if not front_cached_result:
-            write_debug_log(
-                f"IMAGE EXPORT SKIP | card_uuid={card_uuid} | reason=front image cache failed"
+            warning_text = (
+                f"Skipped card because front image was unavailable: "
+                f"{export_row.get('card_name')} | {card_uuid}"
             )
+            export_warnings.append(warning_text)
+            write_debug_log(f"IMAGE EXPORT WARNING | {warning_text}")
             continue
 
-        build_export_card_image(
-            front_cached_result["absolute_path"],
-            front_output_path,
-            export_row["pack_tracking_code"],
-            card_row,
-        )
+        try:
+            build_export_card_image(
+                front_cached_result["absolute_path"],
+                front_output_path,
+                export_row["pack_tracking_code"],
+                card_row,
+            )
+        except Exception as exc:
+            write_debug_log(
+                f"IMAGE EXPORT FRONT RENDER FAILED | card_uuid={card_uuid} | "
+                f"card_name={export_row.get('card_name')} | error={str(exc)} | skipping card"
+            )
+            continue
 
         front_relative_xml_path = f"\\Images\\{finish_folder_name}\\{front_filename}"
 
@@ -3998,22 +4148,34 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
             back_filename = f"{base_filename}_back.jpg"
             back_output_path = os.path.join(finish_output_dir, back_filename)
 
-            back_cached_result = download_chaos_image_to_cache(
+            back_cached_result = try_download_chaos_image_to_cache(
                 back_page_entry.get("card_uuid"),
                 back_page_entry.get("page_kind"),
                 back_page_entry.get("face_name"),
                 back_page_entry.get("image_url"),
+                context_label="IMAGE EXPORT BACK",
             )
 
             if back_cached_result:
-                build_export_card_image(
-                    back_cached_result["absolute_path"],
-                    back_output_path,
-                    f"{export_row['pack_tracking_code']} - BACK",
-                    card_row,
-                )
-                back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
+                try:
+                    build_export_card_image(
+                        back_cached_result["absolute_path"],
+                        back_output_path,
+                        f"{export_row['pack_tracking_code']} - BACK",
+                        card_row,
+                    )
+                    back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
+                except Exception as exc:
+                    write_debug_log(
+                        f"IMAGE EXPORT BACK RENDER FAILED | card_uuid={card_uuid} | "
+                        f"card_name={export_row.get('card_name')} | error={str(exc)} | using default back"
+                    )
+                    back_relative_xml_path = f"\\Images\\Default\\{default_back_filename}"
             else:
+                write_debug_log(
+                    f"IMAGE EXPORT BACK FALLBACK | card_uuid={card_uuid} | "
+                    f"card_name={export_row.get('card_name')} | back image unavailable; using default back"
+                )
                 back_relative_xml_path = f"\\Images\\Default\\{default_back_filename}"
         else:
             back_relative_xml_path = f"\\Images\\Default\\{default_back_filename}"

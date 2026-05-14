@@ -89,6 +89,40 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "fallback_rgb": (20, 17, 15),
     },
 
+    "1997": {
+        "template_name": "Original Frame",
+        "inherits": "default",
+
+        # Original frames often have centered artist/copyright data.
+        # Start small and centered. Adjust this if you want it lower/wider.
+        "overlay_box": {
+            "x1": 0.255,
+            "y1": 0.958,
+            "x2": 0.745,
+            "y2": 1.000,
+        },
+        "text_box": {
+            "x1": 0.275,
+            "y1": 0.954,
+            "x2": 0.725,
+            "y2": 0.987,
+        },
+        "text_align": "center",
+
+        # Example selective rounding: top corners only.
+        # Set these to False/True as you test.
+        "overlay_corner_radius_pct": 0.020,
+        "overlay_round_corners": {
+            "top_left": True,
+            "top_right": True,
+            "bottom_right": False,
+            "bottom_left": False,
+        },
+
+        "card_corner_radius_pct": 0.16,
+        "fallback_rgb": (20, 17, 15),
+    },
+
     "2003": {
         "template_name": "Modern Frame",
         "inherits": "default",
@@ -96,27 +130,27 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # Keep close to old lower-left footer behavior.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.958,
-            "x2": 0.445,
+            "y1": 0.948,
+            "x2": 0.665,
             "y2": 1.000,
         },
         "text_box": {
-            "x1": 0.025,
-            "y1": 0.962,
-            "x2": 0.430,
-            "y2": 0.995,
+            "x1": 0.066,
+            "y1": 0.950,
+            "x2": 0.471,
+            "y2": 0.983,
         },
         "text_align": "left",
 
-        "overlay_corner_radius_pct": 0.000,
+        "overlay_corner_radius_pct": 0.020,
         "overlay_round_corners": {
             "top_left": False,
-            "top_right": False,
+            "top_right": True,
             "bottom_right": False,
             "bottom_left": False,
         },
 
-        "card_corner_radius_pct": 0.030,
+        "card_corner_radius_pct": 0.16,
         "fallback_rgb": (18, 14, 12),
     },
 
@@ -124,22 +158,24 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "template_name": "M15 Frame",
         "inherits": "default",
 
+        #"overlay_fill_rgb_override": (255, 0, 255),
+
         # This is basically the old behavior. Small lower-left black footer label.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.958,
-            "x2": 0.445,
+            "y1": 0.929,
+            "x2": 0.500,
             "y2": 1.000,
         },
         "text_box": {
-            "x1": 0.025,
-            "y1": 0.962,
-            "x2": 0.430,
-            "y2": 0.995,
+            "x1": 0.066,
+            "y1": 0.940,
+            "x2": 0.471,
+            "y2": 0.973,
         },
         "text_align": "left",
 
-        "overlay_corner_radius_pct": 0.000,
+        "overlay_corner_radius_pct": 0.00,
         "overlay_round_corners": {
             "top_left": False,
             "top_right": False,
@@ -147,7 +183,18 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             "bottom_left": False,
         },
 
-        "card_corner_radius_pct": 0.034,
+        # New: carve-out support for the center holo stamp / emblem.
+        "overlay_cutouts": [
+            {
+                "shape": "ellipse",
+                "cx": 0.500,
+                "cy": 0.929,
+                "rx": 0.055,
+                "ry": 0.021,
+            },
+        ],
+
+        "card_corner_radius_pct": 0.060,
         "fallback_rgb": (15, 12, 12),
     },
 
@@ -155,31 +202,33 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "template_name": "Future Sight Frame",
         "inherits": "default",
 
-        # Future Sight frames have odd bottom/footer shapes, but start conservative.
+        # Future Sight frames have odd bottom/footer shapes.
         "overlay_box": {
-            "x1": 0.000,
+            "x1": 0.255,
             "y1": 0.958,
-            "x2": 0.475,
+            "x2": 0.745,
             "y2": 1.000,
         },
         "text_box": {
-            "x1": 0.025,
-            "y1": 0.962,
-            "x2": 0.460,
-            "y2": 0.995,
+            "x1": 0.275,
+            "y1": 0.954,
+            "x2": 0.725,
+            "y2": 0.987,
         },
-        "text_align": "left",
+        "text_align": "center",
 
-        "overlay_corner_radius_pct": 0.000,
+        # Example selective rounding: top corners only.
+        # Set these to False/True as you test.
+        "overlay_corner_radius_pct": 0.020,
         "overlay_round_corners": {
-            "top_left": False,
-            "top_right": False,
+            "top_left": True,
+            "top_right": True,
             "bottom_right": False,
             "bottom_left": False,
         },
 
-        "card_corner_radius_pct": 0.033,
-        "fallback_rgb": (24, 16, 16),
+        "card_corner_radius_pct": 0.16,
+        "fallback_rgb": (20, 17, 15),
     },
 }
 
