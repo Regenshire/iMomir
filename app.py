@@ -2719,6 +2719,40 @@ def build_card_corner_label_text(rendered_entry, pack_tracking_code=None, print_
 
     return " - ".join(label_parts).strip()
 
+def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=None, print_front_back_label=False):
+    card_row = rendered_entry.get("card_row")
+    card_uuid = (rendered_entry.get("card_uuid") or "").strip()
+    page_kind = (rendered_entry.get("page_kind") or "").strip().lower()
+
+    if not card_row or not card_uuid:
+        return rendered_entry
+
+    label_text = build_card_corner_label_text(
+        rendered_entry,
+        pack_tracking_code=pack_tracking_code,
+        print_front_back_label=print_front_back_label,
+    )
+
+    rendered_temp_path = get_chaos_rendered_pdf_image_temp_path(
+        card_uuid,
+        page_kind,
+        label_text,
+    )
+
+    build_chaos_template_rendered_card_image(
+        rendered_entry["temp_path"],
+        rendered_temp_path,
+        label_text,
+        card_row,
+    )
+
+    updated_entry = dict(rendered_entry)
+    updated_entry["source_temp_path"] = rendered_entry["temp_path"]
+    updated_entry["temp_path"] = rendered_temp_path
+    updated_entry["is_persistent_cache_file"] = False
+    updated_entry["is_template_rendered"] = True
+
+    return updated_entry
 
 def draw_card_corner_label(pdf_canvas, slot_x_mm, slot_y_mm, slot_width_mm, slot_height_mm, label_text):
     label_text = (label_text or "").strip().upper()
@@ -2876,6 +2910,11 @@ def get_chaos_temp_file_path(filename):
     ensure_download_directories()
     safe_name = safe_filename(filename)
     return os.path.join(CHAOS_TEMP_CACHE_DIR, safe_name)
+
+def get_chaos_rendered_pdf_image_temp_path(card_uuid, page_kind, label_text):
+    label_part = safe_filename(label_text or "nolabel")
+    filename = f"chaos_pdf_rendered_{safe_filename(card_uuid)}_{safe_filename(page_kind)}_{label_part}.jpg"
+    return get_chaos_temp_file_path(filename)
 
 def build_chaos_pack_image_title_card_bytes(set_code, booster_name, card_width_mm=63.5, card_height_mm=88.9):
     booster_key = normalize_chaos_booster_key(booster_name)
@@ -3229,8 +3268,11 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
             rendered_image_entries.append({
                 "temp_path": title_temp_path,
                 "page_kind": "title",
+                "card_uuid": "",
+                "card_row": None,
                 "is_dual_faced": 0,
                 "is_persistent_cache_file": False,
+                "is_template_rendered": False,
             })
         except Exception as exc:
             write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
@@ -3271,8 +3313,11 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 rendered_image_entries.append({
                     "temp_path": cached_result["absolute_path"],
                     "page_kind": (page_entry.get("page_kind") or "").strip().lower(),
+                    "card_uuid": (page_entry.get("card_uuid") or card_uuid or "").strip(),
+                    "card_row": card_row,
                     "is_dual_faced": int(card_row["is_dual_faced"] or 0),
                     "is_persistent_cache_file": True,
+                    "is_template_rendered": False,
                 })
 
             except Exception as exc:
@@ -3283,6 +3328,23 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 continue
 
     pages_rendered = 0
+
+    template_rendered_entries = []
+
+    for rendered_entry in rendered_image_entries:
+        if rendered_entry.get("page_kind") == "title":
+            template_rendered_entries.append(rendered_entry)
+            continue
+
+        template_rendered_entries.append(
+            build_pdf_rendered_entry_with_template(
+                rendered_entry,
+                pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
+                print_front_back_label=pdf_settings.get("print_front_back_label"),
+            )
+        )
+
+    rendered_image_entries = template_rendered_entries
 
     try:
         if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
@@ -3313,21 +3375,6 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                         slot_def,
                         add_edge_bleed_border=True,
                         rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
-                    )
-
-                    label_text = build_card_corner_label_text(
-                        rendered_entry,
-                        pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
-                        print_front_back_label=pdf_settings.get("print_front_back_label"),
-                    )
-
-                    draw_card_corner_label(
-                        c,
-                        slot_def["x_mm"],
-                        slot_def["y_mm"],
-                        slot_def["width_mm"],
-                        slot_def["height_mm"],
-                        label_text,
                     )
 
                 if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
@@ -3361,21 +3408,6 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                         slot_def,
                     )
 
-                    label_text = build_card_corner_label_text(
-                        rendered_entry,
-                        pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
-                        print_front_back_label=pdf_settings.get("print_front_back_label"),
-                    )
-
-                    draw_card_corner_label(
-                        c,
-                        slot_def["x_mm"],
-                        slot_def["y_mm"],
-                        slot_def["width_mm"],
-                        slot_def["height_mm"],
-                        label_text,
-                    )
-
                 c.showPage()
                 pages_rendered += 1
         else:
@@ -3395,21 +3427,6 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                     mask="auto",
                 )
 
-                label_text = build_card_corner_label_text(
-                    rendered_entry,
-                    pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
-                    print_front_back_label=pdf_settings.get("print_front_back_label"),
-                )
-
-                draw_card_corner_label(
-                    c,
-                    draw_x_mm,
-                    draw_y_mm,
-                    draw_width_mm,
-                    draw_height_mm,
-                    label_text,
-                )
-
                 c.showPage()
                 pages_rendered += 1
 
@@ -3419,8 +3436,9 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 if rendered_entry.get("is_persistent_cache_file", False):
                     continue
 
-                if os.path.exists(rendered_entry["temp_path"]):
-                    os.remove(rendered_entry["temp_path"])
+                temp_path = rendered_entry.get("temp_path")
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
             except Exception:
                 pass
 
@@ -3685,6 +3703,31 @@ def build_export_card_image(source_image_path, output_image_path, label_text, ca
         os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
         image.save(output_image_path, format="JPEG", quality=95, optimize=True)
 
+def build_chaos_template_rendered_card_image(source_image_path, output_image_path, label_text, card_row):
+    """
+    Shared Chaos Draft card rendering path.
+
+    Used by:
+    - Image export ZIP files
+    - Chaos Draft PDFs
+    - Campaign Mode PDFs
+    - PRE-PRINT PDFs
+    - Manage Packs / Preview print PDFs
+
+    This applies:
+    - duplicated edge bleed
+    - frame-template corner cleanup
+    - sampled border/matte color
+    - template-based pack-code overlay placement
+    """
+    build_export_card_image(
+        source_image_path,
+        output_image_path,
+        label_text,
+        card_row,
+    )
+
+    return output_image_path
 
 def get_tracked_pack_card_export_rows(tracked_pack_ids):
     pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
