@@ -20,6 +20,7 @@ data/image_cache/
 data/
 data/scryfall/default-cards.json
 Utility/temp/
+Export/
 
 # OS
 .DS_Store

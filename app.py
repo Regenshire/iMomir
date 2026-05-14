@@ -4,9 +4,12 @@ import json
 import os
 import random
 import re
+import shutil
 import socket
 import threading
 import time
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 
 import requests
@@ -26,6 +29,7 @@ from paths import (
     CHAOS_IMAGE_CACHE_DIR,
     CHAOS_TEMP_CACHE_DIR,
     CAMPAIGN_PLAYER_PORTRAIT_DIR,
+    EXPORT_ROOT_DIR,
     DATA_DOWNLOAD_DIR,
     IMAGE_CACHE_DIR,
     LOG_PATH,
@@ -92,6 +96,8 @@ from db.pricing import (
     enrich_pack_cards_with_prices,
     import_all_prices_today_into_database,
 )
+
+from image_export_templates import resolve_card_export_template_config
 
 from db.database import (
     ensure_column_exists,
@@ -493,6 +499,7 @@ def update_config_from_form(form_data):
         "print_front_back_label",
         "print_pack_tracking_code",
         "enable_track_packs",
+        "enable_chaos_card_image_export",
         "use_pack_image_for_title",
         "open_print_in_new_tab",
         "sound_enabled",
@@ -701,6 +708,8 @@ def import_chaos_cards_from_all_printings():
 
             layout = (card_obj.get("layout") or "").strip().lower()
             side = (card_obj.get("side") or "").strip().lower()
+            frame_version = (card_obj.get("frameVersion") or "").strip().lower()
+            border_color = (card_obj.get("borderColor") or "").strip().lower()
 
             if is_dual_faced_layout(layout) and side == "b":
                 continue
@@ -752,9 +761,11 @@ def import_chaos_cards_from_all_printings():
                     front_image_url,
                     back_image_url,
                     front_face_name,
-                    back_face_name
+                    back_face_name,
+                    frame_version,
+                    border_color
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_uuid,
@@ -779,6 +790,8 @@ def import_chaos_cards_from_all_printings():
                     back_image_url,
                     front_face_name,
                     back_face_name,
+                    frame_version,
+                    border_color,
                 ),
             )
 
@@ -3419,6 +3432,597 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
 
     return buffer
 
+def get_next_image_export_folder():
+    os.makedirs(EXPORT_ROOT_DIR, exist_ok=True)
+
+    date_stamp = datetime.now().strftime("%Y%m%d")
+    export_index = 1
+
+    while True:
+        folder_name = f"Image Export {date_stamp}_{export_index}"
+        export_folder = os.path.join(EXPORT_ROOT_DIR, folder_name)
+
+        if not os.path.exists(export_folder):
+            return {
+                "folder_name": folder_name,
+                "folder_path": export_folder,
+            }
+
+        export_index += 1
+
+
+def make_image_export_id_safe(value):
+    clean_value = (value or "").strip()
+
+    if not clean_value:
+        return "CARD"
+
+    clean_value = re.sub(r"[^A-Za-z0-9]+", "_", clean_value)
+    clean_value = re.sub(r"_+", "_", clean_value)
+    clean_value = clean_value.strip("_")
+
+    return clean_value or "CARD"
+
+
+def make_image_export_filename_safe(value):
+    clean_value = make_image_export_id_safe(value)
+
+    if len(clean_value) > 120:
+        clean_value = clean_value[:120].rstrip("_")
+
+    return clean_value or "CARD"
+
+def sample_image_region_rgb(image, x1, y1, x2, y2):
+    width, height = image.size
+
+    left = max(0, min(width - 1, int(width * x1)))
+    top = max(0, min(height - 1, int(height * y1)))
+    right = max(left + 1, min(width, int(width * x2)))
+    bottom = max(top + 1, min(height, int(height * y2)))
+
+    region = image.crop((left, top, right, bottom)).convert("RGB")
+    pixels = list(region.getdata())
+
+    dark_pixels = [
+        pixel for pixel in pixels
+        if ((pixel[0] + pixel[1] + pixel[2]) / 3.0) <= 90
+    ]
+
+    source_pixels = dark_pixels if dark_pixels else pixels
+
+    if not source_pixels:
+        return None
+
+    reds = sorted(pixel[0] for pixel in source_pixels)
+    greens = sorted(pixel[1] for pixel in source_pixels)
+    blues = sorted(pixel[2] for pixel in source_pixels)
+
+    middle = len(source_pixels) // 2
+
+    return (
+        reds[middle],
+        greens[middle],
+        blues[middle],
+    )
+
+
+def sample_export_border_rgb(image, template_config):
+    sample_regions = template_config.get("border_sample_regions") or []
+
+    sampled_colors = []
+
+    for region in sample_regions:
+        sampled_rgb = sample_image_region_rgb(
+            image,
+            region["x1"],
+            region["y1"],
+            region["x2"],
+            region["y2"],
+        )
+
+        if sampled_rgb:
+            sampled_colors.append(sampled_rgb)
+
+    if sampled_colors:
+        reds = sorted(rgb[0] for rgb in sampled_colors)
+        greens = sorted(rgb[1] for rgb in sampled_colors)
+        blues = sorted(rgb[2] for rgb in sampled_colors)
+        middle = len(sampled_colors) // 2
+
+        return (
+            reds[middle],
+            greens[middle],
+            blues[middle],
+        )
+
+    return tuple(template_config.get("fallback_rgb") or (18, 12, 12))
+
+def draw_selective_rounded_rectangle(draw, box, radius, corners, fill):
+    left, top, right, bottom = box
+    radius = int(max(0, radius or 0))
+
+    if radius <= 0:
+        draw.rectangle(box, fill=fill)
+        return
+
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+    radius = min(radius, width // 2, height // 2)
+
+    top_left = bool((corners or {}).get("top_left"))
+    top_right = bool((corners or {}).get("top_right"))
+    bottom_right = bool((corners or {}).get("bottom_right"))
+    bottom_left = bool((corners or {}).get("bottom_left"))
+
+    # Center rectangles.
+    draw.rectangle((left + radius, top, right - radius, bottom), fill=fill)
+    draw.rectangle((left, top + radius, right, bottom - radius), fill=fill)
+
+    # Corners.
+    if top_left:
+        draw.pieslice((left, top, left + radius * 2, top + radius * 2), 180, 270, fill=fill)
+    else:
+        draw.rectangle((left, top, left + radius, top + radius), fill=fill)
+
+    if top_right:
+        draw.pieslice((right - radius * 2, top, right, top + radius * 2), 270, 360, fill=fill)
+    else:
+        draw.rectangle((right - radius, top, right, top + radius), fill=fill)
+
+    if bottom_right:
+        draw.pieslice((right - radius * 2, bottom - radius * 2, right, bottom), 0, 90, fill=fill)
+    else:
+        draw.rectangle((right - radius, bottom - radius, right, bottom), fill=fill)
+
+    if bottom_left:
+        draw.pieslice((left, bottom - radius * 2, left + radius * 2, bottom), 90, 180, fill=fill)
+    else:
+        draw.rectangle((left, bottom - radius, left + radius, bottom), fill=fill)
+
+
+def draw_image_export_corner_label(image, label_text, template_config, matte_rgb):
+    label_text = (label_text or "").strip().upper()
+    source_image = image.convert("RGB")
+
+    if not label_text:
+        return source_image
+
+    draw = ImageDraw.Draw(source_image)
+    image_width, image_height = source_image.size
+
+    overlay_box = template_config.get("overlay_box") or {}
+    text_box = template_config.get("text_box") or {}
+
+    overlay_left = int(image_width * float(overlay_box.get("x1", 0.000)))
+    overlay_top = int(image_height * float(overlay_box.get("y1", 0.958)))
+    overlay_right = int(image_width * float(overlay_box.get("x2", 0.445)))
+    overlay_bottom = int(image_height * float(overlay_box.get("y2", 1.000)))
+
+    overlay_radius_pct = float(template_config.get("overlay_corner_radius_pct") or 0.0)
+    overlay_radius_px = int(min(image_width, image_height) * overlay_radius_pct)
+
+    draw_selective_rounded_rectangle(
+        draw,
+        (overlay_left, overlay_top, overlay_right, overlay_bottom),
+        overlay_radius_px,
+        template_config.get("overlay_round_corners") or {},
+        fill=tuple(matte_rgb or template_config.get("fallback_rgb") or (18, 12, 12)),
+    )
+
+    text_left = int(image_width * float(text_box.get("x1", 0.025)))
+    text_top = int(image_height * float(text_box.get("y1", 0.962)))
+    text_right = int(image_width * float(text_box.get("x2", 0.430)))
+    text_bottom = int(image_height * float(text_box.get("y2", 0.995)))
+
+    max_text_width = max(20, text_right - text_left)
+    max_text_height = max(14, text_bottom - text_top)
+
+    font_size = max(12, int(max_text_height * 0.82))
+    font = None
+    text_width = 0
+    text_height = 0
+
+    while font_size >= 10:
+        try:
+            font = ImageFont.truetype("arialbd.ttf", font_size)
+        except Exception:
+            font = ImageFont.load_default()
+
+        try:
+            text_bbox = draw.textbbox((0, 0), label_text, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+        except Exception:
+            text_width = len(label_text) * 8
+            text_height = 14
+
+        if text_width <= max_text_width and text_height <= max_text_height:
+            break
+
+        font_size -= 1
+
+    text_align = (template_config.get("text_align") or "left").strip().lower()
+
+    if text_align == "center":
+        text_x = text_left + max(0, (max_text_width - text_width) // 2)
+    elif text_align == "right":
+        text_x = text_right - text_width
+    else:
+        text_x = text_left
+
+    text_y = text_top + max(0, (max_text_height - text_height) // 2)
+
+    draw.text(
+        (text_x, text_y),
+        label_text,
+        fill=tuple(template_config.get("text_fill_rgb") or (255, 255, 255)),
+        font=font,
+    )
+
+    return source_image
+
+def build_export_card_image(source_image_path, output_image_path, label_text, card_row):
+    with Image.open(source_image_path) as source_image:
+        image = source_image.convert("RGB")
+
+        template_config = resolve_card_export_template(card_row)
+
+        image = add_duplicated_edge_border(image)
+
+        matte_rgb = sample_export_border_rgb(image, template_config)
+
+        if (template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask":
+            radius_px = max(1, int(min(image.size) * float(template_config.get("card_corner_radius_pct") or 0.03)))
+            image = apply_rounded_corner_mask(image, radius_px, matte_rgb=matte_rgb)
+
+        image = draw_image_export_corner_label(
+            image=image,
+            label_text=label_text,
+            template_config=template_config,
+            matte_rgb=matte_rgb,
+        )
+
+        os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
+        image.save(output_image_path, format="JPEG", quality=95, optimize=True)
+
+
+def get_tracked_pack_card_export_rows(tracked_pack_ids):
+    pack_ids = normalize_tracked_pack_id_list(tracked_pack_ids)
+
+    if not pack_ids:
+        return []
+
+    placeholders = ",".join(["?"] * len(pack_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT
+            tcp.tracked_pack_id,
+            tcp.pack_tracking_code,
+            tcp.set_code AS pack_set_code,
+            tcp.booster_name AS pack_booster_name,
+            tcp.booster_index,
+            tcp.pack_display_name,
+
+            tcpc.tracked_pack_card_id,
+            tcpc.card_order,
+            tcpc.card_uuid,
+            tcpc.card_name,
+            tcpc.set_code AS card_set_code,
+            tcpc.sheet_is_foil,
+            tcpc.rarity,
+            tcpc.type_line,
+            tcpc.scryfall_id,
+            tcpc.collector_number
+        FROM tracked_chaos_packs tcp
+        INNER JOIN tracked_chaos_pack_cards tcpc
+            ON tcpc.tracked_pack_id = tcp.tracked_pack_id
+        WHERE tcp.tracked_pack_id IN ({placeholders})
+        ORDER BY
+            tcp.tracked_pack_id ASC,
+            tcpc.card_order ASC,
+            tcpc.tracked_pack_card_id ASC
+        """,
+        pack_ids,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    export_rows = []
+
+    for row in rows:
+        export_rows.append({
+            "tracked_pack_id": int(row["tracked_pack_id"]),
+            "pack_tracking_code": (row["pack_tracking_code"] or "").strip().upper(),
+            "pack_set_code": (row["pack_set_code"] or "").strip().upper(),
+            "pack_booster_name": (row["pack_booster_name"] or "").strip().lower(),
+            "booster_index": int(row["booster_index"] or 0),
+            "pack_display_name": row["pack_display_name"] or "",
+            "tracked_pack_card_id": int(row["tracked_pack_card_id"]),
+            "card_order": int(row["card_order"] or 0),
+            "card_uuid": (row["card_uuid"] or "").strip(),
+            "card_name": row["card_name"] or "",
+            "card_set_code": (row["card_set_code"] or row["pack_set_code"] or "").strip().upper(),
+            "sheet_is_foil": int(row["sheet_is_foil"] or 0),
+            "rarity": row["rarity"] or "",
+            "type_line": row["type_line"] or "",
+            "scryfall_id": row["scryfall_id"] or "",
+            "collector_number": row["collector_number"] or "",
+        })
+
+    return export_rows
+
+
+def append_xml_text(parent_element, tag_name, text_value):
+    child_element = ET.SubElement(parent_element, tag_name)
+    child_element.text = str(text_value if text_value is not None else "")
+    return child_element
+
+
+def write_card_image_export_xml(xml_path, card_entries, foil_value):
+    order_element = ET.Element("order")
+
+    details_element = ET.SubElement(order_element, "details")
+    append_xml_text(details_element, "quantity", len(card_entries))
+    append_xml_text(details_element, "foil", "true" if foil_value else "false")
+
+    cards_element = ET.SubElement(order_element, "cards")
+
+    for card_entry in card_entries:
+        card_element = ET.SubElement(cards_element, "card")
+
+        append_xml_text(card_element, "id", card_entry["id"])
+        append_xml_text(card_element, "name", card_entry["name"])
+        append_xml_text(card_element, "setcode", card_entry["setcode"])
+        append_xml_text(card_element, "collector_number", card_entry["collector_number"])
+        append_xml_text(card_element, "front_image_path", card_entry["front_image_path"])
+        append_xml_text(card_element, "back_image_path", card_entry["back_image_path"])
+        append_xml_text(card_element, "pack_tracking_code", card_entry["pack_tracking_code"])
+
+    tree = ET.ElementTree(order_element)
+    ET.indent(tree, space="    ", level=0)
+
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+    tree.write(xml_path, encoding="utf-8", xml_declaration=True)
+
+
+def zip_image_export_folder(export_folder_path, zip_path):
+    export_parent = os.path.dirname(export_folder_path)
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        for root_path, _, file_names in os.walk(export_folder_path):
+            for file_name in file_names:
+                file_path = os.path.join(root_path, file_name)
+                archive_name = os.path.relpath(file_path, export_parent)
+                zip_file.write(file_path, archive_name)
+
+def resolve_card_export_template(card_row):
+    row_keys = set(card_row.keys()) if hasattr(card_row, "keys") else set()
+
+    set_code = (card_row["set_code"] if "set_code" in row_keys else "") or ""
+    frame_version = (card_row["frame_version"] if "frame_version" in row_keys else "") or ""
+
+    release_year = None
+
+    if set_code:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT release_date
+            FROM sets
+            WHERE set_code = ?
+            """,
+            ((set_code or "").strip().upper(),),
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row["release_date"]:
+            try:
+                release_year = int(str(row["release_date"])[:4])
+            except Exception:
+                release_year = None
+
+    return resolve_card_export_template_config(
+        set_code=set_code,
+        frame_version=frame_version,
+        release_year=release_year,
+    )
+
+def build_chaos_card_image_export_zip(tracked_pack_ids):
+    export_rows = get_tracked_pack_card_export_rows(tracked_pack_ids)
+
+    if not export_rows:
+        raise ValueError("No selected pack cards were available for image export.")
+
+    export_info = get_next_image_export_folder()
+    export_folder = export_info["folder_path"]
+    export_folder_name = export_info["folder_name"]
+
+    root_default_dir = os.path.join(export_folder, "Default")
+    images_dir = os.path.join(export_folder, "Images")
+    images_default_dir = os.path.join(images_dir, "Default")
+    images_regular_dir = os.path.join(images_dir, "Regular")
+    images_foil_dir = os.path.join(images_dir, "Foil")
+
+    os.makedirs(root_default_dir, exist_ok=True)
+    os.makedirs(images_default_dir, exist_ok=True)
+    os.makedirs(images_regular_dir, exist_ok=True)
+    os.makedirs(images_foil_dir, exist_ok=True)
+
+    mtg_back_source_path = os.path.join(app.static_folder, "img", "mtg_back.jpg")
+    if not os.path.exists(mtg_back_source_path):
+        raise FileNotFoundError(f"Default MTG back image was not found: {mtg_back_source_path}")
+
+    default_back_filename = "default_back.jpg"
+    default_back_output_path = os.path.join(images_default_dir, default_back_filename)
+    shutil.copyfile(mtg_back_source_path, default_back_output_path)
+
+    # Also copy into root Default because the requested folder structure includes it.
+    shutil.copyfile(
+        mtg_back_source_path,
+        os.path.join(root_default_dir, default_back_filename),
+    )
+
+    regular_xml_cards = []
+    foil_xml_cards = []
+
+    exported_filename_counts = {}
+
+    for export_row in export_rows:
+        card_uuid = export_row["card_uuid"]
+        card_row = get_chaos_card_by_uuid(card_uuid)
+
+        if not card_row:
+            write_debug_log(
+                f"IMAGE EXPORT SKIP | card_uuid={card_uuid} | reason=card row not found"
+            )
+            continue
+
+        page_entries = build_chaos_print_pages_for_card(card_row)
+        if not page_entries:
+            write_debug_log(
+                f"IMAGE EXPORT SKIP | card_uuid={card_uuid} | reason=no printable page entries"
+            )
+            continue
+
+        front_page_entry = None
+        back_page_entry = None
+
+        for page_entry in page_entries:
+            page_kind = (page_entry.get("page_kind") or "").strip().lower()
+
+            if page_kind in {"front", "single"} and front_page_entry is None:
+                front_page_entry = page_entry
+
+            elif page_kind == "back" and back_page_entry is None:
+                back_page_entry = page_entry
+
+        if front_page_entry is None:
+            front_page_entry = page_entries[0]
+
+        is_foil = int(export_row.get("sheet_is_foil") or 0) == 1
+        finish_folder_name = "Foil" if is_foil else "Regular"
+        finish_output_dir = images_foil_dir if is_foil else images_regular_dir
+
+        friendly_card_name = make_image_export_id_safe(export_row["card_name"])
+        export_id = (
+            f"{export_row['pack_tracking_code']}_"
+            f"{export_row['tracked_pack_card_id']}_"
+            f"{friendly_card_name}"
+        )
+
+        base_filename = make_image_export_filename_safe(export_id)
+        filename_key = base_filename.lower()
+        exported_filename_counts[filename_key] = exported_filename_counts.get(filename_key, 0) + 1
+
+        if exported_filename_counts[filename_key] > 1:
+            base_filename = f"{base_filename}_{exported_filename_counts[filename_key]}"
+
+        front_filename = f"{base_filename}.jpg"
+        front_output_path = os.path.join(finish_output_dir, front_filename)
+
+        front_cached_result = download_chaos_image_to_cache(
+            front_page_entry.get("card_uuid"),
+            front_page_entry.get("page_kind"),
+            front_page_entry.get("face_name"),
+            front_page_entry.get("image_url"),
+        )
+
+        if not front_cached_result:
+            write_debug_log(
+                f"IMAGE EXPORT SKIP | card_uuid={card_uuid} | reason=front image cache failed"
+            )
+            continue
+
+        build_export_card_image(
+            front_cached_result["absolute_path"],
+            front_output_path,
+            export_row["pack_tracking_code"],
+            card_row,
+        )
+
+        front_relative_xml_path = f"\\Images\\{finish_folder_name}\\{front_filename}"
+
+        if back_page_entry and back_page_entry.get("image_url"):
+            back_filename = f"{base_filename}_back.jpg"
+            back_output_path = os.path.join(finish_output_dir, back_filename)
+
+            back_cached_result = download_chaos_image_to_cache(
+                back_page_entry.get("card_uuid"),
+                back_page_entry.get("page_kind"),
+                back_page_entry.get("face_name"),
+                back_page_entry.get("image_url"),
+            )
+
+            if back_cached_result:
+                build_export_card_image(
+                    back_cached_result["absolute_path"],
+                    back_output_path,
+                    f"{export_row['pack_tracking_code']} - BACK",
+                    card_row,
+                )
+                back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
+            else:
+                back_relative_xml_path = f"\\Images\\Default\\{default_back_filename}"
+        else:
+            back_relative_xml_path = f"\\Images\\Default\\{default_back_filename}"
+
+        xml_entry = {
+            "id": export_id,
+            "name": export_row["card_name"],
+            "setcode": export_row["card_set_code"],
+            "collector_number": export_row["collector_number"],
+            "front_image_path": front_relative_xml_path,
+            "back_image_path": back_relative_xml_path,
+            "pack_tracking_code": export_row["pack_tracking_code"],
+        }
+
+        if is_foil:
+            foil_xml_cards.append(xml_entry)
+        else:
+            regular_xml_cards.append(xml_entry)
+
+        write_debug_log(
+            f"IMAGE EXPORT CARD | id={export_id} | foil={is_foil} | front={front_relative_xml_path} | back={back_relative_xml_path}"
+        )
+
+    regular_xml_path = os.path.join(export_folder, "Regular.xml")
+    foil_xml_path = os.path.join(export_folder, "Foil.xml")
+
+    write_card_image_export_xml(
+        regular_xml_path,
+        regular_xml_cards,
+        foil_value=False,
+    )
+
+    write_card_image_export_xml(
+        foil_xml_path,
+        foil_xml_cards,
+        foil_value=True,
+    )
+
+    zip_filename = f"{export_folder_name}.zip"
+    zip_path = os.path.join(EXPORT_ROOT_DIR, zip_filename)
+
+    zip_image_export_folder(export_folder, zip_path)
+
+    return {
+        "export_folder": export_folder,
+        "zip_path": zip_path,
+        "zip_filename": zip_filename,
+        "regular_count": len(regular_xml_cards),
+        "foil_count": len(foil_xml_cards),
+        "total_count": len(regular_xml_cards) + len(foil_xml_cards),
+    }
+
 def get_scryfall_bulk_default_cards_download_uri():
     headers = {
         "User-Agent": "iMomir/1.0",
@@ -5401,6 +6005,7 @@ def campaign_chaos_packs():
         selected_chaos_campaign_id=selected_chaos_campaign_id,
         pack_import_campaign_options=pack_import_campaign_options,
         pack_summary=pack_summary,
+        enable_chaos_card_image_export=(get_request_config().get("enable_chaos_card_image_export") or "0").strip() == "1",
     )
 
 @app.route("/campaign-chaos/history", methods=["GET"])
@@ -5849,6 +6454,27 @@ def campaign_chaos_packs_action():
                 "Content-Disposition": f'inline; filename="campaign_saved_packs_{print_result["pack_count"]}.pdf"',
                 "Cache-Control": "no-store",
             },
+        )
+
+    if action == "export_zip":
+        config = get_request_config()
+
+        if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
+            flash("Chaos Draft Card Image Export is disabled in Settings.")
+            return redirect(url_for("campaign_chaos_packs"))
+
+        try:
+            export_result = build_chaos_card_image_export_zip(selected_pack_ids)
+        except Exception as exc:
+            write_debug_log(f"IMAGE EXPORT ERROR | error={str(exc)}")
+            return str(exc), 400
+
+        return send_file(
+            export_result["zip_path"],
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name=export_result["zip_filename"],
+            max_age=0,
         )
 
     if action == "disable":

@@ -4787,3 +4787,7 @@ input {
         grid-template-columns: 1fr;
     }
 }
+
+.campaign-bulk-actions {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}

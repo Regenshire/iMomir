@@ -213,10 +213,15 @@ def initialize_database():
             front_image_url TEXT,
             back_image_url TEXT,
             front_face_name TEXT,
-            back_face_name TEXT
+            back_face_name TEXT,
+            frame_version TEXT,
+            border_color TEXT
         )
         """
     )
+
+    ensure_column_exists(cursor, "chaos_cards", "frame_version", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "border_color", "TEXT")
 
     cursor.execute(
         """

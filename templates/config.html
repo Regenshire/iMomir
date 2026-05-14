@@ -345,6 +345,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Enable Chaos Draft Card Image Export</span>
+                        <input
+                            type="checkbox"
+                            name="enable_chaos_card_image_export"
+                            {% if config.enable_chaos_card_image_export == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Print Pack Tracking Code</span>
                         <input
                             type="checkbox"

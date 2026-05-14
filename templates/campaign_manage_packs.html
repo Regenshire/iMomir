@@ -515,6 +515,18 @@
                     Print Selected
                 </button>
 
+                {% if enable_chaos_card_image_export %}
+                <button
+                    type="submit"
+                    name="bulk_action"
+                    value="export_zip"
+                    class="action-button secondary-button"
+                    formtarget="_blank"
+                >
+                    Export to Zip
+                </button>
+                {% endif %}
+
                 <button
                     type="submit"
                     name="bulk_action"
