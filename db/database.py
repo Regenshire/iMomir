@@ -395,6 +395,52 @@ def initialize_database():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS alternate_sources (
+            alternate_source_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_name TEXT NOT NULL,
+            source_type TEXT NOT NULL,
+            card_uuid TEXT,
+            set_code TEXT,
+            collector_number TEXT,
+            scryfall_id TEXT,
+            card_name TEXT,
+            face_kind TEXT NOT NULL DEFAULT 'single',
+            external_image_url TEXT,
+            local_image_path TEXT,
+            fullbleed_image_path TEXT,
+            remove_bleed INTEGER NOT NULL DEFAULT 0,
+            bleed_size_mm REAL,
+            export_frame_template TEXT,
+            is_enabled INTEGER NOT NULL DEFAULT 1,
+            priority INTEGER NOT NULL DEFAULT 100,
+            notes TEXT,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alternate_sources_card_uuid
+        ON alternate_sources (card_uuid, face_kind, is_enabled, priority)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_alternate_sources_set_number
+        ON alternate_sources (set_code, collector_number, face_kind, is_enabled, priority)
+        """
+    )
+
+    ensure_column_exists(cursor, "alternate_sources", "fullbleed_image_path", "TEXT")
+    ensure_column_exists(cursor, "alternate_sources", "remove_bleed", "INTEGER NOT NULL DEFAULT 0")
+    ensure_column_exists(cursor, "alternate_sources", "bleed_size_mm", "REAL")
+    ensure_column_exists(cursor, "alternate_sources", "export_frame_template", "TEXT")
+
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS card_prices (
             card_uuid TEXT PRIMARY KEY,
             tcgplayer_normal_price REAL,

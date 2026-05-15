@@ -1,0 +1,702 @@
+<style>
+.alternate-image-modal-panel {
+    position: relative;
+    width: 100%;
+    max-height: 88vh;
+    overflow: auto;
+    padding-top: 1.25rem;
+}
+
+.alternate-image-x-button {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    width: 2.35rem;
+    height: 2.35rem;
+    min-width: 2.35rem;
+    padding: 0;
+    border-radius: 999px;
+    line-height: 1;
+    font-size: 1.35rem;
+}
+
+.alternate-image-message {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.alternate-source-row {
+    align-items: center;
+    gap: 1rem;
+}
+
+.alternate-source-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.alternate-source-small-button {
+    width: auto;
+    min-width: 92px;
+    padding: 0.55rem 0.85rem;
+}
+
+.alternate-image-gear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    min-width: 1.65rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted, #b9c3d6);
+    cursor: pointer;
+    font-size: 1.05rem;
+    line-height: 1;
+    margin-right: 0.35rem;
+}
+
+.alternate-image-gear:hover,
+.alternate-image-gear:focus {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-main, #ffffff);
+    outline: none;
+}
+
+.alternate-image-price-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.alternate-image-field-hidden {
+    display: none !important;
+}
+</style>
+
+<div id="alternateImageOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
+    <div id="alternateImageBackdrop" class="card-zoom-backdrop"></div>
+
+    <div class="card-zoom-content" style="max-width: 720px; width: min(720px, 94vw);">
+        <div class="page-panel alternate-image-modal-panel">
+            <button
+                type="button"
+                id="alternateImageCloseButton"
+                class="action-button secondary-button alternate-image-x-button"
+                aria-label="Close alternate image settings"
+                title="Close"
+            >
+                ×
+            </button>
+
+            <div class="chaos-pack-view-header-copy">
+                <h2 class="page-title" style="margin-bottom: 0.25rem;">Alternate Image</h2>
+                <p id="alternateImageCardName" class="page-subtitle"></p>
+            </div>
+
+            <div id="alternateImageMessage" class="flash-message alternate-image-message hidden"></div>
+
+            <div class="metadata-list" style="margin-top: 1rem;">
+                <div class="metadata-row">
+                    <span>Active Source</span>
+                    <strong id="alternateImageActiveSource">Loading...</strong>
+                </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <h3 class="section-title">Alternate Sources</h3>
+                <div id="alternateImageSourceList" class="metadata-list"></div>
+            </div>
+
+            <form id="alternateImageForm" enctype="multipart/form-data" style="margin-top: 1rem;">
+                <input type="hidden" id="alternateImageCardUuid" name="card_uuid" value="">
+
+                <div class="settings-grid">
+                    <label class="toggle-row" for="alternateImageSourceType">
+                        <span>Source Type</span>
+                        <select name="source_type" id="alternateImageSourceType">
+                            <option value="uploaded_file" selected>Upload File</option>
+                            <option value="external_url">External URL</option>
+                            <option value="local_file">Local File Path</option>
+                        </select>
+                    </label>
+
+                    <label class="toggle-row" for="alternateImageFaceKind">
+                        <span>Face Kind</span>
+                        <select name="face_kind" id="alternateImageFaceKind">
+                            <option value="single">Single</option>
+                            <option value="front">Front</option>
+                            <option value="back">Back</option>
+                        </select>
+                    </label>
+
+                    <label class="toggle-row" for="alternateImageExportFrameTemplate">
+                        <span>Card Frame Template</span>
+                        <select name="export_frame_template" id="alternateImageExportFrameTemplate">
+                            <option value="auto">Automatic - Use Card Printing Frame</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="settings-grid" style="margin-top: 0.75rem;">
+                    <label class="toggle-row alternate-source-field alternate-source-field-external-url" for="alternateImageExternalUrl">
+                        <span>External Image URL</span>
+                        <input
+                            type="url"
+                            name="external_image_url"
+                            id="alternateImageExternalUrl"
+                            placeholder="https://..."
+                        >
+                    </label>
+
+                    <label class="toggle-row alternate-source-field alternate-source-field-upload-file" for="alternateImageFile">
+                        <span>Upload Image</span>
+                        <input
+                            type="file"
+                            name="alternate_image_file"
+                            id="alternateImageFile"
+                            accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                        >
+                    </label>
+
+                    <label class="toggle-row alternate-source-field alternate-source-field-local-file" for="alternateImageLocalPath">
+                        <span>Local Image Path</span>
+                        <input
+                            type="text"
+                            name="local_image_path"
+                            id="alternateImageLocalPath"
+                            placeholder="data/alternate_sources/example.png"
+                        >
+                    </label>
+
+                    <label class="toggle-row" for="alternateImageSourceName">
+                        <span>Source Name</span>
+                        <input
+                            type="text"
+                            name="source_name"
+                            id="alternateImageSourceName"
+                            value=""
+                            placeholder="Optional; auto-filled if blank"
+                        >
+                    </label>
+
+                    <label class="toggle-row" for="alternateImageNotes">
+                        <span>Notes</span>
+                        <input
+                            type="text"
+                            name="notes"
+                            id="alternateImageNotes"
+                            placeholder="Optional notes"
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field alternate-source-field alternate-source-field-upload-file">
+                        <span>Remove Bleed From Upload</span>
+                        <input
+                            type="checkbox"
+                            name="remove_bleed"
+                            id="alternateImageRemoveBleed"
+                        >
+                    </label>
+                </div>
+
+                <div class="config-button-row" style="margin-top: 1rem;">
+                    <button type="submit" id="alternateImageAddButton" class="action-button">
+                        Add Alternate Source
+                    </button>
+
+                    <button type="button" id="alternateImageSaveFrameButton" class="action-button secondary-button hidden">
+                        Save Frame Template
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const alternateOverlay = document.getElementById("alternateImageOverlay");
+    const alternateBackdrop = document.getElementById("alternateImageBackdrop");
+    const alternateCloseButton = document.getElementById("alternateImageCloseButton");
+    const alternateButtons = Array.from(document.querySelectorAll(".alternate-image-button"));
+    const alternateForm = document.getElementById("alternateImageForm");
+    const alternateCardUuidInput = document.getElementById("alternateImageCardUuid");
+    const alternateCardName = document.getElementById("alternateImageCardName");
+    const alternateMessage = document.getElementById("alternateImageMessage");
+    const alternateActiveSource = document.getElementById("alternateImageActiveSource");
+    const alternateSourceList = document.getElementById("alternateImageSourceList");
+    const alternateExportFrameTemplate = document.getElementById("alternateImageExportFrameTemplate");
+    const alternateSaveFrameButton = document.getElementById("alternateImageSaveFrameButton");
+    const alternateAddButton = document.getElementById("alternateImageAddButton");
+    const alternateFaceKind = document.getElementById("alternateImageFaceKind");
+    const alternateFileInput = document.getElementById("alternateImageFile");
+    const alternateLocalPathInput = document.getElementById("alternateImageLocalPath");
+    const alternateNotesInput = document.getElementById("alternateImageNotes");
+    const alternateRemoveBleedInput = document.getElementById("alternateImageRemoveBleed");
+
+    let currentActiveAlternateSourceId = null;
+
+    const alternateSourceType = document.getElementById("alternateImageSourceType");
+    const alternateSourceNameInput = document.getElementById("alternateImageSourceName");
+    const alternateExternalUrlInput = document.getElementById("alternateImageExternalUrl");
+
+    const alternateExternalUrlFields = Array.from(document.querySelectorAll(".alternate-source-field-external-url"));
+    const alternateUploadFileFields = Array.from(document.querySelectorAll(".alternate-source-field-upload-file"));
+    const alternateLocalFileFields = Array.from(document.querySelectorAll(".alternate-source-field-local-file"));
+
+    let currentAlternateCardUuid = "";
+
+    function getDomainFromUrl(rawUrl) {
+        try {
+            const parsedUrl = new URL(rawUrl);
+            return parsedUrl.hostname.replace(/^www\./i, "") || "";
+        } catch (error) {
+            return "";
+        }
+    }
+
+    function updateAlternateSourceFieldVisibility() {
+        const sourceType = alternateSourceType ? alternateSourceType.value : "uploaded_file";
+
+        alternateExternalUrlFields.forEach(function (field) {
+            field.classList.toggle("alternate-image-field-hidden", sourceType !== "external_url");
+        });
+
+        alternateUploadFileFields.forEach(function (field) {
+            field.classList.toggle("alternate-image-field-hidden", sourceType !== "uploaded_file");
+        });
+
+        alternateLocalFileFields.forEach(function (field) {
+            field.classList.toggle("alternate-image-field-hidden", sourceType !== "local_file");
+        });
+    }
+
+    function applyDefaultAlternateSourceNameIfBlank() {
+        if (!alternateSourceNameInput || alternateSourceNameInput.value.trim()) {
+            return;
+        }
+
+        const sourceType = alternateSourceType ? alternateSourceType.value : "uploaded_file";
+
+        if (sourceType === "uploaded_file") {
+            alternateSourceNameInput.value = "Upload File";
+            return;
+        }
+
+        if (sourceType === "external_url") {
+            const domainName = getDomainFromUrl(alternateExternalUrlInput ? alternateExternalUrlInput.value : "");
+            alternateSourceNameInput.value = domainName || "External URL";
+            return;
+        }
+
+        if (sourceType === "local_file") {
+            alternateSourceNameInput.value = "Local File";
+        }
+    }
+
+    function setAlternateInputLocked(isLocked) {
+        [
+            alternateSourceType,
+            alternateSourceNameInput,
+            alternateFaceKind,
+            alternateExternalUrlInput,
+            alternateFileInput,
+            alternateLocalPathInput,
+            alternateNotesInput,
+            alternateRemoveBleedInput
+        ].forEach(function (field) {
+            if (field) {
+                field.disabled = isLocked;
+                field.readOnly = isLocked;
+            }
+        });
+
+        if (alternateAddButton) {
+            alternateAddButton.classList.toggle("hidden", isLocked);
+        }
+
+        if (alternateSaveFrameButton) {
+            alternateSaveFrameButton.classList.toggle("hidden", !isLocked);
+        }
+
+        if (alternateExportFrameTemplate) {
+            alternateExportFrameTemplate.disabled = false;
+        }
+    }
+
+    function populateFrameTemplateOptions(options, selectedValue) {
+        if (!alternateExportFrameTemplate) {
+            return;
+        }
+
+        alternateExportFrameTemplate.innerHTML = "";
+
+        (options || []).forEach(function (option) {
+            const optionElement = document.createElement("option");
+            optionElement.value = option.value || "auto";
+            optionElement.textContent = option.label || option.value || "Automatic";
+            alternateExportFrameTemplate.appendChild(optionElement);
+        });
+
+        alternateExportFrameTemplate.value = selectedValue || "auto";
+    }
+
+    function showAlternateMessage(message, isError) {
+        if (!alternateMessage) {
+            return;
+        }
+
+        alternateMessage.textContent = message || "";
+        alternateMessage.classList.toggle("hidden", !message);
+        alternateMessage.style.background = isError ? "#4b1f1f" : "";
+    }
+
+    function refreshCardImages(cardUuid) {
+        if (!cardUuid) {
+            return;
+        }
+
+        const cacheBustedUrl = "/chaos-card-image/" + encodeURIComponent(cardUuid) + "?v=" + Date.now();
+
+        document.querySelectorAll('[data-card-uuid="' + CSS.escape(cardUuid) + '"] img').forEach(function (imageElement) {
+            imageElement.src = cacheBustedUrl;
+
+            if (imageElement.hasAttribute("data-zoom-src")) {
+                imageElement.setAttribute("data-zoom-src", cacheBustedUrl);
+            }
+        });
+    }
+
+    function openAlternateModal(cardUuid, cardName) {
+        currentAlternateCardUuid = cardUuid || "";
+
+        if (!currentAlternateCardUuid || !alternateOverlay) {
+            return;
+        }
+
+        if (alternateCardUuidInput) {
+            alternateCardUuidInput.value = currentAlternateCardUuid;
+        }
+
+        if (alternateCardName) {
+            alternateCardName.textContent = cardName || currentAlternateCardUuid;
+        }
+
+        if (alternateForm) {
+            alternateForm.reset();
+        }
+
+        if (alternateSourceType) {
+            alternateSourceType.value = "uploaded_file";
+        }
+
+        if (alternateSourceNameInput) {
+            alternateSourceNameInput.value = "";
+        }
+
+        showAlternateMessage("", false);
+        currentActiveAlternateSourceId = null;
+        setAlternateInputLocked(false);
+
+        updateAlternateSourceFieldVisibility();
+
+        alternateOverlay.classList.remove("hidden");
+        alternateOverlay.setAttribute("aria-hidden", "false");
+
+        loadAlternateSources();
+    }
+
+    function closeAlternateModal() {
+        if (!alternateOverlay) {
+            return;
+        }
+
+        alternateOverlay.classList.add("hidden");
+        alternateOverlay.setAttribute("aria-hidden", "true");
+        currentAlternateCardUuid = "";
+    }
+
+    function renderAlternateSources(payload) {
+        const sources = payload.alternate_sources || [];
+        const activeSource = payload.active_source;
+
+        currentActiveAlternateSourceId = activeSource ? activeSource.alternate_source_id : null;
+
+        populateFrameTemplateOptions(
+            payload.frame_template_options || [],
+            activeSource ? (activeSource.export_frame_template || "auto") : "auto"
+        );
+
+        setAlternateInputLocked(Boolean(activeSource));
+
+        if (alternateActiveSource) {
+            if (activeSource) {
+                alternateActiveSource.textContent = activeSource.source_name + " (" + activeSource.face_kind + ")";
+            } else {
+                alternateActiveSource.textContent = "Scryfall / default image";
+            }
+        }
+
+        if (!alternateSourceList) {
+            return;
+        }
+
+        alternateSourceList.innerHTML = "";
+
+        if (!sources.length) {
+            const emptyRow = document.createElement("div");
+            emptyRow.className = "metadata-row";
+            emptyRow.innerHTML = "<span>No alternate sources</span><strong>Using Scryfall</strong>";
+            alternateSourceList.appendChild(emptyRow);
+            return;
+        }
+
+        sources.forEach(function (source) {
+            const row = document.createElement("div");
+            row.className = "metadata-row alternate-source-row";
+
+            const left = document.createElement("span");
+            let bleedText = "";
+
+            if (source.remove_bleed) {
+                bleedText = " • bleed removed";
+                if (source.bleed_size_mm !== null && source.bleed_size_mm !== undefined) {
+                    bleedText += " " + source.bleed_size_mm + "mm";
+                }
+            }
+
+            left.textContent = source.source_name + " • " + source.face_kind + bleedText;
+
+            const right = document.createElement("strong");
+            right.className = "metadata-value-wrap alternate-source-actions";
+
+            const enabledButton = document.createElement("button");
+            enabledButton.type = "button";
+            enabledButton.className = "action-button secondary-button alternate-source-small-button";
+            enabledButton.textContent = source.is_enabled ? "Disable" : "Enable";
+            enabledButton.addEventListener("click", function () {
+                toggleAlternateSource(source.alternate_source_id, !source.is_enabled);
+            });
+
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "action-button secondary-button alternate-source-small-button";
+            deleteButton.textContent = "Delete";
+            deleteButton.addEventListener("click", function () {
+                deleteAlternateSource(source.alternate_source_id);
+            });
+
+            right.appendChild(enabledButton);
+            right.appendChild(deleteButton);
+
+            row.appendChild(left);
+            row.appendChild(right);
+            alternateSourceList.appendChild(row);
+        });
+    }
+
+    async function loadAlternateSources() {
+        if (!currentAlternateCardUuid) {
+            return;
+        }
+
+        if (alternateActiveSource) {
+            alternateActiveSource.textContent = "Loading...";
+        }
+
+        if (alternateSourceList) {
+            alternateSourceList.innerHTML = "";
+        }
+
+        try {
+            const response = await fetch("/chaos/cards/" + encodeURIComponent(currentAlternateCardUuid) + "/alternate-sources", {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not load alternate sources.");
+            }
+
+            renderAlternateSources(payload);
+        } catch (error) {
+            showAlternateMessage(error.message || String(error), true);
+        }
+    }
+
+    async function toggleAlternateSource(alternateSourceId, enabled) {
+        try {
+            const response = await fetch("/chaos/alternate-sources/" + alternateSourceId + "/toggle", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    enabled: enabled
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not update alternate source.");
+            }
+
+            refreshCardImages(currentAlternateCardUuid);
+            await loadAlternateSources();
+        } catch (error) {
+            showAlternateMessage(error.message || String(error), true);
+        }
+    }
+
+    async function deleteAlternateSource(alternateSourceId) {
+        const confirmed = window.confirm("Delete this alternate image source?");
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            const response = await fetch("/chaos/alternate-sources/" + alternateSourceId + "/delete", {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not delete alternate source.");
+            }
+
+            refreshCardImages(currentAlternateCardUuid);
+            await loadAlternateSources();
+        } catch (error) {
+            showAlternateMessage(error.message || String(error), true);
+        }
+    }
+
+    async function saveAlternateFrameTemplate() {
+        if (!currentActiveAlternateSourceId || !alternateExportFrameTemplate) {
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                "/chaos/alternate-sources/" + currentActiveAlternateSourceId + "/frame-template",
+                {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        export_frame_template: alternateExportFrameTemplate.value || "auto"
+                    })
+                }
+            );
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not update frame template.");
+            }
+
+            showAlternateMessage("Card frame template updated.", false);
+            await loadAlternateSources();
+        } catch (error) {
+            showAlternateMessage(error.message || String(error), true);
+        }
+    }
+
+    if (alternateSaveFrameButton) {
+        alternateSaveFrameButton.addEventListener("click", saveAlternateFrameTemplate);
+    }
+
+    alternateButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            openAlternateModal(
+                button.getAttribute("data-card-uuid") || "",
+                button.getAttribute("data-card-name") || ""
+            );
+        });
+    });
+
+    if (alternateBackdrop) {
+        alternateBackdrop.addEventListener("click", closeAlternateModal);
+    }
+
+    if (alternateCloseButton) {
+        alternateCloseButton.addEventListener("click", closeAlternateModal);
+    }
+
+    if (alternateForm) {
+        alternateForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            if (!currentAlternateCardUuid) {
+                return;
+            }
+
+            applyDefaultAlternateSourceNameIfBlank();
+
+            const formData = new FormData(alternateForm);
+
+            try {
+                const response = await fetch("/chaos/cards/" + encodeURIComponent(currentAlternateCardUuid) + "/alternate-sources/add", {
+                    method: "POST",
+                    body: formData,
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Could not add alternate source.");
+                }
+
+                alternateForm.reset();
+
+                if (alternateSourceType) {
+                    alternateSourceType.value = "uploaded_file";
+                }
+
+                if (alternateSourceNameInput) {
+                    alternateSourceNameInput.value = "";
+                }
+
+                updateAlternateSourceFieldVisibility();
+                refreshCardImages(currentAlternateCardUuid);
+                showAlternateMessage("Alternate image source added.", false);
+                await loadAlternateSources();
+            } catch (error) {
+                showAlternateMessage(error.message || String(error), true);
+            }
+        });
+    }
+
+    if (alternateSourceType) {
+        alternateSourceType.addEventListener("change", updateAlternateSourceFieldVisibility);
+        updateAlternateSourceFieldVisibility();
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && alternateOverlay && !alternateOverlay.classList.contains("hidden")) {
+            closeAlternateModal();
+        }
+    });
+})();
+</script>

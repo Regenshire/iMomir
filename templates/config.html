@@ -250,6 +250,16 @@
                             {% endfor %}
                         </select>
                     </label>
+                    <label class="toggle-row" for="chaos_scryfall_image_quality">
+                        <span>Chaos Scryfall Image Quality</span>
+                        <select id="chaos_scryfall_image_quality" name="chaos_scryfall_image_quality">
+                            {% for value, label in scryfall_image_quality_options %}
+                                <option value="{{ value }}" {% if config.get("chaos_scryfall_image_quality", "png") == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
                     <label class="toggle-row" for="momir_default_token_variant">
                         <span>Momir Vig Default Token Style</span>
                         <select id="momir_default_token_variant" name="momir_default_token_variant">
@@ -291,6 +301,18 @@
                         >
                     </label>
 
+                    <label class="toggle-row settings-field">
+                        <span>Print Bleed Size (mm)</span>
+                        <input
+                            type="number"
+                            name="print_bleed_size_mm"
+                            step="0.01"
+                            min="0"
+                            max="10"
+                            value="{{ config.get('print_bleed_size_mm', '3.0') }}"
+                        >
+                    </label>
+                    
                     <label class="toggle-row settings-field">
                         <span>Crop Border</span>
                         <input

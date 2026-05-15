@@ -2616,10 +2616,19 @@ input {
 
     .chaos-pack-view-header-actions {
         width: 100%;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
     }
 
-    .chaos-pack-view-back-button {
+    .chaos-pack-view-header-actions .chaos-pack-view-back-button,
+    .chaos-pack-view-header-actions .pack-view-export-split {
         width: 100%;
+        min-width: 0;
+    }
+
+    .chaos-pack-view-header-actions .pack-view-export-split {
+        grid-template-columns: minmax(0, 1fr) 52px;
     }
 
     .chaos-pack-view-grid {
@@ -4790,4 +4799,40 @@ input {
 
 .campaign-bulk-actions {
     grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.pack-view-export-split {
+    position: relative;
+    display: grid;
+    grid-template-columns: 112px 46px;
+    gap: 0;
+    width: 158px;
+    min-width: 158px;
+    flex: 0 0 auto;
+    margin-left: 0;
+}
+
+.pack-view-export-split .chaos-export-main-button,
+.pack-view-export-split .chaos-export-menu-button {
+    width: 100%;
+    min-height: 56px;
+}
+
+.pack-view-export-split .chaos-export-main-button {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.pack-view-export-split .chaos-export-menu-button {
+    min-width: 46px;
+    padding-left: 0;
+    padding-right: 0;
+    border-left: 1px solid var(--border);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.pack-view-export-split .chaos-export-menu {
+    right: 0;
+    top: calc(100% + 8px);
 }

@@ -43,9 +43,51 @@
                 >
                     Print
                 </a>
-                {% endif %}
 
-                {% if not pack.is_preview %}
+                <div
+                    class="chaos-export-split pack-view-export-split"
+                    id="packViewCopySplit"
+                    data-export-url="{{ url_for('campaign_chaos_pack_export', tracked_pack_id=pack.tracked_pack_id) }}"
+                >
+                    <button
+                        type="button"
+                        id="packViewCopyMainButton"
+                        class="action-button secondary-button chaos-export-main-button"
+                        data-export-format="archidekt"
+                    >
+                        Copy
+                    </button>
+
+                    <button
+                        type="button"
+                        id="packViewCopyMenuButton"
+                        class="action-button secondary-button chaos-export-menu-button"
+                        aria-expanded="false"
+                        aria-haspopup="true"
+                        title="Choose export format"
+                    >
+                        ▾
+                    </button>
+
+                    <div id="packViewCopyMenu" class="chaos-export-menu hidden">
+                        <button
+                            type="button"
+                            class="chaos-export-menu-item pack-view-copy-format-button chaos-export-menu-item-active"
+                            data-export-format="archidekt"
+                        >
+                            Copy Archidekt
+                        </button>
+
+                        <button
+                            type="button"
+                            class="chaos-export-menu-item pack-view-copy-format-button"
+                            data-export-format="moxfield"
+                        >
+                            Copy Moxfield
+                        </button>
+                    </div>
+                </div>
+
                 <a
                     class="action-button secondary-button chaos-pack-view-back-button"
                     href="{{ url_for('campaign_chaos_history', tracked_pack_id=pack.tracked_pack_id) }}"
@@ -53,14 +95,16 @@
                     History
                 </a>
                 {% endif %}
-                
             </div>
         </div>
     </div>
-
     <div class="chaos-pack-view-grid">
         {% for card in cards %}
-        <div class="chaos-pack-view-card">
+        <div
+            class="chaos-pack-view-card"
+            data-card-uuid="{{ card.card_uuid }}"
+            data-card-name="{{ card.card_name }}"
+        >
             <div class="chaos-pack-view-image-wrap">
                 <img
                     src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
@@ -77,15 +121,28 @@
             <div class="chaos-pack-view-info">
                 <div class="chaos-pack-view-name">{{ card.card_name }}</div>
 
-                {% if display_pack_prices %}
-                <div class="chaos-pack-view-price">
-                    {% if card.price_info.price is not none %}
-                        ${{ "%.2f"|format(card.price_info.price) }}
-                    {% else %}
-                        Price unavailable
+                <div class="alternate-image-price-row">
+                    <button
+                        type="button"
+                        class="alternate-image-gear alternate-image-button"
+                        data-card-uuid="{{ card.card_uuid }}"
+                        data-card-name="{{ card.card_name }}"
+                        title="Alternate image settings"
+                        aria-label="Alternate image settings for {{ card.card_name }}"
+                    >
+                        ⚙
+                    </button>
+
+                    {% if display_pack_prices %}
+                    <div class="chaos-pack-view-price">
+                        {% if card.price_info.price is not none %}
+                            ${{ "%.2f"|format(card.price_info.price) }}
+                        {% else %}
+                            Price unavailable
+                        {% endif %}
+                    </div>
                     {% endif %}
                 </div>
-                {% endif %}
 
                 {% if card.special_badges %}
                 <div class="chaos-pack-view-badges">
@@ -98,7 +155,7 @@
         </div>
         {% endfor %}
     </div>
-
+    {% include "_alternate_image_modal.html" %}
     <div id="campaignPackZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
         <div id="campaignPackZoomBackdrop" class="card-zoom-backdrop"></div>
         <div class="card-zoom-content">
@@ -119,52 +176,225 @@
     const zoomImage = document.getElementById("campaignPackZoomImage");
     const zoomableImages = Array.from(document.querySelectorAll(".campaign-pack-detail-zoomable"));
 
-    if (!zoomOverlay || !zoomBackdrop || !zoomImage || !zoomableImages.length) {
-        return;
+    if (zoomOverlay && zoomBackdrop && zoomImage && zoomableImages.length) {
+        function openZoom(imageElement) {
+            const imageSrc = imageElement.getAttribute("data-zoom-src") || imageElement.src || "";
+            const imageAlt = imageElement.getAttribute("data-zoom-alt") || imageElement.alt || "";
+
+            if (!imageSrc) {
+                return;
+            }
+
+            zoomImage.src = imageSrc;
+            zoomImage.alt = imageAlt;
+            zoomOverlay.classList.remove("hidden");
+            zoomOverlay.setAttribute("aria-hidden", "false");
+        }
+
+        function closeZoom() {
+            zoomOverlay.classList.add("hidden");
+            zoomOverlay.setAttribute("aria-hidden", "true");
+            zoomImage.src = "";
+            zoomImage.alt = "";
+        }
+
+        zoomableImages.forEach(function (imageElement) {
+            imageElement.addEventListener("click", function () {
+                openZoom(imageElement);
+            });
+
+            imageElement.addEventListener("keydown", function (event) {
+                if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openZoom(imageElement);
+                }
+            });
+        });
+
+        zoomBackdrop.addEventListener("click", closeZoom);
+        zoomImage.addEventListener("click", closeZoom);
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !zoomOverlay.classList.contains("hidden")) {
+                closeZoom();
+            }
+        });
+    }
+    const packViewCopySplit = document.getElementById("packViewCopySplit");
+    const packViewCopyMainButton = document.getElementById("packViewCopyMainButton");
+    const packViewCopyMenuButton = document.getElementById("packViewCopyMenuButton");
+    const packViewCopyMenu = document.getElementById("packViewCopyMenu");
+    const packViewCopyFormatButtons = Array.from(document.querySelectorAll(".pack-view-copy-format-button"));
+
+    let selectedPackViewExportFormat = "archidekt";
+
+    async function copyPackViewTextToClipboard(textValue) {
+        const normalizedText = String(textValue || "");
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            try {
+                await navigator.clipboard.writeText(normalizedText);
+                return true;
+            } catch (error) {
+                // Fall through to legacy copy method.
+            }
+        }
+
+        const hiddenTextArea = document.createElement("textarea");
+        hiddenTextArea.value = normalizedText;
+        hiddenTextArea.setAttribute("readonly", "");
+        hiddenTextArea.style.position = "fixed";
+        hiddenTextArea.style.top = "-1000px";
+        hiddenTextArea.style.left = "-1000px";
+        hiddenTextArea.style.opacity = "0";
+        hiddenTextArea.style.pointerEvents = "none";
+
+        document.body.appendChild(hiddenTextArea);
+
+        try {
+            hiddenTextArea.focus();
+            hiddenTextArea.select();
+            hiddenTextArea.setSelectionRange(0, hiddenTextArea.value.length);
+
+            const copySucceeded = document.execCommand("copy");
+
+            if (!copySucceeded) {
+                throw new Error("Clipboard copy failed.");
+            }
+
+            return true;
+        } finally {
+            document.body.removeChild(hiddenTextArea);
+        }
     }
 
-    function openZoom(imageElement) {
-        const imageSrc = imageElement.getAttribute("data-zoom-src") || imageElement.src || "";
-        const imageAlt = imageElement.getAttribute("data-zoom-alt") || imageElement.alt || "";
-
-        if (!imageSrc) {
+    function closePackViewCopyMenu() {
+        if (!packViewCopyMenu || !packViewCopyMenuButton) {
             return;
         }
 
-        zoomImage.src = imageSrc;
-        zoomImage.alt = imageAlt;
-        zoomOverlay.classList.remove("hidden");
-        zoomOverlay.setAttribute("aria-hidden", "false");
+        packViewCopyMenu.classList.add("hidden");
+        packViewCopyMenuButton.setAttribute("aria-expanded", "false");
     }
 
-    function closeZoom() {
-        zoomOverlay.classList.add("hidden");
-        zoomOverlay.setAttribute("aria-hidden", "true");
-        zoomImage.src = "";
-        zoomImage.alt = "";
+    function togglePackViewCopyMenu() {
+        if (!packViewCopyMenu || !packViewCopyMenuButton) {
+            return;
+        }
+
+        const willOpen = packViewCopyMenu.classList.contains("hidden");
+        packViewCopyMenu.classList.toggle("hidden", !willOpen);
+        packViewCopyMenuButton.setAttribute("aria-expanded", willOpen ? "true" : "false");
     }
 
-    zoomableImages.forEach(function (imageElement) {
-        imageElement.addEventListener("click", function () {
-            openZoom(imageElement);
+    function setSelectedPackViewExportFormat(exportFormat) {
+        const normalizedFormat = String(exportFormat || "").trim().toLowerCase();
+
+        if (normalizedFormat !== "archidekt" && normalizedFormat !== "moxfield") {
+            return;
+        }
+
+        selectedPackViewExportFormat = normalizedFormat;
+
+        packViewCopyFormatButtons.forEach(function (button) {
+            button.classList.toggle(
+                "chaos-export-menu-item-active",
+                (button.getAttribute("data-export-format") || "") === selectedPackViewExportFormat
+            );
         });
+    }
 
-        imageElement.addEventListener("keydown", function (event) {
-            if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                openZoom(imageElement);
+    async function copyPackViewExport() {
+        if (!packViewCopySplit || !packViewCopyMainButton) {
+            return;
+        }
+
+        const exportUrl = packViewCopySplit.getAttribute("data-export-url") || "";
+
+        if (!exportUrl) {
+            throw new Error("Pack export URL was missing.");
+        }
+
+        const originalText = packViewCopyMainButton.textContent;
+
+        packViewCopyMainButton.disabled = true;
+        packViewCopyMainButton.classList.add("action-button-loading");
+        packViewCopyMainButton.textContent = "Copying...";
+
+        if (packViewCopyMenuButton) {
+            packViewCopyMenuButton.disabled = true;
+        }
+
+        try {
+            const response = await fetch(exportUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    export_format: selectedPackViewExportFormat
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to export pack.");
+            }
+
+            await copyPackViewTextToClipboard(payload.export_text || "");
+
+            packViewCopyMainButton.textContent = "Copied";
+
+            window.setTimeout(function () {
+                packViewCopyMainButton.textContent = originalText || "Copy";
+            }, 1400);
+        } finally {
+            packViewCopyMainButton.disabled = false;
+            packViewCopyMainButton.classList.remove("action-button-loading");
+
+            if (packViewCopyMenuButton) {
+                packViewCopyMenuButton.disabled = false;
+            }
+        }
+    }
+
+    if (packViewCopyMainButton) {
+        packViewCopyMainButton.addEventListener("click", async function () {
+            try {
+                await copyPackViewExport();
+            } catch (error) {
+                window.alert(error.message || "Failed to copy pack export.");
+            }
+        });
+    }
+
+    if (packViewCopyMenuButton) {
+        packViewCopyMenuButton.addEventListener("click", function (event) {
+            event.stopPropagation();
+            togglePackViewCopyMenu();
+        });
+    }
+
+    packViewCopyFormatButtons.forEach(function (button) {
+        button.addEventListener("click", async function () {
+            setSelectedPackViewExportFormat(button.getAttribute("data-export-format") || "archidekt");
+            closePackViewCopyMenu();
+
+            try {
+                await copyPackViewExport();
+            } catch (error) {
+                window.alert(error.message || "Failed to copy pack export.");
             }
         });
     });
 
-    zoomBackdrop.addEventListener("click", closeZoom);
-    zoomImage.addEventListener("click", closeZoom);
-
-    document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && !zoomOverlay.classList.contains("hidden")) {
-            closeZoom();
-        }
+    document.addEventListener("click", function () {
+        closePackViewCopyMenu();
     });
+
+    setSelectedPackViewExportFormat("archidekt");
 })();
 </script>
 {% endblock %}

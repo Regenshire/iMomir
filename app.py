@@ -1,5 +1,6 @@
 import csv
 import gzip
+import hashlib
 import json
 import os
 import random
@@ -11,6 +12,7 @@ import time
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import requests
 from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops, ImageDraw, ImageFont
@@ -19,11 +21,12 @@ from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from io import BytesIO
 from pypdf import PdfWriter
-from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, send_file, url_for, has_request_context
 
 from paths import (
     ALL_PRINTINGS_GZ_PATH,
     ALL_PRINTINGS_PATH,
+    ALTERNATE_SOURCE_DIR,
     ATOMIC_CARDS_PATH,
     BUNDLE_BASE_DIR,
     CHAOS_IMAGE_CACHE_DIR,
@@ -75,6 +78,7 @@ from settings import (
     PRINT_TEMPLATE_METADATA,
     PRINT_TEMPLATE_OPTIONS,
     REPEAT_MODE_OPTIONS,
+    SCRYFALL_IMAGE_QUALITY_OPTIONS,
     SCRYFALL_BULK_DATA_URL,
     SILHOUETTE_CORNER_RADIUS_MM,
     SILHOUETTE_EDGE_BORDER_PIXELS,
@@ -97,7 +101,10 @@ from db.pricing import (
     import_all_prices_today_into_database,
 )
 
-from image_export_templates import resolve_card_export_template_config
+from image_export_templates import (
+    get_card_export_template_options,
+    resolve_card_export_template_config,
+)
 
 from db.database import (
     ensure_column_exists,
@@ -513,6 +520,7 @@ def update_config_from_form(form_data):
         "print_template": "dk-1234",
         "print_color_mode": "grayscale",
         "chaos_draft_export_format": "none",
+        "chaos_scryfall_image_quality": "png",
     }
 
     for key in checkbox_keys:
@@ -570,6 +578,11 @@ def update_config_from_form(form_data):
         submitted_chaos_export_format = select_defaults["chaos_draft_export_format"]
     updated_config["chaos_draft_export_format"] = submitted_chaos_export_format
 
+    submitted_scryfall_image_quality = (form_data.get("chaos_scryfall_image_quality") or "").strip().lower()
+    if submitted_scryfall_image_quality not in {"normal", "large", "png"}:
+        submitted_scryfall_image_quality = select_defaults["chaos_scryfall_image_quality"]
+    updated_config["chaos_scryfall_image_quality"] = submitted_scryfall_image_quality
+
     submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
     try:
         parsed_pdf_width_mm = float(submitted_pdf_width_mm)
@@ -587,6 +600,19 @@ def update_config_from_form(form_data):
     except ValueError:
         parsed_pdf_height_mm = 85.25
     updated_config["pdf_height_mm"] = str(parsed_pdf_height_mm)
+
+    submitted_print_bleed_size_mm = (form_data.get("print_bleed_size_mm") or "").strip()
+    try:
+        parsed_print_bleed_size_mm = float(submitted_print_bleed_size_mm)
+        if parsed_print_bleed_size_mm < 0:
+            raise ValueError()
+    except ValueError:
+        parsed_print_bleed_size_mm = 3.0
+
+    if parsed_print_bleed_size_mm > 10:
+        parsed_print_bleed_size_mm = 10.0
+
+    updated_config["print_bleed_size_mm"] = str(parsed_print_bleed_size_mm)
 
     if submitted_game_mode == "tower_of_power":
         any_primary_selected = any(updated_config.get(key) == "1" for key, _ in PRIMARY_TYPE_KEYS)
@@ -1562,6 +1588,7 @@ def ensure_download_directories():
     os.makedirs(CHAOS_IMAGE_CACHE_DIR, exist_ok=True)
     os.makedirs(CHAOS_TEMP_CACHE_DIR, exist_ok=True)
     os.makedirs(CAMPAIGN_PLAYER_PORTRAIT_DIR, exist_ok=True)
+    os.makedirs(ALTERNATE_SOURCE_DIR, exist_ok=True)
 
 def save_campaign_player_portrait_file(uploaded_file, player_id):
     if not uploaded_file:
@@ -2155,13 +2182,39 @@ def normalize_card_lookup_name(card_name):
 
     return value.strip().lower()
 
-def build_scryfall_image_url(scryfall_id):
-    if not scryfall_id or len(scryfall_id) < 2:
-        return None
+def get_effective_chaos_scryfall_image_quality():
+    try:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+    except Exception:
+        config = {}
 
-    return f"https://cards.scryfall.io/normal/front/{scryfall_id[0]}/{scryfall_id[1]}/{scryfall_id}.jpg"
+    quality_value = (config.get("chaos_scryfall_image_quality") or "png").strip().lower()
+    if quality_value not in {"normal", "large", "png"}:
+        quality_value = "png"
 
-def build_scryfall_face_image_url(scryfall_id, face_side):
+    return quality_value
+
+
+def get_scryfall_quality_download_order(quality_preference):
+    quality_preference = (quality_preference or "png").strip().lower()
+
+    if quality_preference == "normal":
+        return ["normal"]
+
+    if quality_preference == "large":
+        return ["large", "normal"]
+
+    return ["png", "large", "normal"]
+
+
+def build_scryfall_image_url(scryfall_id, image_quality="normal"):
+    return build_scryfall_face_image_url(scryfall_id, "front", image_quality=image_quality)
+
+
+def build_scryfall_face_image_url(scryfall_id, face_side, image_quality="normal"):
     if not scryfall_id or len(scryfall_id) < 2:
         return None
 
@@ -2169,7 +2222,70 @@ def build_scryfall_face_image_url(scryfall_id, face_side):
     if normalized_side not in {"front", "back"}:
         normalized_side = "front"
 
-    return f"https://cards.scryfall.io/normal/{normalized_side}/{scryfall_id[0]}/{scryfall_id[1]}/{scryfall_id}.jpg"
+    normalized_quality = (image_quality or "normal").strip().lower()
+    if normalized_quality not in {"normal", "large", "png"}:
+        normalized_quality = "normal"
+
+    file_ext = "png" if normalized_quality == "png" else "jpg"
+
+    return (
+        f"https://cards.scryfall.io/"
+        f"{normalized_quality}/{normalized_side}/{scryfall_id[0]}/{scryfall_id[1]}/{scryfall_id}.{file_ext}"
+    )
+
+
+def parse_scryfall_image_url(image_url):
+    raw_url = (image_url or "").strip()
+    if not raw_url:
+        return None
+
+    match = re.match(
+        r"^https?://cards\.scryfall\.io/(?P<quality>[^/]+)/(?P<side>front|back)/[^/]+/[^/]+/(?P<scryfall_id>[A-Za-z0-9-]+)\.(?P<ext>jpg|jpeg|png)$",
+        raw_url,
+        re.IGNORECASE,
+    )
+
+    if not match:
+        return None
+
+    return {
+        "quality": (match.group("quality") or "").strip().lower(),
+        "side": (match.group("side") or "").strip().lower(),
+        "scryfall_id": (match.group("scryfall_id") or "").strip(),
+        "ext": (match.group("ext") or "").strip().lower(),
+    }
+
+
+def build_scryfall_candidate_image_urls(image_url, quality_preference=None):
+    raw_url = (image_url or "").strip()
+    if not raw_url:
+        return []
+
+    parsed = parse_scryfall_image_url(raw_url)
+    if not parsed:
+        return [raw_url]
+
+    if not quality_preference:
+        quality_preference = get_effective_chaos_scryfall_image_quality()
+
+    candidate_urls = []
+    seen_urls = set()
+
+    for quality_value in get_scryfall_quality_download_order(quality_preference):
+        candidate_url = build_scryfall_face_image_url(
+            parsed["scryfall_id"],
+            parsed["side"],
+            image_quality=quality_value,
+        )
+
+        if candidate_url and candidate_url not in seen_urls:
+            candidate_urls.append(candidate_url)
+            seen_urls.add(candidate_url)
+
+    if raw_url not in seen_urls:
+        candidate_urls.append(raw_url)
+
+    return candidate_urls
 
 def extract_chaos_card_faces(card_obj, uuid_lookup):
     card_name = (card_obj.get("name") or "").strip()
@@ -2306,7 +2422,12 @@ def build_chaos_cached_image_filename(card_uuid, page_kind, face_name, image_url
     elif lower_url.endswith(".jpg") or lower_url.endswith(".jpeg"):
         file_ext = ".jpg"
 
-    return f"{uuid_part}_{page_part}_{face_part}{file_ext}"
+    parsed = parse_scryfall_image_url(image_url)
+    quality_part = parsed["quality"] if parsed else "source"
+
+    url_hash = hashlib.md5((image_url or "").encode("utf-8")).hexdigest()[:10]
+
+    return f"{uuid_part}_{page_part}_{face_part}_{quality_part}_{url_hash}{file_ext}"
 
 
 def get_chaos_cached_image_paths(card_uuid, page_kind, face_name, image_url):
@@ -2327,31 +2448,53 @@ def download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url):
 
     ensure_download_directories()
 
-    cache_paths = get_chaos_cached_image_paths(card_uuid, page_kind, face_name, image_url)
-    abs_path = cache_paths["absolute_path"]
-
-    if os.path.exists(abs_path):
-        write_debug_log(
-            f"CHAOS IMAGE CACHE HIT | card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | file={cache_paths['filename']}"
-        )
-        return cache_paths
-
     headers = {
         "User-Agent": "iMomir/1.0",
         "Accept": "*/*",
     }
 
-    response = requests.get(image_url, headers=headers, timeout=120)
-    response.raise_for_status()
+    candidate_urls = build_scryfall_candidate_image_urls(image_url)
+    last_exception = None
 
-    with open(abs_path, "wb") as file_handle:
-        file_handle.write(response.content)
+    for candidate_url in candidate_urls:
+        cache_paths = get_chaos_cached_image_paths(card_uuid, page_kind, face_name, candidate_url)
+        abs_path = cache_paths["absolute_path"]
 
-    write_debug_log(
-        f"CHAOS IMAGE CACHE MISS | card_uuid={card_uuid} | page_kind={page_kind} | face_name={face_name} | downloaded={cache_paths['filename']}"
-    )
+        if os.path.exists(abs_path):
+            write_debug_log(
+                f"CHAOS IMAGE CACHE HIT | card_uuid={card_uuid} | page_kind={page_kind} | "
+                f"face_name={face_name} | file={cache_paths['filename']} | url={candidate_url}"
+            )
+            return cache_paths
 
-    return cache_paths
+        try:
+            response = requests.get(candidate_url, headers=headers, timeout=120)
+            response.raise_for_status()
+
+            with open(abs_path, "wb") as file_handle:
+                file_handle.write(response.content)
+
+            write_debug_log(
+                f"CHAOS IMAGE CACHE MISS | card_uuid={card_uuid} | page_kind={page_kind} | "
+                f"face_name={face_name} | downloaded={cache_paths['filename']} | url={candidate_url}"
+            )
+
+            return cache_paths
+
+        except requests.exceptions.RequestException as exc:
+            last_exception = exc
+
+            write_debug_log(
+                f"CHAOS IMAGE DOWNLOAD ATTEMPT FAILED | card_uuid={card_uuid} | page_kind={page_kind} | "
+                f"face_name={face_name} | url={candidate_url} | error={str(exc)}"
+            )
+
+            continue
+
+    if last_exception:
+        raise last_exception
+
+    return None
 
 def try_download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url, context_label="CHAOS IMAGE"):
     try:
@@ -2780,6 +2923,7 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
         rendered_temp_path,
         label_text,
         card_row,
+        template_key_override=rendered_entry.get("export_frame_template") or "auto",
     )
 
     updated_entry = dict(rendered_entry)
@@ -3083,6 +3227,679 @@ def build_chaos_pack_title_card_image_bytes(pack_display_name, card_width_mm=63.
     image.save(output_buffer, format="PNG")
     return output_buffer.getvalue()
 
+def normalize_alternate_face_kind(face_kind):
+    normalized_face_kind = (face_kind or "single").strip().lower()
+
+    if normalized_face_kind not in {"single", "front", "back"}:
+        normalized_face_kind = "single"
+
+    return normalized_face_kind
+
+
+def get_alternate_source_for_card(card_row, face_kind="single"):
+    if not card_row:
+        return None
+
+    normalized_face_kind = normalize_alternate_face_kind(face_kind)
+    row_keys = set(card_row.keys()) if hasattr(card_row, "keys") else set()
+
+    card_uuid = (card_row["card_uuid"] if "card_uuid" in row_keys else "") or ""
+    set_code = (card_row["set_code"] if "set_code" in row_keys else "") or ""
+    collector_number = (card_row["collector_number"] if "collector_number" in row_keys else "") or ""
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if card_uuid:
+        cursor.execute(
+            """
+            SELECT *
+            FROM alternate_sources
+            WHERE is_enabled = 1
+              AND card_uuid = ?
+              AND face_kind IN (?, 'single')
+            ORDER BY
+                CASE WHEN face_kind = ? THEN 0 ELSE 1 END,
+                alternate_source_id DESC
+            LIMIT 1
+            """,
+            (
+                card_uuid,
+                normalized_face_kind,
+                normalized_face_kind,
+            ),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return row
+
+    if set_code and collector_number:
+        cursor.execute(
+            """
+            SELECT *
+            FROM alternate_sources
+            WHERE is_enabled = 1
+              AND UPPER(COALESCE(set_code, '')) = UPPER(?)
+              AND LOWER(COALESCE(collector_number, '')) = LOWER(?)
+              AND face_kind IN (?, 'single')
+            ORDER BY
+                CASE WHEN face_kind = ? THEN 0 ELSE 1 END,
+                alternate_source_id DESC
+            LIMIT 1
+            """,
+            (
+                set_code,
+                collector_number,
+                normalized_face_kind,
+                normalized_face_kind,
+            ),
+        )
+
+        row = cursor.fetchone()
+        if row:
+            conn.close()
+            return row
+
+    conn.close()
+    return None
+
+
+def get_alternate_source_local_absolute_path(alternate_source_row):
+    if not alternate_source_row:
+        return ""
+
+    local_image_path = (alternate_source_row["local_image_path"] or "").strip()
+
+    if not local_image_path:
+        return ""
+
+    if os.path.isabs(local_image_path):
+        return local_image_path
+
+    return os.path.abspath(os.path.join(RUNTIME_BASE_DIR, local_image_path))
+
+
+def build_alternate_source_cache_filename(alternate_source_id, image_url):
+    parsed_ext = ".jpg"
+    lower_url = (image_url or "").strip().lower()
+
+    if lower_url.endswith(".png"):
+        parsed_ext = ".png"
+    elif lower_url.endswith(".webp"):
+        parsed_ext = ".webp"
+    elif lower_url.endswith(".jpeg"):
+        parsed_ext = ".jpg"
+
+    return f"alternate_source_{int(alternate_source_id)}{parsed_ext}"
+
+
+def ensure_alternate_source_cached(alternate_source_row):
+    if not alternate_source_row:
+        return None
+
+    local_path = get_alternate_source_local_absolute_path(alternate_source_row)
+
+    if local_path and os.path.exists(local_path):
+        return {
+            "absolute_path": local_path,
+            "source": "alternate_source_local",
+            "alternate_source_id": int(alternate_source_row["alternate_source_id"]),
+        }
+
+    external_url = (alternate_source_row["external_image_url"] or "").strip()
+    if not external_url:
+        return None
+
+    ensure_download_directories()
+
+    alternate_source_id = int(alternate_source_row["alternate_source_id"])
+    filename = build_alternate_source_cache_filename(alternate_source_id, external_url)
+    output_path = os.path.join(ALTERNATE_SOURCE_DIR, filename)
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "image/avif,image/webp,image/png,image/jpeg,image/*,*/*;q=0.8",
+    }
+
+    response = requests.get(external_url, headers=headers, timeout=180)
+    response.raise_for_status()
+
+    with open(output_path, "wb") as output_file:
+        output_file.write(response.content)
+
+    relative_path = os.path.relpath(output_path, RUNTIME_BASE_DIR).replace("\\", "/")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE alternate_sources
+        SET local_image_path = ?,
+            updated_at_utc = ?
+        WHERE alternate_source_id = ?
+        """,
+        (
+            relative_path,
+            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            alternate_source_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "absolute_path": output_path,
+        "source": "alternate_source_external_cached",
+        "alternate_source_id": alternate_source_id,
+    }
+
+
+def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
+    normalized_page_kind = (page_kind or "single").strip().lower()
+
+    if normalized_page_kind not in {"front", "back"}:
+        normalized_page_kind = "single"
+
+    alternate_source = get_alternate_source_for_card(
+        card_row,
+        face_kind=normalized_page_kind,
+    )
+
+    if alternate_source:
+        try:
+            cached_alternate = ensure_alternate_source_cached(alternate_source)
+
+            if cached_alternate and os.path.exists(cached_alternate["absolute_path"]):
+                write_debug_log(
+                    f"ALTERNATE SOURCE USED | alternate_source_id={cached_alternate['alternate_source_id']} | "
+                    f"card_uuid={card_row['card_uuid']} | page_kind={normalized_page_kind} | path={cached_alternate['absolute_path']}"
+                )
+
+                return {
+                    "source_type": "alternate_source",
+                    "absolute_path": cached_alternate["absolute_path"],
+                    "image_url": "",
+                    "alternate_source_id": cached_alternate["alternate_source_id"],
+                    "export_frame_template": (
+                        alternate_source["export_frame_template"] or "auto"
+                        if "export_frame_template" in alternate_source.keys()
+                        else "auto"
+                    ),
+                }
+
+        except Exception as exc:
+            write_debug_log(
+                f"ALTERNATE SOURCE FAILED | card_uuid={card_row['card_uuid']} | "
+                f"page_kind={normalized_page_kind} | error={str(exc)} | falling back to Scryfall"
+            )
+
+    return {
+        "source_type": "scryfall",
+        "absolute_path": "",
+        "image_url": fallback_image_url,
+        "alternate_source_id": None,
+        "export_frame_template": "auto",
+    }
+
+def serialize_alternate_source_row(row):
+    if not row:
+        return None
+
+    return {
+        "alternate_source_id": int(row["alternate_source_id"]),
+        "source_name": row["source_name"] or "",
+        "source_type": row["source_type"] or "",
+        "card_uuid": row["card_uuid"] or "",
+        "set_code": row["set_code"] or "",
+        "collector_number": row["collector_number"] or "",
+        "scryfall_id": row["scryfall_id"] or "",
+        "card_name": row["card_name"] or "",
+        "face_kind": row["face_kind"] or "single",
+        "external_image_url": row["external_image_url"] or "",
+        "local_image_path": row["local_image_path"] or "",
+        "fullbleed_image_path": row["fullbleed_image_path"] or "" if "fullbleed_image_path" in row.keys() else "",
+        "remove_bleed": int(row["remove_bleed"] or 0) == 1 if "remove_bleed" in row.keys() else False,
+        "bleed_size_mm": row["bleed_size_mm"] if "bleed_size_mm" in row.keys() else None,
+        "export_frame_template": (
+            row["export_frame_template"] or "auto"
+            if "export_frame_template" in row.keys()
+            else "auto"
+        ),
+        "is_enabled": int(row["is_enabled"] or 0) == 1,
+        "priority": int(row["priority"] or 100),
+        "notes": row["notes"] or "",
+        "created_at_utc": row["created_at_utc"] or "",
+        "updated_at_utc": row["updated_at_utc"] or "",
+    }
+
+
+def get_alternate_sources_for_card(card_uuid):
+    clean_card_uuid = (card_uuid or "").strip()
+
+    if not clean_card_uuid:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM alternate_sources
+        WHERE card_uuid = ?
+        ORDER BY
+            is_enabled DESC,
+            priority ASC,
+            alternate_source_id DESC
+        """,
+        (clean_card_uuid,),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        serialize_alternate_source_row(row)
+        for row in rows
+    ]
+
+
+def get_alternate_source_by_id(alternate_source_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM alternate_sources
+        WHERE alternate_source_id = ?
+        """,
+        (int(alternate_source_id),),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row
+
+CARD_PRINT_WIDTH_MM = 63.0
+CARD_PRINT_HEIGHT_MM = 88.0
+
+
+def get_configured_print_bleed_size_mm():
+    try:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+    except Exception:
+        config = {}
+
+    try:
+        bleed_size_mm = float((config.get("print_bleed_size_mm") or "3.0").strip())
+    except (TypeError, ValueError):
+        bleed_size_mm = 3.0
+
+    if bleed_size_mm < 0:
+        bleed_size_mm = 0.0
+
+    if bleed_size_mm > 10:
+        bleed_size_mm = 10.0
+
+    return bleed_size_mm
+
+
+def get_image_save_format_from_extension(file_ext):
+    normalized_ext = (file_ext or "").strip().lower()
+
+    if normalized_ext == ".png":
+        return "PNG"
+
+    if normalized_ext == ".webp":
+        return "WEBP"
+
+    return "JPEG"
+
+
+def sample_bleed_border_rgb(image):
+    source_image = image.convert("RGB")
+    width, height = source_image.size
+
+    sample_regions = [
+        (0.015, 0.015, 0.080, 0.080),
+        (0.920, 0.015, 0.985, 0.080),
+        (0.015, 0.920, 0.080, 0.985),
+        (0.920, 0.920, 0.985, 0.985),
+        (0.350, 0.955, 0.650, 0.990),
+    ]
+
+    sampled_pixels = []
+
+    for x1, y1, x2, y2 in sample_regions:
+        left = max(0, min(width - 1, int(width * x1)))
+        top = max(0, min(height - 1, int(height * y1)))
+        right = max(left + 1, min(width, int(width * x2)))
+        bottom = max(top + 1, min(height, int(height * y2)))
+
+        region = source_image.crop((left, top, right, bottom))
+        pixels = list(region.getdata())
+
+        if pixels:
+            step = max(1, len(pixels) // 500)
+            sampled_pixels.extend(pixels[::step])
+
+    if not sampled_pixels:
+        return (18, 12, 12)
+
+    reds = sorted(pixel[0] for pixel in sampled_pixels)
+    greens = sorted(pixel[1] for pixel in sampled_pixels)
+    blues = sorted(pixel[2] for pixel in sampled_pixels)
+    middle = len(sampled_pixels) // 2
+
+    return (
+        reds[middle],
+        greens[middle],
+        blues[middle],
+    )
+
+
+def add_card_bleed(image, bleed_size_mm=None, card_width_mm=CARD_PRINT_WIDTH_MM, card_height_mm=CARD_PRINT_HEIGHT_MM):
+    source_image = image.convert("RGB")
+
+    try:
+        bleed_mm = float(bleed_size_mm if bleed_size_mm is not None else get_configured_print_bleed_size_mm())
+    except (TypeError, ValueError):
+        bleed_mm = 3.0
+
+    if bleed_mm <= 0:
+        return source_image
+
+    source_width, source_height = source_image.size
+
+    extra_x = int(round(source_width * (bleed_mm / float(card_width_mm))))
+    extra_y = int(round(source_height * (bleed_mm / float(card_height_mm))))
+
+    if extra_x <= 0 and extra_y <= 0:
+        return source_image
+
+    bleed_rgb = sample_bleed_border_rgb(source_image)
+
+    output_image = Image.new(
+        "RGB",
+        (
+            source_width + (extra_x * 2),
+            source_height + (extra_y * 2),
+        ),
+        bleed_rgb,
+    )
+
+    output_image.paste(source_image, (extra_x, extra_y))
+
+    return output_image
+
+def crop_image_to_card_aspect_ratio(image, card_width_mm=CARD_PRINT_WIDTH_MM, card_height_mm=CARD_PRINT_HEIGHT_MM):
+    source_image = image.convert("RGB")
+
+    source_width, source_height = source_image.size
+
+    if source_width <= 0 or source_height <= 0:
+        return source_image
+
+    target_ratio = float(card_width_mm) / float(card_height_mm)
+    source_ratio = float(source_width) / float(source_height)
+
+    # Small tolerance prevents unnecessary 1-pixel crop noise.
+    if abs(source_ratio - target_ratio) <= 0.001:
+        return source_image
+
+    if source_ratio > target_ratio:
+        # Image is too wide. Crop left/right.
+        target_width = int(round(source_height * target_ratio))
+
+        if target_width <= 0 or target_width >= source_width:
+            return source_image
+
+        left = int((source_width - target_width) / 2)
+        right = left + target_width
+
+        return source_image.crop((left, 0, right, source_height))
+
+    # Image is too tall. Crop top/bottom.
+    target_height = int(round(source_width / target_ratio))
+
+    if target_height <= 0 or target_height >= source_height:
+        return source_image
+
+    top = int((source_height - target_height) / 2)
+    bottom = top + target_height
+
+    return source_image.crop((0, top, source_width, bottom))
+
+def remove_card_bleed(image, bleed_size_mm=None, card_width_mm=CARD_PRINT_WIDTH_MM, card_height_mm=CARD_PRINT_HEIGHT_MM):
+    source_image = image.convert("RGB")
+
+    try:
+        bleed_mm = float(bleed_size_mm if bleed_size_mm is not None else get_configured_print_bleed_size_mm())
+    except (TypeError, ValueError):
+        bleed_mm = 3.0
+
+    if bleed_mm <= 0:
+        return crop_image_to_card_aspect_ratio(
+            source_image,
+            card_width_mm=card_width_mm,
+            card_height_mm=card_height_mm,
+        )
+
+    source_width, source_height = source_image.size
+
+    full_width_mm = float(card_width_mm) + (bleed_mm * 2.0)
+    full_height_mm = float(card_height_mm) + (bleed_mm * 2.0)
+
+    crop_x = int(round(source_width * (bleed_mm / full_width_mm)))
+    crop_y = int(round(source_height * (bleed_mm / full_height_mm)))
+
+    left = crop_x
+    top = crop_y
+    right = source_width - crop_x
+    bottom = source_height - crop_y
+
+    if right <= left or bottom <= top:
+        return crop_image_to_card_aspect_ratio(
+            source_image,
+            card_width_mm=card_width_mm,
+            card_height_mm=card_height_mm,
+        )
+
+    bleed_removed_image = source_image.crop((left, top, right, bottom))
+
+    return crop_image_to_card_aspect_ratio(
+        bleed_removed_image,
+        card_width_mm=card_width_mm,
+        card_height_mm=card_height_mm,
+    )
+
+def save_alternate_source_upload_file(uploaded_file, card_uuid, face_kind, remove_bleed=False, bleed_size_mm=None):
+    if not uploaded_file or not uploaded_file.filename:
+        return {
+            "local_image_path": "",
+            "fullbleed_image_path": "",
+            "remove_bleed": False,
+            "bleed_size_mm": None,
+        }
+
+    original_filename = (uploaded_file.filename or "").strip()
+    file_ext = os.path.splitext(original_filename)[1].strip().lower()
+
+    if file_ext not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise ValueError("Alternate image upload must be a PNG, JPG, JPEG, or WEBP file.")
+
+    ensure_download_directories()
+
+    fullbleed_dir = os.path.join(ALTERNATE_SOURCE_DIR, "fullbleed")
+    os.makedirs(fullbleed_dir, exist_ok=True)
+
+    safe_uuid = safe_filename(card_uuid or "card")
+    safe_face = safe_filename(face_kind or "single")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+
+    output_filename = f"alternate_{safe_uuid}_{safe_face}_{timestamp}{file_ext}"
+    output_path = os.path.join(ALTERNATE_SOURCE_DIR, output_filename)
+
+    fullbleed_relative_path = ""
+
+    if remove_bleed:
+        fullbleed_filename = f"fullbleed_{safe_uuid}_{safe_face}_{timestamp}{file_ext}"
+        fullbleed_output_path = os.path.join(fullbleed_dir, fullbleed_filename)
+
+        uploaded_file.save(fullbleed_output_path)
+
+        with Image.open(fullbleed_output_path) as source_image:
+            processed_image = remove_card_bleed(
+                source_image,
+                bleed_size_mm=bleed_size_mm,
+            )
+
+            save_format = get_image_save_format_from_extension(file_ext)
+
+            if save_format == "JPEG":
+                processed_image = processed_image.convert("RGB")
+                processed_image.save(output_path, format=save_format, quality=95, optimize=True)
+            else:
+                processed_image.save(output_path, format=save_format)
+
+        fullbleed_relative_path = os.path.relpath(fullbleed_output_path, RUNTIME_BASE_DIR).replace("\\", "/")
+
+    else:
+        uploaded_file.save(output_path)
+
+        # Validate the uploaded image can be opened before accepting it.
+        with Image.open(output_path) as test_image:
+            test_image.verify()
+
+    return {
+        "local_image_path": os.path.relpath(output_path, RUNTIME_BASE_DIR).replace("\\", "/"),
+        "fullbleed_image_path": fullbleed_relative_path,
+        "remove_bleed": bool(remove_bleed),
+        "bleed_size_mm": float(bleed_size_mm) if bleed_size_mm is not None else None,
+    }
+
+
+def create_alternate_source_for_card(
+    card_uuid,
+    source_name,
+    source_type,
+    face_kind,
+    external_image_url="",
+    local_image_path="",
+    fullbleed_image_path="",
+    remove_bleed=False,
+    bleed_size_mm=None,
+    export_frame_template="auto",
+    priority=100,
+    notes="",
+):
+    card_row = get_chaos_card_by_uuid(card_uuid)
+
+    if not card_row:
+        raise ValueError("Card UUID was not found in chaos_cards.")
+
+    clean_source_name = (source_name or "").strip()
+    if not clean_source_name:
+        clean_source_name = "Manual Alternate Source"
+
+    clean_source_type = (source_type or "").strip().lower()
+    if clean_source_type not in {"external_url", "uploaded_file", "local_file"}:
+        clean_source_type = "external_url"
+
+    clean_face_kind = normalize_alternate_face_kind(face_kind)
+
+    clean_export_frame_template = (export_frame_template or "auto").strip().lower()
+    valid_export_frame_templates = {
+        option["value"]
+        for option in get_card_export_template_options()
+    }
+
+    if clean_export_frame_template not in valid_export_frame_templates:
+        clean_export_frame_template = "auto"
+
+    try:
+        parsed_priority = int(priority)
+    except (TypeError, ValueError):
+        parsed_priority = 100
+
+    clean_external_url = (external_image_url or "").strip()
+    clean_local_path = (local_image_path or "").strip()
+
+    if clean_source_type == "external_url" and not clean_external_url:
+        raise ValueError("External URL is required for external_url alternate sources.")
+
+    if clean_source_type in {"uploaded_file", "local_file"} and not clean_local_path:
+        raise ValueError("A local image path is required for uploaded_file/local_file alternate sources.")
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO alternate_sources (
+            source_name,
+            source_type,
+            card_uuid,
+            set_code,
+            collector_number,
+            scryfall_id,
+            card_name,
+            face_kind,
+            external_image_url,
+            local_image_path,
+            fullbleed_image_path,
+            remove_bleed,
+            bleed_size_mm,
+            export_frame_template,
+            is_enabled,
+            priority,
+            notes,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            clean_source_name,
+            clean_source_type,
+            card_uuid,
+            card_row["set_code"],
+            card_row["collector_number"],
+            card_row["scryfall_id"],
+            card_row["card_name"],
+            clean_face_kind,
+            clean_external_url,
+            clean_local_path,
+            (fullbleed_image_path or "").strip(),
+            1 if remove_bleed else 0,
+            float(bleed_size_mm) if bleed_size_mm is not None else None,
+            clean_export_frame_template,
+            1,
+            parsed_priority,
+            (notes or "").strip(),
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    alternate_source_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return int(alternate_source_id)
+
 def get_chaos_card_by_uuid(card_uuid):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -3326,22 +4143,35 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
 
         for page_entry in page_entries:
             page_image_url = (page_entry.get("image_url") or "").strip()
-            if not page_image_url:
-                continue
+            page_kind = (page_entry.get("page_kind") or "").strip().lower()
+
+            image_source = resolve_card_image_source_for_page(
+                card_row,
+                page_kind,
+                page_image_url,
+            )
 
             write_debug_log(
                 f"CHAOS PDF RENDER | card_name={page_entry.get('card_name')} | "
                 f"page_kind={page_entry.get('page_kind')} | face_name={page_entry.get('face_name')} | "
-                f"has_url={'yes' if page_image_url else 'no'}"
+                f"source_type={image_source.get('source_type')} | has_url={'yes' if page_image_url else 'no'}"
             )
 
             try:
-                cached_result = download_chaos_image_to_cache(
-                    page_entry.get("card_uuid"),
-                    page_entry.get("page_kind"),
-                    page_entry.get("face_name"),
-                    page_image_url,
-                )
+                if image_source.get("source_type") == "alternate_source":
+                    cached_result = {
+                        "absolute_path": image_source["absolute_path"],
+                    }
+                else:
+                    if not page_image_url:
+                        continue
+
+                    cached_result = download_chaos_image_to_cache(
+                        page_entry.get("card_uuid"),
+                        page_entry.get("page_kind"),
+                        page_entry.get("face_name"),
+                        page_image_url,
+                    )
 
                 if not cached_result:
                     raise ValueError("No cached result returned for chaos image download.")
@@ -3354,6 +4184,7 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                     "is_dual_faced": int(card_row["is_dual_faced"] or 0),
                     "is_persistent_cache_file": True,
                     "is_template_rendered": False,
+                    "export_frame_template": image_source.get("export_frame_template") or "auto",
                 })
 
             except Exception as exc:
@@ -3560,12 +4391,10 @@ def sample_image_region_rgb(image, x1, y1, x2, y2):
     )
 
 
-def sample_export_border_rgb(image, template_config):
-    sample_regions = template_config.get("border_sample_regions") or []
-
+def sample_template_regions_rgb(image, sample_regions, fallback_rgb):
     sampled_colors = []
 
-    for region in sample_regions:
+    for region in sample_regions or []:
         sampled_rgb = sample_image_region_rgb(
             image,
             region["x1"],
@@ -3589,7 +4418,31 @@ def sample_export_border_rgb(image, template_config):
             blues[middle],
         )
 
-    return tuple(template_config.get("fallback_rgb") or (18, 12, 12))
+    return tuple(fallback_rgb or (18, 12, 12))
+
+
+def sample_export_border_rgb(image, template_config, sample_type="card_matte", fallback_rgb=None):
+    template_fallback_rgb = tuple(template_config.get("fallback_rgb") or (18, 12, 12))
+    effective_fallback_rgb = tuple(fallback_rgb or template_fallback_rgb)
+
+    if sample_type == "overlay_fill":
+        sample_regions = (
+            template_config.get("overlay_fill_sample_regions")
+            or template_config.get("border_sample_regions")
+            or []
+        )
+    else:
+        sample_regions = (
+            template_config.get("card_matte_sample_regions")
+            or template_config.get("border_sample_regions")
+            or []
+        )
+
+    return sample_template_regions_rgb(
+        image=image,
+        sample_regions=sample_regions,
+        fallback_rgb=effective_fallback_rgb,
+    )
 
 def draw_selective_rounded_rectangle(draw, box, radius, corners, fill):
     left, top, right, bottom = box
@@ -3724,7 +4577,43 @@ def apply_overlay_with_cutouts(image, box, radius_px, corners, fill_rgb, cutouts
 
     return image
 
-def draw_image_export_corner_label(image, label_text, template_config, matte_rgb):
+def get_readable_overlay_text_rgb(background_rgb, template_config=None):
+    template_config = template_config or {}
+
+    # Optional hard override for unusual templates.
+    forced_text_rgb = template_config.get("text_fill_rgb_override")
+    if forced_text_rgb:
+        return tuple(forced_text_rgb)
+
+    try:
+        red, green, blue = background_rgb
+    except Exception:
+        return (255, 255, 255)
+
+    # WCAG-style relative luminance.
+    # Higher value = lighter background.
+    def linearize_color_channel(channel_value):
+        channel = float(channel_value) / 255.0
+
+        if channel <= 0.03928:
+            return channel / 12.92
+
+        return ((channel + 0.055) / 1.055) ** 2.4
+
+    red_lum = linearize_color_channel(red)
+    green_lum = linearize_color_channel(green)
+    blue_lum = linearize_color_channel(blue)
+
+    luminance = (0.2126 * red_lum) + (0.7152 * green_lum) + (0.0722 * blue_lum)
+
+    # Light background: use black text.
+    # Dark background: use white text.
+    if luminance >= 0.48:
+        return (0, 0, 0)
+
+    return (255, 255, 255)
+
+def draw_image_export_corner_label(image, label_text, template_config, matte_rgb, overlay_fill_rgb=None):
     label_text = (label_text or "").strip().upper()
     source_image = image.convert("RGB")
 
@@ -3747,9 +4636,15 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
 
     overlay_fill_rgb = tuple(
         template_config.get("overlay_fill_rgb_override")
+        or overlay_fill_rgb
         or matte_rgb
         or template_config.get("fallback_rgb")
         or (18, 12, 12)
+    )
+
+    text_fill_rgb = get_readable_overlay_text_rgb(
+        overlay_fill_rgb,
+        template_config=template_config,
     )
 
     source_image = apply_overlay_with_cutouts(
@@ -3811,37 +4706,52 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     draw.text(
         (text_x, text_y),
         label_text,
-        fill=tuple(template_config.get("text_fill_rgb") or (255, 255, 255)),
+        fill=text_fill_rgb,
         font=font,
     )
 
     return source_image
 
-def build_export_card_image(source_image_path, output_image_path, label_text, card_row):
+def build_export_card_image(source_image_path, output_image_path, label_text, card_row, template_key_override=None):
     with Image.open(source_image_path) as source_image:
         image = source_image.convert("RGB")
 
-        template_config = resolve_card_export_template(card_row)
+        template_config = resolve_card_export_template(
+            card_row,
+            template_key_override=template_key_override,
+        )
 
         image = add_duplicated_edge_border(image)
 
-        matte_rgb = sample_export_border_rgb(image, template_config)
+        card_matte_rgb = sample_export_border_rgb(
+            image,
+            template_config,
+            sample_type="card_matte",
+        )
+
+        overlay_fill_rgb = sample_export_border_rgb(
+            image,
+            template_config,
+            sample_type="overlay_fill",
+            fallback_rgb=card_matte_rgb,
+        )
 
         if (template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask":
             radius_px = max(1, int(min(image.size) * float(template_config.get("card_corner_radius_pct") or 0.03)))
-            image = apply_rounded_corner_mask(image, radius_px, matte_rgb=matte_rgb)
+            image = apply_rounded_corner_mask(image, radius_px, matte_rgb=card_matte_rgb)
 
         image = draw_image_export_corner_label(
             image=image,
             label_text=label_text,
             template_config=template_config,
-            matte_rgb=matte_rgb,
+            matte_rgb=card_matte_rgb,
+            overlay_fill_rgb=overlay_fill_rgb,
         )
 
         os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
         image.save(output_image_path, format="JPEG", quality=95, optimize=True)
 
-def build_chaos_template_rendered_card_image(source_image_path, output_image_path, label_text, card_row):
+def build_chaos_template_rendered_card_image(source_image_path, output_image_path, label_text, card_row, template_key_override=None):
     """
     Shared Chaos Draft card rendering path.
 
@@ -3863,6 +4773,7 @@ def build_chaos_template_rendered_card_image(source_image_path, output_image_pat
         output_image_path,
         label_text,
         card_row,
+        template_key_override=template_key_override,
     )
 
     return output_image_path
@@ -3981,7 +4892,7 @@ def zip_image_export_folder(export_folder_path, zip_path):
                 archive_name = os.path.relpath(file_path, export_parent)
                 zip_file.write(file_path, archive_name)
 
-def resolve_card_export_template(card_row):
+def resolve_card_export_template(card_row, template_key_override=None):
     row_keys = set(card_row.keys()) if hasattr(card_row, "keys") else set()
 
     set_code = (card_row["set_code"] if "set_code" in row_keys else "") or ""
@@ -4015,6 +4926,7 @@ def resolve_card_export_template(card_row):
         set_code=set_code,
         frame_version=frame_version,
         release_year=release_year,
+        template_key_override=template_key_override,
     )
 
 def build_chaos_card_image_export_zip(tracked_pack_ids):
@@ -4111,13 +5023,24 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
         front_filename = f"{base_filename}.jpg"
         front_output_path = os.path.join(finish_output_dir, front_filename)
 
-        front_cached_result = try_download_chaos_image_to_cache(
-            front_page_entry.get("card_uuid"),
+        front_image_source = resolve_card_image_source_for_page(
+            card_row,
             front_page_entry.get("page_kind"),
-            front_page_entry.get("face_name"),
             front_page_entry.get("image_url"),
-            context_label="IMAGE EXPORT FRONT",
         )
+
+        if front_image_source.get("source_type") == "alternate_source":
+            front_cached_result = {
+                "absolute_path": front_image_source["absolute_path"],
+            }
+        else:
+            front_cached_result = try_download_chaos_image_to_cache(
+                front_page_entry.get("card_uuid"),
+                front_page_entry.get("page_kind"),
+                front_page_entry.get("face_name"),
+                front_page_entry.get("image_url"),
+                context_label="IMAGE EXPORT FRONT",
+            )
 
         if not front_cached_result:
             warning_text = (
@@ -4134,6 +5057,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
                 front_output_path,
                 export_row["pack_tracking_code"],
                 card_row,
+                template_key_override=front_image_source.get("export_frame_template") or "auto",
             )
         except Exception as exc:
             write_debug_log(
@@ -4148,13 +5072,24 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
             back_filename = f"{base_filename}_back.jpg"
             back_output_path = os.path.join(finish_output_dir, back_filename)
 
-            back_cached_result = try_download_chaos_image_to_cache(
-                back_page_entry.get("card_uuid"),
+            back_image_source = resolve_card_image_source_for_page(
+                card_row,
                 back_page_entry.get("page_kind"),
-                back_page_entry.get("face_name"),
                 back_page_entry.get("image_url"),
-                context_label="IMAGE EXPORT BACK",
             )
+
+            if back_image_source.get("source_type") == "alternate_source":
+                back_cached_result = {
+                    "absolute_path": back_image_source["absolute_path"],
+                }
+            else:
+                back_cached_result = try_download_chaos_image_to_cache(
+                    back_page_entry.get("card_uuid"),
+                    back_page_entry.get("page_kind"),
+                    back_page_entry.get("face_name"),
+                    back_page_entry.get("image_url"),
+                    context_label="IMAGE EXPORT BACK",
+                )
 
             if back_cached_result:
                 try:
@@ -4163,6 +5098,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
                         back_output_path,
                         f"{export_row['pack_tracking_code']} - BACK",
                         card_row,
+                        template_key_override=back_image_source.get("export_frame_template") or "auto",
                     )
                     back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
                 except Exception as exc:
@@ -5729,6 +6665,7 @@ def config():
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
         chaos_draft_export_format_options=CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
+        scryfall_image_quality_options=SCRYFALL_IMAGE_QUALITY_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
@@ -6388,6 +7325,44 @@ def campaign_chaos_pack_print(tracked_pack_id):
         },
     )
 
+@app.route("/campaign-chaos/packs/<int:tracked_pack_id>/export", methods=["POST"])
+def campaign_chaos_pack_export(tracked_pack_id):
+    pack = get_tracked_pack_state_by_id(tracked_pack_id)
+
+    if not pack:
+        return jsonify({
+            "ok": False,
+            "message": "Tracked pack was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    export_format = (payload.get("export_format") or request.form.get("export_format") or "").strip().lower()
+
+    if export_format not in {"archidekt", "moxfield"}:
+        return jsonify({
+            "ok": False,
+            "message": "Invalid export format.",
+        }), 400
+
+    try:
+        export_text = build_chaos_pack_export_text(pack, export_format)
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    filename_base = safe_filename(
+        f"{pack.get('pack_tracking_code') or 'saved_pack'}_{export_format}".lower()
+    )
+
+    return jsonify({
+        "ok": True,
+        "export_format": export_format,
+        "filename": f"{filename_base}.txt",
+        "export_text": export_text,
+    })
+
 @app.route("/campaign-chaos/packs/import-campaign-packs", methods=["GET"])
 def campaign_chaos_packs_import_campaign_packs():
     source_campaign_id = (request.args.get("source_campaign_id") or "").strip()
@@ -6877,6 +7852,353 @@ def chaos_draft_save_pack():
 
     return jsonify(result)
 
+@app.route("/chaos/cards/<card_uuid>/alternate-sources", methods=["GET"])
+@app.route("/campaign-chaos/cards/<card_uuid>/alternate-sources", methods=["GET"])
+def campaign_chaos_card_alternate_sources(card_uuid):
+    card_row = get_chaos_card_by_uuid(card_uuid)
+
+    if not card_row:
+        return jsonify({
+            "ok": False,
+            "message": "Card UUID was not found.",
+            "alternate_sources": [],
+        }), 404
+
+    alternate_sources = get_alternate_sources_for_card(card_uuid)
+
+    active_source = None
+    for source in alternate_sources:
+        if source["is_enabled"]:
+            active_source = source
+            break
+
+    return jsonify({
+        "ok": True,
+        "card": {
+            "card_uuid": card_row["card_uuid"],
+            "card_name": card_row["card_name"],
+            "set_code": card_row["set_code"],
+            "collector_number": card_row["collector_number"],
+            "scryfall_id": card_row["scryfall_id"],
+        },
+        "frame_template_options": get_card_export_template_options(),
+        "active_source": active_source,
+        "alternate_sources": alternate_sources,
+    })
+
+
+@app.route("/chaos/cards/<card_uuid>/alternate-sources/add", methods=["POST"])
+@app.route("/campaign-chaos/cards/<card_uuid>/alternate-sources/add", methods=["POST"])
+def campaign_chaos_card_alternate_sources_add(card_uuid):
+    card_row = get_chaos_card_by_uuid(card_uuid)
+
+    if not card_row:
+        return jsonify({
+            "ok": False,
+            "message": "Card UUID was not found.",
+        }), 404
+
+    source_name = (request.form.get("source_name") or "").strip()
+    source_type = (request.form.get("source_type") or "external_url").strip().lower()
+    face_kind = normalize_alternate_face_kind(request.form.get("face_kind") or "single")
+    external_image_url = (request.form.get("external_image_url") or "").strip()
+    local_image_path = (request.form.get("local_image_path") or "").strip()
+    priority = "100"
+    notes = (request.form.get("notes") or "").strip()
+    remove_bleed = request.form.get("remove_bleed") == "on"
+    bleed_size_mm = get_configured_print_bleed_size_mm()
+    export_frame_template = (request.form.get("export_frame_template") or "auto").strip().lower()
+
+    fullbleed_image_path = ""
+
+    uploaded_file = request.files.get("alternate_image_file")
+
+    if not source_name:
+        if uploaded_file and uploaded_file.filename:
+            source_name = "Upload File"
+        elif source_type == "external_url" and external_image_url:
+            try:
+                parsed_domain = re.sub(
+                    r"^www\.",
+                    "",
+                    urlparse(external_image_url).hostname or "",
+                    flags=re.IGNORECASE,
+                )
+                source_name = parsed_domain or "External URL"
+            except Exception:
+                source_name = "External URL"
+        elif source_type == "local_file":
+            source_name = "Local File"
+        else:
+            source_name = "Manual Alternate Image"
+
+    try:
+        if uploaded_file and uploaded_file.filename:
+            source_type = "uploaded_file"
+            upload_result = save_alternate_source_upload_file(
+                uploaded_file,
+                card_uuid=card_uuid,
+                face_kind=face_kind,
+                remove_bleed=remove_bleed,
+                bleed_size_mm=bleed_size_mm,
+            )
+
+            local_image_path = upload_result["local_image_path"]
+            fullbleed_image_path = upload_result["fullbleed_image_path"]
+            remove_bleed = upload_result["remove_bleed"]
+            bleed_size_mm = upload_result["bleed_size_mm"]
+
+        alternate_source_id = create_alternate_source_for_card(
+            card_uuid=card_uuid,
+            source_name=source_name,
+            source_type=source_type,
+            face_kind=face_kind,
+            external_image_url=external_image_url,
+            local_image_path=local_image_path,
+            fullbleed_image_path=fullbleed_image_path,
+            remove_bleed=remove_bleed,
+            bleed_size_mm=bleed_size_mm,
+            export_frame_template=export_frame_template,
+            priority=priority,
+            notes=notes,
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": "Alternate image source added.",
+            "alternate_source_id": alternate_source_id,
+            "alternate_sources": get_alternate_sources_for_card(card_uuid),
+        })
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+@app.route("/chaos/alternate-sources/<int:alternate_source_id>/frame-template", methods=["POST"])
+@app.route("/campaign-chaos/alternate-sources/<int:alternate_source_id>/frame-template", methods=["POST"])
+def campaign_chaos_alternate_source_frame_template_update(alternate_source_id):
+    source_row = get_alternate_source_by_id(alternate_source_id)
+
+    if not source_row:
+        return jsonify({
+            "ok": False,
+            "message": "Alternate source was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    export_frame_template = (payload.get("export_frame_template") or "auto").strip().lower()
+
+    valid_export_frame_templates = {
+        option["value"]
+        for option in get_card_export_template_options()
+    }
+
+    if export_frame_template not in valid_export_frame_templates:
+        export_frame_template = "auto"
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE alternate_sources
+        SET export_frame_template = ?,
+            updated_at_utc = ?
+        WHERE alternate_source_id = ?
+        """,
+        (
+            export_frame_template,
+            now_utc,
+            int(alternate_source_id),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "Card frame template updated.",
+        "alternate_sources": get_alternate_sources_for_card(source_row["card_uuid"]),
+    })
+
+@app.route("/chaos/alternate-sources/<int:alternate_source_id>/toggle", methods=["POST"])
+@app.route("/campaign-chaos/alternate-sources/<int:alternate_source_id>/toggle", methods=["POST"])
+def campaign_chaos_alternate_source_toggle(alternate_source_id):
+    source_row = get_alternate_source_by_id(alternate_source_id)
+
+    if not source_row:
+        return jsonify({
+            "ok": False,
+            "message": "Alternate source was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    enabled = bool(payload.get("enabled", False))
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE alternate_sources
+        SET is_enabled = ?,
+            updated_at_utc = ?
+        WHERE alternate_source_id = ?
+        """,
+        (
+            1 if enabled else 0,
+            now_utc,
+            int(alternate_source_id),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "Alternate source updated.",
+        "alternate_sources": get_alternate_sources_for_card(source_row["card_uuid"]),
+    })
+
+@app.route("/chaos/alternate-sources/<int:alternate_source_id>/delete", methods=["POST"])
+@app.route("/campaign-chaos/alternate-sources/<int:alternate_source_id>/delete", methods=["POST"])
+def campaign_chaos_alternate_source_delete(alternate_source_id):
+    source_row = get_alternate_source_by_id(alternate_source_id)
+
+    if not source_row:
+        return jsonify({
+            "ok": False,
+            "message": "Alternate source was not found.",
+        }), 404
+
+    card_uuid = source_row["card_uuid"]
+    local_path = get_alternate_source_local_absolute_path(source_row)
+
+    fullbleed_path = ""
+    if "fullbleed_image_path" in source_row.keys():
+        fullbleed_relative_path = (source_row["fullbleed_image_path"] or "").strip()
+        if fullbleed_relative_path:
+            fullbleed_path = os.path.abspath(os.path.join(RUNTIME_BASE_DIR, fullbleed_relative_path))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        DELETE FROM alternate_sources
+        WHERE alternate_source_id = ?
+        """,
+        (int(alternate_source_id),),
+    )
+
+    conn.commit()
+    conn.close()
+
+    # Only remove files inside the managed alternate source folder.
+    try:
+        alternate_root = os.path.abspath(ALTERNATE_SOURCE_DIR)
+
+        for candidate_path in [local_path, fullbleed_path]:
+            if not candidate_path:
+                continue
+
+            local_abs = os.path.abspath(candidate_path)
+            if local_abs.startswith(alternate_root) and os.path.exists(local_abs):
+                os.remove(local_abs)
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+        "message": "Alternate source deleted.",
+        "alternate_sources": get_alternate_sources_for_card(card_uuid),
+    })
+
+@app.route("/debug/alternate-source/add", methods=["POST"])
+def debug_alternate_source_add():
+    card_uuid = (request.form.get("card_uuid") or "").strip()
+    face_kind = normalize_alternate_face_kind(request.form.get("face_kind") or "single")
+    source_name = (request.form.get("source_name") or "Manual Alternate Source").strip()
+    source_type = (request.form.get("source_type") or "external_url").strip().lower()
+    external_image_url = (request.form.get("external_image_url") or "").strip()
+    local_image_path = (request.form.get("local_image_path") or "").strip()
+    priority = request.form.get("priority") or "100"
+
+    if not card_uuid:
+        return "card_uuid is required", 400
+
+    card_row = get_chaos_card_by_uuid(card_uuid)
+    if not card_row:
+        return "card_uuid was not found in chaos_cards", 404
+
+    try:
+        parsed_priority = int(priority)
+    except (TypeError, ValueError):
+        parsed_priority = 100
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO alternate_sources (
+            source_name,
+            source_type,
+            card_uuid,
+            set_code,
+            collector_number,
+            scryfall_id,
+            card_name,
+            face_kind,
+            external_image_url,
+            local_image_path,
+            is_enabled,
+            priority,
+            notes,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            source_name,
+            source_type,
+            card_uuid,
+            card_row["set_code"],
+            card_row["collector_number"],
+            card_row["scryfall_id"],
+            card_row["card_name"],
+            face_kind,
+            external_image_url,
+            local_image_path,
+            1,
+            parsed_priority,
+            "Debug route insert",
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    alternate_source_id = cursor.lastrowid
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "alternate_source_id": int(alternate_source_id),
+    })
+
 @app.route("/chaos-card-image/<card_uuid>", methods=["GET"])
 def chaos_card_image(card_uuid):
     card_row = get_chaos_card_by_uuid(card_uuid)
@@ -6890,6 +8212,18 @@ def chaos_card_image(card_uuid):
 
     first_page = page_entries[0]
     image_url = (first_page.get("image_url") or "").strip()
+    page_kind = (first_page.get("page_kind") or "").strip().lower()
+
+    image_source = resolve_card_image_source_for_page(
+        card_row,
+        page_kind,
+        image_url,
+    )
+
+    if image_source.get("source_type") == "alternate_source":
+        alternate_path = os.path.abspath(image_source["absolute_path"])
+        if os.path.exists(alternate_path):
+            return send_file(alternate_path)
 
     if not image_url:
         return ("Not found", 404)

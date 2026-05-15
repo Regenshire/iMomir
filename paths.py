@@ -23,6 +23,7 @@ IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "image_cache")
 CHAOS_IMAGE_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_image_cache")
 CHAOS_TEMP_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_temp_cache")
 CAMPAIGN_PLAYER_PORTRAIT_DIR = os.path.join(DATA_ROOT_DIR, "campaign_player_portraits")
+ALTERNATE_SOURCE_DIR = os.path.join(DATA_ROOT_DIR, "alternate_sources")
 
 EXPORT_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "Export")
 

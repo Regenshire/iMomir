@@ -73,6 +73,7 @@ DEFAULT_CONFIG = {
     "use_pdf_print": "1",
     "pdf_width_mm": "57.5",
     "pdf_height_mm": "85.25",
+    "print_bleed_size_mm": "3.0",
     "pdf_crop_border": "1",
     "print_front_back_label": "1",
     "print_pack_tracking_code": "0",
@@ -86,6 +87,7 @@ DEFAULT_CONFIG = {
     "tower_pdf_draw_count": "7",
     "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
     "chaos_draft_export_format": "none",
+    "chaos_scryfall_image_quality": "png",
     "display_pack_prices": "1",
     "pack_price_source": "tcgplayer-retail",
 }
@@ -93,6 +95,12 @@ DEFAULT_CONFIG = {
 REPEAT_MODE_OPTIONS = [
     ("1", "Repeat"),
     ("0", "No Repeats"),
+]
+
+SCRYFALL_IMAGE_QUALITY_OPTIONS = [
+    ("normal", "Normal"),
+    ("large", "Large → Normal"),
+    ("png", "PNG Preferred → Large → Normal"),
 ]
 
 PRIMARY_TYPE_KEYS = [
@@ -242,22 +250,23 @@ GAME_MODE_OPTIONS = [
         "image_filename": "img/token_mode_tower_of_power.jpg",
     },
     {
+        "value": "chaos_draft_campaign",
+        "label": "Chaos Draft - Campaign Mode",
+        "description": "Chaos Draft is the ultimate way to play! Campaign Mode allows you to manage and design your Chaos drafts with specific packs and roll for specific players. Add packs you own, or print packs you dont.  You can do it all in Campaign Mode.",
+        "image_filename": "img/token_mode_chaos_draft.jpg",
+    },
+    {
         "value": "chaos_draft",
         "label": "Chaos Draft",
         "description": "Chaos Draft selects a random booster pack from the currently enabled sets. One of the funnest ways to play Magic the Gathering.",
-        "image_filename": "img/token_mode_tower_of_power.jpg",
+        "image_filename": "img/token_mode_chaos_draft.jpg",
     },
-    {
-        "value": "chaos_draft_campaign",
-        "label": "Chaos Draft - Campaign Mode",
-        "description": "Campaign Mode selects from packs that have already been saved to the Pack Tracking Database. Use this mode when you are drafting from physical packs that have printed tracking codes.",
-        "image_filename": "img/token_mode_tower_of_power.jpg",
-    },
+
     {
         "value": "preprint_chaos_draft",
         "label": "PRE-PRINT - Chaos Draft",
         "description": "Pre-generate Chaos Draft packs for your next game. Choose how many players and how many packs per player, then combine all generated packs into one printable PDF document.",
-        "image_filename": "img/token_mode_tower_of_power.jpg",
+        "image_filename": "img/token_mode_chaos_draft.jpg",
     },
     {
         "value": "planechase",
@@ -308,7 +317,7 @@ CHAOS_DUPLICATE_CONTROL_TYPES = {
     "set",
     "collector",
 }
-CHAOS_DUPLICATE_REROLL_CHANCE = 0.5
+CHAOS_DUPLICATE_REROLL_CHANCE = 0.7
 CHAOS_DUPLICATE_MAX_REROLLS = 3
 CHAOS_DUPLICATE_LOG_ALL_DETECTIONS = True
 

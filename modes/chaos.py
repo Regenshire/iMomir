@@ -2190,10 +2190,20 @@ def ensure_tracked_pack_campaign_schema():
     cursor.execute("PRAGMA table_info(tracked_chaos_packs)")
     tracked_pack_columns = {row[1] for row in cursor.fetchall()}
 
+    cursor.execute(
+        """
+        SELECT config_value
+        FROM app_config
+        WHERE config_key = 'tracked_pack_campaigns_legacy_migration_complete'
+        """
+    )
+    migration_row = cursor.fetchone()
+    legacy_migration_complete = bool(migration_row and migration_row["config_value"] == "1")
+
     # Migration bridge:
     # Existing installs stored campaign membership directly on tracked_chaos_packs.campaign_id.
-    # Copy that into the new membership table without changing tracking codes.
-    if "campaign_id" in tracked_pack_columns:
+    # Copy that into the new membership table ONCE, then never auto-recreate deleted links.
+    if "campaign_id" in tracked_pack_columns and not legacy_migration_complete:
         cursor.execute(
             """
             INSERT OR IGNORE INTO tracked_chaos_pack_campaigns (
@@ -2213,6 +2223,14 @@ def ensure_tracked_pack_campaign_schema():
                 COALESCE(campaign_enabled, 1),
                 COALESCE(added_at_utc, strftime('%Y-%m-%d %H:%M:%S UTC', 'now'))
             FROM tracked_chaos_packs
+            """
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO app_config (config_key, config_value)
+            VALUES ('tracked_pack_campaigns_legacy_migration_complete', '1')
+            ON CONFLICT(config_key) DO UPDATE SET config_value = '1'
             """
         )
 
@@ -4789,21 +4807,28 @@ def delete_tracked_packs(tracked_pack_ids, campaign_id=None):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        f"""
-        DELETE FROM tracked_chaos_pack_campaigns
-        WHERE campaign_key = ?
-          AND tracked_pack_id IN ({placeholders})
-        """,
-        [campaign_key] + pack_ids,
-    )
+    try:
+        cursor.execute(
+            f"""
+            DELETE FROM tracked_chaos_pack_campaigns
+            WHERE campaign_key = ?
+              AND tracked_pack_id IN ({placeholders})
+            """,
+            [campaign_key] + pack_ids,
+        )
 
-    deleted_count = cursor.rowcount
+        deleted_count = cursor.rowcount
 
-    conn.commit()
-    conn.close()
+        conn.commit()
 
-    return deleted_count
+        return int(deleted_count or 0)
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
 def get_tracked_pack_state_by_id(tracked_pack_id):
     conn = get_db_connection()

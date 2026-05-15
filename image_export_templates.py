@@ -85,6 +85,18 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             "bottom_left": False,
         },
 
+        "overlay_fill_sample_regions": [
+            {"x1": 0.50, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+            {"x1": 0.80, "y1": 0.980, "x2": 0.94, "y2": 0.985},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+        ],
+
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (20, 17, 15),
     },
@@ -119,6 +131,18 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             "bottom_left": False,
         },
 
+        "overlay_fill_sample_regions": [
+            {"x1": 0.62, "y1": 0.945, "x2": 0.76, "y2": 0.985},
+            {"x1": 0.80, "y1": 0.945, "x2": 0.94, "y2": 0.985},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.010, "y1": 0.900, "x2": 0.055, "y2": 0.980},
+            {"x1": 0.945, "y1": 0.900, "x2": 0.990, "y2": 0.980},
+            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
+        ],
+
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (20, 17, 15),
     },
@@ -149,6 +173,18 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             "bottom_right": False,
             "bottom_left": False,
         },
+
+        "overlay_fill_sample_regions": [
+            {"x1": 0.62, "y1": 0.945, "x2": 0.76, "y2": 0.985},
+            {"x1": 0.80, "y1": 0.945, "x2": 0.94, "y2": 0.985},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.010, "y1": 0.900, "x2": 0.055, "y2": 0.980},
+            {"x1": 0.945, "y1": 0.900, "x2": 0.990, "y2": 0.980},
+            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
+        ],
 
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (18, 14, 12),
@@ -192,6 +228,18 @@ CARD_EXPORT_FRAME_TEMPLATES = {
                 "rx": 0.055,
                 "ry": 0.021,
             },
+        ],
+
+        "overlay_fill_sample_regions": [
+            {"x1": 0.62, "y1": 0.945, "x2": 0.76, "y2": 0.985},
+            {"x1": 0.80, "y1": 0.945, "x2": 0.94, "y2": 0.985},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.010, "y1": 0.900, "x2": 0.055, "y2": 0.980},
+            {"x1": 0.945, "y1": 0.900, "x2": 0.990, "y2": 0.980},
+            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
         ],
 
         "card_corner_radius_pct": 0.060,
@@ -264,6 +312,37 @@ def deep_merge_template(base, override):
 
     return merged
 
+def get_card_export_template_options():
+    options = [
+        {
+            "value": "auto",
+            "label": "Automatic - Use Card Printing Frame",
+        }
+    ]
+
+    for template_key, template_config in CARD_EXPORT_FRAME_TEMPLATES.items():
+        if template_key == "default":
+            continue
+
+        template_name = template_config.get("template_name") or template_key
+
+        if template_key in {"1993", "1997"}:
+            label = f"{template_name} ({template_key})"
+        elif template_key == "2003":
+            label = "Modern Frame (2003)"
+        elif template_key == "2015":
+            label = "M15 Frame (2015)"
+        elif template_key == "future":
+            label = "Future Sight Frame"
+        else:
+            label = template_name
+
+        options.append({
+            "value": template_key,
+            "label": label,
+        })
+
+    return options
 
 def get_card_export_template_by_key(template_key):
     clean_key = (template_key or "default").strip().lower()
@@ -281,7 +360,13 @@ def get_card_export_template_by_key(template_key):
     return template
 
 
-def resolve_card_export_template_config(set_code, frame_version, release_year=None):
+def resolve_card_export_template_config(set_code, frame_version, release_year=None, template_key_override=None):
+    clean_template_key_override = (template_key_override or "").strip().lower()
+
+    if clean_template_key_override and clean_template_key_override != "auto":
+        if clean_template_key_override in CARD_EXPORT_FRAME_TEMPLATES:
+            return get_card_export_template_by_key(clean_template_key_override)
+        
     clean_set_code = (set_code or "").strip().upper()
     clean_frame_version = (frame_version or "").strip().lower()
 
