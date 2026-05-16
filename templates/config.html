@@ -367,6 +367,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Replace Basic Lands</span>
+                        <input
+                            type="checkbox"
+                            name="chaos_replace_basic_lands"
+                            {% if config.get("chaos_replace_basic_lands", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Enable Chaos Draft Card Image Export</span>
                         <input
                             type="checkbox"
@@ -376,11 +385,29 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>Export - Add Bleed</span>
+                        <input
+                            type="checkbox"
+                            name="export_add_bleed"
+                            {% if config.get("export_add_bleed", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Print Pack Tracking Code</span>
                         <input
                             type="checkbox"
                             name="print_pack_tracking_code"
                             {% if config.print_pack_tracking_code == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Print Pack Labels</span>
+                        <input
+                            type="checkbox"
+                            name="print_pack_labels"
+                            {% if config.get("print_pack_labels", "0") == "1" %}checked{% endif %}
                         >
                     </label>
 

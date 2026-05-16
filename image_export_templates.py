@@ -52,6 +52,14 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             {"x1": 0.010, "y1": 0.955, "x2": 0.070, "y2": 0.990},
             {"x1": 0.010, "y1": 0.020, "x2": 0.070, "y2": 0.085},
         ],
+
+        # Used only when generating artificial bleed for ZIP image export.
+        # Keep this to one or two clean border-color samples.
+        "bleed_fill_sample_regions": [
+            {"x1": 0.020, "y1": 0.955, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.955, "x2": 0.940, "y2": 0.990},
+        ],
+
         "fallback_rgb": (18, 12, 12),
     },
 
@@ -95,6 +103,11 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
             {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
             {"x1": 0.500, "y1": 0.980, "x2": 0.55, "y2": 0.985},
+        ],
+
+        "bleed_fill_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.800, "y1": 0.980, "x2": 0.940, "y2": 0.985},
         ],
 
         "card_corner_radius_pct": 0.16,
@@ -143,6 +156,11 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
         ],
 
+        "bleed_fill_sample_regions": [
+            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
+        ],
+
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (20, 17, 15),
     },
@@ -182,6 +200,11 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "card_matte_sample_regions": [
             {"x1": 0.010, "y1": 0.900, "x2": 0.055, "y2": 0.980},
             {"x1": 0.945, "y1": 0.900, "x2": 0.990, "y2": 0.980},
+            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
+            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
+        ],
+
+        "bleed_fill_sample_regions": [
             {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
             {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
         ],
@@ -231,15 +254,20 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         ],
 
         "overlay_fill_sample_regions": [
-            {"x1": 0.62, "y1": 0.945, "x2": 0.76, "y2": 0.985},
-            {"x1": 0.80, "y1": 0.945, "x2": 0.94, "y2": 0.985},
+            {"x1": 0.49, "y1": 0.955, "x2": 0.51, "y2": 0.965},
+            {"x1": 0.52, "y1": 0.965, "x2": 0.54, "y2": 0.985},
         ],
 
         "card_matte_sample_regions": [
             {"x1": 0.010, "y1": 0.900, "x2": 0.055, "y2": 0.980},
             {"x1": 0.945, "y1": 0.900, "x2": 0.990, "y2": 0.980},
-            {"x1": 0.020, "y1": 0.945, "x2": 0.180, "y2": 0.990},
-            {"x1": 0.760, "y1": 0.945, "x2": 0.940, "y2": 0.990},
+            {"x1": 0.49, "y1": 0.955, "x2": 0.51, "y2": 0.965},
+            {"x1": 0.52, "y1": 0.965, "x2": 0.54, "y2": 0.985},
+        ],
+
+        "bleed_fill_sample_regions": [
+            {"x1": 0.490, "y1": 0.955, "x2": 0.510, "y2": 0.965},
+            {"x1": 0.520, "y1": 0.965, "x2": 0.540, "y2": 0.985},
         ],
 
         "card_corner_radius_pct": 0.060,
@@ -275,10 +303,150 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             "bottom_left": False,
         },
 
+        "bleed_fill_sample_regions": [
+            {"x1": 0.275, "y1": 0.955, "x2": 0.450, "y2": 0.990},
+            {"x1": 0.550, "y1": 0.955, "x2": 0.725, "y2": 0.990},
+        ],
+
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (20, 17, 15),
     },
 }
+
+CARD_WIDTH_MM = 63.0
+CARD_HEIGHT_MM = 88.0
+BLEED_SIZE_MM = 3.0
+BLEED_WIDTH_MM = CARD_WIDTH_MM + (BLEED_SIZE_MM * 2.0)
+BLEED_HEIGHT_MM = CARD_HEIGHT_MM + (BLEED_SIZE_MM * 2.0)
+
+
+def convert_card_x_to_bleed_x(value):
+    return (BLEED_SIZE_MM + (float(value) * CARD_WIDTH_MM)) / BLEED_WIDTH_MM
+
+
+def convert_card_y_to_bleed_y(value):
+    return (BLEED_SIZE_MM + (float(value) * CARD_HEIGHT_MM)) / BLEED_HEIGHT_MM
+
+
+def convert_card_width_to_bleed_width(value):
+    return (float(value) * CARD_WIDTH_MM) / BLEED_WIDTH_MM
+
+
+def convert_card_height_to_bleed_height(value):
+    return (float(value) * CARD_HEIGHT_MM) / BLEED_HEIGHT_MM
+
+
+def make_bleed_box(box):
+    if not isinstance(box, dict):
+        return box
+
+    return {
+        "x1": convert_card_x_to_bleed_x(box.get("x1", 0.0)),
+        "y1": convert_card_y_to_bleed_y(box.get("y1", 0.0)),
+        "x2": convert_card_x_to_bleed_x(box.get("x2", 1.0)),
+        "y2": convert_card_y_to_bleed_y(box.get("y2", 1.0)),
+    }
+
+
+def make_bleed_regions(regions):
+    return [
+        make_bleed_box(region)
+        for region in (regions or [])
+        if isinstance(region, dict)
+    ]
+
+
+def make_bleed_cutout(cutout):
+    if not isinstance(cutout, dict):
+        return cutout
+
+    bleed_cutout = dict(cutout)
+    shape = (bleed_cutout.get("shape") or "").strip().lower()
+
+    if "cx" in bleed_cutout:
+        bleed_cutout["cx"] = convert_card_x_to_bleed_x(bleed_cutout["cx"])
+
+    if "cy" in bleed_cutout:
+        bleed_cutout["cy"] = convert_card_y_to_bleed_y(bleed_cutout["cy"])
+
+    if "x1" in bleed_cutout:
+        bleed_cutout["x1"] = convert_card_x_to_bleed_x(bleed_cutout["x1"])
+
+    if "x2" in bleed_cutout:
+        bleed_cutout["x2"] = convert_card_x_to_bleed_x(bleed_cutout["x2"])
+
+    if "y1" in bleed_cutout:
+        bleed_cutout["y1"] = convert_card_y_to_bleed_y(bleed_cutout["y1"])
+
+    if "y2" in bleed_cutout:
+        bleed_cutout["y2"] = convert_card_y_to_bleed_y(bleed_cutout["y2"])
+
+    if "rx" in bleed_cutout:
+        bleed_cutout["rx"] = convert_card_width_to_bleed_width(bleed_cutout["rx"])
+
+    if "ry" in bleed_cutout:
+        bleed_cutout["ry"] = convert_card_height_to_bleed_height(bleed_cutout["ry"])
+
+    if shape == "circle" and "r" in bleed_cutout:
+        bleed_cutout["r"] = convert_card_width_to_bleed_width(bleed_cutout["r"])
+
+    return bleed_cutout
+
+
+def make_bleed_template(template_key, template_config):
+    bleed_template = {
+        "template_name": f"{template_config.get('template_name') or template_key} - Bleed",
+        "inherits": template_key,
+        "is_bleed_template": True,
+    }
+
+    if "overlay_box" in template_config:
+        bleed_template["overlay_box"] = make_bleed_box(template_config["overlay_box"])
+
+    if "text_box" in template_config:
+        bleed_template["text_box"] = make_bleed_box(template_config["text_box"])
+
+    if "overlay_fill_sample_regions" in template_config:
+        bleed_template["overlay_fill_sample_regions"] = make_bleed_regions(
+            template_config.get("overlay_fill_sample_regions") or []
+        )
+
+    if "card_matte_sample_regions" in template_config:
+        bleed_template["card_matte_sample_regions"] = make_bleed_regions(
+            template_config.get("card_matte_sample_regions") or []
+        )
+
+    if "border_sample_regions" in template_config:
+        bleed_template["border_sample_regions"] = make_bleed_regions(
+            template_config.get("border_sample_regions") or []
+        )
+
+    if "overlay_cutouts" in template_config:
+        bleed_template["overlay_cutouts"] = [
+            make_bleed_cutout(cutout)
+            for cutout in (template_config.get("overlay_cutouts") or [])
+        ]
+
+    return bleed_template
+
+
+def register_bleed_templates():
+    for template_key, template_config in list(CARD_EXPORT_FRAME_TEMPLATES.items()):
+        if template_key.endswith("_bleed"):
+            continue
+
+        bleed_key = f"{template_key}_bleed"
+
+        if bleed_key in CARD_EXPORT_FRAME_TEMPLATES:
+            continue
+
+        CARD_EXPORT_FRAME_TEMPLATES[bleed_key] = make_bleed_template(
+            template_key,
+            template_config,
+        )
+
+
+register_bleed_templates()
 
 CARD_EXPORT_SET_TEMPLATE_OVERRIDES = {
     # Use this for specific weird/problem sets after testing.
@@ -321,7 +489,7 @@ def get_card_export_template_options():
     ]
 
     for template_key, template_config in CARD_EXPORT_FRAME_TEMPLATES.items():
-        if template_key == "default":
+        if template_key == "default" or template_key.endswith("_bleed"):
             continue
 
         template_name = template_config.get("template_name") or template_key
@@ -360,12 +528,22 @@ def get_card_export_template_by_key(template_key):
     return template
 
 
-def resolve_card_export_template_config(set_code, frame_version, release_year=None, template_key_override=None):
+def resolve_card_export_template_config(set_code, frame_version, release_year=None, template_key_override=None, use_bleed_template=False):
     clean_template_key_override = (template_key_override or "").strip().lower()
+
+    def resolve_key_with_bleed(template_key):
+        clean_key = (template_key or "default").strip().lower()
+
+        if use_bleed_template and not clean_key.endswith("_bleed"):
+            bleed_key = f"{clean_key}_bleed"
+            if bleed_key in CARD_EXPORT_FRAME_TEMPLATES:
+                clean_key = bleed_key
+
+        return get_card_export_template_by_key(clean_key)
 
     if clean_template_key_override and clean_template_key_override != "auto":
         if clean_template_key_override in CARD_EXPORT_FRAME_TEMPLATES:
-            return get_card_export_template_by_key(clean_template_key_override)
+            return resolve_key_with_bleed(clean_template_key_override)
         
     clean_set_code = (set_code or "").strip().upper()
     clean_frame_version = (frame_version or "").strip().lower()
@@ -377,7 +555,7 @@ def resolve_card_export_template_config(set_code, frame_version, release_year=No
         return deep_merge_template(base_template, override)
 
     if clean_frame_version in CARD_EXPORT_FRAME_TEMPLATES:
-        return get_card_export_template_by_key(clean_frame_version)
+        return resolve_key_with_bleed(clean_frame_version)
 
     try:
         release_year = int(release_year) if release_year is not None else None
@@ -386,9 +564,9 @@ def resolve_card_export_template_config(set_code, frame_version, release_year=No
 
     if release_year is not None:
         if release_year < 2003:
-            return get_card_export_template_by_key("1993")
+            return resolve_key_with_bleed("1993")
         if release_year < 2014:
-            return get_card_export_template_by_key("2003")
-        return get_card_export_template_by_key("2015")
+            return resolve_key_with_bleed("2003")
+        return resolve_key_with_bleed("2015")
 
-    return get_card_export_template_by_key("default")
+    return resolve_key_with_bleed("default")

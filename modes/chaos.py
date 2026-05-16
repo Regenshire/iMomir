@@ -656,6 +656,110 @@ def get_chaos_sheet_info(set_code, booster_name, sheet_name):
         "sheet_total_weight": float(row["sheet_total_weight"] or 0),
     }
 
+def is_chaos_replace_basic_lands_enabled():
+    config = get_config()
+    return (config.get("chaos_replace_basic_lands") or "0").strip() == "1"
+
+
+def get_random_common_replacement_card_for_set(set_code, excluded_card_uuid=None):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_excluded_card_uuid = (excluded_card_uuid or "").strip()
+
+    if not clean_set_code:
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    params = [clean_set_code]
+    excluded_sql = ""
+
+    if clean_excluded_card_uuid:
+        excluded_sql = "AND cc.card_uuid <> ?"
+        params.append(clean_excluded_card_uuid)
+
+    cursor.execute(
+        f"""
+        SELECT
+            cc.card_uuid,
+            cc.card_name,
+            cc.rarity,
+            cc.type_line,
+            cc.image_url,
+            cc.scryfall_id,
+            cc.collector_number
+        FROM chaos_cards cc
+        WHERE cc.set_code = ?
+          AND LOWER(COALESCE(cc.rarity, '')) = 'common'
+          AND COALESCE(cc.is_booster, 1) = 1
+          AND LOWER(COALESCE(cc.type_line, '')) NOT LIKE '%basic land%'
+          AND LOWER(COALESCE(cc.card_name, '')) NOT IN (
+                'plains',
+                'island',
+                'swamp',
+                'mountain',
+                'forest',
+                'wastes',
+                'snow-covered plains',
+                'snow-covered island',
+                'snow-covered swamp',
+                'snow-covered mountain',
+                'snow-covered forest',
+                'snow-covered wastes'
+          )
+          {excluded_sql}
+        ORDER BY RANDOM()
+        LIMIT 1
+        """,
+        params,
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "card_uuid": row["card_uuid"],
+        "card_weight": 1.0,
+        "card_name": row["card_name"],
+        "rarity": row["rarity"],
+        "type_line": row["type_line"],
+        "image_url": row["image_url"],
+        "scryfall_id": row["scryfall_id"],
+        "collector_number": row["collector_number"],
+    }
+
+
+def replace_basic_land_if_enabled(chosen_card, set_code, booster_name, sheet_name, write_debug_log_fn):
+    if not chosen_card:
+        return chosen_card
+
+    if not is_chaos_replace_basic_lands_enabled():
+        return chosen_card
+
+    if not is_chaos_basic_land_card(chosen_card):
+        return chosen_card
+
+    replacement_card = get_random_common_replacement_card_for_set(
+        set_code,
+        excluded_card_uuid=chosen_card.get("card_uuid"),
+    )
+
+    if not replacement_card:
+        write_debug_log_fn(
+            f"CHAOS BASIC LAND REPLACE SKIPPED | set={set_code} | booster={booster_name} | "
+            f"sheet={sheet_name} | card={chosen_card.get('card_name')} | reason=no_common_replacement_found"
+        )
+        return chosen_card
+
+    write_debug_log_fn(
+        f"CHAOS BASIC LAND REPLACED | set={set_code} | booster={booster_name} | sheet={sheet_name} | "
+        f"old_card={chosen_card.get('card_name')} | new_card={replacement_card.get('card_name')}"
+    )
+
+    return replacement_card
 
 def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_fn):
     variant_contents = get_chaos_booster_variant_contents(set_code, booster_name, booster_index)
@@ -676,6 +780,14 @@ def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_
             chosen_card = choose_weighted_row(available_cards, "card_weight")
             if not chosen_card:
                 break
+
+            chosen_card = replace_basic_land_if_enabled(
+                chosen_card,
+                set_code,
+                booster_name,
+                sheet_name,
+                write_debug_log_fn,
+            )
 
             booster_type = normalize_booster_type_for_filter(booster_name)
 
@@ -1916,6 +2028,7 @@ def build_chaos_pack_pdf_from_variant(
     pack_display_name,
     build_chaos_pack_pdf_fn,
     write_debug_log_fn,
+    include_pack_labels=True,
 ):
     open_result = open_chaos_pack_with_bonus_rule(
         set_code,
@@ -1950,6 +2063,7 @@ def build_chaos_pack_pdf_from_variant(
         set_code=set_code,
         booster_name=booster_name,
         pack_tracking_code=pack_tracking_code,
+        include_pack_labels=include_pack_labels,
     )
 
 def save_opened_chaos_pack_to_tracking_db(opened_pack=None, campaign_id=None):
@@ -4938,6 +5052,8 @@ def build_tracked_packs_combined_pdf(
 
     merger = PdfWriter()
     appended_count = 0
+    pack_label_states = []
+    print_pack_labels = (get_config().get("print_pack_labels") or "0").strip() == "1"
 
     for tracked_pack_id in pack_ids:
         pack_state = get_tracked_pack_state_by_id(tracked_pack_id)
@@ -4955,10 +5071,14 @@ def build_tracked_packs_combined_pdf(
             set_code=pack_state["set_code"],
             booster_name=pack_state["booster_name"],
             pack_tracking_code=pack_state["pack_tracking_code"],
+            include_pack_labels=False,
         )
 
         merger.append(pack_pdf_buffer)
         appended_count += 1
+
+        if print_pack_labels:
+            pack_label_states.append(pack_state)
 
         if write_debug_log_fn:
             write_debug_log_fn(
@@ -4969,6 +5089,20 @@ def build_tracked_packs_combined_pdf(
     if appended_count == 0:
         merger.close()
         raise ValueError("No selected packs could be printed.")
+
+    if print_pack_labels and pack_label_states:
+        label_pdf_buffer = build_chaos_pack_pdf_fn(
+            [],
+            "Pack Labels",
+            set_code="",
+            booster_name="",
+            pack_tracking_code="",
+            include_pack_labels=False,
+            title_card_only=True,
+            pack_label_states=pack_label_states,
+        )
+
+        merger.append(label_pdf_buffer)
 
     output_buffer = BytesIO()
     merger.write(output_buffer)
@@ -5192,6 +5326,8 @@ def build_preprint_chaos_draft_pdf(
 
     merger = PdfWriter()
     generated_pack_count = 0
+    pack_label_states = []
+    print_pack_labels = (get_config().get("print_pack_labels") or "0").strip() == "1"
 
     for player_number in range(1, parsed_player_count + 1):
         for pack_number in range(1, parsed_packs_per_player + 1):
@@ -5215,16 +5351,39 @@ def build_preprint_chaos_draft_pdf(
                 pack_display_name,
                 build_chaos_pack_pdf_fn,
                 write_debug_log_fn,
+                include_pack_labels=False,
             )
 
             merger.append(pack_pdf_buffer)
             generated_pack_count += 1
+
+            if print_pack_labels:
+                pack_label_states.append({
+                    "pack_display_name": pack_display_name,
+                    "set_code": chosen_variant["set_code"],
+                    "booster_name": chosen_variant["booster_name"],
+                    "pack_tracking_code": "",
+                })
 
             write_debug_log_fn(
                 f"PREPRINT CHAOS DRAFT | player={player_number} | pack={pack_number} | "
                 f"set={chosen_variant['set_code']} | booster={chosen_variant['booster_name']} | "
                 f"booster_index={chosen_variant['booster_index']}"
             )
+
+    if print_pack_labels and pack_label_states:
+        label_pdf_buffer = build_chaos_pack_pdf_fn(
+            [],
+            "Pack Labels",
+            set_code="",
+            booster_name="",
+            pack_tracking_code="",
+            include_pack_labels=False,
+            title_card_only=True,
+            pack_label_states=pack_label_states,
+        )
+
+        merger.append(label_pdf_buffer)
 
     output_buffer = BytesIO()
     merger.write(output_buffer)

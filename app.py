@@ -106,6 +106,8 @@ from image_export_templates import (
     resolve_card_export_template_config,
 )
 
+from pack_label_templates import get_pack_label_template
+
 from db.database import (
     ensure_column_exists,
     get_all_sets,
@@ -373,6 +375,9 @@ def inject_global_template_state():
 
 PACK_ART_DIR = get_pack_art_dir(app.static_folder)
 
+SCRYFALL_SETS_API_URL = "https://api.scryfall.com/sets"
+SET_ICON_RELATIVE_DIR = "img/set_icons"
+
 refresh_status = {
     "is_running": False,
     "stage": "Idle",
@@ -505,8 +510,11 @@ def update_config_from_form(form_data):
         "pdf_crop_border",
         "print_front_back_label",
         "print_pack_tracking_code",
+        "print_pack_labels",
         "enable_track_packs",
         "enable_chaos_card_image_export",
+        "export_add_bleed",
+        "chaos_replace_basic_lands",
         "use_pack_image_for_title",
         "open_print_in_new_tab",
         "sound_enabled",
@@ -1589,6 +1597,7 @@ def ensure_download_directories():
     os.makedirs(CHAOS_TEMP_CACHE_DIR, exist_ok=True)
     os.makedirs(CAMPAIGN_PLAYER_PORTRAIT_DIR, exist_ok=True)
     os.makedirs(ALTERNATE_SOURCE_DIR, exist_ok=True)
+    os.makedirs(os.path.join(app.static_folder, SET_ICON_RELATIVE_DIR.replace("/", os.sep)), exist_ok=True)
 
 def save_campaign_player_portrait_file(uploaded_file, player_id):
     if not uploaded_file:
@@ -3071,6 +3080,303 @@ def render_print_page(card, image_src):
         sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
+def get_pack_label_set_icon_path(set_code):
+    clean_set_code = (set_code or "").strip().upper()
+
+    if not clean_set_code:
+        return ""
+
+    # Prefer database-cached local path if the set-icon sync has populated it.
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT local_icon_svg_path
+            FROM sets
+            WHERE set_code = ?
+            """,
+            (clean_set_code,),
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row["local_icon_svg_path"]:
+            candidate_path = os.path.join(
+                app.static_folder,
+                str(row["local_icon_svg_path"]).replace("/", os.sep),
+            )
+
+            if os.path.exists(candidate_path):
+                return candidate_path
+
+    except Exception:
+        pass
+
+    # Fallback to expected static location.
+    fallback_path = os.path.join(
+        app.static_folder,
+        "img",
+        "set_icons",
+        f"{safe_filename(clean_set_code)}.svg",
+    )
+
+    if os.path.exists(fallback_path):
+        return fallback_path
+
+    return ""
+
+
+def get_pack_label_signature_path():
+    signature_path = os.path.join(
+        app.static_folder,
+        "img",
+        "iMomir_sig_1.png",
+    )
+
+    if os.path.exists(signature_path):
+        return signature_path
+
+    return ""
+
+
+def create_vertical_gradient(width, height, top_rgb, mid_rgb, bottom_rgb):
+    gradient = Image.new("RGB", (width, height), top_rgb)
+    draw = ImageDraw.Draw(gradient)
+
+    top_rgb = tuple(top_rgb)
+    mid_rgb = tuple(mid_rgb)
+    bottom_rgb = tuple(bottom_rgb)
+
+    for y in range(height):
+        position = y / max(1, height - 1)
+
+        if position <= 0.5:
+            local_position = position / 0.5
+            start_rgb = top_rgb
+            end_rgb = mid_rgb
+        else:
+            local_position = (position - 0.5) / 0.5
+            start_rgb = mid_rgb
+            end_rgb = bottom_rgb
+
+        row_rgb = tuple(
+            int(start_rgb[channel] + ((end_rgb[channel] - start_rgb[channel]) * local_position))
+            for channel in range(3)
+        )
+
+        draw.line((0, y, width, y), fill=row_rgb)
+
+    return gradient
+
+
+def load_title_card_font(preferred_size, bold=True):
+    font_names = []
+
+    if bold:
+        font_names.extend([
+            "arialbd.ttf",
+            "Arial Bold.ttf",
+            "DejaVuSans-Bold.ttf",
+        ])
+    else:
+        font_names.extend([
+            "arial.ttf",
+            "Arial.ttf",
+            "DejaVuSans.ttf",
+        ])
+
+    for font_name in font_names:
+        try:
+            return ImageFont.truetype(font_name, preferred_size)
+        except Exception:
+            pass
+
+    return ImageFont.load_default()
+
+
+def wrap_text_for_pixel_width(draw, text_value, font, max_width_px):
+    words = (text_value or "").strip().split()
+
+    if not words:
+        return []
+
+    lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = word if not current_line else f"{current_line} {word}"
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        test_width = bbox[2] - bbox[0]
+
+        if test_width <= max_width_px or not current_line:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+
+    if current_line:
+        lines.append(current_line)
+
+    return lines
+
+
+def draw_centered_text_lines(draw, lines, center_x, start_y, font, fill, line_spacing_px):
+    current_y = start_y
+
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_width = bbox[2] - bbox[0]
+        line_height = bbox[3] - bbox[1]
+        draw.text(
+            (center_x - (line_width / 2), current_y),
+            line,
+            fill=fill,
+            font=font,
+        )
+        current_y += line_height + line_spacing_px
+
+    return current_y
+
+
+def render_svg_icon_to_tinted_image(svg_path, target_size_px, tint_rgb, opacity=64):
+    svg_path = (svg_path or "").strip()
+
+    if not svg_path or not os.path.exists(svg_path):
+        return None
+
+    try:
+        import cairosvg
+    except Exception:
+        write_debug_log("PACK LABEL SVG RENDER SKIPPED | cairosvg is not installed")
+        return None
+
+    try:
+        png_bytes = cairosvg.svg2png(
+            url=svg_path,
+            output_width=int(target_size_px),
+            output_height=int(target_size_px),
+        )
+
+        with Image.open(BytesIO(png_bytes)) as icon_source:
+            icon_rgba = icon_source.convert("RGBA")
+
+        alpha = icon_rgba.getchannel("A")
+
+        opacity = max(0, min(255, int(opacity)))
+        if opacity < 255:
+            alpha = alpha.point(lambda pixel: int(pixel * (opacity / 255.0)))
+
+        tinted_icon = Image.new(
+            "RGBA",
+            icon_rgba.size,
+            tuple(tint_rgb) + (0,),
+        )
+        tinted_icon.putalpha(alpha)
+
+        return tinted_icon
+
+    except Exception as exc:
+        write_debug_log(f"PACK LABEL SVG RENDER FAILED | path={svg_path} | error={str(exc)}")
+        return None
+
+
+def paste_centered_rgba(base_image, overlay_image, center_x, center_y):
+    if not overlay_image:
+        return base_image
+
+    overlay = overlay_image.convert("RGBA")
+    left = int(center_x - (overlay.width / 2))
+    top = int(center_y - (overlay.height / 2))
+
+    base_image.paste(overlay, (left, top), overlay)
+
+    return base_image
+
+
+def draw_pack_label_decorative_border(draw, width, height, template_config):
+    outer_radius = int(min(width, height) * float(template_config.get("outer_corner_radius_pct") or 0.055))
+    inner_inset = int(min(width, height) * float(template_config.get("inner_border_inset_pct") or 0.025))
+
+    border_rgb = tuple(template_config.get("border_rgb") or (70, 70, 80))
+    inner_border_rgb = tuple(template_config.get("inner_border_rgb") or border_rgb)
+
+    draw.rounded_rectangle(
+        [(4, 4), (width - 5, height - 5)],
+        radius=outer_radius,
+        outline=border_rgb,
+        width=max(4, int(width * 0.008)),
+    )
+
+    draw.rounded_rectangle(
+        [(inner_inset, inner_inset), (width - inner_inset - 1, height - inner_inset - 1)],
+        radius=max(1, outer_radius - inner_inset),
+        outline=inner_border_rgb,
+        width=max(1, int(width * 0.003)),
+    )
+
+
+def draw_pack_label_footer(draw, width, height, pack_tracking_code, template_config):
+    clean_pack_code = (pack_tracking_code or "").strip().upper()
+
+    if not clean_pack_code:
+        return
+
+    footer_fill_rgb = tuple(template_config.get("footer_fill_rgb") or (16, 16, 22))
+    footer_outline_rgb = tuple(template_config.get("footer_outline_rgb") or (80, 80, 90))
+    pack_code_rgb = tuple(template_config.get("pack_code_rgb") or (245, 245, 250))
+
+    footer_height = int(height * 0.102)
+    footer_width = int(width * 0.76)
+    footer_left = int((width - footer_width) / 2)
+    footer_top = int(height * 0.845)
+    footer_right = footer_left + footer_width
+    footer_bottom = footer_top + footer_height
+
+    footer_radius = int(footer_height * 0.35)
+
+    draw.rounded_rectangle(
+        [(footer_left, footer_top), (footer_right, footer_bottom)],
+        radius=footer_radius,
+        fill=footer_fill_rgb,
+        outline=footer_outline_rgb,
+        width=max(1, int(width * 0.003)),
+    )
+
+    font_size = int(height * 0.035)
+    font = load_title_card_font(font_size, bold=True)
+
+    max_text_width = int(footer_width * 0.88)
+    text_to_draw = clean_pack_code
+
+    while text_to_draw:
+        bbox = draw.textbbox((0, 0), text_to_draw, font=font)
+        text_width = bbox[2] - bbox[0]
+
+        if text_width <= max_text_width:
+            break
+
+        text_to_draw = text_to_draw[:-1].rstrip()
+
+    if text_to_draw != clean_pack_code and len(text_to_draw) > 1:
+        text_to_draw = text_to_draw[:-1].rstrip() + "…"
+
+    bbox = draw.textbbox((0, 0), text_to_draw, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    draw.text(
+        (
+            (width - text_width) / 2,
+            footer_top + ((footer_height - text_height) / 2) - int(height * 0.002),
+        ),
+        text_to_draw,
+        fill=pack_code_rgb,
+        font=font,
+    )
+
 def split_chaos_pack_display_name_for_title(pack_display_name):
     raw_value = (pack_display_name or "").strip()
 
@@ -3155,76 +3461,512 @@ def build_chaos_pack_image_title_card_bytes(set_code, booster_name, card_width_m
         fitted_image.save(output_buffer, format="PNG")
         return output_buffer.getvalue()
 
-def build_chaos_pack_title_card_image_bytes(pack_display_name, card_width_mm=63.5, card_height_mm=88.9):
+def get_configured_print_pack_labels():
+    try:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+    except Exception:
+        config = {}
+
+    return (config.get("print_pack_labels") or "0").strip() == "1"
+
+
+def draw_chaos_pack_label_pdf_page(
+    pdf_canvas,
+    page_width_mm,
+    page_height_mm,
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code="",
+):
+    label_card_bytes = build_chaos_pack_title_card_image_bytes(
+        pack_display_name,
+        set_code=set_code,
+        booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
+        card_width_mm=page_width_mm,
+        card_height_mm=page_height_mm,
+    )
+
+    label_reader = ImageReader(BytesIO(label_card_bytes))
+
+    pdf_canvas.drawImage(
+        label_reader,
+        0,
+        0,
+        width=page_width_mm * mm,
+        height=page_height_mm * mm,
+        preserveAspectRatio=False,
+        mask="auto",
+    )
+
+    pdf_canvas.showPage()
+
+
+def save_chaos_pack_label_image_file(
+    output_path,
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code="",
+    card_width_mm=63.0,
+    card_height_mm=88.0,
+):
+    label_card_bytes = build_chaos_pack_title_card_image_bytes(
+        pack_display_name,
+        set_code=set_code,
+        booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
+        card_width_mm=card_width_mm,
+        card_height_mm=card_height_mm,
+    )
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    with Image.open(BytesIO(label_card_bytes)) as label_image:
+        label_image.convert("RGB").save(
+            output_path,
+            format="JPEG",
+            quality=95,
+            optimize=True,
+        )
+
+    return output_path
+
+def build_chaos_pack_label_rendered_entry(
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code="",
+    label_suffix="label",
+):
+    pack_label_bytes = build_chaos_pack_title_card_image_bytes(
+        pack_display_name,
+        set_code=set_code,
+        booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
+    )
+
+    pack_label_temp_filename = (
+        f"chaos_pack_label_{safe_filename(pack_display_name)}"
+        f"_{safe_filename(pack_tracking_code or label_suffix or 'label')}.png"
+    )
+    pack_label_temp_path = get_chaos_temp_file_path(pack_label_temp_filename)
+
+    with open(pack_label_temp_path, "wb") as pack_label_file:
+        pack_label_file.write(pack_label_bytes)
+
+    return {
+        "temp_path": pack_label_temp_path,
+        "page_kind": "title",
+        "card_uuid": "",
+        "card_row": None,
+        "is_dual_faced": 0,
+        "is_persistent_cache_file": False,
+        "is_template_rendered": False,
+    }
+
+
+def draw_chaos_rendered_entries_into_pdf_layout(
+    pdf_canvas,
+    rendered_image_entries,
+    pdf_template_layout,
+    print_settings,
+    width_mm,
+    height_mm,
+    draw_x_mm,
+    draw_y_mm,
+    draw_width_mm,
+    draw_height_mm,
+):
+    if not rendered_image_entries:
+        return 0
+
+    pages_rendered = 0
+
+    if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
+        background_abs_path = os.path.join(app.static_folder, "sil", "SIL_LETTER_HORIZONTAL.png")
+
+        if not os.path.exists(background_abs_path):
+            raise FileNotFoundError(f"Silhouette background not found: {background_abs_path}")
+
+        slot_defs = get_silhouette_letter_horizontal_8_slots_mm()
+
+        for page_start_index in range(0, len(rendered_image_entries), 8):
+            page_entries = rendered_image_entries[page_start_index:page_start_index + 8]
+
+            draw_pdf_background_image(
+                pdf_canvas,
+                background_abs_path,
+                width_mm,
+                height_mm,
+            )
+
+            for slot_index, rendered_entry in enumerate(page_entries):
+                slot_def = slot_defs[slot_index]
+
+                draw_processed_image_into_slot(
+                    pdf_canvas,
+                    rendered_entry["temp_path"],
+                    print_settings["print_mode"],
+                    slot_def,
+                    add_edge_bleed_border=True,
+                    rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+                )
+
+            if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
+                for blank_slot_index in range(len(page_entries), len(slot_defs)):
+                    draw_processed_image_into_slot(
+                        pdf_canvas,
+                        image_path=None,
+                        print_mode=print_settings["print_mode"],
+                        slot_def=slot_defs[blank_slot_index],
+                        add_edge_bleed_border=False,
+                        rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+                        blank_white_card=True,
+                    )
+
+            pdf_canvas.showPage()
+            pages_rendered += 1
+
+        return pages_rendered
+
+    if (
+        pdf_template_layout.get("is_multi_card_layout", False)
+        and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card"
+    ):
+        slot_defs = get_two_card_borderless_slots_mm()
+
+        for page_start_index in range(0, len(rendered_image_entries), 2):
+            page_entries = rendered_image_entries[page_start_index:page_start_index + 2]
+
+            for slot_index, rendered_entry in enumerate(page_entries):
+                slot_def = slot_defs[slot_index]
+
+                draw_processed_image_into_two_card_slot(
+                    pdf_canvas,
+                    rendered_entry["temp_path"],
+                    print_settings["print_mode"],
+                    slot_def,
+                )
+
+            pdf_canvas.showPage()
+            pages_rendered += 1
+
+        return pages_rendered
+
+    for rendered_entry in rendered_image_entries:
+        pdf_image_reader = build_pdf_image_reader(
+            rendered_entry["temp_path"],
+            print_settings["print_mode"],
+        )
+
+        pdf_canvas.drawImage(
+            pdf_image_reader,
+            draw_x_mm * mm,
+            draw_y_mm * mm,
+            width=draw_width_mm * mm,
+            height=draw_height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
+
+        pdf_canvas.showPage()
+        pages_rendered += 1
+
+    return pages_rendered
+
+def build_chaos_pack_title_card_image_bytes(
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code="",
+    card_width_mm=63.5,
+    card_height_mm=88.9,
+):
     normalized_pack_display_name = normalize_chaos_pack_display_name(pack_display_name)
     title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(normalized_pack_display_name)
+
+    clean_set_code = (set_code or "").strip().upper()
+
+    if not clean_set_code:
+        match = re.search(r"\(([^()]*)\)\s*$", title_booster_name or "")
+        if match:
+            clean_set_code = (match.group(1) or "").strip().upper()
+
+    clean_booster_name = (booster_name or title_booster_name or "").strip()
+    template_config = get_pack_label_template(clean_booster_name)
 
     pixels_per_mm = 12
     image_width_px = int(round(card_width_mm * pixels_per_mm))
     image_height_px = int(round(card_height_mm * pixels_per_mm))
 
-    image = Image.new("RGB", (image_width_px, image_height_px), (255, 255, 255))
+    icon_center_y_pct = float(template_config.get("icon_center_y_pct", 0.245))
+    title_band_top_pct = float(template_config.get("title_band_top_pct", 0.475))
+    title_band_bottom_pct = float(template_config.get("title_band_bottom_pct", 0.592))
+    title_center_anchor_pct = float(template_config.get("title_center_anchor_pct", 0.475))
+    signature_center_y_pct = float(template_config.get("signature_center_y_pct", 0.725))
+
+    title_box_min_width_pct = float(template_config.get("title_box_min_width_pct", 0.78))
+    title_box_pad_x_pct = float(template_config.get("title_box_pad_x_pct", 0.055))
+    title_box_pad_top_pct = float(template_config.get("title_box_pad_top_pct", 0.020))
+    title_box_pad_bottom_pct = float(template_config.get("title_box_pad_bottom_pct", 0.028))
+    title_box_corner_radius_pct = float(template_config.get("title_box_corner_radius_pct", 0.030))
+    title_text_gap_pct = float(template_config.get("title_text_gap_pct", 0.010))
+
+    signature_scale_pct = float(template_config.get("signature_scale_pct", 1.00))
+
+    accent_rgb = tuple(template_config.get("accent_rgb") or (180, 180, 185))
+    accent_highlight_rgb = tuple(template_config.get("accent_highlight_rgb") or accent_rgb)
+
+    image = create_vertical_gradient(
+        image_width_px,
+        image_height_px,
+        template_config.get("background_top_rgb") or (18, 18, 22),
+        template_config.get("background_mid_rgb") or (30, 30, 36),
+        template_config.get("background_bottom_rgb") or (10, 10, 14),
+    ).convert("RGBA")
+
     draw = ImageDraw.Draw(image)
 
-    border_color = (0, 0, 0)
-    text_color = (0, 0, 0)
-
-    draw.rounded_rectangle(
-        [(6, 6), (image_width_px - 7, image_height_px - 7)],
-        radius=26,
-        outline=border_color,
-        width=6,
-        fill=(255, 255, 255),
+    draw_pack_label_decorative_border(
+        draw,
+        image_width_px,
+        image_height_px,
+        template_config,
     )
 
-    try:
-        title_font = ImageFont.truetype("arialbd.ttf", 64)
-        subtitle_font = ImageFont.truetype("arialbd.ttf", 42)
-    except Exception:
-        title_font = ImageFont.load_default()
-        subtitle_font = ImageFont.load_default()
+    # Large centered set emblem / watermark.
+    icon_path = get_pack_label_set_icon_path(clean_set_code)
+    icon_size_px = int(min(image_width_px, image_height_px) * 0.50)
 
-    side_padding_px = 50
-    usable_width_px = image_width_px - (side_padding_px * 2)
+    icon_image = render_svg_icon_to_tinted_image(
+        icon_path,
+        icon_size_px,
+        template_config.get("set_icon_rgb") or accent_rgb,
+        opacity=int(template_config.get("set_icon_opacity") or 58),
+    )
 
-    title_lines = []
-    subtitle_lines = []
+    if icon_image:
+        paste_centered_rgba(
+            image,
+            icon_image,
+            image_width_px / 2,
+            image_height_px * icon_center_y_pct,
+        )
 
-    if title_set_name:
-        title_lines = simpleSplit(title_set_name, "Helvetica-Bold", 18, usable_width_px / pixels_per_mm * mm)
+    draw = ImageDraw.Draw(image)
 
-    if title_booster_name:
-        subtitle_lines = simpleSplit(title_booster_name, "Helvetica-Bold", 12, usable_width_px / pixels_per_mm * mm)
+    title_rgb = tuple(template_config.get("title_rgb") or (255, 255, 255))
+    subtitle_rgb = tuple(template_config.get("subtitle_rgb") or (226, 226, 234))
 
-    # Fallback if simpleSplit returns nothing useful
-    if not title_lines and title_set_name:
-        title_lines = [title_set_name]
-    if not subtitle_lines and title_booster_name:
-        subtitle_lines = [title_booster_name]
+    title_font = load_title_card_font(int(image_height_px * 0.058), bold=True)
+    subtitle_font = load_title_card_font(int(image_height_px * 0.034), bold=True)
 
-    total_line_count = len(title_lines) + len(subtitle_lines)
-    line_height_title = 78
-    line_height_subtitle = 56
-    total_height = (len(title_lines) * line_height_title) + (len(subtitle_lines) * line_height_subtitle)
+    usable_text_width = int(image_width_px * 0.78)
 
-    current_y = max(80, (image_height_px - total_height) // 2)
+    title_lines = wrap_text_for_pixel_width(
+        draw,
+        title_set_name or "Booster Pack",
+        title_font,
+        usable_text_width,
+    )
 
-    for line in title_lines:
-        bbox = draw.textbbox((0, 0), line, font=title_font)
-        text_width = bbox[2] - bbox[0]
-        text_x = (image_width_px - text_width) // 2
-        draw.text((text_x, current_y), line, fill=text_color, font=title_font)
-        current_y += line_height_title
+    if len(title_lines) > 2:
+        title_font = load_title_card_font(int(image_height_px * 0.048), bold=True)
+        title_lines = wrap_text_for_pixel_width(
+            draw,
+            title_set_name or "Booster Pack",
+            title_font,
+            usable_text_width,
+        )[:2]
 
-    for line in subtitle_lines:
-        bbox = draw.textbbox((0, 0), line, font=subtitle_font)
-        text_width = bbox[2] - bbox[0]
-        text_x = (image_width_px - text_width) // 2
-        draw.text((text_x, current_y), line, fill=text_color, font=subtitle_font)
-        current_y += line_height_subtitle
+    subtitle_text = title_booster_name or clean_booster_name or "Booster Pack"
+    subtitle_lines = wrap_text_for_pixel_width(
+        draw,
+        subtitle_text,
+        subtitle_font,
+        usable_text_width,
+    )
+
+    if len(subtitle_lines) > 2:
+        subtitle_font = load_title_card_font(int(image_height_px * 0.030), bold=True)
+        subtitle_lines = wrap_text_for_pixel_width(
+            draw,
+            subtitle_text,
+            subtitle_font,
+            usable_text_width,
+        )[:2]
+
+    title_line_spacing_px = int(image_height_px * 0.010)
+    subtitle_line_spacing_px = int(image_height_px * 0.006)
+    title_text_gap_px = int(image_height_px * title_text_gap_pct)
+
+    def measure_text_lines(lines, font, line_spacing_px):
+        if not lines:
+            return 0, 0
+
+        max_width_px = 0
+        total_height_px = 0
+
+        for index, line in enumerate(lines):
+            bbox = draw.textbbox((0, 0), line, font=font)
+            line_width_px = bbox[2] - bbox[0]
+            line_height_px = bbox[3] - bbox[1]
+
+            max_width_px = max(max_width_px, line_width_px)
+            total_height_px += line_height_px
+
+            if index < len(lines) - 1:
+                total_height_px += line_spacing_px
+
+        return max_width_px, total_height_px
+
+    title_max_width_px, title_height_px = measure_text_lines(
+        title_lines,
+        title_font,
+        title_line_spacing_px,
+    )
+
+    subtitle_max_width_px, subtitle_height_px = measure_text_lines(
+        subtitle_lines,
+        subtitle_font,
+        subtitle_line_spacing_px,
+    )
+
+    text_block_width_px = max(title_max_width_px, subtitle_max_width_px)
+
+    text_block_height_px = title_height_px
+    if title_lines and subtitle_lines:
+        text_block_height_px += title_text_gap_px
+    text_block_height_px += subtitle_height_px
+
+    title_box_pad_x_px = int(image_width_px * title_box_pad_x_pct)
+    title_box_pad_top_px = int(image_height_px * title_box_pad_top_pct)
+    title_box_pad_bottom_px = int(image_height_px * title_box_pad_bottom_pct)
+
+    title_box_width_px = max(
+        int(image_width_px * title_box_min_width_pct),
+        text_block_width_px + (title_box_pad_x_px * 2),
+    )
+
+    title_box_height_px = text_block_height_px + title_box_pad_top_px + title_box_pad_bottom_px
+
+    title_box_left = int((image_width_px - title_box_width_px) / 2)
+    title_box_top = int(image_height_px * title_band_top_pct)
+    title_box_right = title_box_left + title_box_width_px
+    title_box_bottom = title_box_top + title_box_height_px
+
+    title_box_corner_radius_px = int(min(image_width_px, image_height_px) * title_box_corner_radius_pct)
+
+    accent_layer = Image.new("RGBA", (image_width_px, image_height_px), (0, 0, 0, 0))
+    accent_draw = ImageDraw.Draw(accent_layer)
+
+    # Base title box
+    accent_draw.rounded_rectangle(
+        [
+            (title_box_left, title_box_top),
+            (title_box_right, title_box_bottom),
+        ],
+        radius=title_box_corner_radius_px,
+        fill=accent_rgb + (52,),
+        outline=accent_rgb + (120,),
+        width=max(1, int(image_width_px * 0.003)),
+    )
+
+    # Subtle top shimmer / ripple highlight
+    shimmer_height_px = max(6, int(title_box_height_px * 0.28))
+    accent_draw.rounded_rectangle(
+        [
+            (title_box_left + 2, title_box_top + 2),
+            (title_box_right - 2, title_box_top + shimmer_height_px),
+        ],
+        radius=max(1, title_box_corner_radius_px - 2),
+        fill=accent_highlight_rgb + (34,),
+    )
+
+    image.alpha_composite(accent_layer)
+    draw = ImageDraw.Draw(image)
+
+    text_center_x = image_width_px / 2
+    current_y = title_box_top + title_box_pad_top_px
+
+    current_y = draw_centered_text_lines(
+        draw,
+        title_lines,
+        text_center_x,
+        current_y,
+        title_font,
+        title_rgb,
+        title_line_spacing_px,
+    )
+
+    if title_lines and subtitle_lines:
+        current_y += title_text_gap_px
+
+    draw_centered_text_lines(
+        draw,
+        subtitle_lines,
+        text_center_x,
+        current_y,
+        subtitle_font,
+        subtitle_rgb,
+        subtitle_line_spacing_px,
+    )
+
+    # iMomir gold signature.
+    signature_path = get_pack_label_signature_path()
+
+    if signature_path:
+        try:
+            with Image.open(signature_path) as signature_source:
+                signature_image = signature_source.convert("RGBA")
+
+            base_signature_width = int(
+                image_width_px * float(template_config.get("signature_max_width_pct") or 0.44)
+            )
+
+            signature_scale_pct = max(0.10, min(2.00, float(signature_scale_pct or 1.00)))
+            target_signature_width = max(1, int(base_signature_width * signature_scale_pct))
+
+            new_signature_height = int(signature_image.height * (target_signature_width / signature_image.width))
+            signature_image = signature_image.resize(
+                (target_signature_width, new_signature_height),
+                Image.LANCZOS,
+            )
+
+            signature_opacity = int(template_config.get("signature_opacity") or 255)
+            signature_opacity = max(0, min(255, signature_opacity))
+
+            if signature_opacity < 255:
+                sig_alpha = signature_image.getchannel("A")
+                sig_alpha = sig_alpha.point(lambda pixel: int(pixel * (signature_opacity / 255.0)))
+                signature_image.putalpha(sig_alpha)
+
+            paste_centered_rgba(
+                image,
+                signature_image,
+                image_width_px / 2,
+                image_height_px * signature_center_y_pct,
+            )
+
+        except Exception as exc:
+            write_debug_log(f"PACK LABEL SIGNATURE FAILED | error={str(exc)}")
+
+    draw = ImageDraw.Draw(image)
+    draw_pack_label_footer(
+        draw,
+        image_width_px,
+        image_height_px,
+        pack_tracking_code,
+        template_config,
+    )
 
     output_buffer = BytesIO()
-    image.save(output_buffer, format="PNG")
+    image.convert("RGB").save(output_buffer, format="PNG")
     return output_buffer.getvalue()
 
 def normalize_alternate_face_kind(face_kind):
@@ -3419,9 +4161,12 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
                     f"card_uuid={card_row['card_uuid']} | page_kind={normalized_page_kind} | path={cached_alternate['absolute_path']}"
                 )
 
+                fullbleed_absolute_path = get_alternate_source_fullbleed_absolute_path(alternate_source)
+
                 return {
                     "source_type": "alternate_source",
                     "absolute_path": cached_alternate["absolute_path"],
+                    "fullbleed_absolute_path": fullbleed_absolute_path if fullbleed_absolute_path and os.path.exists(fullbleed_absolute_path) else "",
                     "image_url": "",
                     "alternate_source_id": cached_alternate["alternate_source_id"],
                     "export_frame_template": (
@@ -3440,6 +4185,7 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
     return {
         "source_type": "scryfall",
         "absolute_path": "",
+        "fullbleed_absolute_path": "",
         "image_url": fallback_image_url,
         "alternate_source_id": None,
         "export_frame_template": "auto",
@@ -3552,6 +4298,34 @@ def get_configured_print_bleed_size_mm():
 
     return bleed_size_mm
 
+def get_configured_export_add_bleed():
+    try:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+    except Exception:
+        config = {}
+
+    return (config.get("export_add_bleed") or "0").strip() == "1"
+
+
+def get_alternate_source_fullbleed_absolute_path(alternate_source_row):
+    if not alternate_source_row:
+        return ""
+
+    if "fullbleed_image_path" not in alternate_source_row.keys():
+        return ""
+
+    fullbleed_image_path = (alternate_source_row["fullbleed_image_path"] or "").strip()
+
+    if not fullbleed_image_path:
+        return ""
+
+    if os.path.isabs(fullbleed_image_path):
+        return fullbleed_image_path
+
+    return os.path.abspath(os.path.join(RUNTIME_BASE_DIR, fullbleed_image_path))
 
 def get_image_save_format_from_extension(file_ext):
     normalized_ext = (file_ext or "").strip().lower()
@@ -3607,7 +4381,13 @@ def sample_bleed_border_rgb(image):
     )
 
 
-def add_card_bleed(image, bleed_size_mm=None, card_width_mm=CARD_PRINT_WIDTH_MM, card_height_mm=CARD_PRINT_HEIGHT_MM):
+def add_card_bleed(
+    image,
+    bleed_size_mm=None,
+    card_width_mm=CARD_PRINT_WIDTH_MM,
+    card_height_mm=CARD_PRINT_HEIGHT_MM,
+    bleed_rgb=None,
+):
     source_image = image.convert("RGB")
 
     try:
@@ -3626,7 +4406,10 @@ def add_card_bleed(image, bleed_size_mm=None, card_width_mm=CARD_PRINT_WIDTH_MM,
     if extra_x <= 0 and extra_y <= 0:
         return source_image
 
-    bleed_rgb = sample_bleed_border_rgb(source_image)
+    if bleed_rgb is None:
+        bleed_rgb = sample_bleed_border_rgb(source_image)
+
+    bleed_rgb = tuple(bleed_rgb or (18, 12, 12))
 
     output_image = Image.new(
         "RGB",
@@ -4016,7 +4799,16 @@ def build_chaos_print_pages_for_card(card_row):
 
     return pages
 
-def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=None, pack_tracking_code=None):
+def build_chaos_pack_pdf(
+    cards,
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code=None,
+    include_pack_labels=True,
+    title_card_only=False,
+    pack_label_states=None,
+):
     pdf_settings = resolve_pdf_print_settings()
     pdf_template_layout = resolve_pdf_template_layout()
     crop_border = pdf_settings["pdf_crop_border"]
@@ -4030,56 +4822,303 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
+
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    rendered_image_entries = []
+    pack_label_rendered_entries = []
+
+    try:
+        # Used by combined-pack print jobs to build a PDF made only of pack labels.
+        # This must use the normal PDF layout system, and it must support multiple labels.
+        if title_card_only:
+            label_states = list(pack_label_states or [])
+
+            if not label_states:
+                label_states.append({
+                    "pack_display_name": pack_display_name,
+                    "set_code": set_code,
+                    "booster_name": booster_name,
+                    "pack_tracking_code": pack_tracking_code,
+                })
+
+            for label_index, label_state in enumerate(label_states, start=1):
+                pack_label_rendered_entries.append(
+                    build_chaos_pack_label_rendered_entry(
+                        label_state.get("pack_display_name") or "Pack Label",
+                        set_code=label_state.get("set_code"),
+                        booster_name=label_state.get("booster_name"),
+                        pack_tracking_code=label_state.get("pack_tracking_code"),
+                        label_suffix=f"label_{label_index}",
+                    )
+                )
+
+            pages_rendered = draw_chaos_rendered_entries_into_pdf_layout(
+                c,
+                pack_label_rendered_entries,
+                pdf_template_layout,
+                print_settings,
+                width_mm,
+                height_mm,
+                draw_x_mm,
+                draw_y_mm,
+                draw_width_mm,
+                draw_height_mm,
+            )
+
+            if pages_rendered == 0:
+                raise ValueError("No Chaos Draft pack label images could be rendered into the PDF.")
+
+            c.save()
+            buffer.seek(0)
+            return buffer
+
+        # Normal single-card/page title behavior for non-Silhouette layouts.
+        # Silhouette layouts already include the initial title card as a normal slot entry below.
+        if not is_silhouette_layout:
+            title_card_bytes = build_chaos_pack_title_card_image_bytes(
+                pack_display_name,
+                set_code=set_code,
+                booster_name=booster_name,
+                pack_tracking_code=pack_tracking_code,
+                card_width_mm=width_mm,
+                card_height_mm=height_mm,
+            )
+
+            title_reader = ImageReader(BytesIO(title_card_bytes))
+
+            c.drawImage(
+                title_reader,
+                0,
+                0,
+                width=width_mm * mm,
+                height=height_mm * mm,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+
+            c.showPage()
+
+        # Initial title card as a normal card slot for Silhouette layouts.
+        if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
+            try:
+                config = get_request_config()
+                use_pack_image_for_title = (config.get("use_pack_image_for_title") or "0").strip() == "1"
+
+                title_card_bytes = None
+
+                if use_pack_image_for_title and set_code and booster_name:
+                    title_card_bytes = build_chaos_pack_image_title_card_bytes(set_code, booster_name)
+
+                if not title_card_bytes:
+                    title_card_bytes = build_chaos_pack_title_card_image_bytes(
+                        pack_display_name,
+                        set_code=set_code,
+                        booster_name=booster_name,
+                        pack_tracking_code=pack_tracking_code,
+                    )
+
+                title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
+                title_temp_path = get_chaos_temp_file_path(title_temp_filename)
+
+                with open(title_temp_path, "wb") as title_file:
+                    title_file.write(title_card_bytes)
+
+                rendered_image_entries.append({
+                    "temp_path": title_temp_path,
+                    "page_kind": "title",
+                    "card_uuid": "",
+                    "card_row": None,
+                    "is_dual_faced": 0,
+                    "is_persistent_cache_file": False,
+                    "is_template_rendered": False,
+                })
+            except Exception as exc:
+                write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
+
+        # Normal card image entries.
+        for card in cards:
+            card_uuid = card.get("card_uuid")
+            card_row = get_chaos_card_by_uuid(card_uuid)
+
+            if not card_row:
+                continue
+
+            page_entries = build_chaos_print_pages_for_card(card_row)
+            if not page_entries:
+                continue
+
+            for page_entry in page_entries:
+                page_image_url = (page_entry.get("image_url") or "").strip()
+                page_kind = (page_entry.get("page_kind") or "").strip().lower()
+
+                image_source = resolve_card_image_source_for_page(
+                    card_row,
+                    page_kind,
+                    page_image_url,
+                )
+
+                write_debug_log(
+                    f"CHAOS PDF RENDER | card_name={page_entry.get('card_name')} | "
+                    f"page_kind={page_entry.get('page_kind')} | face_name={page_entry.get('face_name')} | "
+                    f"source_type={image_source.get('source_type')} | has_url={'yes' if page_image_url else 'no'}"
+                )
+
+                try:
+                    if image_source.get("source_type") == "alternate_source":
+                        cached_result = {
+                            "absolute_path": image_source["absolute_path"],
+                        }
+                    else:
+                        if not page_image_url:
+                            continue
+
+                        cached_result = download_chaos_image_to_cache(
+                            page_entry.get("card_uuid"),
+                            page_entry.get("page_kind"),
+                            page_entry.get("face_name"),
+                            page_image_url,
+                        )
+
+                    if not cached_result:
+                        raise ValueError("No cached result returned for chaos image download.")
+
+                    rendered_image_entries.append({
+                        "temp_path": cached_result["absolute_path"],
+                        "page_kind": (page_entry.get("page_kind") or "").strip().lower(),
+                        "card_uuid": (page_entry.get("card_uuid") or card_uuid or "").strip(),
+                        "card_row": card_row,
+                        "is_dual_faced": int(card_row["is_dual_faced"] or 0),
+                        "is_persistent_cache_file": True,
+                        "is_template_rendered": False,
+                        "export_frame_template": image_source.get("export_frame_template") or "auto",
+                    })
+
+                except Exception as exc:
+                    write_debug_log(
+                        f"CHAOS PDF RENDER ERROR | card_name={page_entry.get('card_name')} | "
+                        f"page_kind={page_entry.get('page_kind')} | error={str(exc)}"
+                    )
+                    continue
+
+        template_rendered_entries = []
+
+        for rendered_entry in rendered_image_entries:
+            if rendered_entry.get("page_kind") == "title":
+                template_rendered_entries.append(rendered_entry)
+                continue
+
+            template_rendered_entries.append(
+                build_pdf_rendered_entry_with_template(
+                    rendered_entry,
+                    pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
+                    print_front_back_label=pdf_settings.get("print_front_back_label"),
+                )
+            )
+
+        rendered_image_entries = template_rendered_entries
+
+        # IMPORTANT:
+        # Pack labels are NOT appended to rendered_image_entries.
+        # They are rendered as their own trailing "pack" using the exact same layout system.
+        if include_pack_labels and get_configured_print_pack_labels():
+            try:
+                pack_label_rendered_entries.append(
+                    build_chaos_pack_label_rendered_entry(
+                        pack_display_name,
+                        set_code=set_code,
+                        booster_name=booster_name,
+                        pack_tracking_code=pack_tracking_code,
+                        label_suffix="label",
+                    )
+                )
+            except Exception as exc:
+                write_debug_log(
+                    f"CHAOS PACK LABEL PDF ERROR | pack={pack_display_name} | error={str(exc)}"
+                )
+
+        pages_rendered = draw_chaos_rendered_entries_into_pdf_layout(
+            c,
+            rendered_image_entries,
+            pdf_template_layout,
+            print_settings,
+            width_mm,
+            height_mm,
+            draw_x_mm,
+            draw_y_mm,
+            draw_width_mm,
+            draw_height_mm,
+        )
+
+        if pages_rendered == 0:
+            raise ValueError("No Chaos Draft card images could be rendered into the PDF.")
+
+        # Render pack labels after the normal cards, as separate trailing layout pages.
+        # This gives Silhouette its own background/sheet and prevents mixed card+label pages.
+        if pack_label_rendered_entries:
+            draw_chaos_rendered_entries_into_pdf_layout(
+                c,
+                pack_label_rendered_entries,
+                pdf_template_layout,
+                print_settings,
+                width_mm,
+                height_mm,
+                draw_x_mm,
+                draw_y_mm,
+                draw_width_mm,
+                draw_height_mm,
+            )
+
+        c.save()
+        buffer.seek(0)
+
+        return buffer
+
+    finally:
+        for rendered_entry in rendered_image_entries + pack_label_rendered_entries:
+            try:
+                if rendered_entry.get("is_persistent_cache_file", False):
+                    continue
+
+                temp_path = rendered_entry.get("temp_path")
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+
     if not is_silhouette_layout:
-        # Title card page
-        page_width_pts = width_mm * mm
-        page_height_pts = height_mm * mm
+        # Title card page.
+        title_card_bytes = build_chaos_pack_title_card_image_bytes(
+            pack_display_name,
+            set_code=set_code,
+            booster_name=booster_name,
+            pack_tracking_code=pack_tracking_code,
+            card_width_mm=width_mm,
+            card_height_mm=height_mm,
+        )
 
-        title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(pack_display_name)
+        title_reader = ImageReader(BytesIO(title_card_bytes))
 
-        side_padding_pts = 9 * mm
-        usable_width_pts = page_width_pts - (side_padding_pts * 2)
-
-        c.setFillColorRGB(1, 1, 1)
-        c.rect(0, 0, page_width_pts, page_height_pts, fill=1, stroke=0)
-
-        c.setFillColorRGB(0, 0, 0)
-
-        current_y = (page_height_pts / 2) + 8
-
-        if title_set_name:
-            font_name = "Helvetica-Bold"
-            font_size = 16
-            line_spacing = 16
-
-            wrapped_lines = simpleSplit(title_set_name, font_name, font_size, usable_width_pts)
-
-            for line in wrapped_lines:
-                text_width = c.stringWidth(line, font_name, font_size)
-                x_position = (page_width_pts - text_width) / 2
-
-                c.setFont(font_name, font_size)
-                c.drawString(x_position, current_y, line)
-
-                current_y -= line_spacing
-
-        current_y -= 4
-
-        if title_booster_name:
-            font_name = "Helvetica-Bold"
-            font_size = 13
-            line_spacing = 14
-
-            wrapped_lines = simpleSplit(title_booster_name, font_name, font_size, usable_width_pts)
-
-            for line in wrapped_lines:
-                text_width = c.stringWidth(line, font_name, font_size)
-                x_position = (page_width_pts - text_width) / 2
-
-                c.setFont(font_name, font_size)
-                c.drawString(x_position, current_y, line)
-
-                current_y -= line_spacing
+        c.drawImage(
+            title_reader,
+            0,
+            0,
+            width=width_mm * mm,
+            height=height_mm * mm,
+            preserveAspectRatio=False,
+            mask="auto",
+        )
 
         c.showPage()
 
@@ -4110,7 +5149,12 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
                 title_card_bytes = build_chaos_pack_image_title_card_bytes(set_code, booster_name)
 
             if not title_card_bytes:
-                title_card_bytes = build_chaos_pack_title_card_image_bytes(pack_display_name)
+                title_card_bytes = build_chaos_pack_title_card_image_bytes(
+                    pack_display_name,
+                    set_code=set_code,
+                    booster_name=booster_name,
+                    pack_tracking_code=pack_tracking_code,
+                )
 
             title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
             title_temp_path = get_chaos_temp_file_path(title_temp_filename)
@@ -4212,6 +5256,39 @@ def build_chaos_pack_pdf(cards, pack_display_name, set_code=None, booster_name=N
         )
 
     rendered_image_entries = template_rendered_entries
+
+    if include_pack_labels and get_configured_print_pack_labels():
+        try:
+            pack_label_bytes = build_chaos_pack_title_card_image_bytes(
+                pack_display_name,
+                set_code=set_code,
+                booster_name=booster_name,
+                pack_tracking_code=pack_tracking_code,
+            )
+
+            pack_label_temp_filename = (
+                f"chaos_pack_label_{safe_filename(pack_display_name)}"
+                f"_{safe_filename(pack_tracking_code or 'label')}.png"
+            )
+            pack_label_temp_path = get_chaos_temp_file_path(pack_label_temp_filename)
+
+            with open(pack_label_temp_path, "wb") as pack_label_file:
+                pack_label_file.write(pack_label_bytes)
+
+            rendered_image_entries.append({
+                "temp_path": pack_label_temp_path,
+                "page_kind": "title",
+                "card_uuid": "",
+                "card_row": None,
+                "is_dual_faced": 0,
+                "is_persistent_cache_file": False,
+                "is_template_rendered": False,
+            })
+
+        except Exception as exc:
+            write_debug_log(
+                f"CHAOS PACK LABEL PDF ERROR | pack={pack_display_name} | error={str(exc)}"
+            )
 
     try:
         if pdf_template_layout["print_template"] == "silhouette-letter-horizontal-8":
@@ -4428,6 +5505,13 @@ def sample_export_border_rgb(image, template_config, sample_type="card_matte", f
     if sample_type == "overlay_fill":
         sample_regions = (
             template_config.get("overlay_fill_sample_regions")
+            or template_config.get("border_sample_regions")
+            or []
+        )
+    elif sample_type == "bleed_fill":
+        sample_regions = (
+            template_config.get("bleed_fill_sample_regions")
+            or template_config.get("card_matte_sample_regions")
             or template_config.get("border_sample_regions")
             or []
         )
@@ -4712,13 +5796,66 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
 
     return source_image
 
-def build_export_card_image(source_image_path, output_image_path, label_text, card_row, template_key_override=None):
+def build_export_card_image(
+    source_image_path,
+    output_image_path,
+    label_text,
+    card_row,
+    template_key_override=None,
+    add_export_bleed=False,
+    use_bleed_template=False,
+):
     with Image.open(source_image_path) as source_image:
         image = source_image.convert("RGB")
+
+        # If we are GENERATING bleed, clean up the original card corners first.
+        # Do not do this for real full-bleed sources, because those already include
+        # their own bleed image and should not be treated like a normal 63x88 card.
+        if add_export_bleed:
+            pre_bleed_template_config = resolve_card_export_template(
+                card_row,
+                template_key_override=template_key_override,
+                use_bleed_template=False,
+            )
+
+            pre_bleed_card_matte_rgb = sample_export_border_rgb(
+                image,
+                pre_bleed_template_config,
+                sample_type="card_matte",
+            )
+
+            bleed_fill_rgb = sample_export_border_rgb(
+                image,
+                pre_bleed_template_config,
+                sample_type="bleed_fill",
+                fallback_rgb=pre_bleed_card_matte_rgb,
+            )
+
+            if (pre_bleed_template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask":
+                pre_bleed_radius_px = max(
+                    1,
+                    int(
+                        min(image.size)
+                        * float(pre_bleed_template_config.get("card_corner_radius_pct") or 0.03)
+                    ),
+                )
+
+                image = apply_rounded_corner_mask(
+                    image,
+                    pre_bleed_radius_px,
+                    matte_rgb=pre_bleed_card_matte_rgb,
+                )
+
+            image = add_card_bleed(
+                image,
+                bleed_size_mm=get_configured_print_bleed_size_mm(),
+                bleed_rgb=bleed_fill_rgb,
+            )
 
         template_config = resolve_card_export_template(
             card_row,
             template_key_override=template_key_override,
+            use_bleed_template=use_bleed_template,
         )
 
         image = add_duplicated_edge_border(image)
@@ -4736,9 +5873,23 @@ def build_export_card_image(source_image_path, output_image_path, label_text, ca
             fallback_rgb=card_matte_rgb,
         )
 
-        if (template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask":
-            radius_px = max(1, int(min(image.size) * float(template_config.get("card_corner_radius_pct") or 0.03)))
-            image = apply_rounded_corner_mask(image, radius_px, matte_rgb=card_matte_rgb)
+        # Normal exports and real full-bleed sources still use the regular template corner cleanup.
+        # Generated bleed already had the original card corners cleaned before the bleed was added,
+        # so do not apply a second rounded mask to the expanded bleed canvas.
+        if (
+            not add_export_bleed
+            and (template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask"
+        ):
+            radius_px = max(
+                1,
+                int(min(image.size) * float(template_config.get("card_corner_radius_pct") or 0.03)),
+            )
+
+            image = apply_rounded_corner_mask(
+                image,
+                radius_px,
+                matte_rgb=card_matte_rgb,
+            )
 
         image = draw_image_export_corner_label(
             image=image,
@@ -4751,7 +5902,15 @@ def build_export_card_image(source_image_path, output_image_path, label_text, ca
         os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
         image.save(output_image_path, format="JPEG", quality=95, optimize=True)
 
-def build_chaos_template_rendered_card_image(source_image_path, output_image_path, label_text, card_row, template_key_override=None):
+def build_chaos_template_rendered_card_image(
+    source_image_path,
+    output_image_path,
+    label_text,
+    card_row,
+    template_key_override=None,
+    add_export_bleed=False,
+    use_bleed_template=False,
+):
     """
     Shared Chaos Draft card rendering path.
 
@@ -4774,6 +5933,8 @@ def build_chaos_template_rendered_card_image(source_image_path, output_image_pat
         label_text,
         card_row,
         template_key_override=template_key_override,
+        add_export_bleed=add_export_bleed,
+        use_bleed_template=use_bleed_template,
     )
 
     return output_image_path
@@ -4892,7 +6053,7 @@ def zip_image_export_folder(export_folder_path, zip_path):
                 archive_name = os.path.relpath(file_path, export_parent)
                 zip_file.write(file_path, archive_name)
 
-def resolve_card_export_template(card_row, template_key_override=None):
+def resolve_card_export_template(card_row, template_key_override=None, use_bleed_template=False):
     row_keys = set(card_row.keys()) if hasattr(card_row, "keys") else set()
 
     set_code = (card_row["set_code"] if "set_code" in row_keys else "") or ""
@@ -4927,7 +6088,36 @@ def resolve_card_export_template(card_row, template_key_override=None):
         frame_version=frame_version,
         release_year=release_year,
         template_key_override=template_key_override,
+        use_bleed_template=use_bleed_template,
     )
+
+def resolve_image_export_bleed_source_path(cached_result, image_source, export_add_bleed):
+    source_path = (cached_result or {}).get("absolute_path") or ""
+
+    if not export_add_bleed:
+        return {
+            "source_path": source_path,
+            "add_export_bleed": False,
+            "use_bleed_template": False,
+            "used_fullbleed_source": False,
+        }
+
+    fullbleed_source_path = (image_source or {}).get("fullbleed_absolute_path") or ""
+
+    if fullbleed_source_path and os.path.exists(fullbleed_source_path):
+        return {
+            "source_path": fullbleed_source_path,
+            "add_export_bleed": False,
+            "use_bleed_template": True,
+            "used_fullbleed_source": True,
+        }
+
+    return {
+        "source_path": source_path,
+        "add_export_bleed": True,
+        "use_bleed_template": True,
+        "used_fullbleed_source": False,
+    }
 
 def build_chaos_card_image_export_zip(tracked_pack_ids):
     export_rows = get_tracked_pack_card_export_rows(tracked_pack_ids)
@@ -4935,6 +6125,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
     if not export_rows:
         raise ValueError("No selected pack cards were available for image export.")
 
+    export_add_bleed = get_configured_export_add_bleed()
     export_info = get_next_image_export_folder()
     export_folder = export_info["folder_path"]
     export_folder_name = export_info["folder_name"]
@@ -4944,11 +6135,13 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
     images_default_dir = os.path.join(images_dir, "Default")
     images_regular_dir = os.path.join(images_dir, "Regular")
     images_foil_dir = os.path.join(images_dir, "Foil")
+    pack_labels_dir = os.path.join(export_folder, "PackLabels")
 
     os.makedirs(root_default_dir, exist_ok=True)
     os.makedirs(images_default_dir, exist_ok=True)
     os.makedirs(images_regular_dir, exist_ok=True)
     os.makedirs(images_foil_dir, exist_ok=True)
+    os.makedirs(pack_labels_dir, exist_ok=True)
 
     mtg_back_source_path = os.path.join(app.static_folder, "img", "mtg_back.jpg")
     if not os.path.exists(mtg_back_source_path):
@@ -4956,11 +6149,20 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
 
     default_back_filename = "default_back.jpg"
     default_back_output_path = os.path.join(images_default_dir, default_back_filename)
-    shutil.copyfile(mtg_back_source_path, default_back_output_path)
+
+    if export_add_bleed:
+        with Image.open(mtg_back_source_path) as mtg_back_image:
+            default_back_image = add_card_bleed(
+                mtg_back_image,
+                bleed_size_mm=get_configured_print_bleed_size_mm(),
+            )
+            default_back_image.save(default_back_output_path, format="JPEG", quality=95, optimize=True)
+    else:
+        shutil.copyfile(mtg_back_source_path, default_back_output_path)
 
     # Also copy into root Default because the requested folder structure includes it.
     shutil.copyfile(
-        mtg_back_source_path,
+        default_back_output_path,
         os.path.join(root_default_dir, default_back_filename),
     )
 
@@ -5051,13 +6253,21 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
             write_debug_log(f"IMAGE EXPORT WARNING | {warning_text}")
             continue
 
+        front_bleed_source = resolve_image_export_bleed_source_path(
+            front_cached_result,
+            front_image_source,
+            export_add_bleed,
+        )
+
         try:
             build_export_card_image(
-                front_cached_result["absolute_path"],
+                front_bleed_source["source_path"],
                 front_output_path,
                 export_row["pack_tracking_code"],
                 card_row,
                 template_key_override=front_image_source.get("export_frame_template") or "auto",
+                add_export_bleed=front_bleed_source["add_export_bleed"],
+                use_bleed_template=front_bleed_source["use_bleed_template"],
             )
         except Exception as exc:
             write_debug_log(
@@ -5092,13 +6302,21 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
                 )
 
             if back_cached_result:
+                back_bleed_source = resolve_image_export_bleed_source_path(
+                    back_cached_result,
+                    back_image_source,
+                    export_add_bleed,
+                )
+
                 try:
                     build_export_card_image(
-                        back_cached_result["absolute_path"],
+                        back_bleed_source["source_path"],
                         back_output_path,
                         f"{export_row['pack_tracking_code']} - BACK",
                         card_row,
                         template_key_override=back_image_source.get("export_frame_template") or "auto",
+                        add_export_bleed=back_bleed_source["add_export_bleed"],
+                        use_bleed_template=back_bleed_source["use_bleed_template"],
                     )
                     back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
                 except Exception as exc:
@@ -5134,6 +6352,46 @@ def build_chaos_card_image_export_zip(tracked_pack_ids):
         write_debug_log(
             f"IMAGE EXPORT CARD | id={export_id} | foil={is_foil} | front={front_relative_xml_path} | back={back_relative_xml_path}"
         )
+
+    if get_configured_print_pack_labels():
+        pack_label_lookup = {}
+
+        for export_row in export_rows:
+            tracked_pack_id = int(export_row["tracked_pack_id"])
+
+            if tracked_pack_id in pack_label_lookup:
+                continue
+
+            pack_label_lookup[tracked_pack_id] = {
+                "tracked_pack_id": tracked_pack_id,
+                "pack_display_name": export_row["pack_display_name"],
+                "pack_tracking_code": export_row["pack_tracking_code"],
+                "set_code": export_row["pack_set_code"],
+                "booster_name": export_row["pack_booster_name"],
+            }
+
+        for pack_label in pack_label_lookup.values():
+            safe_pack_code = safe_filename(
+                pack_label["pack_tracking_code"] or f"pack_{pack_label['tracked_pack_id']}"
+            )
+
+            pack_label_filename = f"{safe_pack_code}_label.jpg"
+            pack_label_output_path = os.path.join(pack_labels_dir, pack_label_filename)
+
+            save_chaos_pack_label_image_file(
+                pack_label_output_path,
+                pack_label["pack_display_name"],
+                set_code=pack_label["set_code"],
+                booster_name=pack_label["booster_name"],
+                pack_tracking_code=pack_label["pack_tracking_code"],
+                card_width_mm=CARD_PRINT_WIDTH_MM,
+                card_height_mm=CARD_PRINT_HEIGHT_MM,
+            )
+
+            write_debug_log(
+                f"IMAGE EXPORT PACK LABEL | tracked_pack_id={pack_label['tracked_pack_id']} | "
+                f"tracking_code={pack_label['pack_tracking_code']} | file=PackLabels/{pack_label_filename}"
+            )
 
     regular_xml_path = os.path.join(export_folder, "Regular.xml")
     foil_xml_path = os.path.join(export_folder, "Foil.xml")
@@ -5584,6 +6842,130 @@ def build_type_flags(card_types):
             flags[flag_name] = 1
 
     return flags
+
+def download_scryfall_set_icons():
+    ensure_download_directories()
+
+    set_icon_dir = os.path.join(app.static_folder, SET_ICON_RELATIVE_DIR.replace("/", os.sep))
+    os.makedirs(set_icon_dir, exist_ok=True)
+
+    set_refresh_status(
+        stage="Downloading Set Icons",
+        message="Downloading Scryfall set icon SVG references...",
+    )
+
+    headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "application/json;q=0.9,*/*;q=0.8",
+    }
+
+    response = requests.get(
+        SCRYFALL_SETS_API_URL,
+        headers=headers,
+        timeout=60,
+    )
+    response.raise_for_status()
+
+    payload = response.json()
+    set_items = safe_list(payload.get("data"))
+
+    if not set_items:
+        raise ValueError("Scryfall sets response did not contain any set data.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    ensure_column_exists(cursor, "sets", "scryfall_icon_svg_uri", "TEXT")
+    ensure_column_exists(cursor, "sets", "local_icon_svg_path", "TEXT")
+
+    downloaded_count = 0
+    skipped_count = 0
+    updated_count = 0
+
+    svg_headers = {
+        "User-Agent": "iMomir/1.0",
+        "Accept": "image/svg+xml,*/*;q=0.8",
+    }
+
+    for set_item in set_items:
+        set_code = (set_item.get("code") or "").strip().upper()
+        icon_svg_uri = (set_item.get("icon_svg_uri") or "").strip()
+
+        if not set_code or not icon_svg_uri:
+            skipped_count += 1
+            continue
+
+        local_filename = f"{safe_filename(set_code)}.svg"
+        local_abs_path = os.path.join(set_icon_dir, local_filename)
+        local_rel_path = f"{SET_ICON_RELATIVE_DIR}/{local_filename}"
+
+        try:
+            should_download = True
+
+            if os.path.exists(local_abs_path) and os.path.getsize(local_abs_path) > 0:
+                should_download = False
+
+            if should_download:
+                icon_response = requests.get(
+                    icon_svg_uri,
+                    headers=svg_headers,
+                    timeout=60,
+                )
+                icon_response.raise_for_status()
+
+                icon_text = icon_response.text or ""
+
+                if "<svg" not in icon_text.lower():
+                    raise ValueError(f"Scryfall icon response for {set_code} did not look like SVG.")
+
+                with open(local_abs_path, "w", encoding="utf-8") as icon_file:
+                    icon_file.write(icon_text)
+
+                downloaded_count += 1
+            else:
+                skipped_count += 1
+
+            cursor.execute(
+                """
+                UPDATE sets
+                SET scryfall_icon_svg_uri = ?,
+                    local_icon_svg_path = ?
+                WHERE set_code = ?
+                """,
+                (
+                    icon_svg_uri,
+                    local_rel_path,
+                    set_code,
+                ),
+            )
+
+            if cursor.rowcount > 0:
+                updated_count += 1
+
+        except Exception as exc:
+            skipped_count += 1
+            write_debug_log(
+                f"SCRYFALL SET ICON DOWNLOAD FAILED | set={set_code} | url={icon_svg_uri} | error={str(exc)}"
+            )
+            continue
+
+    conn.commit()
+    conn.close()
+
+    append_refresh_detail_line(
+        f"=== SCRYFALL SET ICONS COMPLETE === downloaded={downloaded_count}, skipped={skipped_count}, updated_sets={updated_count}"
+    )
+
+    set_refresh_status(
+        stage="Downloading Set Icons",
+        message=f"Set icon sync complete. Downloaded {downloaded_count}; updated {updated_count} set rows.",
+    )
+
+    return {
+        "downloaded_count": downloaded_count,
+        "skipped_count": skipped_count,
+        "updated_count": updated_count,
+    }
 
 def import_set_list_into_database():
     if not os.path.exists(SET_LIST_PATH):
@@ -6094,6 +7476,12 @@ def run_refresh_job(force_download=False):
             message="Importing set metadata into SQLite...",
         )
         imported_sets = import_set_list_into_database()
+
+        set_refresh_status(
+            stage="Downloading Set Icons",
+            message="Downloading Scryfall set icons...",
+        )
+        download_scryfall_set_icons()
 
         set_refresh_status(
             stage="Importing Cards - DO NOT LEAVE PAGE",

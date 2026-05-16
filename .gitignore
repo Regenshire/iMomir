@@ -21,6 +21,7 @@ data/
 data/scryfall/default-cards.json
 Utility/temp/
 Export/
+static/img/set_icons/
 
 # OS
 .DS_Store
