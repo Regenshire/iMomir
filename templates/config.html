@@ -41,27 +41,45 @@
                     </a>
                 </div>
 
-                <div class="game-mode-card-list" id="gameModeCardList">
-                    {% for mode in game_mode_options %}
-                        <button
-                            type="button"
-                            class="game-mode-card {% if config.get('game_mode', 'custom') == mode.value %}game-mode-card-selected{% endif %}"
-                            data-mode-value="{{ mode.value }}"
-                            data-mode-print-href="{{ mode.print_href }}"
-                        >
-                            <div class="game-mode-card-image-wrap">
-                                <img
-                                    src="{{ mode.image_src }}"
-                                    alt="{{ mode.label }}"
-                                    class="game-mode-card-image"
-                                >
-                            </div>
+                <div class="game-mode-group-list" id="gameModeCardList">
+                    {% for group in grouped_game_modes %}
+                        {% set selected_group = namespace(value=false) %}
+                        {% for mode in group.modes %}
+                            {% if config.get('game_mode', 'custom') == mode.value %}
+                                {% set selected_group.value = true %}
+                            {% endif %}
+                        {% endfor %}
 
-                            <div class="game-mode-card-content">
-                                <div class="game-mode-card-title">{{ mode.label }}</div>
-                                <div class="game-mode-card-description">{{ mode.description | safe }}</div>
+                        <div class="game-mode-group {% if selected_group.value %}is-open{% endif %}" data-mode-group="{{ group.key }}">
+                            <button type="button" class="game-mode-group-header">
+                                <span>{{ group.label }}</span>
+                                <span class="game-mode-group-chevron">▾</span>
+                            </button>
+
+                            <div class="game-mode-group-body">
+                                {% for mode in group.modes %}
+                                    <button
+                                        type="button"
+                                        class="game-mode-card {% if config.get('game_mode', 'custom') == mode.value %}game-mode-card-selected{% endif %}"
+                                        data-mode-value="{{ mode.value }}"
+                                        data-mode-print-href="{{ mode.print_href }}"
+                                    >
+                                        <div class="game-mode-card-image-wrap">
+                                            <img
+                                                src="{{ mode.image_src }}"
+                                                alt="{{ mode.label }}"
+                                                class="game-mode-card-image"
+                                            >
+                                        </div>
+
+                                        <div class="game-mode-card-content">
+                                            <div class="game-mode-card-title">{{ mode.label }}</div>
+                                            <div class="game-mode-card-description">{{ mode.description | safe }}</div>
+                                        </div>
+                                    </button>
+                                {% endfor %}
                             </div>
-                        </button>
+                        </div>
                     {% endfor %}
                 </div>
             </div>
@@ -576,6 +594,99 @@
         </div>
     </div>
 
+        <div id="section_cleanup" class="page-panel collapsible-panel is-open" data-section="cleanup">
+        <button type="button" class="collapsible-header">
+            <span>Cleanup</span>
+            <span class="collapsible-chevron">▾</span>
+        </button>
+
+        <div class="collapsible-body cleanup-panel-body">
+            <div class="cleanup-subsection">
+                <h3 class="cleanup-subsection-title">Exports</h3>
+
+                <div class="settings-grid">
+                    <label class="toggle-row" for="auto_clear_exports">
+                        <span>Auto Clear Exports</span>
+                        <select id="auto_clear_exports" name="auto_clear_exports" form="configForm">
+                            <option value="off" {% if config.get("auto_clear_exports", "7") == "off" %}selected{% endif %}>Off</option>
+                            <option value="7" {% if config.get("auto_clear_exports", "7") == "7" %}selected{% endif %}>7 Days</option>
+                            <option value="1" {% if config.get("auto_clear_exports", "7") == "1" %}selected{% endif %}>1 Day</option>
+                            <option value="30" {% if config.get("auto_clear_exports", "7") == "30" %}selected{% endif %}>30 Days</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="cleanup-action-row">
+                    <form method="post" action="{{ url_for('maintenance_clear_exports') }}">
+                        <button type="submit" class="action-button secondary-button cleanup-action-button">
+                            Clear Exports
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="config-section-divider"></div>
+
+            <div class="cleanup-subsection">
+                <h3 class="cleanup-subsection-title">iMomir Backup</h3>
+
+                <div class="cleanup-action-row">
+                    <form method="post" action="{{ url_for('maintenance_backup_imomir') }}" target="_blank">
+                        <button type="submit" class="action-button cleanup-action-button">
+                            Backup iMomir
+                        </button>
+                    </form>
+
+                    <form
+                        method="post"
+                        action="{{ url_for('maintenance_import_imomir') }}"
+                        enctype="multipart/form-data"
+                        class="campaign-inline-import-form"
+                    >
+                        <label class="action-button secondary-button cleanup-action-button cleanup-file-button">
+                            Import iMomir
+                            <input
+                                type="file"
+                                name="backup_file"
+                                accept=".zip"
+                                class="hidden"
+                                onchange="this.form.submit();"
+                            >
+                        </label>
+                    </form>
+                </div>
+            </div>
+
+            <div class="config-section-divider"></div>
+
+            <div class="cleanup-subsection">
+                <h3 class="cleanup-subsection-title cleanup-danger-title">Danger Zone</h3>
+
+                <div class="cleanup-action-row">
+                    <form method="post" action="{{ url_for('maintenance_clear_all_history') }}" id="clearAllHistoryForm">
+                        <input type="hidden" name="delete_confirmation" value="">
+                        <button type="submit" class="action-button cleanup-danger-button cleanup-action-button">
+                            Clear All History
+                        </button>
+                    </form>
+
+                    <form method="post" action="{{ url_for('maintenance_backup_all_packs') }}" target="_blank">
+                        <button type="submit" class="action-button secondary-button cleanup-action-button">
+                            Backup All Packs
+                        </button>
+                    </form>
+
+                    <form method="post" action="{{ url_for('maintenance_clear_all_packs') }}" id="clearAllPacksForm">
+                        <input type="hidden" name="delete_confirmation" value="">
+                        <button type="submit" class="action-button cleanup-danger-button cleanup-action-button">
+                            Clear All Packs
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <footer class="app-footer">
         <div class="app-footer-credits">
         Powered by
@@ -603,4 +714,106 @@
         </div>
     </footer>
 </div>
+<script>
+(function () {
+    const gameModeList = document.getElementById("gameModeCardList");
+    const gameModeInput = document.getElementById("game_mode");
+    const printSelectedTokenButton = document.getElementById("printSelectedTokenButton");
+
+    if (!gameModeList || !gameModeInput) {
+        return;
+    }
+
+    gameModeList.addEventListener("click", function (event) {
+        const groupHeader = event.target.closest(".game-mode-group-header");
+
+        if (groupHeader) {
+            const group = groupHeader.closest(".game-mode-group");
+
+            if (!group) {
+                return;
+            }
+
+            group.classList.toggle("is-open");
+            return;
+        }
+
+        const modeButton = event.target.closest(".game-mode-card");
+
+        if (!modeButton) {
+            return;
+        }
+
+        const selectedModeValue = modeButton.dataset.modeValue || "";
+        const selectedPrintHref = modeButton.dataset.modePrintHref || "";
+
+        if (!selectedModeValue) {
+            return;
+        }
+
+        gameModeInput.value = selectedModeValue;
+
+        document.querySelectorAll(".game-mode-card").forEach(function (button) {
+            button.classList.remove("game-mode-card-selected");
+        });
+
+        modeButton.classList.add("game-mode-card-selected");
+
+        if (printSelectedTokenButton && selectedPrintHref) {
+            printSelectedTokenButton.href = selectedPrintHref;
+        }
+    });
+})();
+</script>
+<script>
+(function () {
+    const clearAllHistoryForm = document.getElementById("clearAllHistoryForm");
+    const clearAllPacksForm = document.getElementById("clearAllPacksForm");
+
+    if (clearAllHistoryForm) {
+        clearAllHistoryForm.addEventListener("submit", function (event) {
+            const confirmation = window.prompt(
+                "This will permanently clear all iMomir history. Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                return;
+            }
+
+            const hiddenInput = clearAllHistoryForm.querySelector("input[name='delete_confirmation']");
+            if (hiddenInput) {
+                hiddenInput.value = "DELETE";
+            }
+        });
+    }
+
+    if (clearAllPacksForm) {
+        clearAllPacksForm.addEventListener("submit", function (event) {
+            const backupWarning = window.confirm(
+                "This will permanently clear all saved packs. Use Backup All Packs first if you may need to restore them later.\n\nClick OK to continue to the DELETE confirmation, or Cancel to stop."
+            );
+
+            if (!backupWarning) {
+                event.preventDefault();
+                return;
+            }
+
+            const confirmation = window.prompt(
+                "You are about to permanently clear all saved packs. Type DELETE to confirm."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+                return;
+            }
+
+            const hiddenInput = clearAllPacksForm.querySelector("input[name='delete_confirmation']");
+            if (hiddenInput) {
+                hiddenInput.value = "DELETE";
+            }
+        });
+    }
+})();
+</script>
 {% endblock %}

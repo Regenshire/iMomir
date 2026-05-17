@@ -674,10 +674,59 @@ input {
     margin-bottom: 14px;
 }
 
-.game-mode-card-list {
+.game-mode-card-list,
+.game-mode-group-list {
     display: flex;
     flex-direction: column;
     gap: 14px;
+}
+
+.game-mode-group {
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    background: rgba(18, 20, 26, 0.55);
+}
+
+.game-mode-group-header {
+    width: 100%;
+    min-height: 58px;
+    border: 0;
+    background: linear-gradient(180deg, rgba(34, 38, 46, 0.96), rgba(26, 29, 36, 0.96));
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    font-size: 1.08rem;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: left;
+}
+
+.game-mode-group-header:hover {
+    background: var(--button);
+}
+
+.game-mode-group-chevron {
+    color: var(--muted);
+    transition: transform 0.18s ease;
+}
+
+.game-mode-group.is-open .game-mode-group-chevron {
+    transform: rotate(180deg);
+}
+
+.game-mode-group-body {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px;
+}
+
+.game-mode-group.is-open .game-mode-group-body {
+    display: flex;
 }
 
 .game-mode-card {
@@ -2241,6 +2290,96 @@ input {
     font-size: 0.92rem;
     font-weight: 700;
     line-height: 1.25;
+}
+
+/* Fire TV / short landscape browser layout.
+   Silk reports roughly 960 x 540, so width-based mobile CSS does not apply. */
+@media (max-height: 600px) and (min-width: 700px) {
+    .screen {
+        gap: 12px;
+    }
+
+    .campaign-chaos-header-panel {
+        padding: 10px 14px;
+    }
+
+    .campaign-current-player-card {
+        grid-template-columns: 64px minmax(0, 1fr);
+        gap: 12px;
+    }
+
+    .campaign-current-player-portrait-wrap {
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+    }
+
+    .campaign-current-player-name {
+        font-size: 1.08rem;
+    }
+
+    .campaign-current-player-placeholder {
+        font-size: 1.55rem;
+    }
+
+    .campaign-top-actions-row {
+        gap: 8px;
+    }
+
+    .campaign-top-actions-row .campaign-player-select-compact {
+        min-height: 34px;
+    }
+
+    .campaign-top-actions-row .chaos-draft-next-button {
+        min-height: 34px;
+        padding: 5px 14px;
+    }
+
+    .chaos-draft-spinner-window {
+        min-height: 360px;
+        max-height: 360px;
+        padding: 22px 0;
+    }
+
+    .chaos-draft-spinner-track {
+        gap: 12px;
+        padding: 0 120px;
+        align-items: center;
+    }
+
+    .chaos-pack-card {
+        flex: 0 0 153px;
+        padding: 8px;
+        gap: 8px;
+    }
+
+    .chaos-pack-card-winning {
+        transform: scale(1.08);
+    }
+
+    .chaos-pack-card-winning .chaos-pack-card-image {
+        transform: scale(1.04);
+        margin-top: 2px;
+        margin-bottom: 2px;
+    }
+
+    .chaos-pack-card-image {
+        max-height: 323px;
+    }
+
+    .chaos-pack-card-title {
+        font-size: 0.82rem;
+        line-height: 1.18;
+    }
+
+    .chaos-draft-spin-cta {
+        width: 238px;
+        height: 238px;
+    }
+
+    .chaos-draft-pointer img {
+        width: 40px;
+    }
 }
 
 @media (max-width: 560px) {
@@ -4105,6 +4244,106 @@ input {
     width: 100%;
 }
 
+.campaign-manage-footer-links {
+    margin-top: 18px;
+    display: flex;
+    justify-content: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.cleanup-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.cleanup-subsection {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.cleanup-subsection-title {
+    margin: 0;
+    padding: 0 2px;
+    font-size: 1.05rem;
+    font-weight: 800;
+    color: var(--text);
+}
+
+.cleanup-danger-title {
+    color: #ff9b9b;
+}
+
+.cleanup-action-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.cleanup-action-row form,
+.cleanup-action-row .campaign-inline-import-form {
+    margin: 0;
+    display: inline-flex;
+}
+
+.cleanup-action-button {
+    min-width: 190px;
+    justify-content: center;
+}
+
+.cleanup-file-button {
+    cursor: pointer;
+}
+
+.cleanup-danger-button {
+    background: rgba(120, 24, 28, 0.92) !important;
+    border: 1px solid rgba(255, 92, 92, 0.75) !important;
+    color: #fff !important;
+}
+
+.cleanup-danger-button:hover {
+    background: rgba(165, 34, 40, 0.98) !important;
+    border-color: rgba(255, 130, 130, 0.95) !important;
+}
+
+@media (max-width: 760px) {
+    .cleanup-action-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cleanup-action-row form,
+    .cleanup-action-row .campaign-inline-import-form,
+    .cleanup-action-button {
+        width: 100%;
+    }
+}
+
+.campaign-custom-title-dialog {
+    max-width: min(100%, 760px);
+}
+
+.campaign-custom-title-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.campaign-custom-title-grid {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) 220px;
+    gap: 12px;
+}
+
+@media (max-width: 760px) {
+    .campaign-custom-title-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 760px) {
     .campaign-mode-title-row {
         grid-template-columns: 1fr;
@@ -4835,4 +5074,66 @@ input {
 .pack-view-export-split .chaos-export-menu {
     right: 0;
     top: calc(100% + 8px);
+}
+
+.campaign-inline-import-form {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+}
+
+.campaign-inline-import-form label {
+    cursor: pointer;
+}
+
+.hidden {
+    display: none !important;
+}
+
+.campaign-save-edit-form {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.campaign-save-row-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.campaign-save-row-actions .campaign-save-row-button {
+    min-width: 108px;
+}
+
+.campaign-save-backup-form.hidden {
+    display: none !important;
+}
+
+.campaign-save-default-row {
+    align-items: stretch;
+}
+
+.campaign-save-default-row .campaign-save-edit-form {
+    width: 100%;
+}
+
+.campaign-save-default-row .campaign-save-input[readonly] {
+    opacity: 0.9;
+    cursor: default;
+}
+
+@media (max-width: 760px) {
+    .campaign-save-edit-form {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-save-row-actions {
+        width: 100%;
+    }
+
+    .campaign-save-row-actions .campaign-save-row-button {
+        flex: 1;
+    }
 }

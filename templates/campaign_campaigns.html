@@ -32,41 +32,98 @@
     <div class="page-panel">
         <h2>Add Campaign</h2>
 
-        <form
-            method="post"
-            action="{{ url_for('campaign_chaos_campaigns_add') }}"
-            class="campaign-save-add-form"
-        >
-            <label class="campaign-save-field">
-                <span>Campaign Name</span>
-                <input
-                    type="text"
-                    name="campaign_name"
-                    class="campaign-save-input"
-                    placeholder="Campaign name"
-                    autocomplete="off"
-                    required
-                >
-            </label>
+        <div class="campaign-save-add-form">
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_campaigns_add') }}"
+                class="campaign-save-add-form"
+            >
+                <label class="campaign-save-field">
+                    <span>Campaign Name</span>
+                    <input
+                        type="text"
+                        id="campaignAddNameInput"
+                        name="campaign_name"
+                        class="campaign-save-input"
+                        placeholder="Campaign name"
+                        autocomplete="off"
+                        required
+                    >
+                </label>
 
-            <button type="submit" class="action-button campaign-save-add-button">
-                Add Campaign
-            </button>
-        </form>
+                <button type="submit" class="action-button campaign-save-add-button">
+                    Add Campaign
+                </button>
+            </form>
+
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_campaigns_import_backup') }}"
+                enctype="multipart/form-data"
+                class="campaign-inline-import-form"
+            >
+                <input
+                    type="hidden"
+                    id="campaignImportNameOverrideInput"
+                    name="campaign_name_override"
+                    value=""
+                >
+
+                <label class="action-button secondary-button campaign-save-add-button">
+                    Import Campaign
+                    <input
+                        type="file"
+                        name="backup_file"
+                        accept=".zip"
+                        class="hidden"
+                        onchange="document.getElementById('campaignImportNameOverrideInput').value = (document.getElementById('campaignAddNameInput') ? document.getElementById('campaignAddNameInput').value : ''); this.form.submit();"
+                    >
+                </label>
+            </form>
+        </div>
     </div>
 
     <div class="page-panel">
         <h2>Campaign Saves</h2>
 
-        <div class="campaign-save-default-row">
-            <div>
-                <div class="campaign-save-title">No Campaign</div>
-                <div class="campaign-save-meta">Default unscoped campaign mode.</div>
-            </div>
+        <div class="campaign-save-row campaign-save-default-row">
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_campaigns_default_save') }}"
+                class="campaign-save-edit-form"
+            >
+                <label class="campaign-save-field">
+                    <span>Campaign Name</span>
+                    <input
+                        type="text"
+                        class="campaign-save-input"
+                        value="No Campaign"
+                        readonly
+                    >
+                </label>
 
-            {% if not selected_chaos_campaign_id %}
-            <span class="campaign-status-badge campaign-status-enabled">Selected</span>
-            {% endif %}
+                <div class="campaign-save-row-actions">
+                    <button type="submit" class="action-button secondary-button campaign-save-row-button">
+                        Save
+                    </button>
+
+                    <button
+                        type="submit"
+                        form="campaignDefaultBackupForm"
+                        class="action-button secondary-button campaign-save-row-button"
+                    >
+                        Backup
+                    </button>
+                </div>
+            </form>
+
+            <form
+                id="campaignDefaultBackupForm"
+                method="post"
+                action="{{ url_for('campaign_chaos_campaigns_default_backup') }}"
+                class="campaign-save-backup-form hidden"
+                target="_blank"
+            ></form>
         </div>
 
         {% if campaigns %}
@@ -99,18 +156,28 @@
                         <span>Active</span>
                     </label>
 
-                    {% if selected_chaos_campaign_id == campaign.campaign_id %}
-                    <span class="campaign-status-badge campaign-status-enabled campaign-save-selected-badge">
-                        Selected
-                    </span>
-                    {% else %}
-                    <span class="campaign-save-selected-placeholder"></span>
-                    {% endif %}
+                    <div class="campaign-save-row-actions">
+                        <button type="submit" class="action-button secondary-button campaign-save-row-button">
+                            Save
+                        </button>
 
-                    <button type="submit" class="action-button secondary-button campaign-save-row-button">
-                        Save
-                    </button>
+                        <button
+                            type="submit"
+                            form="campaignBackupForm{{ campaign.campaign_id }}"
+                            class="action-button secondary-button campaign-save-row-button"
+                        >
+                            Backup
+                        </button>
+                    </div>
                 </form>
+
+                <form
+                    id="campaignBackupForm{{ campaign.campaign_id }}"
+                    method="post"
+                    action="{{ url_for('campaign_chaos_campaigns_backup', campaign_id=campaign.campaign_id) }}"
+                    class="campaign-save-backup-form hidden"
+                    target="_blank"
+                ></form>
 
                 <form
                     method="post"

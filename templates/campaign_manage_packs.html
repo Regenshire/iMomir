@@ -27,6 +27,24 @@
                     Summary
                 </button>
 
+                <form
+                    method="post"
+                    action="{{ url_for('campaign_chaos_packs_import_backup') }}"
+                    enctype="multipart/form-data"
+                    class="campaign-inline-import-form"
+                >
+                    <label class="action-button secondary-button campaign-header-action-button">
+                        Import
+                        <input
+                            type="file"
+                            name="backup_file"
+                            accept=".zip"
+                            class="hidden"
+                            onchange="this.form.submit();"
+                        >
+                    </label>
+                </form>
+
                 <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('result') }}">
                     Back
                 </a>
@@ -471,6 +489,91 @@
         </div>
     </div>
 
+        <div id="campaignCustomTitleSheetModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignCustomTitleSheetBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog campaign-custom-title-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignCustomTitleSheetTitle">
+            <div class="campaign-add-pack-header">
+                <div>
+                    <h2 id="campaignCustomTitleSheetTitle" class="campaign-add-pack-title">Print Custom Title Sheet</h2>
+                    <p class="campaign-add-pack-subtitle">
+                        Generate a full sheet of custom pack title cards using the current print template.
+                    </p>
+                </div>
+
+                <button type="button" id="campaignCustomTitleSheetCloseButton" class="campaign-add-pack-close-button" aria-label="Close Custom Title Sheet">
+                    ×
+                </button>
+            </div>
+
+            <form
+                method="get"
+                action="{{ url_for('campaign_chaos_print_custom_title_sheet') }}"
+                target="_blank"
+                class="campaign-custom-title-form"
+            >
+                <div class="campaign-custom-title-grid">
+                    <label class="campaign-add-pack-custom-field" for="campaignCustomTitleSetCodeInput">
+                        <span>Set Code</span>
+                        <input
+                            type="text"
+                            id="campaignCustomTitleSetCodeInput"
+                            name="set_code"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="FIN"
+                            maxlength="12"
+                            required
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field" for="campaignCustomTitlePackNameInput">
+                        <span>Pack Name</span>
+                        <input
+                            type="text"
+                            id="campaignCustomTitlePackNameInput"
+                            name="pack_name"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Defaults to set name"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field" for="campaignCustomTitlePackTypeSelect">
+                        <span>Pack Type</span>
+                        <select
+                            id="campaignCustomTitlePackTypeSelect"
+                            name="pack_type"
+                            class="campaign-add-pack-custom-input"
+                        >
+                            {% for option in custom_title_pack_type_options %}
+                                <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+
+                <label class="campaign-add-pack-custom-field" for="campaignCustomTitleTextInput">
+                    <span>Custom Text</span>
+                    <input
+                        type="text"
+                        id="campaignCustomTitleTextInput"
+                        name="custom_text"
+                        class="campaign-add-pack-custom-input"
+                        placeholder="Optional footer text"
+                        autocomplete="off"
+                    >
+                </label>
+
+                <div class="campaign-add-pack-custom-actions">
+                    <button type="submit" class="action-button">
+                        Generate Title Sheet
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div class="page-panel">
         <form method="get" action="{{ url_for('campaign_chaos_packs') }}" class="campaign-pack-search-form">
             <input
@@ -526,6 +629,15 @@
                     Export to Zip
                 </button>
                 {% endif %}
+
+                <button
+                    type="submit"
+                    formaction="{{ url_for('campaign_chaos_packs_backup') }}"
+                    class="action-button secondary-button"
+                    formtarget="_blank"
+                >
+                    Backup
+                </button>
 
                 <button
                     type="submit"
@@ -640,6 +752,24 @@
             {% endif %}
         </div>
     </form>
+
+    <div class="campaign-manage-footer-links">
+        <a
+            href="{{ url_for('campaign_chaos_print_default_back_sheet') }}"
+            target="_blank"
+            class="campaign-small-link-button"
+        >
+            Print Default Back Sheet
+        </a>
+
+        <button
+            type="button"
+            id="campaignPrintCustomTitleSheetButton"
+            class="campaign-small-link-button"
+        >
+            Print Custom Title Sheet
+        </button>
+    </div>
 </div>
 
 <script>
@@ -695,6 +825,14 @@
     const customPackNameInput = document.getElementById("campaignCustomPackNameInput");
     const customDecklistInput = document.getElementById("campaignCustomDecklistInput");
     const generateCustomPackButton = document.getElementById("campaignGenerateCustomPackButton");
+    const printCustomTitleSheetButton = document.getElementById("campaignPrintCustomTitleSheetButton");
+    const customTitleSheetModal = document.getElementById("campaignCustomTitleSheetModal");
+    const customTitleSheetBackdrop = document.getElementById("campaignCustomTitleSheetBackdrop");
+    const customTitleSheetCloseButton = document.getElementById("campaignCustomTitleSheetCloseButton");
+    const customTitleSetCodeInput = document.getElementById("campaignCustomTitleSetCodeInput");
+    const customTitlePackNameInput = document.getElementById("campaignCustomTitlePackNameInput");
+
+    let customTitlePackNameWasEdited = false;
 
     let addPackModalHasSavedChanges = false;
 
@@ -912,6 +1050,74 @@
 
         if (addPackModalHasSavedChanges) {
             window.location.href = "{{ url_for('campaign_chaos_packs') }}";
+        }
+    }
+
+    function openCustomTitleSheetModal() {
+        if (!customTitleSheetModal) {
+            return;
+        }
+
+        customTitlePackNameWasEdited = false;
+
+        if (customTitleSetCodeInput) {
+            customTitleSetCodeInput.value = "";
+        }
+
+        if (customTitlePackNameInput) {
+            customTitlePackNameInput.value = "";
+        }
+
+        customTitleSheetModal.classList.remove("hidden");
+        customTitleSheetModal.setAttribute("aria-hidden", "false");
+
+        if (customTitleSetCodeInput) {
+            customTitleSetCodeInput.focus();
+        }
+    }
+
+    function closeCustomTitleSheetModal() {
+        if (!customTitleSheetModal) {
+            return;
+        }
+
+        customTitleSheetModal.classList.add("hidden");
+        customTitleSheetModal.setAttribute("aria-hidden", "true");
+    }
+
+    async function refreshCustomTitlePackNameFromSetCode() {
+        if (!customTitleSetCodeInput || !customTitlePackNameInput) {
+            return;
+        }
+
+        const setCode = (customTitleSetCodeInput.value || "").trim();
+
+        if (!setCode || customTitlePackNameWasEdited) {
+            return;
+        }
+
+        try {
+            const response = await fetch(
+                "{{ url_for('campaign_chaos_custom_title_set_name') }}" + "?set_code=" + encodeURIComponent(setCode),
+                {
+                    method: "GET",
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                }
+            );
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                return;
+            }
+
+            if (payload.set_name && !customTitlePackNameWasEdited) {
+                customTitlePackNameInput.value = payload.set_name;
+            }
+        } catch (error) {
+            console.error(error);
         }
     }
 
@@ -1749,6 +1955,33 @@
         });
     }
 
+    if (printCustomTitleSheetButton) {
+        printCustomTitleSheetButton.addEventListener("click", openCustomTitleSheetModal);
+    }
+
+    if (customTitleSheetBackdrop) {
+        customTitleSheetBackdrop.addEventListener("click", closeCustomTitleSheetModal);
+    }
+
+    if (customTitleSheetCloseButton) {
+        customTitleSheetCloseButton.addEventListener("click", closeCustomTitleSheetModal);
+    }
+
+    if (customTitlePackNameInput) {
+        customTitlePackNameInput.addEventListener("input", function () {
+            customTitlePackNameWasEdited = true;
+        });
+    }
+
+    if (customTitleSetCodeInput) {
+        customTitleSetCodeInput.addEventListener("input", function () {
+            customTitlePackNameWasEdited = false;
+        });
+
+        customTitleSetCodeInput.addEventListener("change", refreshCustomTitlePackNameFromSetCode);
+        customTitleSetCodeInput.addEventListener("blur", refreshCustomTitlePackNameFromSetCode);
+    }
+
     if (addPackButton) {
         addPackButton.addEventListener("click", openAddPackModal);
     }
@@ -2047,6 +2280,10 @@
 
         if (addPackModal && !addPackModal.classList.contains("hidden")) {
             closeAddPackModal();
+        }
+
+        if (customTitleSheetModal && !customTitleSheetModal.classList.contains("hidden")) {
+            closeCustomTitleSheetModal();
         }
     });
 })();

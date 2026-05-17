@@ -108,6 +108,21 @@ from image_export_templates import (
 
 from pack_label_templates import get_pack_label_template
 
+from db.exports import (
+    EXPORT_KIND_CAMPAIGN,
+    EXPORT_KIND_FULL,
+    EXPORT_KIND_PACKS,
+    auto_clear_export_root,
+    clear_all_history_data,
+    clear_all_packs_data,
+    clear_export_root,
+    export_campaign_archive,
+    export_default_campaign_archive,
+    export_full_archive,
+    export_packs_archive,
+    import_archive_from_file_object,
+)
+
 from db.database import (
     ensure_column_exists,
     get_all_sets,
@@ -231,6 +246,18 @@ def get_request_config():
         g._config_cache = get_config()
     return g._config_cache
 
+def get_auto_clear_exports_config_value():
+    try:
+        config = get_request_config() if has_request_context() else get_config()
+    except Exception:
+        config = {}
+
+    value = (config.get("auto_clear_exports") or "7").strip().lower()
+
+    if value not in {"off", "1", "7", "30"}:
+        value = "7"
+
+    return value
 
 def _build_pdf_print_settings(config):
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
@@ -529,6 +556,7 @@ def update_config_from_form(form_data):
         "print_color_mode": "grayscale",
         "chaos_draft_export_format": "none",
         "chaos_scryfall_image_quality": "png",
+        "auto_clear_exports": "7",
     }
 
     for key in checkbox_keys:
@@ -590,6 +618,11 @@ def update_config_from_form(form_data):
     if submitted_scryfall_image_quality not in {"normal", "large", "png"}:
         submitted_scryfall_image_quality = select_defaults["chaos_scryfall_image_quality"]
     updated_config["chaos_scryfall_image_quality"] = submitted_scryfall_image_quality
+
+    submitted_auto_clear_exports = (form_data.get("auto_clear_exports") or "").strip().lower()
+    if submitted_auto_clear_exports not in {"off", "1", "7", "30"}:
+        submitted_auto_clear_exports = select_defaults["auto_clear_exports"]
+    updated_config["auto_clear_exports"] = submitted_auto_clear_exports
 
     submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
     try:
@@ -3050,6 +3083,275 @@ def build_single_image_pdf_buffer(image_path):
 
     return buffer
 
+def build_default_card_back_sheet_pdf():
+    pdf_settings = resolve_pdf_print_settings()
+    pdf_template_layout = resolve_pdf_template_layout()
+    print_settings = resolve_print_settings()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
+
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    mtg_back_path = os.path.join(app.static_folder, "img", "mtg_back.jpg")
+
+    if not os.path.exists(mtg_back_path):
+        raise FileNotFoundError(f"Default MTG back image was not found: {mtg_back_path}")
+
+    # Eight entries gives one full Silhouette Letter sheet.
+    # For single-card templates, this intentionally generates 8 card-back pages.
+    rendered_back_entries = []
+
+    for back_index in range(8):
+        rendered_back_entries.append({
+            "temp_path": mtg_back_path,
+            "page_kind": "back",
+            "card_uuid": f"default_back_{back_index + 1}",
+            "card_row": None,
+            "is_dual_faced": 0,
+            "is_persistent_cache_file": True,
+            "is_template_rendered": False,
+        })
+
+    buffer = BytesIO()
+    pdf_canvas = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+    pages_rendered = draw_chaos_rendered_entries_into_pdf_layout(
+        pdf_canvas,
+        rendered_back_entries,
+        pdf_template_layout,
+        print_settings,
+        width_mm,
+        height_mm,
+        draw_x_mm,
+        draw_y_mm,
+        draw_width_mm,
+        draw_height_mm,
+    )
+
+    if pages_rendered == 0:
+        raise ValueError("No default card back images could be rendered into the PDF.")
+
+    pdf_canvas.save()
+    buffer.seek(0)
+
+    return buffer
+
+def get_set_name_for_custom_title_sheet(set_code):
+    clean_set_code = (set_code or "").strip().upper()
+
+    if not clean_set_code:
+        return ""
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT set_name
+        FROM sets
+        WHERE set_code = ?
+        """,
+        (clean_set_code,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row and row["set_name"]:
+        return row["set_name"]
+
+    return ""
+
+
+def get_custom_title_sheet_pack_type_options():
+    options = []
+    seen_values = set()
+
+    for item in CHAOS_PACK_TYPE_OPTIONS:
+        raw_value = (item.get("value") or "").strip().lower()
+        raw_label = (item.get("label") or "").strip()
+
+        if not raw_value:
+            continue
+
+        label = raw_label or " ".join(word.capitalize() for word in raw_value.split("_"))
+
+        if "booster" not in label.lower():
+            label = f"{label} Booster"
+
+        if raw_value not in seen_values:
+            options.append({
+                "value": raw_value,
+                "label": label,
+            })
+            seen_values.add(raw_value)
+
+    extra_options = [
+        ("chaos_draft", "Chaos Draft Booster"),
+        ("secret_lair", "Secret Lair Booster"),
+        ("cube", "Cube Booster"),
+        ("custom", "Custom Booster"),
+    ]
+
+    for value, label in extra_options:
+        if value not in seen_values:
+            options.append({
+                "value": value,
+                "label": label,
+            })
+            seen_values.add(value)
+
+    return options
+
+
+def get_custom_title_sheet_pack_type_label(pack_type_value):
+    clean_value = (pack_type_value or "").strip().lower()
+
+    for option in get_custom_title_sheet_pack_type_options():
+        if option["value"] == clean_value:
+            return option["label"]
+
+    return "Custom Booster"
+
+
+def get_custom_title_sheet_default_footer_text(set_code, pack_type_value):
+    clean_set_code = (set_code or "").strip().upper() or "CUSTOM"
+    clean_pack_type = (pack_type_value or "").strip().lower()
+
+    type_code_lookup = {
+        "collector": "C",
+        "draft": "D",
+        "play": "P",
+        "set": "S",
+        "jumpstart": "J",
+        "chaos_draft": "CD",
+        "secret_lair": "SL",
+        "cube": "CB",
+        "custom": "CU",
+    }
+
+    type_code = type_code_lookup.get(clean_pack_type, "O")
+    return f"{clean_set_code}.{type_code}.TITLE"
+
+
+def build_custom_title_sheet_pdf(set_code, pack_name, pack_type_value, custom_text):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_pack_name = (pack_name or "").strip()
+    clean_custom_text = (custom_text or "").strip()
+
+    if not clean_set_code:
+        raise ValueError("Set Code is required.")
+
+    if not clean_pack_name:
+        clean_pack_name = get_set_name_for_custom_title_sheet(clean_set_code) or clean_set_code
+
+    pack_type_label = get_custom_title_sheet_pack_type_label(pack_type_value)
+    footer_text = clean_custom_text
+
+    pack_display_name = normalize_chaos_pack_display_name(
+        f"{clean_pack_name} - {pack_type_label} ({clean_set_code})"
+    )
+
+    pdf_settings = resolve_pdf_print_settings()
+    pdf_template_layout = resolve_pdf_template_layout()
+    print_settings = resolve_print_settings()
+
+    width_mm = pdf_template_layout["page_width_mm"]
+    height_mm = pdf_template_layout["page_height_mm"]
+    crop_border = pdf_settings["pdf_crop_border"]
+
+    draw_x_mm = pdf_template_layout["draw_x_mm"]
+    draw_y_mm = pdf_template_layout["draw_y_mm"]
+    draw_width_mm = pdf_template_layout["draw_width_mm"]
+    draw_height_mm = pdf_template_layout["draw_height_mm"]
+
+    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
+        crop_left_right_mm = width_mm * 0.05
+        crop_top_bottom_mm = height_mm * 0.034
+
+        draw_x_mm = -crop_left_right_mm
+        draw_y_mm = -crop_top_bottom_mm
+        draw_width_mm = width_mm + (crop_left_right_mm * 2)
+        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+
+    rendered_title_entries = []
+
+    try:
+        for title_index in range(8):
+            title_card_bytes = build_chaos_pack_title_card_image_bytes(
+                pack_display_name,
+                set_code=clean_set_code,
+                booster_name=pack_type_label,
+                pack_tracking_code=footer_text,
+                icon_fallback_set_code="P16",
+            )
+
+            title_temp_filename = (
+                f"custom_title_sheet_{safe_filename(clean_set_code)}_"
+                f"{safe_filename(pack_type_value)}_{title_index + 1}.png"
+            )
+            title_temp_path = get_chaos_temp_file_path(title_temp_filename)
+
+            with open(title_temp_path, "wb") as title_file:
+                title_file.write(title_card_bytes)
+
+            rendered_title_entries.append({
+                "temp_path": title_temp_path,
+                "page_kind": "title",
+                "card_uuid": "",
+                "card_row": None,
+                "is_dual_faced": 0,
+                "is_persistent_cache_file": False,
+                "is_template_rendered": False,
+            })
+
+        buffer = BytesIO()
+        pdf_canvas = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
+
+        pages_rendered = draw_chaos_rendered_entries_into_pdf_layout(
+            pdf_canvas,
+            rendered_title_entries,
+            pdf_template_layout,
+            print_settings,
+            width_mm,
+            height_mm,
+            draw_x_mm,
+            draw_y_mm,
+            draw_width_mm,
+            draw_height_mm,
+        )
+
+        if pages_rendered == 0:
+            raise ValueError("No custom title sheet images could be rendered into the PDF.")
+
+        pdf_canvas.save()
+        buffer.seek(0)
+
+        return buffer
+
+    finally:
+        for rendered_entry in rendered_title_entries:
+            try:
+                temp_path = rendered_entry.get("temp_path")
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+
 def build_inline_pdf_response(pdf_buffer, filename):
     safe_name = (filename or "document.pdf").strip()
     if not safe_name.lower().endswith(".pdf"):
@@ -3080,8 +3382,13 @@ def render_print_page(card, image_src):
         sheet_offset_y=print_settings["sheet_offset_y"],
     )
 
-def get_pack_label_set_icon_path(set_code):
+def get_pack_label_set_icon_path(set_code, fallback_set_code=None):
     clean_set_code = (set_code or "").strip().upper()
+    clean_fallback_set_code = (fallback_set_code or "").strip().upper()
+
+    if not clean_set_code and clean_fallback_set_code:
+        clean_set_code = clean_fallback_set_code
+        clean_fallback_set_code = ""
 
     if not clean_set_code:
         return ""
@@ -3115,7 +3422,6 @@ def get_pack_label_set_icon_path(set_code):
     except Exception:
         pass
 
-    # Fallback to expected static location.
     fallback_path = os.path.join(
         app.static_folder,
         "img",
@@ -3126,18 +3432,40 @@ def get_pack_label_set_icon_path(set_code):
     if os.path.exists(fallback_path):
         return fallback_path
 
+    if clean_fallback_set_code and clean_fallback_set_code != clean_set_code:
+        return get_pack_label_set_icon_path(clean_fallback_set_code)
+
     return ""
 
 
-def get_pack_label_signature_path():
-    signature_path = os.path.join(
+def get_pack_label_signature_path(template_config=None):
+    template_config = template_config or {}
+
+    requested_filename = (template_config.get("signature_logo_path") or "iMomir_sig_1.png").strip()
+
+    # Only allow a filename, not a path traversal or arbitrary filesystem path.
+    requested_filename = os.path.basename(requested_filename)
+
+    if not requested_filename:
+        requested_filename = "iMomir_sig_1.png"
+
+    requested_signature_path = os.path.join(
+        app.static_folder,
+        "img",
+        requested_filename,
+    )
+
+    if os.path.exists(requested_signature_path):
+        return requested_signature_path
+
+    fallback_signature_path = os.path.join(
         app.static_folder,
         "img",
         "iMomir_sig_1.png",
     )
 
-    if os.path.exists(signature_path):
-        return signature_path
+    if os.path.exists(fallback_signature_path):
+        return fallback_signature_path
 
     return ""
 
@@ -3295,27 +3623,215 @@ def paste_centered_rgba(base_image, overlay_image, center_x, center_y):
 
     return base_image
 
+def apply_alpha_opacity(alpha_channel, opacity):
+    opacity = max(0, min(255, int(opacity or 0)))
 
-def draw_pack_label_decorative_border(draw, width, height, template_config):
+    if opacity >= 255:
+        return alpha_channel
+
+    return alpha_channel.point(lambda pixel: int(pixel * (opacity / 255.0)))
+
+
+def build_gold_shimmer_overlay_from_alpha(alpha_channel, base_rgb, shimmer_rgb, opacity=120, blur_px=0):
+    source_alpha = apply_alpha_opacity(alpha_channel, opacity)
+
+    width, height = source_alpha.size
+    shimmer_image = Image.new("RGBA", (width, height), tuple(base_rgb) + (0,))
+    shimmer_pixels = shimmer_image.load()
+    alpha_pixels = source_alpha.load()
+
+    base_rgb = tuple(base_rgb)
+    shimmer_rgb = tuple(shimmer_rgb)
+
+    for y in range(height):
+        diagonal_position = (y / max(1, height - 1))
+
+        for x in range(width):
+            alpha_value = alpha_pixels[x, y]
+            if alpha_value <= 0:
+                continue
+
+            x_position = x / max(1, width - 1)
+
+            # Static diagonal shimmer bands. Not animated; this is baked into the rendered image.
+            band_value = ((x_position * 1.45) + (diagonal_position * 0.85)) % 1.0
+
+            if 0.17 <= band_value <= 0.30 or 0.58 <= band_value <= 0.68:
+                mix = 0.72
+            elif 0.30 < band_value <= 0.38 or 0.68 < band_value <= 0.75:
+                mix = 0.35
+            else:
+                mix = 0.0
+
+            pixel_rgb = (
+                int(base_rgb[0] + ((shimmer_rgb[0] - base_rgb[0]) * mix)),
+                int(base_rgb[1] + ((shimmer_rgb[1] - base_rgb[1]) * mix)),
+                int(base_rgb[2] + ((shimmer_rgb[2] - base_rgb[2]) * mix)),
+            )
+
+            shimmer_pixels[x, y] = pixel_rgb + (alpha_value,)
+
+    blur_px = int(blur_px or 0)
+    if blur_px > 0:
+        shimmer_image = shimmer_image.filter(ImageFilter.GaussianBlur(radius=blur_px))
+
+    return shimmer_image
+
+
+def draw_pack_label_glow_rounded_rectangle(
+    image,
+    box,
+    radius_px,
+    glow_rgb,
+    glow_opacity,
+    blur_px,
+    line_width_px,
+    spread_px=0,
+):
+    glow_opacity = int(glow_opacity or 0)
+
+    if glow_opacity <= 0:
+        return image
+
+    spread_px = max(0, int(spread_px or 0))
+    blur_px = max(0, int(blur_px or 0))
+    line_width_px = max(1, int(line_width_px or 1))
+
+    left, top, right, bottom = box
+
+    expanded_box = (
+        int(left - spread_px),
+        int(top - spread_px),
+        int(right + spread_px),
+        int(bottom + spread_px),
+    )
+
+    glow_layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    glow_draw = ImageDraw.Draw(glow_layer)
+
+    glow_draw.rounded_rectangle(
+        expanded_box,
+        radius=max(0, int(radius_px + spread_px)),
+        outline=tuple(glow_rgb) + (glow_opacity,),
+        width=line_width_px,
+    )
+
+    if blur_px > 0:
+        glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
+
+    image.alpha_composite(glow_layer)
+
+    return image
+
+
+def draw_pack_label_icon_shimmer(
+    image,
+    icon_image,
+    center_x,
+    center_y,
+    base_rgb,
+    shimmer_rgb,
+    shimmer_opacity,
+    shimmer_blur_px,
+    offset_x_px=0,
+    offset_y_px=0,
+):
+    if not icon_image:
+        return image
+
+    shimmer_opacity = int(shimmer_opacity or 0)
+
+    if shimmer_opacity <= 0:
+        return image
+
+    icon_rgba = icon_image.convert("RGBA")
+    icon_alpha = icon_rgba.getchannel("A")
+
+    shimmer_image = build_gold_shimmer_overlay_from_alpha(
+        icon_alpha,
+        base_rgb=base_rgb,
+        shimmer_rgb=shimmer_rgb,
+        opacity=shimmer_opacity,
+        blur_px=shimmer_blur_px,
+    )
+
+    left = int(center_x - (shimmer_image.width / 2) + int(offset_x_px or 0))
+    top = int(center_y - (shimmer_image.height / 2) + int(offset_y_px or 0))
+
+    image.alpha_composite(shimmer_image, (left, top))
+
+    return image
+
+def draw_pack_label_decorative_border(image, width, height, template_config):
     outer_radius = int(min(width, height) * float(template_config.get("outer_corner_radius_pct") or 0.055))
     inner_inset = int(min(width, height) * float(template_config.get("inner_border_inset_pct") or 0.025))
 
     border_rgb = tuple(template_config.get("border_rgb") or (70, 70, 80))
     inner_border_rgb = tuple(template_config.get("inner_border_rgb") or border_rgb)
 
+    outer_box = (4, 4, width - 5, height - 5)
+    inner_box = (inner_inset, inner_inset, width - inner_inset - 1, height - inner_inset - 1)
+    outer_line_width = max(4, int(width * 0.008))
+    inner_line_width = max(1, int(width * 0.003))
+
+    if bool(template_config.get("card_glow_enabled", False)):
+        draw_pack_label_glow_rounded_rectangle(
+            image,
+            outer_box,
+            outer_radius,
+            glow_rgb=tuple(template_config.get("card_glow_rgb") or border_rgb),
+            glow_opacity=int(template_config.get("card_glow_opacity") or 0),
+            blur_px=int(template_config.get("card_glow_blur_px") or 0),
+            line_width_px=int(template_config.get("card_glow_line_width_px") or outer_line_width),
+            spread_px=int(template_config.get("card_glow_spread_px") or 0),
+        )
+
+    if bool(template_config.get("border_shimmer_enabled", False)):
+        shimmer_rgb = tuple(template_config.get("border_shimmer_rgb") or border_rgb)
+        shimmer_opacity = int(template_config.get("border_shimmer_opacity") or 0)
+        shimmer_blur_px = int(template_config.get("border_shimmer_blur_px") or 0)
+        shimmer_line_width_px = int(template_config.get("border_shimmer_line_width_px") or outer_line_width)
+        shimmer_spread_px = int(template_config.get("border_shimmer_spread_px") or 0)
+
+        draw_pack_label_glow_rounded_rectangle(
+            image,
+            outer_box,
+            outer_radius,
+            glow_rgb=shimmer_rgb,
+            glow_opacity=shimmer_opacity,
+            blur_px=shimmer_blur_px,
+            line_width_px=shimmer_line_width_px,
+            spread_px=shimmer_spread_px,
+        )
+
+        draw_pack_label_glow_rounded_rectangle(
+            image,
+            inner_box,
+            max(1, outer_radius - inner_inset),
+            glow_rgb=shimmer_rgb,
+            glow_opacity=max(0, int(shimmer_opacity * 0.70)),
+            blur_px=max(0, int(shimmer_blur_px * 0.70)),
+            line_width_px=max(1, int(shimmer_line_width_px * 0.65)),
+            spread_px=max(0, int(shimmer_spread_px * 0.50)),
+        )
+
+    draw = ImageDraw.Draw(image)
+
     draw.rounded_rectangle(
-        [(4, 4), (width - 5, height - 5)],
+        outer_box,
         radius=outer_radius,
         outline=border_rgb,
-        width=max(4, int(width * 0.008)),
+        width=outer_line_width,
     )
 
     draw.rounded_rectangle(
-        [(inner_inset, inner_inset), (width - inner_inset - 1, height - inner_inset - 1)],
+        inner_box,
         radius=max(1, outer_radius - inner_inset),
         outline=inner_border_rgb,
-        width=max(1, int(width * 0.003)),
+        width=inner_line_width,
     )
+
+    return image
 
 
 def draw_pack_label_footer(draw, width, height, pack_tracking_code, template_config):
@@ -3686,6 +4202,7 @@ def build_chaos_pack_title_card_image_bytes(
     pack_tracking_code="",
     card_width_mm=63.5,
     card_height_mm=88.9,
+    icon_fallback_set_code=None,
 ):
     normalized_pack_display_name = normalize_chaos_pack_display_name(pack_display_name)
     title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(normalized_pack_display_name)
@@ -3730,32 +4247,54 @@ def build_chaos_pack_title_card_image_bytes(
         template_config.get("background_bottom_rgb") or (10, 10, 14),
     ).convert("RGBA")
 
-    draw = ImageDraw.Draw(image)
-
     draw_pack_label_decorative_border(
-        draw,
+        image,
         image_width_px,
         image_height_px,
         template_config,
     )
 
+    draw = ImageDraw.Draw(image)
+
     # Large centered set emblem / watermark.
-    icon_path = get_pack_label_set_icon_path(clean_set_code)
+    icon_path = get_pack_label_set_icon_path(
+        clean_set_code,
+        fallback_set_code=icon_fallback_set_code,
+    )
     icon_size_px = int(min(image_width_px, image_height_px) * 0.50)
+
+    set_icon_rgb = tuple(template_config.get("set_icon_rgb") or accent_rgb)
 
     icon_image = render_svg_icon_to_tinted_image(
         icon_path,
         icon_size_px,
-        template_config.get("set_icon_rgb") or accent_rgb,
+        set_icon_rgb,
         opacity=int(template_config.get("set_icon_opacity") or 58),
     )
 
     if icon_image:
+        icon_center_x = image_width_px / 2
+        icon_center_y = image_height_px * icon_center_y_pct
+
+        if bool(template_config.get("set_icon_shimmer_enabled", False)):
+            draw_pack_label_icon_shimmer(
+                image,
+                icon_image,
+                icon_center_x,
+                icon_center_y,
+                base_rgb=set_icon_rgb,
+                shimmer_rgb=tuple(template_config.get("set_icon_shimmer_rgb") or set_icon_rgb),
+                shimmer_opacity=int(template_config.get("set_icon_shimmer_opacity") or 0),
+                shimmer_blur_px=int(template_config.get("set_icon_shimmer_blur_px") or 0),
+                offset_x_px=int(image_width_px * float(template_config.get("set_icon_shimmer_offset_x_pct") or 0.0)),
+                offset_y_px=int(image_height_px * float(template_config.get("set_icon_shimmer_offset_y_pct") or 0.0)),
+            )
+
         paste_centered_rgba(
             image,
             icon_image,
-            image_width_px / 2,
-            image_height_px * icon_center_y_pct,
+            icon_center_x,
+            icon_center_y,
         )
 
     draw = ImageDraw.Draw(image)
@@ -3918,7 +4457,7 @@ def build_chaos_pack_title_card_image_bytes(
     )
 
     # iMomir gold signature.
-    signature_path = get_pack_label_signature_path()
+    signature_path = get_pack_label_signature_path(template_config)
 
     if signature_path:
         try:
@@ -5395,6 +5934,7 @@ def build_chaos_pack_pdf(
     return buffer
 
 def get_next_image_export_folder():
+    auto_clear_export_root(get_auto_clear_exports_config_value())
     os.makedirs(EXPORT_ROOT_DIR, exist_ok=True)
 
     date_stamp = datetime.now().strftime("%Y%m%d")
@@ -7617,6 +8157,15 @@ def run_refresh_job(force_download=False):
 @app.route("/")
 def index():
     config = get_request_config()
+    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
+
+    if current_game_mode in {
+        "chaos_draft",
+        "chaos_draft_campaign",
+        "preprint_chaos_draft",
+    }:
+        return redirect(url_for("result"))
+
     selected_type_info = resolve_selected_result_type(
         config,
         request.args.get("selected_type", ""),
@@ -7627,7 +8176,7 @@ def index():
     return render_template(
         "index.html",
         card_database_ready=is_card_database_ready(),
-        current_game_mode=(config.get("game_mode") or "custom").strip().lower(),
+        current_game_mode=current_game_mode,
         enabled_type_options=selected_type_info["enabled_types"],
         selected_type_value=selected_type_info["selected_value"],
         use_pdf_print=pdf_settings["use_pdf_print"],
@@ -8015,13 +8564,81 @@ def config():
     current_image_status = build_config_page_image_status()
 
     resolved_game_mode_cards = []
+    hidden_config_game_modes = {
+        # This mode is still valid internally, but it is no longer shown as a selectable mode.
+        "preprint_chaos_draft",
+    }
+
     for item in GAME_MODE_OPTIONS:
-        token_image = resolve_game_mode_token_image(item["value"])
+        mode_value = (item.get("value") or "").strip().lower()
+
+        if mode_value in hidden_config_game_modes:
+            continue
+
+        token_image = resolve_game_mode_token_image(mode_value)
         resolved_game_mode_cards.append({
             **item,
             "image_src": url_for("static", filename=token_image["filename"]),
-            "print_href": get_game_mode_print_href(item["value"]),
+            "print_href": get_game_mode_print_href(mode_value),
         })
+
+    game_mode_group_definitions = [
+        {
+            "key": "momir",
+            "label": "Momir",
+            "values": [
+                "custom",
+                "momir_basic",
+                "momir_select",
+                "momir_planeswalker",
+                "momir_legends",
+                "momir_battleship",
+                "momir_aggro",
+                "momir_odds",
+                "momir_evens",
+                "momir_prime",
+                "tower_of_power",
+            ],
+        },
+        {
+            "key": "chaos",
+            "label": "Chaos Draft",
+            "values": [
+                "chaos_draft_campaign",
+                "chaos_draft",
+            ],
+        },
+        {
+            "key": "other",
+            "label": "Other",
+            "values": [
+                "planechase",
+                "archenemy",
+            ],
+        },
+    ]
+
+    game_mode_lookup = {
+        (mode.get("value") or "").strip().lower(): mode
+        for mode in resolved_game_mode_cards
+    }
+
+    grouped_game_modes = []
+
+    for group_definition in game_mode_group_definitions:
+        group_modes = []
+
+        for mode_value in group_definition["values"]:
+            mode = game_mode_lookup.get(mode_value)
+            if mode:
+                group_modes.append(mode)
+
+        if group_modes:
+            grouped_game_modes.append({
+                "key": group_definition["key"],
+                "label": group_definition["label"],
+                "modes": group_modes,
+            })
 
     source_file_present = bool(
         import_metadata.get("source_last_updated")
@@ -8049,6 +8666,7 @@ def config():
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
         game_mode_options=resolved_game_mode_cards,
+        grouped_game_modes=grouped_game_modes,
         repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
@@ -8064,6 +8682,96 @@ def config():
         qr_image_url=build_qr_code_image_url(access_url),
     )
 
+@app.route("/maintenance/clear-exports", methods=["POST"])
+def maintenance_clear_exports():
+    result = clear_export_root()
+
+    flash(f"Cleared Export folder. Removed {result['removed_count']} item(s).")
+    return redirect(url_for("config"))
+
+@app.route("/maintenance/backup-imomir", methods=["POST"])
+def maintenance_backup_imomir():
+    try:
+        backup_result = export_full_archive(
+            auto_clear_exports_value=get_auto_clear_exports_config_value(),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return send_file(
+        backup_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=backup_result["zip_filename"],
+        max_age=0,
+    )
+
+
+@app.route("/maintenance/import-imomir", methods=["POST"])
+def maintenance_import_imomir():
+    backup_file = request.files.get("backup_file")
+
+    try:
+        import_result = import_archive_from_file_object(
+            backup_file,
+            EXPORT_KIND_FULL,
+        )
+    except Exception as exc:
+        flash(f"iMomir import failed: {str(exc)}")
+        return redirect(url_for("config"))
+
+    flash(
+        f"iMomir import complete. Imported {import_result['imported_rows']} row(s) "
+        f"and restored {import_result['extracted_files']} file(s)."
+    )
+
+    return redirect(url_for("config"))
+
+@app.route("/maintenance/backup-all-packs", methods=["POST"])
+def maintenance_backup_all_packs():
+    try:
+        backup_result = export_packs_archive(
+            [],
+            auto_clear_exports_value=get_auto_clear_exports_config_value(),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return send_file(
+        backup_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=backup_result["zip_filename"],
+        max_age=0,
+    )
+
+
+@app.route("/maintenance/clear-all-history", methods=["POST"])
+def maintenance_clear_all_history():
+    delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if delete_confirmation != "DELETE":
+        flash("Clear All History cancelled. Type DELETE to confirm.")
+        return redirect(url_for("config"))
+
+    result = clear_all_history_data()
+
+    flash(f"Cleared all history. Deleted {result['total_deleted']} row(s).")
+    return redirect(url_for("config"))
+
+
+@app.route("/maintenance/clear-all-packs", methods=["POST"])
+def maintenance_clear_all_packs():
+    delete_confirmation = (request.form.get("delete_confirmation") or "").strip()
+
+    if delete_confirmation != "DELETE":
+        flash("Clear All Packs cancelled. Type DELETE to confirm.")
+        return redirect(url_for("config"))
+
+    result = clear_all_packs_data()
+
+    flash(f"Cleared all packs. Deleted {result['total_deleted']} row(s).")
+    return redirect(url_for("config"))
 
 @app.route("/refresh-cards/start", methods=["POST"])
 def refresh_cards_start():
@@ -8231,6 +8939,77 @@ def campaign_chaos_campaigns():
         selected_chaos_campaign_id=selected_chaos_campaign_id,
     )
 
+@app.route("/campaign-chaos/campaigns/default/save", methods=["POST"])
+def campaign_chaos_campaigns_default_save():
+    set_selected_chaos_campaign_id(None)
+
+    clear_chaos_session_state("selected_campaign_player_id")
+    clear_chaos_session_state("selected_chaos_draft_game_id")
+    clear_chaos_session_state("pending_spin_result")
+    clear_chaos_session_state("pending_opened_pack")
+    clear_chaos_session_state("pending_campaign_pack_opening_recorded")
+
+    flash("No Campaign selected.")
+    return redirect(url_for("campaign_chaos_campaigns"))
+
+
+@app.route("/campaign-chaos/campaigns/default/backup", methods=["POST"])
+def campaign_chaos_campaigns_default_backup():
+    try:
+        backup_result = export_default_campaign_archive(
+            auto_clear_exports_value=get_auto_clear_exports_config_value(),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return send_file(
+        backup_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=backup_result["zip_filename"],
+        max_age=0,
+    )
+
+@app.route("/campaign-chaos/campaigns/import-backup", methods=["POST"])
+def campaign_chaos_campaigns_import_backup():
+    backup_file = request.files.get("backup_file")
+    campaign_name_override = (request.form.get("campaign_name_override") or "").strip()
+
+    try:
+        import_result = import_archive_from_file_object(
+            backup_file,
+            EXPORT_KIND_CAMPAIGN,
+            campaign_name_override=campaign_name_override,
+        )
+    except Exception as exc:
+        flash(f"Campaign import failed: {str(exc)}")
+        return redirect(url_for("campaign_chaos_campaigns"))
+
+    flash(
+        f"Campaign import complete. Imported {import_result['imported_rows']} row(s) "
+        f"and restored {import_result['extracted_files']} file(s)."
+    )
+
+    return redirect(url_for("campaign_chaos_campaigns"))
+
+
+@app.route("/campaign-chaos/campaigns/<int:campaign_id>/backup", methods=["POST"])
+def campaign_chaos_campaigns_backup(campaign_id):
+    try:
+        backup_result = export_campaign_archive(
+            campaign_id,
+            auto_clear_exports_value=get_auto_clear_exports_config_value(),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return send_file(
+        backup_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=backup_result["zip_filename"],
+        max_age=0,
+    )
 
 @app.route("/campaign-chaos/campaigns/add", methods=["POST"])
 def campaign_chaos_campaigns_add():
@@ -8536,6 +9315,7 @@ def campaign_chaos_packs():
         pack_import_campaign_options=pack_import_campaign_options,
         pack_summary=pack_summary,
         enable_chaos_card_image_export=(get_request_config().get("enable_chaos_card_image_export") or "0").strip() == "1",
+        custom_title_pack_type_options=get_custom_title_sheet_pack_type_options(),
     )
 
 @app.route("/campaign-chaos/history", methods=["GET"])
@@ -8691,6 +9471,104 @@ def campaign_chaos_pack_detail(tracked_pack_id):
         cards=cards,
         display_pack_prices=display_pack_prices,
         pack_price_source=pack_price_source,
+    )
+
+@app.route("/campaign-chaos/packs/backup", methods=["POST"])
+def campaign_chaos_packs_backup():
+    selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+
+    try:
+        backup_result = export_packs_archive(
+            selected_pack_ids,
+            auto_clear_exports_value=get_auto_clear_exports_config_value(),
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return send_file(
+        backup_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=backup_result["zip_filename"],
+        max_age=0,
+    )
+
+
+@app.route("/campaign-chaos/packs/import-backup", methods=["POST"])
+def campaign_chaos_packs_import_backup():
+    backup_file = request.files.get("backup_file")
+
+    try:
+        import_result = import_archive_from_file_object(
+            backup_file,
+            EXPORT_KIND_PACKS,
+        )
+    except Exception as exc:
+        flash(f"Pack import failed: {str(exc)}")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    flash(
+        f"Pack import complete. Imported {import_result['imported_rows']} row(s) "
+        f"and restored {import_result['extracted_files']} file(s)."
+    )
+
+    return redirect(url_for("campaign_chaos_packs"))
+
+@app.route("/campaign-chaos/packs/print-default-back-sheet", methods=["GET"])
+def campaign_chaos_print_default_back_sheet():
+    try:
+        pdf_buffer = build_default_card_back_sheet_pdf()
+    except Exception as exc:
+        return str(exc), 400
+
+    return Response(
+        pdf_buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="default_card_back_sheet.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+@app.route("/campaign-chaos/packs/custom-title-set-name", methods=["GET"])
+def campaign_chaos_custom_title_set_name():
+    set_code = (request.args.get("set_code") or "").strip().upper()
+
+    return jsonify({
+        "ok": True,
+        "set_code": set_code,
+        "set_name": get_set_name_for_custom_title_sheet(set_code),
+    })
+
+
+@app.route("/campaign-chaos/packs/print-custom-title-sheet", methods=["GET"])
+def campaign_chaos_print_custom_title_sheet():
+    set_code = (request.args.get("set_code") or "").strip().upper()
+    pack_name = (request.args.get("pack_name") or "").strip()
+    pack_type = (request.args.get("pack_type") or "").strip().lower()
+    custom_text = (request.args.get("custom_text") or "").strip()
+
+    try:
+        pdf_buffer = build_custom_title_sheet_pdf(
+            set_code=set_code,
+            pack_name=pack_name,
+            pack_type_value=pack_type,
+            custom_text=custom_text,
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    filename_base = safe_filename(
+        f"custom_title_sheet_{set_code or 'custom'}_{pack_type or 'custom'}"
+    )
+
+    return Response(
+        pdf_buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename_base}.pdf"',
+            "Cache-Control": "no-store",
+        },
     )
 
 @app.route("/campaign-chaos/packs/<int:tracked_pack_id>/print", methods=["GET"])
