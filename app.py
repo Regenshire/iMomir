@@ -794,6 +794,8 @@ def import_chaos_cards_from_all_printings():
             border_color = (card_obj.get("borderColor") or "").strip().lower()
             colors_json = json.dumps(safe_list(card_obj.get("colors")))
             color_identity_json = json.dumps(safe_list(card_obj.get("colorIdentity")))
+            edhrec_rank = safe_int_or_none(card_obj.get("edhrecRank"))
+            edhrec_saltiness = safe_float_or_none(card_obj.get("edhrecSaltiness"))
 
             if is_dual_faced_layout(layout) and side == "b":
                 continue
@@ -849,9 +851,11 @@ def import_chaos_cards_from_all_printings():
                     frame_version,
                     border_color,
                     colors_json,
-                    color_identity_json
+                    color_identity_json,
+                    edhrec_rank,
+                    edhrec_saltiness
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_uuid,
@@ -880,6 +884,8 @@ def import_chaos_cards_from_all_printings():
                     border_color,
                     colors_json,
                     color_identity_json,
+                    edhrec_rank,
+                    edhrec_saltiness,
                 ),
             )
 
@@ -2260,6 +2266,25 @@ def safe_dict(value):
     if isinstance(value, dict):
         return value
     return {}
+
+def safe_int_or_none(value):
+    if value is None or value == "":
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def safe_float_or_none(value):
+    if value is None or value == "":
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 def normalize_card_lookup_name(card_name):
     value = (card_name or "").strip()
@@ -7580,7 +7605,7 @@ def import_set_list_into_database():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("DELETE FROM sets")
+    cursor.execute("DELETE FROM sets WHERE COALESCE(set_type, '') <> 'custom'")
 
     inserted_count = 0
 
@@ -11132,6 +11157,7 @@ def custom_draft_set_cards_search(set_code):
         set_code_filter=request.args.get("set_code") or "",
         year_start=request.args.get("year_start") or "",
         year_end=request.args.get("year_end") or "",
+        sort_option=request.args.get("sort") or "name_asc",
     )
 
     results = []
@@ -11150,6 +11176,9 @@ def custom_draft_set_cards_search(set_code):
             "mana_value": row["mana_value"],
             "colors_json": row["colors_json"] or "[]",
             "color_identity_json": row["color_identity_json"] or "[]",
+            "edhrec_rank": row["edhrec_rank"],
+            "edhrec_saltiness": row["edhrec_saltiness"],
+            "sort_price": row["sort_price"],
             "already_in_set": int(row["already_in_set"] or 0) == 1,
             "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
         })

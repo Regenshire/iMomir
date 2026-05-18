@@ -1216,6 +1216,34 @@ def sort_opened_chaos_pack_cards(cards, booster_name, write_debug_log_fn):
     if not cards:
         return []
 
+    if any("custom_slot_number" in card_entry for card_entry in cards):
+        sorted_custom_cards = sorted(
+            cards,
+            key=lambda card_entry: (
+                int(card_entry.get("custom_slot_number") or card_entry.get("card_order") or 999),
+                int(card_entry.get("card_order") or 999),
+                (card_entry.get("card_name") or "").strip().lower(),
+            ),
+        )
+
+        write_debug_log_fn(
+            f"CUSTOM DRAFT PACK SORT | booster={booster_name} | "
+            f"sort=custom_slot_number | before={len(cards)} | after={len(sorted_custom_cards)}"
+        )
+
+        for card_entry in sorted_custom_cards:
+            write_debug_log_fn(
+                f"CUSTOM DRAFT PACK SORT CARD | booster={booster_name} | "
+                f"slot={card_entry.get('custom_slot_number')} | "
+                f"sheet={card_entry.get('sheet_name')} | "
+                f"special_rule={card_entry.get('custom_effective_special_category_rule')} | "
+                f"card_special_index={card_entry.get('custom_card_special_category_index')} | "
+                f"rarity={card_entry.get('rarity')} | "
+                f"card={card_entry.get('card_name')}"
+            )
+
+        return sorted_custom_cards
+
     sort_profile = get_chaos_booster_sort_profile(booster_name)
 
     if sort_profile is None:

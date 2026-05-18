@@ -220,45 +220,62 @@
             </div>
         </div>
 
-        <div class="page-panel">
+        <div class="page-panel custom-draft-add-card-launch-panel">
             <div class="custom-draft-card-list-header">
                 <div>
-                    <h2>Set Card List</h2>
+                    <h2>Add Cards</h2>
                     <p class="page-subtitle">
-                        Search all Chaos Draft cards and add them to this custom set pool.
+                        Search and browse all Chaos Draft cards, then add them to this custom set pool.
                     </p>
                 </div>
 
-                <div class="custom-draft-card-count">
-                    {{ custom_set_cards|length }} card(s)
-                </div>
+                <button
+                    type="button"
+                    id="customDraftOpenAddCardsButton"
+                    class="action-button custom-draft-open-add-cards-button"
+                >
+                    Add Cards
+                </button>
             </div>
+        </div>
 
-            <div class="custom-draft-card-search-panel">
-                <div class="custom-draft-card-search-controls">
-                    <input
-                        type="text"
-                        id="customDraftCardSearchInput"
-                        class="campaign-add-pack-custom-input"
-                        placeholder="Optional: card name, rarity, type, collector number..."
-                        autocomplete="off"
-                    >
-
-                    <button
-                        type="button"
-                        id="customDraftCardSearchButton"
-                        class="action-button secondary-button"
-                    >
-                        Search
-                    </button>
+        <div
+            id="customDraftCardSearchOverlay"
+            class="custom-draft-card-search-overlay hidden"
+            aria-hidden="true"
+        >
+            <div class="custom-draft-card-search-window">
+                <div class="custom-draft-card-search-window-header">
+                    <div>
+                        <h2>Add Cards</h2>
+                        <p class="page-subtitle">
+                            Search by card name, set, color identity, rarity, mana value, year, spell type, EDHREC rank, or saltiness.
+                        </p>
+                    </div>
 
                     <button
                         type="button"
-                        id="customDraftCardSearchMaximizeButton"
-                        class="action-button secondary-button"
+                        id="customDraftCardSearchCloseButton"
+                        class="custom-draft-card-search-close-button"
+                        aria-label="Close Add Cards search"
+                        title="Close"
                     >
-                        Maximize
+                        ×
                     </button>
+                </div>
+
+                <div class="custom-draft-card-search-panel">
+                <div class="custom-draft-card-search-text-row">
+                    <label class="custom-draft-filter-field custom-draft-search-text-field">
+                        <span>Search Text</span>
+                        <input
+                            type="text"
+                            id="customDraftCardSearchInput"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Optional: card name, rarity, type, collector number..."
+                            autocomplete="off"
+                        >
+                    </label>
                 </div>
 
                 <div class="custom-draft-search-builder-grid">
@@ -366,20 +383,68 @@
                             placeholder="Any"
                         >
                     </label>
-
-                    <button
-                        type="button"
-                        id="customDraftSearchClearFiltersButton"
-                        class="action-button secondary-button custom-draft-clear-filters-button"
-                    >
-                        Clear Search
-                    </button>
                 </div>
 
+                <div class="custom-draft-search-action-row">
+                    <div class="custom-draft-search-action-left">
+                        <button
+                            type="button"
+                            id="customDraftCardSearchButton"
+                            class="action-button"
+                        >
+                            Search
+                        </button>
 
+                        <button
+                            type="button"
+                            id="customDraftSearchClearFiltersButton"
+                            class="action-button secondary-button"
+                        >
+                            Clear Search
+                        </button>
+                    </div>
+
+                    <label class="custom-draft-filter-field custom-draft-search-sort-field">
+                        <span>Sort By</span>
+                        <select id="customDraftSearchSortSelect" class="custom-draft-filter-input">
+                            <option value="name_asc">Name A-Z</option>
+                            <option value="name_desc">Name Z-A</option>
+                            <option value="set_asc">Set Code A-Z</option>
+                            <option value="set_desc">Set Code Z-A</option>
+                            <option value="year_newest">Year Newest</option>
+                            <option value="year_oldest">Year Oldest</option>
+                            <option value="rarity_low_high">Rarity Common → Mythic</option>
+                            <option value="rarity_high_low">Rarity Mythic → Common</option>
+                            <option value="mv_low_high">Mana Value Low → High</option>
+                            <option value="mv_high_low">Mana Value High → Low</option>
+                            <option value="edhrec_rank_best">EDHREC Rank Best</option>
+                            <option value="edhrec_rank_worst">EDHREC Rank Worst</option>
+                            <option value="edhrec_salt_high">EDHREC Salt High</option>
+                            <option value="edhrec_salt_low">EDHREC Salt Low</option>
+                            <option value="price_high">Price High</option>
+                            <option value="price_low">Price Low</option>
+                        </select>
+                    </label>
+                </div>
 
                 <div id="customDraftCardSearchStatus" class="custom-draft-card-search-status hidden"></div>
                 <div id="customDraftCardSearchResults" class="custom-draft-card-search-results hidden"></div>
+            </div>
+        </div>
+    </div>
+
+        <div class="page-panel">
+            <div class="custom-draft-card-list-header">
+                <div>
+                    <h2>Set Card List</h2>
+                    <p class="page-subtitle">
+                        Manage cards currently assigned to this custom draft set.
+                    </p>
+                </div>
+
+                <div class="custom-draft-card-count">
+                    {{ custom_set_cards|length }} card(s)
+                </div>
             </div>
 
             <div class="custom-draft-current-card-tools">
@@ -459,6 +524,26 @@
                         </select>
                     </label>
 
+                    <label class="custom-draft-filter-field">
+                        <span>Sort By</span>
+                        <select id="customDraftCurrentSortSelect" class="custom-draft-filter-input">
+                            <option value="name_asc">Name A-Z</option>
+                            <option value="name_desc">Name Z-A</option>
+                            <option value="set_asc">Set Code A-Z</option>
+                            <option value="set_desc">Set Code Z-A</option>
+                            <option value="rarity_low_high">Rarity Common → Mythic</option>
+                            <option value="rarity_high_low">Rarity Mythic → Common</option>
+                            <option value="mv_low_high">Mana Value Low → High</option>
+                            <option value="mv_high_low">Mana Value High → Low</option>
+                            <option value="edhrec_rank_best">EDHREC Rank Best</option>
+                            <option value="edhrec_rank_worst">EDHREC Rank Worst</option>
+                            <option value="edhrec_salt_high">EDHREC Salt High</option>
+                            <option value="edhrec_salt_low">EDHREC Salt Low</option>
+                            <option value="price_high">Price High</option>
+                            <option value="price_low">Price Low</option>
+                        </select>
+                    </label>
+
                     <button
                         type="button"
                         id="customDraftClearFiltersButton"
@@ -479,6 +564,11 @@
                         data-color-identity="{{ (card.color_identity_json or '[]')|lower }}"
                         data-mana-value="{{ card.mana_value if card.mana_value is not none else '' }}"
                         data-type-line="{{ (card.type_line or '')|lower }}"
+                        data-card-name="{{ (card.card_name or '')|lower }}"
+                        data-set-code="{{ (card.card_set_code or '')|upper }}"
+                        data-edhrec-rank="{{ card.edhrec_rank if card.edhrec_rank is not none else '' }}"
+                        data-edhrec-saltiness="{{ card.edhrec_saltiness if card.edhrec_saltiness is not none else '' }}"
+                        data-sort-price="{{ card.sort_price if card.sort_price is not none else '' }}"
                     >
                         <div class="custom-draft-current-card-image-wrap">
                             <img
@@ -516,6 +606,9 @@
                                 <span>#{{ card.collector_number or "?" }}</span>
                                 <span>{{ card.rarity or "unknown rarity" }}</span>
                                 <span>MV {{ "%.1f"|format(card.mana_value) if card.mana_value is not none else "?" }}</span>
+                                <span>EDHREC {{ card.edhrec_rank if card.edhrec_rank is not none else "?" }}</span>
+                                <span>Salt {{ "%.2f"|format(card.edhrec_saltiness) if card.edhrec_saltiness is not none else "?" }}</span>
+                                <span>Price {{ "$%.2f"|format(card.sort_price) if card.sort_price is not none else "?" }}</span>
                                 <span
                                     class="custom-draft-color-identity"
                                     data-color-json="{{ card.color_identity_json or '[]' }}"
@@ -590,14 +683,16 @@
     const searchButton = document.getElementById("customDraftCardSearchButton");
     const searchStatus = document.getElementById("customDraftCardSearchStatus");
     const searchResults = document.getElementById("customDraftCardSearchResults");
-    const searchPanel = document.querySelector(".custom-draft-card-search-panel");
-    const searchMaximizeButton = document.getElementById("customDraftCardSearchMaximizeButton");
+    const searchOverlay = document.getElementById("customDraftCardSearchOverlay");
+    const openAddCardsButton = document.getElementById("customDraftOpenAddCardsButton");
+    const closeAddCardsButton = document.getElementById("customDraftCardSearchCloseButton");
     const searchRarityFilter = document.getElementById("customDraftSearchRarityFilter");
     const searchColorFilter = document.getElementById("customDraftSearchColorFilter");
     const searchManaOperatorFilter = document.getElementById("customDraftSearchManaOperatorFilter");
     const searchManaValueFilter = document.getElementById("customDraftSearchManaValueFilter");
     const searchTypeFilter = document.getElementById("customDraftSearchTypeFilter");
     const searchSetCodeFilter = document.getElementById("customDraftSearchSetCodeFilter");
+    const searchSortSelect = document.getElementById("customDraftSearchSortSelect");
     const searchYearStartFilter = document.getElementById("customDraftSearchYearStartFilter");
     const searchYearEndFilter = document.getElementById("customDraftSearchYearEndFilter");
     const searchClearFiltersButton = document.getElementById("customDraftSearchClearFiltersButton");
@@ -608,6 +703,7 @@
     const manaOperatorFilter = document.getElementById("customDraftManaOperatorFilter");
     const manaValueFilter = document.getElementById("customDraftManaValueFilter");
     const typeFilter = document.getElementById("customDraftTypeFilter");
+    const currentSortSelect = document.getElementById("customDraftCurrentSortSelect");
     const clearFiltersButton = document.getElementById("customDraftClearFiltersButton");
     const currentCardList = document.getElementById("customDraftCurrentCardList");
 
@@ -761,6 +857,340 @@
         searchResults.classList.add("hidden");
     }
 
+    function getCardReleaseYear(card) {
+        const rawYear = card && card.release_year ? String(card.release_year).trim() : "";
+
+        if (!rawYear) {
+            return 0;
+        }
+
+        const parsedYear = Number(rawYear);
+
+        if (!Number.isFinite(parsedYear)) {
+            return 0;
+        }
+
+        return parsedYear;
+    }
+
+    function getCardReleaseDateSortValue(card) {
+        const rawDate = card && card.release_date ? String(card.release_date).trim() : "";
+
+        if (!rawDate) {
+            return getCardReleaseYear(card) * 10000;
+        }
+
+        const cleanDate = rawDate.replace(/[^0-9]/g, "");
+
+        if (!cleanDate) {
+            return getCardReleaseYear(card) * 10000;
+        }
+
+        const parsedDate = Number(cleanDate);
+
+        if (!Number.isFinite(parsedDate)) {
+            return getCardReleaseYear(card) * 10000;
+        }
+
+        return parsedDate;
+    }
+
+    function getMostRecentCardPrinting(cards) {
+        const cardList = Array.isArray(cards) ? cards.slice() : [];
+
+        cardList.sort(function (cardA, cardB) {
+            return getCardReleaseDateSortValue(cardB) - getCardReleaseDateSortValue(cardA);
+        });
+
+        return cardList[0] || null;
+    }
+
+    function buildVirtualSearchCardRow(card, cardNameOverride) {
+        const cardName = cardNameOverride !== undefined
+            ? cardNameOverride
+            : card.card_name;
+
+        return {
+            dataset: {
+                cardName: String(cardName || "").toLowerCase(),
+                setCode: String(card.set_code || "").toUpperCase(),
+                rarity: String(card.rarity || "").toLowerCase(),
+                manaValue: card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value),
+                edhrecRank: card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank),
+                edhrecSaltiness: card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness),
+                sortPrice: card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price),
+                releaseDateSort: String(getCardReleaseDateSortValue(card))
+            }
+        };
+    }
+
+    function getGroupedSearchCards(cards) {
+        const groupLookup = new Map();
+
+        (cards || []).forEach(function (card) {
+            const cardName = String(card.card_name || "Unknown Card").trim() || "Unknown Card";
+            const groupKey = cardName.toLowerCase();
+
+            if (!groupLookup.has(groupKey)) {
+                groupLookup.set(groupKey, {
+                    key: groupKey,
+                    card_name: cardName,
+                    cards: []
+                });
+            }
+
+            groupLookup.get(groupKey).cards.push(card);
+        });
+
+        const groups = Array.from(groupLookup.values());
+
+        groups.forEach(function (group) {
+            const selectedSortValue = searchSortSelect ? searchSortSelect.value : "name_asc";
+
+            group.representative_card = getMostRecentCardPrinting(group.cards);
+
+            group.cards.sort(function (cardA, cardB) {
+                const rowA = buildVirtualSearchCardRow(cardA);
+                const rowB = buildVirtualSearchCardRow(cardB);
+
+                const sortCompare = compareCardRows(rowA, rowB, selectedSortValue);
+
+                if (sortCompare !== 0) {
+                    return sortCompare;
+                }
+
+                return getCardReleaseDateSortValue(cardB) - getCardReleaseDateSortValue(cardA);
+            });
+
+            group.already_in_set_count = group.cards.filter(function (card) {
+                return Boolean(card.already_in_set);
+            }).length;
+        });
+
+        groups.sort(function (groupA, groupB) {
+            const firstA = groupA.cards[0] || {};
+            const firstB = groupB.cards[0] || {};
+
+            const virtualRowA = buildVirtualSearchCardRow(firstA, groupA.card_name);
+            const virtualRowB = buildVirtualSearchCardRow(firstB, groupB.card_name);
+
+            return compareCardRows(
+                virtualRowA,
+                virtualRowB,
+                searchSortSelect ? searchSortSelect.value : "name_asc"
+            );
+        });
+
+        return groups;
+    }
+
+    function createSearchResultPrintingRow(card) {
+        const row = document.createElement("div");
+        row.className = "custom-draft-card-search-row custom-draft-card-search-printing-row";
+
+        const manaValue = card.mana_value === null || card.mana_value === undefined || card.mana_value === ""
+            ? ""
+            : String(card.mana_value);
+
+        row.dataset.cardSearch = [
+            card.card_name || "",
+            card.set_code || "",
+            card.collector_number || "",
+            card.rarity || "",
+            card.type_line || "",
+            card.color_identity_json || "[]",
+            manaValue
+        ].join(" ").toLowerCase();
+
+        row.dataset.rarity = String(card.rarity || "").toLowerCase();
+        row.dataset.colorIdentity = String(card.color_identity_json || "[]").toLowerCase();
+        row.dataset.manaValue = manaValue;
+        row.dataset.typeLine = String(card.type_line || "").toLowerCase();
+        row.dataset.cardName = String(card.card_name || "").toLowerCase();
+        row.dataset.setCode = String(card.set_code || "").toUpperCase();
+        row.dataset.edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
+        row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
+        row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
+
+        if (card.already_in_set) {
+            row.classList.add("custom-draft-card-search-row-disabled");
+        }
+
+        const imageWrap = document.createElement("div");
+        imageWrap.className = "custom-draft-card-search-image-wrap";
+
+        const image = document.createElement("img");
+        image.className = "custom-draft-card-search-image custom-draft-card-zoomable";
+        image.src = card.image_src || "";
+        image.alt = card.card_name || "Card";
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.dataset.zoomSrc = card.image_src || "";
+        image.dataset.zoomAlt = card.card_name || "Card";
+
+        imageWrap.appendChild(image);
+
+        const main = document.createElement("div");
+        main.className = "custom-draft-card-search-main";
+
+        const title = document.createElement("div");
+        title.className = "custom-draft-card-search-title";
+        title.textContent = card.card_name || "Unknown Card";
+
+        const meta = document.createElement("div");
+        meta.className = "custom-draft-card-search-meta";
+
+        const displayManaValue = manaValue || "?";
+
+        const metaLineOne = document.createElement("div");
+        metaLineOne.className = "custom-draft-card-search-meta-line";
+        metaLineOne.textContent = [
+            card.set_code || "",
+            card.release_year ? card.release_year : "",
+            card.collector_number ? "#" + card.collector_number : "",
+            card.rarity || "",
+            "MV " + displayManaValue,
+            "EDHREC " + (card.edhrec_rank === null || card.edhrec_rank === undefined ? "?" : card.edhrec_rank),
+            "Salt " + (card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "?" : Number(card.edhrec_saltiness).toFixed(2)),
+            "Price " + (card.sort_price === null || card.sort_price === undefined ? "?" : "$" + Number(card.sort_price).toFixed(2)),
+            "Color Identity: " + getColorIdentityLabel(card.color_identity_json || "[]", card.type_line || "")
+        ].filter(Boolean).join(" • ");
+
+        const metaLineTwo = document.createElement("div");
+        metaLineTwo.className = "custom-draft-card-search-type-line";
+        metaLineTwo.textContent = card.type_line || "";
+
+        meta.appendChild(metaLineOne);
+        meta.appendChild(metaLineTwo);
+
+        main.appendChild(title);
+        main.appendChild(meta);
+
+        const actions = document.createElement("div");
+        actions.className = "custom-draft-card-search-actions";
+
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.className = "action-button secondary-button custom-draft-card-add-button";
+        addButton.textContent = card.already_in_set ? "Added" : "Add";
+        addButton.disabled = Boolean(card.already_in_set);
+
+        addButton.addEventListener("click", async function () {
+            await addCardToSet(card.card_uuid, addButton);
+        });
+
+        actions.appendChild(addButton);
+
+        row.appendChild(imageWrap);
+        row.appendChild(main);
+        row.appendChild(actions);
+
+        return row;
+    }
+
+    function createSearchResultGroup(group) {
+        const representativeCard = group.representative_card || group.cards[0] || {};
+        const groupElement = document.createElement("div");
+        groupElement.className = "custom-draft-card-search-group";
+
+        const isSinglePrinting = group.cards.length === 1;
+        const startsExpanded = isSinglePrinting;
+
+        groupElement.classList.toggle("custom-draft-card-search-group-expanded", startsExpanded);
+
+        const headerButton = document.createElement("div");
+        headerButton.className = "custom-draft-card-search-group-header";
+        headerButton.setAttribute("role", "button");
+        headerButton.setAttribute("tabindex", "0");
+        headerButton.setAttribute("aria-expanded", startsExpanded ? "true" : "false");
+
+        const imageWrap = document.createElement("div");
+        imageWrap.className = "custom-draft-card-search-group-image-wrap";
+
+        const image = document.createElement("img");
+        image.className = "custom-draft-card-search-group-image custom-draft-card-zoomable";
+        image.src = representativeCard.image_src || "";
+        image.alt = group.card_name || "Card";
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.dataset.zoomSrc = representativeCard.image_src || "";
+        image.dataset.zoomAlt = group.card_name || "Card";
+
+        imageWrap.appendChild(image);
+
+        const main = document.createElement("div");
+        main.className = "custom-draft-card-search-group-main";
+
+        const titleRow = document.createElement("div");
+        titleRow.className = "custom-draft-card-search-group-title-row";
+
+        const title = document.createElement("div");
+        title.className = "custom-draft-card-search-group-title";
+        title.textContent = group.card_name || "Unknown Card";
+
+        const countBadge = document.createElement("span");
+        countBadge.className = "custom-draft-card-search-group-count";
+        countBadge.textContent = group.cards.length + " printing(s)";
+
+        titleRow.appendChild(title);
+        titleRow.appendChild(countBadge);
+
+        const meta = document.createElement("div");
+        meta.className = "custom-draft-card-search-group-meta";
+        meta.textContent = [
+            representativeCard.set_code ? "Newest: " + representativeCard.set_code : "",
+            representativeCard.release_year || "",
+            representativeCard.rarity || "",
+            representativeCard.type_line || "",
+            group.already_in_set_count > 0 ? group.already_in_set_count + " already added" : ""
+        ].filter(Boolean).join(" • ");
+
+        main.appendChild(titleRow);
+        main.appendChild(meta);
+
+        const expandIcon = document.createElement("div");
+        expandIcon.className = "custom-draft-card-search-group-expand-icon";
+        expandIcon.textContent = startsExpanded ? "−" : "+";
+
+        headerButton.appendChild(imageWrap);
+        headerButton.appendChild(main);
+        headerButton.appendChild(expandIcon);
+
+        const printingsWrap = document.createElement("div");
+        printingsWrap.className = "custom-draft-card-search-group-printings";
+
+        group.cards.forEach(function (card) {
+            printingsWrap.appendChild(createSearchResultPrintingRow(card));
+        });
+
+        function toggleGroupExpanded(event) {
+            if (event && event.target && event.target.closest(".custom-draft-card-zoomable")) {
+                return;
+            }
+
+            const isExpanded = groupElement.classList.contains("custom-draft-card-search-group-expanded");
+            const nextExpanded = !isExpanded;
+
+            groupElement.classList.toggle("custom-draft-card-search-group-expanded", nextExpanded);
+            headerButton.setAttribute("aria-expanded", nextExpanded ? "true" : "false");
+            expandIcon.textContent = nextExpanded ? "−" : "+";
+        }
+
+        headerButton.addEventListener("click", toggleGroupExpanded);
+
+        headerButton.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                toggleGroupExpanded(event);
+            }
+        });
+
+        groupElement.appendChild(headerButton);
+        groupElement.appendChild(printingsWrap);
+
+        return groupElement;
+    }
+
     function renderSearchResults(cards) {
         if (!searchResults) {
             return;
@@ -777,100 +1207,10 @@
             return;
         }
 
-        cards.forEach(function (card) {
-            const row = document.createElement("div");
-            row.className = "custom-draft-card-search-row";
+        const groups = getGroupedSearchCards(cards);
 
-            const manaValue = card.mana_value === null || card.mana_value === undefined || card.mana_value === ""
-                ? ""
-                : String(card.mana_value);
-
-            row.dataset.cardSearch = [
-                card.card_name || "",
-                card.set_code || "",
-                card.collector_number || "",
-                card.rarity || "",
-                card.type_line || "",
-                card.color_identity_json || "[]",
-                manaValue
-            ].join(" ").toLowerCase();
-
-            row.dataset.rarity = String(card.rarity || "").toLowerCase();
-            row.dataset.colorIdentity = String(card.color_identity_json || "[]").toLowerCase();
-            row.dataset.manaValue = manaValue;
-            row.dataset.typeLine = String(card.type_line || "").toLowerCase();
-
-            if (card.already_in_set) {
-                row.classList.add("custom-draft-card-search-row-disabled");
-            }
-
-            const imageWrap = document.createElement("div");
-            imageWrap.className = "custom-draft-card-search-image-wrap";
-
-            const image = document.createElement("img");
-            image.className = "custom-draft-card-search-image custom-draft-card-zoomable";
-            image.src = card.image_src || "";
-            image.alt = card.card_name || "Card";
-            image.setAttribute("role", "button");
-            image.setAttribute("tabindex", "0");
-            image.dataset.zoomSrc = card.image_src || "";
-            image.dataset.zoomAlt = card.card_name || "Card";
-
-            imageWrap.appendChild(image);
-
-            const main = document.createElement("div");
-            main.className = "custom-draft-card-search-main";
-
-            const title = document.createElement("div");
-            title.className = "custom-draft-card-search-title";
-            title.textContent = card.card_name || "Unknown Card";
-
-            const meta = document.createElement("div");
-            meta.className = "custom-draft-card-search-meta";
-
-            const displayManaValue = manaValue || "?";
-
-            const metaLineOne = document.createElement("div");
-            metaLineOne.className = "custom-draft-card-search-meta-line";
-            metaLineOne.textContent = [
-                card.set_code || "",
-                card.release_year ? card.release_year : "",
-                card.collector_number ? "#" + card.collector_number : "",
-                card.rarity || "",
-                "MV " + displayManaValue,
-                "Color Identity: " + getColorIdentityLabel(card.color_identity_json || "[]", card.type_line || "")
-            ].filter(Boolean).join(" • ");
-
-            const metaLineTwo = document.createElement("div");
-            metaLineTwo.className = "custom-draft-card-search-type-line";
-            metaLineTwo.textContent = card.type_line || "";
-
-            meta.appendChild(metaLineOne);
-            meta.appendChild(metaLineTwo);
-
-            main.appendChild(title);
-            main.appendChild(meta);
-
-            const actions = document.createElement("div");
-            actions.className = "custom-draft-card-search-actions";
-
-            const addButton = document.createElement("button");
-            addButton.type = "button";
-            addButton.className = "action-button secondary-button custom-draft-card-add-button";
-            addButton.textContent = card.already_in_set ? "Added" : "Add";
-            addButton.disabled = Boolean(card.already_in_set);
-
-            addButton.addEventListener("click", async function () {
-                await addCardToSet(card.card_uuid, addButton);
-            });
-
-            actions.appendChild(addButton);
-
-            row.appendChild(imageWrap);
-            row.appendChild(main);
-            row.appendChild(actions);
-
-            searchResults.appendChild(row);
+        groups.forEach(function (group) {
+            searchResults.appendChild(createSearchResultGroup(group));
         });
 
         bindZoomableImages();
@@ -929,6 +1269,10 @@
 
         if (searchYearEndFilter && (searchYearEndFilter.value || "").trim()) {
             params.set("year_end", (searchYearEndFilter.value || "").trim());
+        }
+
+        if (searchSortSelect && searchSortSelect.value) {
+            params.set("sort", searchSortSelect.value);
         }
 
         return searchUrl + "?" + params.toString();
@@ -1239,6 +1583,126 @@
         });
     }
 
+        function getRarityRank(rarityValue, highToLow) {
+        const cleanRarity = String(rarityValue || "").toLowerCase();
+
+        const lowHighRanks = {
+            "common": 1,
+            "uncommon": 2,
+            "rare": 3,
+            "mythic": 4
+        };
+
+        const highLowRanks = {
+            "mythic": 1,
+            "rare": 2,
+            "uncommon": 3,
+            "common": 4
+        };
+
+        const rankMap = highToLow ? highLowRanks : lowHighRanks;
+        return rankMap[cleanRarity] || 99;
+    }
+
+    function getNumericSortValue(rawValue, nullValue) {
+        const parsedValue = Number(rawValue);
+
+        if (!Number.isFinite(parsedValue)) {
+            return nullValue;
+        }
+
+        return parsedValue;
+    }
+
+    function compareText(a, b) {
+        return String(a || "").localeCompare(String(b || ""), undefined, {
+            sensitivity: "base",
+            numeric: true
+        });
+    }
+
+    function compareCardRows(rowA, rowB, sortValue) {
+        const sortOption = sortValue || "name_asc";
+
+        if (sortOption === "name_desc") {
+            return compareText(rowB.dataset.cardName, rowA.dataset.cardName);
+        }
+
+        if (sortOption === "set_asc") {
+            return compareText(rowA.dataset.setCode, rowB.dataset.setCode) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "set_desc") {
+            return compareText(rowB.dataset.setCode, rowA.dataset.setCode) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "year_newest") {
+            return getNumericSortValue(rowB.dataset.releaseDateSort, 0) - getNumericSortValue(rowA.dataset.releaseDateSort, 0) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "year_oldest") {
+            return getNumericSortValue(rowA.dataset.releaseDateSort, 99999999) - getNumericSortValue(rowB.dataset.releaseDateSort, 99999999) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "rarity_low_high") {
+            return getRarityRank(rowA.dataset.rarity, false) - getRarityRank(rowB.dataset.rarity, false) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "rarity_high_low") {
+            return getRarityRank(rowA.dataset.rarity, true) - getRarityRank(rowB.dataset.rarity, true) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "mv_low_high") {
+            return getNumericSortValue(rowA.dataset.manaValue, 999) - getNumericSortValue(rowB.dataset.manaValue, 999) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "mv_high_low") {
+            return getNumericSortValue(rowB.dataset.manaValue, -1) - getNumericSortValue(rowA.dataset.manaValue, -1) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "edhrec_rank_best") {
+            return getNumericSortValue(rowA.dataset.edhrecRank, 999999999) - getNumericSortValue(rowB.dataset.edhrecRank, 999999999) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "edhrec_rank_worst") {
+            return getNumericSortValue(rowB.dataset.edhrecRank, -1) - getNumericSortValue(rowA.dataset.edhrecRank, -1) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "edhrec_salt_high") {
+            return getNumericSortValue(rowB.dataset.edhrecSaltiness, -1) - getNumericSortValue(rowA.dataset.edhrecSaltiness, -1) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "edhrec_salt_low") {
+            return getNumericSortValue(rowA.dataset.edhrecSaltiness, 999999999) - getNumericSortValue(rowB.dataset.edhrecSaltiness, 999999999) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "price_high") {
+            return getNumericSortValue(rowB.dataset.sortPrice, -1) - getNumericSortValue(rowA.dataset.sortPrice, -1) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        if (sortOption === "price_low") {
+            return getNumericSortValue(rowA.dataset.sortPrice, 999999999) - getNumericSortValue(rowB.dataset.sortPrice, 999999999) || compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+        }
+
+        return compareText(rowA.dataset.cardName, rowB.dataset.cardName);
+    }
+
+    function sortRowsInContainer(containerElement, rowSelector, sortValue) {
+        if (!containerElement) {
+            return;
+        }
+
+        const rows = Array.from(containerElement.querySelectorAll(rowSelector));
+
+        rows.sort(function (rowA, rowB) {
+            return compareCardRows(rowA, rowB, sortValue);
+        });
+
+        rows.forEach(function (row) {
+            containerElement.appendChild(row);
+        });
+    }
+
     function filterSearchResults() {
         if (!searchResults) {
             return;
@@ -1250,21 +1714,54 @@
         const manaValue = searchManaValueFilter ? (searchManaValueFilter.value || "").trim() : "";
         const typeValue = searchTypeFilter ? (searchTypeFilter.value || "").trim().toLowerCase() : "";
 
-        const rows = Array.from(searchResults.querySelectorAll(".custom-draft-card-search-row"));
+        const groups = Array.from(searchResults.querySelectorAll(".custom-draft-card-search-group"));
 
-        rows.forEach(function (row) {
-            const rowRarity = row.dataset.rarity || "";
-            const rowTypeLine = row.dataset.typeLine || "";
+        groups.forEach(function (groupElement) {
+            const rows = Array.from(groupElement.querySelectorAll(".custom-draft-card-search-row"));
+            let visibleCount = 0;
 
-            const rarityMatches = !rarityValue || rowRarity === rarityValue;
-            const colorMatches = rowMatchesColorFilter(row, colorValue);
-            const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
-            const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
+            rows.forEach(function (row) {
+                const rowRarity = row.dataset.rarity || "";
+                const rowTypeLine = row.dataset.typeLine || "";
 
-            row.classList.toggle(
-                "hidden",
-                !(rarityMatches && colorMatches && manaMatches && typeMatches)
-            );
+                const rarityMatches = !rarityValue || rowRarity === rarityValue;
+                const colorMatches = rowMatchesColorFilter(row, colorValue);
+                const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
+                const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
+
+                const isVisible = rarityMatches && colorMatches && manaMatches && typeMatches;
+
+                row.classList.toggle("hidden", !isVisible);
+
+                if (isVisible) {
+                    visibleCount += 1;
+                }
+            });
+
+            groupElement.classList.toggle("hidden", visibleCount === 0);
+
+            const countBadge = groupElement.querySelector(".custom-draft-card-search-group-count");
+            if (countBadge) {
+                const totalCount = rows.length;
+                countBadge.textContent = visibleCount === totalCount
+                    ? totalCount + " printing(s)"
+                    : visibleCount + " of " + totalCount + " printing(s)";
+            }
+
+            if (visibleCount === 1 && rows.length > 1) {
+                const headerButton = groupElement.querySelector(".custom-draft-card-search-group-header");
+                const expandIcon = groupElement.querySelector(".custom-draft-card-search-group-expand-icon");
+
+                groupElement.classList.add("custom-draft-card-search-group-expanded");
+
+                if (headerButton) {
+                    headerButton.setAttribute("aria-expanded", "true");
+                }
+
+                if (expandIcon) {
+                    expandIcon.textContent = "−";
+                }
+            }
         });
     }
 
@@ -1298,6 +1795,12 @@
                 !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches)
             );
         });
+
+        sortRowsInContainer(
+            currentCardList,
+            ".custom-draft-current-card-row",
+            currentSortSelect ? currentSortSelect.value : "name_asc"
+        );
     }
 
     function renderExistingColorIdentityLabels() {
@@ -1372,24 +1875,38 @@
         generatedSaveButton.addEventListener("click", saveGeneratedPreviewPack);
     }
 
-    function setSearchPanelMaximized(isMaximized) {
-        if (!searchPanel) {
+    function openAddCardsSearch() {
+        if (!searchOverlay) {
             return;
         }
 
-        searchPanel.classList.toggle("custom-draft-card-search-panel-maximized", Boolean(isMaximized));
-        document.body.classList.toggle("custom-draft-search-maximized-active", Boolean(isMaximized));
+        searchOverlay.classList.remove("hidden");
+        searchOverlay.setAttribute("aria-hidden", "false");
+        document.body.classList.add("custom-draft-search-maximized-active");
 
-        if (searchMaximizeButton) {
-            searchMaximizeButton.textContent = isMaximized ? "Restore" : "Maximize";
+        if (searchInput) {
+            window.setTimeout(function () {
+                searchInput.focus();
+            }, 50);
         }
     }
 
-    if (searchMaximizeButton) {
-        searchMaximizeButton.addEventListener("click", function () {
-            const isCurrentlyMaximized = searchPanel && searchPanel.classList.contains("custom-draft-card-search-panel-maximized");
-            setSearchPanelMaximized(!isCurrentlyMaximized);
-        });
+    function closeAddCardsSearch() {
+        if (!searchOverlay) {
+            return;
+        }
+
+        searchOverlay.classList.add("hidden");
+        searchOverlay.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("custom-draft-search-maximized-active");
+    }
+
+    if (openAddCardsButton) {
+        openAddCardsButton.addEventListener("click", openAddCardsSearch);
+    }
+
+    if (closeAddCardsButton) {
+        closeAddCardsButton.addEventListener("click", closeAddCardsSearch);
     }
 
     if (searchButton) {
@@ -1412,6 +1929,7 @@
         searchManaValueFilter,
         searchTypeFilter,
         searchSetCodeFilter,
+        searchSortSelect,
         searchYearStartFilter,
         searchYearEndFilter
     ].forEach(function (searchFilterElement) {
@@ -1433,7 +1951,8 @@
         colorFilter,
         manaOperatorFilter,
         manaValueFilter,
-        typeFilter
+        typeFilter,
+        currentSortSelect
     ].forEach(function (filterElement) {
         if (filterElement) {
             filterElement.addEventListener("input", filterCurrentCards);
@@ -1480,6 +1999,10 @@
                 typeFilter.value = "";
             }
 
+            if (currentSortSelect) {
+                currentSortSelect.value = "name_asc";
+            }
+
             filterCurrentCards();
         });
     }
@@ -1522,6 +2045,10 @@
                 searchYearEndFilter.value = "";
             }
 
+            if (searchSortSelect) {
+                searchSortSelect.value = "name_asc";
+            }
+
             clearSearchResults();
             setSearchStatus("", false);
         });
@@ -1545,8 +2072,8 @@
             return;
         }
 
-        if (searchPanel && searchPanel.classList.contains("custom-draft-card-search-panel-maximized")) {
-            setSearchPanelMaximized(false);
+        if (searchOverlay && !searchOverlay.classList.contains("hidden")) {
+            closeAddCardsSearch();
         }
     });
 

@@ -145,6 +145,8 @@ def initialize_database():
         ensure_column_exists(cursor, "chaos_cards", "back_face_name", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "colors_json", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "color_identity_json", "TEXT")
+        ensure_column_exists(cursor, "chaos_cards", "edhrec_rank", "INTEGER")
+        ensure_column_exists(cursor, "chaos_cards", "edhrec_saltiness", "REAL")
     if table_exists_with_cursor(cursor, "tracked_chaos_packs"):
         ensure_column_exists(cursor, "tracked_chaos_packs", "campaign_enabled", "INTEGER NOT NULL DEFAULT 1")
 
@@ -234,7 +236,9 @@ def initialize_database():
             frame_version TEXT,
             border_color TEXT,
             colors_json TEXT,
-            color_identity_json TEXT
+            color_identity_json TEXT,
+            edhrec_rank INTEGER,
+            edhrec_saltiness REAL
         )
         """
     )
@@ -243,6 +247,8 @@ def initialize_database():
     ensure_column_exists(cursor, "chaos_cards", "border_color", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "colors_json", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "color_identity_json", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "edhrec_rank", "INTEGER")
+    ensure_column_exists(cursor, "chaos_cards", "edhrec_saltiness", "REAL")
 
     cursor.execute(
         """
@@ -255,6 +261,20 @@ def initialize_database():
         """
         CREATE INDEX IF NOT EXISTS idx_chaos_cards_name
         ON chaos_cards (card_name)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_cards_edhrec_rank
+        ON chaos_cards (edhrec_rank)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chaos_cards_edhrec_saltiness
+        ON chaos_cards (edhrec_saltiness)
         """
     )
 
@@ -615,6 +635,8 @@ def initialize_database():
     conn.commit()
     conn.close()
 
+    restore_custom_draft_sets_to_sets_table()
+
 
 def get_config():
     conn = get_db_connection()
@@ -815,6 +837,35 @@ def normalize_custom_draft_set_code(raw_set_code):
 
     return clean_code
 
+def restore_custom_draft_sets_to_sets_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO sets (
+            set_code,
+            set_name,
+            release_date,
+            set_block,
+            set_type,
+            local_icon_svg_path
+        )
+        SELECT
+            cds.set_code,
+            cds.set_code,
+            COALESCE(SUBSTR(cds.created_at_utc, 1, 10), '2026-01-01'),
+            'Custom',
+            'custom',
+            cds.icon_svg_path
+        FROM custom_draft_sets cds
+        LEFT JOIN sets s ON s.set_code = cds.set_code
+        WHERE s.set_code IS NULL
+        """
+    )
+
+    conn.commit()
+    conn.close()
 
 def get_custom_draft_sets():
     conn = get_db_connection()
@@ -824,10 +875,10 @@ def get_custom_draft_sets():
         """
         SELECT
             cds.set_code,
-            s.set_name,
-            s.release_date,
-            s.set_type,
-            s.local_icon_svg_path,
+            COALESCE(s.set_name, cds.set_code) AS set_name,
+            COALESCE(s.release_date, SUBSTR(cds.created_at_utc, 1, 10)) AS release_date,
+            COALESCE(s.set_type, 'custom') AS set_type,
+            COALESCE(s.local_icon_svg_path, cds.icon_svg_path) AS local_icon_svg_path,
             cds.special_category_1_name,
             cds.special_category_2_name,
             cds.special_category_3_name,
@@ -841,8 +892,10 @@ def get_custom_draft_sets():
                 WHERE cdsc.set_code = cds.set_code
             ) AS card_count
         FROM custom_draft_sets cds
-        INNER JOIN sets s ON s.set_code = cds.set_code
-        ORDER BY s.release_date DESC, s.set_name COLLATE NOCASE ASC
+        LEFT JOIN sets s ON s.set_code = cds.set_code
+        ORDER BY
+            COALESCE(s.release_date, SUBSTR(cds.created_at_utc, 1, 10)) DESC,
+            COALESCE(s.set_name, cds.set_code) COLLATE NOCASE ASC
         """
     )
 
@@ -864,10 +917,10 @@ def get_custom_draft_set(set_code):
         """
         SELECT
             cds.set_code,
-            s.set_name,
-            s.release_date,
-            s.set_type,
-            s.local_icon_svg_path,
+            COALESCE(s.set_name, cds.set_code) AS set_name,
+            COALESCE(s.release_date, SUBSTR(cds.created_at_utc, 1, 10)) AS release_date,
+            COALESCE(s.set_type, 'custom') AS set_type,
+            COALESCE(s.local_icon_svg_path, cds.icon_svg_path) AS local_icon_svg_path,
             cds.special_category_1_name,
             cds.special_category_2_name,
             cds.special_category_3_name,
@@ -881,7 +934,7 @@ def get_custom_draft_set(set_code):
                 WHERE cdsc.set_code = cds.set_code
             ) AS card_count
         FROM custom_draft_sets cds
-        INNER JOIN sets s ON s.set_code = cds.set_code
+        LEFT JOIN sets s ON s.set_code = cds.set_code
         WHERE cds.set_code = ?
         """,
         (clean_set_code,),
@@ -1487,6 +1540,20 @@ def custom_draft_card_matches_basic_land(card_row):
     type_line = ((card_row["type_line"] if "type_line" in card_row.keys() else "") or "").strip().lower()
     return "basic" in type_line and "land" in type_line
 
+def custom_draft_basic_land_allowed_for_slot(card_row, rarity_rule, special_category_rule):
+    if not custom_draft_card_matches_basic_land(card_row):
+        return True
+
+    clean_rarity_rule = str(rarity_rule or "any").strip().lower()
+    clean_special_category_rule = str(special_category_rule or "none").strip().lower()
+
+    if clean_rarity_rule == "basic_land":
+        return True
+
+    if clean_special_category_rule != "none" and clean_rarity_rule == "any":
+        return True
+
+    return False
 
 def get_custom_draft_rarity_bucket_for_rule(rarity_rule):
     clean_rarity_rule = str(rarity_rule or "any").strip().lower()
@@ -1539,13 +1606,13 @@ def custom_draft_card_matches_rarity_rule(card_row, rarity_rule):
 def custom_draft_card_matches_special_category_rule(card_row, special_category_rule):
     clean_special_category_rule = str(special_category_rule or "none").strip().lower()
 
-    if clean_special_category_rule == "none":
-        return True
-
     try:
         category_index = int(card_row["special_category_index"] or 0)
     except (TypeError, ValueError):
         category_index = 0
+
+    if clean_special_category_rule == "none":
+        return category_index == 0
 
     if clean_special_category_rule == "category_1":
         return category_index == 1
@@ -1556,10 +1623,40 @@ def custom_draft_card_matches_special_category_rule(card_row, special_category_r
     if clean_special_category_rule == "category_3":
         return category_index == 3
 
-    return True
+    return category_index == 0
+
+def get_custom_draft_card_special_category_index(card_row):
+    try:
+        return int(card_row["special_category_index"] or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
-def filter_custom_draft_pack_candidates(card_pool, slot_rule, allow_special_category=True):
+def get_custom_draft_rule_special_category_index(special_category_rule):
+    clean_special_category_rule = str(special_category_rule or "none").strip().lower()
+
+    if clean_special_category_rule == "category_1":
+        return 1
+
+    if clean_special_category_rule == "category_2":
+        return 2
+
+    if clean_special_category_rule == "category_3":
+        return 3
+
+    return 0
+
+
+def filter_custom_draft_candidates_for_exact_special_category(candidate_cards, special_category_rule):
+    required_category_index = get_custom_draft_rule_special_category_index(special_category_rule)
+
+    return [
+        card_row
+        for card_row in candidate_cards or []
+        if get_custom_draft_card_special_category_index(card_row) == required_category_index
+    ]
+
+def filter_custom_draft_pack_candidates(card_pool, slot_rule):
     filtered_cards = []
 
     color_rule = slot_rule["color_rule"] if "color_rule" in slot_rule.keys() else "any"
@@ -1567,13 +1664,16 @@ def filter_custom_draft_pack_candidates(card_pool, slot_rule, allow_special_cate
     special_category_rule = slot_rule["special_category_rule"] if "special_category_rule" in slot_rule.keys() else "none"
 
     for card_row in card_pool:
+        if not custom_draft_card_matches_special_category_rule(card_row, special_category_rule):
+            continue
+
+        if not custom_draft_basic_land_allowed_for_slot(card_row, rarity_rule, special_category_rule):
+            continue
+
         if not custom_draft_card_matches_color_rule(card_row, color_rule):
             continue
 
         if not custom_draft_card_matches_rarity_rule(card_row, rarity_rule):
-            continue
-
-        if allow_special_category and not custom_draft_card_matches_special_category_rule(card_row, special_category_rule):
             continue
 
         filtered_cards.append(card_row)
@@ -1612,7 +1712,6 @@ def get_custom_draft_pack_candidates_with_fallback(card_pool, slot_rule):
         candidates = filter_custom_draft_pack_candidates(
             card_pool,
             fallback_rule,
-            allow_special_category=fallback_rule["special_category_rule"] != "none",
         )
 
         if candidates:
@@ -1761,10 +1860,36 @@ def generate_custom_draft_set_pack_cards(set_code, booster_name):
         if not candidates:
             raise ValueError(f"No valid cards were found for slot {slot['slot_number']}.")
 
+        effective_special_category_rule = (
+            effective_rule["special_category_rule"]
+            if effective_rule
+            else slot["special_category_rule"]
+        )
+
         candidates = apply_custom_draft_weighted_rarity_choice(
             candidates,
             effective_rule["rarity_rule"] if effective_rule else slot["rarity_rule"],
         )
+
+        candidates = filter_custom_draft_candidates_for_exact_special_category(
+            candidates,
+            effective_special_category_rule,
+        )
+
+        candidates = [
+            card_row
+            for card_row in candidates
+            if custom_draft_basic_land_allowed_for_slot(
+                card_row,
+                effective_rule["rarity_rule"] if effective_rule else slot["rarity_rule"],
+                effective_special_category_rule,
+            )
+        ]
+
+        if not candidates:
+            raise ValueError(
+                f"No valid cards remained for slot {slot['slot_number']} after enforcing special slot and basic land placement."
+            )
 
         unused_candidates = [
             card_row
@@ -1785,6 +1910,12 @@ def generate_custom_draft_set_pack_cards(set_code, booster_name):
             clean_booster_name,
             0,
         )
+
+        generated_card["custom_slot_number"] = int(slot["slot_number"])
+        generated_card["custom_slot_special_category_rule"] = slot["special_category_rule"]
+        generated_card["custom_effective_special_category_rule"] = effective_special_category_rule
+        generated_card["custom_card_special_category_index"] = get_custom_draft_card_special_category_index(chosen_card)
+        generated_card["custom_card_is_basic_land"] = custom_draft_card_matches_basic_land(chosen_card)
 
         fallback_label = fallback_result["fallback_label"]
 
@@ -1831,9 +1962,17 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
             cc.mana_value,
             cc.colors_json,
             cc.color_identity_json,
+            cc.edhrec_rank,
+            cc.edhrec_saltiness,
+            COALESCE(
+                cp.tcgplayer_normal_price,
+                cp.tcgplayer_foil_price,
+                cp.tcgplayer_etched_price
+            ) AS sort_price,
             cc.is_dual_faced
         FROM custom_draft_set_cards cdsc
         INNER JOIN chaos_cards cc ON cc.card_uuid = cdsc.card_uuid
+        LEFT JOIN card_prices cp ON cp.card_uuid = cc.card_uuid
         WHERE cdsc.set_code = ?
     """
 
@@ -1879,6 +2018,7 @@ def search_chaos_cards_for_custom_draft_set(
     set_code_filter="",
     year_start=None,
     year_end=None,
+    sort_option="name_asc",
 ):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_search_text = str(search_text or "").strip().lower()
@@ -1887,6 +2027,7 @@ def search_chaos_cards_for_custom_draft_set(
     clean_mana_operator = str(mana_operator or "").strip()
     clean_type_filter = str(type_filter or "").strip().lower()
     clean_set_code_filter = str(set_code_filter or "").strip().upper()
+    clean_sort_option = str(sort_option or "name_asc").strip().lower()
 
     try:
         parsed_limit = int(limit)
@@ -2060,20 +2201,73 @@ def search_chaos_cards_for_custom_draft_set(
         where_sql = "WHERE " + " AND ".join(where_clauses)
 
     order_exact_params = []
+    search_rank_sql = ""
+
     if clean_search_text:
         order_exact_params = [
             clean_search_text,
             f"{clean_search_text}%",
         ]
-        order_sql = """
+        search_rank_sql = """
             CASE
                 WHEN LOWER(cc.card_name) = ? THEN 0
                 WHEN LOWER(cc.card_name) LIKE ? THEN 1
                 ELSE 2
             END,
         """
-    else:
-        order_sql = ""
+
+    sort_sql_map = {
+        "name_asc": "cc.card_name COLLATE NOCASE ASC, cc.set_code ASC, CAST(cc.collector_number AS INTEGER) ASC, cc.collector_number ASC",
+        "name_desc": "cc.card_name COLLATE NOCASE DESC, cc.set_code ASC, CAST(cc.collector_number AS INTEGER) ASC, cc.collector_number ASC",
+        "set_asc": "cc.set_code ASC, CAST(cc.collector_number AS INTEGER) ASC, cc.collector_number ASC, cc.card_name COLLATE NOCASE ASC",
+        "set_desc": "cc.set_code DESC, CAST(cc.collector_number AS INTEGER) ASC, cc.collector_number ASC, cc.card_name COLLATE NOCASE ASC",
+        "year_newest": "CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC, cc.card_name COLLATE NOCASE ASC",
+        "year_oldest": "CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) ASC, cc.card_name COLLATE NOCASE ASC",
+        "rarity_low_high": """
+            CASE LOWER(COALESCE(cc.rarity, ''))
+                WHEN 'common' THEN 1
+                WHEN 'uncommon' THEN 2
+                WHEN 'rare' THEN 3
+                WHEN 'mythic' THEN 4
+                ELSE 9
+            END ASC,
+            cc.card_name COLLATE NOCASE ASC
+        """,
+        "rarity_high_low": """
+            CASE LOWER(COALESCE(cc.rarity, ''))
+                WHEN 'mythic' THEN 1
+                WHEN 'rare' THEN 2
+                WHEN 'uncommon' THEN 3
+                WHEN 'common' THEN 4
+                ELSE 9
+            END ASC,
+            cc.card_name COLLATE NOCASE ASC
+        """,
+        "mv_low_high": "COALESCE(cc.mana_value, 999) ASC, cc.card_name COLLATE NOCASE ASC",
+        "mv_high_low": "COALESCE(cc.mana_value, -1) DESC, cc.card_name COLLATE NOCASE ASC",
+        "edhrec_rank_best": "CASE WHEN cc.edhrec_rank IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_rank ASC, cc.card_name COLLATE NOCASE ASC",
+        "edhrec_rank_worst": "CASE WHEN cc.edhrec_rank IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_rank DESC, cc.card_name COLLATE NOCASE ASC",
+        "edhrec_salt_high": "CASE WHEN cc.edhrec_saltiness IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_saltiness DESC, cc.card_name COLLATE NOCASE ASC",
+        "edhrec_salt_low": "CASE WHEN cc.edhrec_saltiness IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_saltiness ASC, cc.card_name COLLATE NOCASE ASC",
+        "price_high": """
+            CASE
+                WHEN COALESCE(cp.tcgplayer_normal_price, cp.tcgplayer_foil_price, cp.tcgplayer_etched_price) IS NULL THEN 1
+                ELSE 0
+            END ASC,
+            COALESCE(cp.tcgplayer_normal_price, cp.tcgplayer_foil_price, cp.tcgplayer_etched_price) DESC,
+            cc.card_name COLLATE NOCASE ASC
+        """,
+        "price_low": """
+            CASE
+                WHEN COALESCE(cp.tcgplayer_normal_price, cp.tcgplayer_foil_price, cp.tcgplayer_etched_price) IS NULL THEN 1
+                ELSE 0
+            END ASC,
+            COALESCE(cp.tcgplayer_normal_price, cp.tcgplayer_foil_price, cp.tcgplayer_etched_price) ASC,
+            cc.card_name COLLATE NOCASE ASC
+        """,
+    }
+
+    sort_sql = sort_sql_map.get(clean_sort_option, sort_sql_map["name_asc"])
 
     cursor.execute(
         f"""
@@ -2089,6 +2283,13 @@ def search_chaos_cards_for_custom_draft_set(
             cc.mana_value,
             cc.colors_json,
             cc.color_identity_json,
+            cc.edhrec_rank,
+            cc.edhrec_saltiness,
+            COALESCE(
+                cp.tcgplayer_normal_price,
+                cp.tcgplayer_foil_price,
+                cp.tcgplayer_etched_price
+            ) AS sort_price,
             cc.is_dual_faced,
             CASE
                 WHEN cdsc.custom_set_card_id IS NULL THEN 0
@@ -2097,17 +2298,16 @@ def search_chaos_cards_for_custom_draft_set(
         FROM chaos_cards cc
         LEFT JOIN sets s
             ON s.set_code = cc.set_code
+        LEFT JOIN card_prices cp
+            ON cp.card_uuid = cc.card_uuid
         LEFT JOIN custom_draft_set_cards cdsc
             ON cdsc.card_uuid = cc.card_uuid
            AND cdsc.set_code = ?
         {where_sql}
         ORDER BY
-            {order_sql}
+            {search_rank_sql}
             already_in_set ASC,
-            cc.card_name COLLATE NOCASE ASC,
-            cc.set_code ASC,
-            CAST(cc.collector_number AS INTEGER) ASC,
-            cc.collector_number ASC
+            {sort_sql}
         LIMIT ?
         """,
         params + order_exact_params + [parsed_limit],
