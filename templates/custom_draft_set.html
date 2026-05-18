@@ -240,7 +240,7 @@
                         type="text"
                         id="customDraftCardSearchInput"
                         class="campaign-add-pack-custom-input"
-                        placeholder="Search card name, set code, rarity, type, or collector number..."
+                        placeholder="Optional: card name, rarity, type, collector number..."
                         autocomplete="off"
                     >
 
@@ -251,9 +251,17 @@
                     >
                         Search
                     </button>
+
+                    <button
+                        type="button"
+                        id="customDraftCardSearchMaximizeButton"
+                        class="action-button secondary-button"
+                    >
+                        Maximize
+                    </button>
                 </div>
 
-                <div class="custom-draft-search-filter-grid">
+                <div class="custom-draft-search-builder-grid">
                     <label class="custom-draft-filter-field">
                         <span>Rarity</span>
                         <select id="customDraftSearchRarityFilter" class="custom-draft-filter-input">
@@ -280,6 +288,18 @@
                             <option value="colorless_multi">Colorless/Multi</option>
                             <option value="colorless_multi_land">Colorless/Multi/Land</option>
                         </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Set Code</span>
+                        <input
+                            type="text"
+                            id="customDraftSearchSetCodeFilter"
+                            class="custom-draft-filter-input"
+                            maxlength="12"
+                            placeholder="Any"
+                            autocomplete="off"
+                        >
                     </label>
 
                     <label class="custom-draft-filter-field">
@@ -321,14 +341,42 @@
                         </select>
                     </label>
 
+                    <label class="custom-draft-filter-field">
+                        <span>Start Year</span>
+                        <input
+                            type="number"
+                            id="customDraftSearchYearStartFilter"
+                            class="custom-draft-filter-input"
+                            min="1993"
+                            max="2100"
+                            step="1"
+                            placeholder="Any"
+                        >
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>End Year</span>
+                        <input
+                            type="number"
+                            id="customDraftSearchYearEndFilter"
+                            class="custom-draft-filter-input"
+                            min="1993"
+                            max="2100"
+                            step="1"
+                            placeholder="Any"
+                        >
+                    </label>
+
                     <button
                         type="button"
                         id="customDraftSearchClearFiltersButton"
                         class="action-button secondary-button custom-draft-clear-filters-button"
                     >
-                        Clear Filters
+                        Clear Search
                     </button>
                 </div>
+
+
 
                 <div id="customDraftCardSearchStatus" class="custom-draft-card-search-status hidden"></div>
                 <div id="customDraftCardSearchResults" class="custom-draft-card-search-results hidden"></div>
@@ -542,11 +590,16 @@
     const searchButton = document.getElementById("customDraftCardSearchButton");
     const searchStatus = document.getElementById("customDraftCardSearchStatus");
     const searchResults = document.getElementById("customDraftCardSearchResults");
+    const searchPanel = document.querySelector(".custom-draft-card-search-panel");
+    const searchMaximizeButton = document.getElementById("customDraftCardSearchMaximizeButton");
     const searchRarityFilter = document.getElementById("customDraftSearchRarityFilter");
     const searchColorFilter = document.getElementById("customDraftSearchColorFilter");
     const searchManaOperatorFilter = document.getElementById("customDraftSearchManaOperatorFilter");
     const searchManaValueFilter = document.getElementById("customDraftSearchManaValueFilter");
     const searchTypeFilter = document.getElementById("customDraftSearchTypeFilter");
+    const searchSetCodeFilter = document.getElementById("customDraftSearchSetCodeFilter");
+    const searchYearStartFilter = document.getElementById("customDraftSearchYearStartFilter");
+    const searchYearEndFilter = document.getElementById("customDraftSearchYearEndFilter");
     const searchClearFiltersButton = document.getElementById("customDraftSearchClearFiltersButton");
 
     const currentFilterInput = document.getElementById("customDraftCurrentCardFilterInput");
@@ -777,14 +830,23 @@
 
             const displayManaValue = manaValue || "?";
 
-            meta.textContent = [
+            const metaLineOne = document.createElement("div");
+            metaLineOne.className = "custom-draft-card-search-meta-line";
+            metaLineOne.textContent = [
                 card.set_code || "",
+                card.release_year ? card.release_year : "",
                 card.collector_number ? "#" + card.collector_number : "",
                 card.rarity || "",
                 "MV " + displayManaValue,
-                "Color Identity: " + getColorIdentityLabel(card.color_identity_json || "[]", card.type_line || ""),
-                card.type_line || ""
+                "Color Identity: " + getColorIdentityLabel(card.color_identity_json || "[]", card.type_line || "")
             ].filter(Boolean).join(" • ");
+
+            const metaLineTwo = document.createElement("div");
+            metaLineTwo.className = "custom-draft-card-search-type-line";
+            metaLineTwo.textContent = card.type_line || "";
+
+            meta.appendChild(metaLineOne);
+            meta.appendChild(metaLineTwo);
 
             main.appendChild(title);
             main.appendChild(meta);
@@ -816,15 +878,69 @@
         filterSearchResults();
     }
 
+    function getAdvancedSearchHasAnyValue() {
+        return Boolean(
+            (searchInput && (searchInput.value || "").trim()) ||
+            (searchRarityFilter && (searchRarityFilter.value || "").trim()) ||
+            (searchColorFilter && (searchColorFilter.value || "").trim()) ||
+            (searchManaOperatorFilter && (searchManaOperatorFilter.value || "").trim()) ||
+            (searchManaValueFilter && (searchManaValueFilter.value || "").trim()) ||
+            (searchTypeFilter && (searchTypeFilter.value || "").trim()) ||
+            (searchSetCodeFilter && (searchSetCodeFilter.value || "").trim()) ||
+            (searchYearStartFilter && (searchYearStartFilter.value || "").trim()) ||
+            (searchYearEndFilter && (searchYearEndFilter.value || "").trim())
+        );
+    }
+
+    function buildAdvancedCardSearchUrl() {
+        const params = new URLSearchParams();
+
+        if (searchInput && (searchInput.value || "").trim()) {
+            params.set("q", (searchInput.value || "").trim());
+        }
+
+        if (searchRarityFilter && searchRarityFilter.value) {
+            params.set("rarity", searchRarityFilter.value);
+        }
+
+        if (searchColorFilter && searchColorFilter.value) {
+            params.set("color_identity", searchColorFilter.value);
+        }
+
+        if (searchManaOperatorFilter && searchManaOperatorFilter.value) {
+            params.set("mana_operator", searchManaOperatorFilter.value);
+        }
+
+        if (searchManaValueFilter && (searchManaValueFilter.value || "").trim()) {
+            params.set("mana_value", (searchManaValueFilter.value || "").trim());
+        }
+
+        if (searchTypeFilter && searchTypeFilter.value) {
+            params.set("type", searchTypeFilter.value);
+        }
+
+        if (searchSetCodeFilter && (searchSetCodeFilter.value || "").trim()) {
+            params.set("set_code", (searchSetCodeFilter.value || "").trim().toUpperCase());
+        }
+
+        if (searchYearStartFilter && (searchYearStartFilter.value || "").trim()) {
+            params.set("year_start", (searchYearStartFilter.value || "").trim());
+        }
+
+        if (searchYearEndFilter && (searchYearEndFilter.value || "").trim()) {
+            params.set("year_end", (searchYearEndFilter.value || "").trim());
+        }
+
+        return searchUrl + "?" + params.toString();
+    }
+
     async function runCardSearch() {
-        if (!searchInput || !searchButton) {
+        if (!searchButton) {
             return;
         }
 
-        const query = (searchInput.value || "").trim();
-
-        if (!query) {
-            setSearchStatus("Enter a card search first.", true);
+        if (!getAdvancedSearchHasAnyValue()) {
+            setSearchStatus("Enter a text search or choose at least one search option.", true);
             clearSearchResults();
             return;
         }
@@ -835,7 +951,7 @@
         setSearchStatus("", false);
 
         try {
-            const response = await fetch(searchUrl + "?q=" + encodeURIComponent(query), {
+            const response = await fetch(buildAdvancedCardSearchUrl(), {
                 method: "GET",
                 headers: {
                     "Accept": "application/json"
@@ -849,7 +965,7 @@
             }
 
             renderSearchResults(payload.results || []);
-            setSearchStatus("Loaded " + (payload.results || []).length + " result(s). Use filters to narrow the list.", false);
+            setSearchStatus("Loaded " + (payload.results || []).length + " result(s).", false);
         } catch (error) {
             console.error(error);
             clearSearchResults();
@@ -1021,10 +1137,14 @@
 
             button.classList.remove("action-button-loading");
             button.textContent = payload.inserted ? "Added" : "Already Added";
+            button.disabled = true;
 
-            window.setTimeout(function () {
-                window.location.reload();
-            }, 400);
+            const resultRow = button.closest(".custom-draft-card-search-row");
+            if (resultRow) {
+                resultRow.classList.add("custom-draft-card-search-row-disabled");
+            }
+
+            setSearchStatus(payload.message || "Card added. Search results remain open.", false);
         } catch (error) {
             console.error(error);
             button.disabled = false;
@@ -1252,6 +1372,26 @@
         generatedSaveButton.addEventListener("click", saveGeneratedPreviewPack);
     }
 
+    function setSearchPanelMaximized(isMaximized) {
+        if (!searchPanel) {
+            return;
+        }
+
+        searchPanel.classList.toggle("custom-draft-card-search-panel-maximized", Boolean(isMaximized));
+        document.body.classList.toggle("custom-draft-search-maximized-active", Boolean(isMaximized));
+
+        if (searchMaximizeButton) {
+            searchMaximizeButton.textContent = isMaximized ? "Restore" : "Maximize";
+        }
+    }
+
+    if (searchMaximizeButton) {
+        searchMaximizeButton.addEventListener("click", function () {
+            const isCurrentlyMaximized = searchPanel && searchPanel.classList.contains("custom-draft-card-search-panel-maximized");
+            setSearchPanelMaximized(!isCurrentlyMaximized);
+        });
+    }
+
     if (searchButton) {
         searchButton.addEventListener("click", runCardSearch);
     }
@@ -1264,6 +1404,28 @@
             }
         });
     }
+
+    [
+        searchRarityFilter,
+        searchColorFilter,
+        searchManaOperatorFilter,
+        searchManaValueFilter,
+        searchTypeFilter,
+        searchSetCodeFilter,
+        searchYearStartFilter,
+        searchYearEndFilter
+    ].forEach(function (searchFilterElement) {
+        if (!searchFilterElement) {
+            return;
+        }
+
+        searchFilterElement.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                runCardSearch();
+            }
+        });
+    });
 
     [
         currentFilterInput,
@@ -1324,6 +1486,10 @@
 
     if (searchClearFiltersButton) {
         searchClearFiltersButton.addEventListener("click", function () {
+            if (searchInput) {
+                searchInput.value = "";
+            }
+
             if (searchRarityFilter) {
                 searchRarityFilter.value = "";
             }
@@ -1344,7 +1510,20 @@
                 searchTypeFilter.value = "";
             }
 
-            filterSearchResults();
+            if (searchSetCodeFilter) {
+                searchSetCodeFilter.value = "";
+            }
+
+            if (searchYearStartFilter) {
+                searchYearStartFilter.value = "";
+            }
+
+            if (searchYearEndFilter) {
+                searchYearEndFilter.value = "";
+            }
+
+            clearSearchResults();
+            setSearchStatus("", false);
         });
     }
 
@@ -1357,8 +1536,17 @@
     }
 
     document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && zoomOverlay && !zoomOverlay.classList.contains("hidden")) {
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        if (zoomOverlay && !zoomOverlay.classList.contains("hidden")) {
             closeZoom();
+            return;
+        }
+
+        if (searchPanel && searchPanel.classList.contains("custom-draft-card-search-panel-maximized")) {
+            setSearchPanelMaximized(false);
         }
     });
 

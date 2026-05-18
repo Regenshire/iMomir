@@ -5335,7 +5335,7 @@ input {
 
 .custom-draft-card-search-controls {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 140px;
+    grid-template-columns: minmax(0, 1fr) 140px 150px;
     gap: 12px;
     align-items: stretch;
 }
@@ -5368,7 +5368,7 @@ input {
 
 .custom-draft-card-search-row {
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr) 110px;
+    grid-template-columns: 80px minmax(0, 1fr) 110px;
     gap: 12px;
     align-items: center;
     border: 1px solid var(--border);
@@ -5382,8 +5382,8 @@ input {
 }
 
 .custom-draft-card-search-image-wrap {
-    width: 64px;
-    height: 88px;
+    width: 80px;
+    height: 110px;
     border-radius: 8px;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.04);
@@ -5568,14 +5568,18 @@ input {
     }
 
     .custom-draft-card-search-row {
-        grid-template-columns: 56px minmax(0, 1fr);
+        grid-template-columns: 70px minmax(0, 1fr);
     }
 
     .custom-draft-card-search-actions {
         grid-column: 1 / -1;
     }
 
-    .custom-draft-card-search-image-wrap,
+    .custom-draft-card-search-image-wrap {
+        width: 70px;
+        height: 98px;
+    }
+
     .custom-draft-current-card-image-wrap {
         width: 56px;
         height: 78px;
@@ -5677,29 +5681,6 @@ input {
 
     .custom-draft-card-remove-button {
         margin-top: 0;
-    }
-}
-
-/* ==========================================
-   Custom Draft Search Filters
-   ========================================== */
-
-.custom-draft-search-filter-grid {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 12px;
-}
-
-@media (max-width: 1100px) {
-    .custom-draft-search-filter-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 700px) {
-    .custom-draft-search-filter-grid {
-        grid-template-columns: 1fr;
     }
 }
 
@@ -5882,4 +5863,61 @@ input {
         width: 48px;
         min-width: 48px;
     }
+}
+
+/* ==========================================
+   Custom Draft Advanced Card Search
+   ========================================== */
+
+.custom-draft-search-builder-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+@media (max-width: 1100px) {
+    .custom-draft-search-builder-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .custom-draft-search-builder-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================
+   Custom Draft Search Panel Maximize
+   ========================================== */
+
+.custom-draft-card-search-meta-line {
+    color: var(--muted);
+    font-size: 0.88rem;
+    line-height: 1.35;
+}
+
+.custom-draft-card-search-type-line {
+    color: #dbe7ff;
+    font-size: 0.88rem;
+    line-height: 1.35;
+    margin-top: 4px;
+}
+
+.custom-draft-card-search-panel-maximized {
+    position: fixed;
+    inset: 12px;
+    z-index: 1400;
+    overflow-y: auto;
+    max-height: calc(100vh - 24px);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.62);
+}
+
+.custom-draft-card-search-panel-maximized .custom-draft-card-search-results {
+    max-height: calc(100vh - 320px);
+}
+
+.custom-draft-search-maximized-active {
+    overflow: hidden;
 }

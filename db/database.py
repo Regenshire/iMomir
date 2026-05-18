@@ -1703,16 +1703,16 @@ def resolve_custom_draft_foil_flag(foil_rule):
     return 0
 
 
-def serialize_custom_draft_pack_card(card_row, slot_rule, card_order):
+def serialize_custom_draft_pack_card(card_row, slot_rule, card_order, pack_set_code, booster_name, booster_index=0):
     sheet_is_foil = resolve_custom_draft_foil_flag(slot_rule["foil_rule"] if "foil_rule" in slot_rule.keys() else "no")
 
     return {
         "card_order": int(card_order),
         "card_uuid": card_row["card_uuid"],
         "card_name": card_row["card_name"],
-        "set_code": card_row["card_set_code"],
-        "booster_name": "custom_draft_set",
-        "booster_index": 0,
+        "set_code": (pack_set_code or "").strip().upper(),
+        "booster_name": (booster_name or "").strip().lower(),
+        "booster_index": int(booster_index or 0),
         "sheet_name": f"custom_slot_{int(card_order)}",
         "sheet_is_foil": sheet_is_foil,
         "sheet_has_balance_colors": 0,
@@ -1722,6 +1722,7 @@ def serialize_custom_draft_pack_card(card_row, slot_rule, card_order):
         "image_url": card_row["image_url"] or "",
         "scryfall_id": card_row["scryfall_id"] or "",
         "collector_number": card_row["collector_number"] or "",
+        "source_card_set_code": card_row["card_set_code"] or "",
         "finish_type": "Foil" if sheet_is_foil else "Regular",
         "special_badges": ["Foil"] if sheet_is_foil else [],
     }
@@ -1780,6 +1781,9 @@ def generate_custom_draft_set_pack_cards(set_code, booster_name):
             chosen_card,
             slot,
             len(generated_cards) + 1,
+            clean_set_code,
+            clean_booster_name,
+            0,
         )
 
         fallback_label = fallback_result["fallback_label"]
@@ -1863,18 +1867,31 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
     conn.close()
     return rows
 
-
-def search_chaos_cards_for_custom_draft_set(set_code, search_text, limit=999):
+def search_chaos_cards_for_custom_draft_set(
+    set_code,
+    search_text="",
+    limit=999,
+    rarity_filter="",
+    color_identity_filter="",
+    mana_operator="",
+    mana_value=None,
+    type_filter="",
+    set_code_filter="",
+    year_start=None,
+    year_end=None,
+):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_search_text = str(search_text or "").strip().lower()
-
-    if not clean_search_text:
-        return []
+    clean_rarity_filter = str(rarity_filter or "").strip().lower()
+    clean_color_identity_filter = str(color_identity_filter or "").strip().lower()
+    clean_mana_operator = str(mana_operator or "").strip()
+    clean_type_filter = str(type_filter or "").strip().lower()
+    clean_set_code_filter = str(set_code_filter or "").strip().upper()
 
     try:
         parsed_limit = int(limit)
     except (TypeError, ValueError):
-        parsed_limit = 40
+        parsed_limit = 999
 
     if parsed_limit < 1:
         parsed_limit = 1
@@ -1882,18 +1899,189 @@ def search_chaos_cards_for_custom_draft_set(set_code, search_text, limit=999):
     if parsed_limit > 999:
         parsed_limit = 999
 
+    parsed_mana_value = None
+    if mana_value not in {None, ""}:
+        try:
+            parsed_mana_value = float(mana_value)
+        except (TypeError, ValueError):
+            parsed_mana_value = None
+
+    parsed_year_start = None
+    if year_start not in {None, ""}:
+        try:
+            parsed_year_start = int(year_start)
+        except (TypeError, ValueError):
+            parsed_year_start = None
+
+    parsed_year_end = None
+    if year_end not in {None, ""}:
+        try:
+            parsed_year_end = int(year_end)
+        except (TypeError, ValueError):
+            parsed_year_end = None
+
+    has_any_filter = any([
+        clean_search_text,
+        clean_rarity_filter,
+        clean_color_identity_filter,
+        clean_mana_operator and parsed_mana_value is not None,
+        clean_type_filter,
+        clean_set_code_filter,
+        parsed_year_start is not None,
+        parsed_year_end is not None,
+    ])
+
+    if not has_any_filter:
+        return []
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    like_value = f"%{clean_search_text}%"
-    starts_with_value = f"{clean_search_text}%"
+    where_clauses = []
+    params = [clean_set_code]
+
+    if clean_search_text:
+        like_value = f"%{clean_search_text}%"
+
+        where_clauses.append(
+            """
+            (
+                    LOWER(cc.card_name) LIKE ?
+                 OR LOWER(cc.set_code) LIKE ?
+                 OR LOWER(COALESCE(cc.collector_number, '')) LIKE ?
+                 OR LOWER(COALESCE(cc.rarity, '')) LIKE ?
+                 OR LOWER(COALESCE(cc.type_line, '')) LIKE ?
+            )
+            """
+        )
+        params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    if clean_rarity_filter:
+        where_clauses.append("LOWER(COALESCE(cc.rarity, '')) = ?")
+        params.append(clean_rarity_filter)
+
+    color_json_sql = "UPPER(COALESCE(cc.color_identity_json, '[]'))"
+    type_line_sql = "LOWER(COALESCE(cc.type_line, ''))"
+
+    if clean_color_identity_filter == "colorless":
+        where_clauses.append(f"{color_json_sql} = '[]'")
+        where_clauses.append(f"{type_line_sql} NOT LIKE '%land%'")
+
+    elif clean_color_identity_filter == "land":
+        where_clauses.append(f"{type_line_sql} LIKE '%land%'")
+
+    elif clean_color_identity_filter in {"w", "u", "b", "r", "g"}:
+        color_symbol = clean_color_identity_filter.upper()
+
+        where_clauses.append(f"{color_json_sql} LIKE ?")
+        params.append(f'%"{color_symbol}"%')
+
+    elif clean_color_identity_filter == "multi":
+        where_clauses.append(
+            f"""
+            (
+                (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
+                (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
+                (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
+                (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
+                (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
+            ) >= 2
+            """
+        )
+
+    elif clean_color_identity_filter == "colorless_multi":
+        where_clauses.append(
+            f"""
+            (
+                {color_json_sql} = '[]'
+                OR (
+                    (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
+                ) >= 2
+            )
+            """
+        )
+
+    elif clean_color_identity_filter == "colorless_multi_land":
+        where_clauses.append(
+            f"""
+            (
+                {color_json_sql} = '[]'
+                OR {type_line_sql} LIKE '%land%'
+                OR (
+                    (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
+                    (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
+                ) >= 2
+            )
+            """
+        )
+
+    if clean_mana_operator and parsed_mana_value is not None:
+        if clean_mana_operator == "=":
+            where_clauses.append("COALESCE(cc.mana_value, -1) = ?")
+            params.append(parsed_mana_value)
+        elif clean_mana_operator == "<=":
+            where_clauses.append("COALESCE(cc.mana_value, -1) <= ?")
+            params.append(parsed_mana_value)
+        elif clean_mana_operator == ">=":
+            where_clauses.append("COALESCE(cc.mana_value, -1) >= ?")
+            params.append(parsed_mana_value)
+        elif clean_mana_operator == "<":
+            where_clauses.append("COALESCE(cc.mana_value, -1) < ?")
+            params.append(parsed_mana_value)
+        elif clean_mana_operator == ">":
+            where_clauses.append("COALESCE(cc.mana_value, -1) > ?")
+            params.append(parsed_mana_value)
+
+    if clean_type_filter:
+        where_clauses.append("LOWER(COALESCE(cc.type_line, '')) LIKE ?")
+        params.append(f"%{clean_type_filter}%")
+
+    if clean_set_code_filter:
+        where_clauses.append("UPPER(COALESCE(cc.set_code, '')) = ?")
+        params.append(clean_set_code_filter)
+
+    if parsed_year_start is not None:
+        where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) >= ?")
+        params.append(parsed_year_start)
+
+    if parsed_year_end is not None:
+        where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) <= ?")
+        params.append(parsed_year_end)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    order_exact_params = []
+    if clean_search_text:
+        order_exact_params = [
+            clean_search_text,
+            f"{clean_search_text}%",
+        ]
+        order_sql = """
+            CASE
+                WHEN LOWER(cc.card_name) = ? THEN 0
+                WHEN LOWER(cc.card_name) LIKE ? THEN 1
+                ELSE 2
+            END,
+        """
+    else:
+        order_sql = ""
 
     cursor.execute(
-        """
+        f"""
         SELECT
             cc.card_uuid,
             cc.card_name,
             cc.set_code,
+            s.release_date,
             cc.collector_number,
             cc.rarity,
             cc.type_line,
@@ -1907,22 +2095,14 @@ def search_chaos_cards_for_custom_draft_set(set_code, search_text, limit=999):
                 ELSE 1
             END AS already_in_set
         FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
         LEFT JOIN custom_draft_set_cards cdsc
             ON cdsc.card_uuid = cc.card_uuid
            AND cdsc.set_code = ?
-        WHERE (
-                LOWER(cc.card_name) LIKE ?
-             OR LOWER(cc.set_code) LIKE ?
-             OR LOWER(COALESCE(cc.collector_number, '')) LIKE ?
-             OR LOWER(COALESCE(cc.rarity, '')) LIKE ?
-             OR LOWER(COALESCE(cc.type_line, '')) LIKE ?
-        )
+        {where_sql}
         ORDER BY
-            CASE
-                WHEN LOWER(cc.card_name) = ? THEN 0
-                WHEN LOWER(cc.card_name) LIKE ? THEN 1
-                ELSE 2
-            END,
+            {order_sql}
             already_in_set ASC,
             cc.card_name COLLATE NOCASE ASC,
             cc.set_code ASC,
@@ -1930,23 +2110,12 @@ def search_chaos_cards_for_custom_draft_set(set_code, search_text, limit=999):
             cc.collector_number ASC
         LIMIT ?
         """,
-        (
-            clean_set_code,
-            like_value,
-            like_value,
-            like_value,
-            like_value,
-            like_value,
-            clean_search_text,
-            starts_with_value,
-            parsed_limit,
-        ),
+        params + order_exact_params + [parsed_limit],
     )
 
     rows = cursor.fetchall()
     conn.close()
     return rows
-
 
 def add_card_to_custom_draft_set(set_code, card_uuid):
     clean_set_code = normalize_custom_draft_set_code(set_code)

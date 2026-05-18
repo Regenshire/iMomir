@@ -11124,6 +11124,14 @@ def custom_draft_set_cards_search(set_code):
         clean_set_code,
         search_text,
         limit=999,
+        rarity_filter=request.args.get("rarity") or "",
+        color_identity_filter=request.args.get("color_identity") or "",
+        mana_operator=request.args.get("mana_operator") or "",
+        mana_value=request.args.get("mana_value") or "",
+        type_filter=request.args.get("type") or "",
+        set_code_filter=request.args.get("set_code") or "",
+        year_start=request.args.get("year_start") or "",
+        year_end=request.args.get("year_end") or "",
     )
 
     results = []
@@ -11133,6 +11141,8 @@ def custom_draft_set_cards_search(set_code):
             "card_uuid": row["card_uuid"],
             "card_name": row["card_name"],
             "set_code": row["set_code"],
+            "release_date": row["release_date"] or "",
+            "release_year": (row["release_date"] or "")[:4],
             "collector_number": row["collector_number"] or "",
             "rarity": row["rarity"] or "",
             "type_line": row["type_line"] or "",

@@ -16,7 +16,12 @@ from settings import (
     CHAOS_DUPLICATE_REROLL_CHANCE,
     CHAOS_PACK_TYPE_OPTIONS,
 )
-from db.database import get_config, get_db_connection, get_selected_set_codes
+from db.database import (
+    generate_custom_draft_set_pack_cards,
+    get_config,
+    get_db_connection,
+    get_selected_set_codes,
+)
 
 def get_pack_type_code_for_tracking(booster_name):
     value = (booster_name or "").strip().lower()
@@ -191,17 +196,48 @@ def get_set_name_from_code(set_code):
 
     return (set_code or "").strip().upper()
 
+def is_custom_draft_set_code(set_code):
+    return str(set_code or "").strip().upper().endswith("^")
+
+
+def normalize_custom_draft_set_booster_name(booster_name):
+    clean_booster_name = str(booster_name or "").strip().lower()
+
+    if clean_booster_name in {"mystery", "play", "collector"}:
+        return clean_booster_name
+
+    return ""
+
+
+def get_custom_draft_set_booster_label(booster_name):
+    clean_booster_name = normalize_custom_draft_set_booster_name(booster_name)
+
+    if clean_booster_name == "mystery":
+        return "Mystery Booster"
+
+    if clean_booster_name == "play":
+        return "Play Booster"
+
+    if clean_booster_name == "collector":
+        return "Collector Booster"
+
+    return "Custom Booster"
+
 
 def build_default_chaos_pack_display_name(set_code, booster_name):
     set_name = get_set_name_from_code(set_code)
 
     clean_booster_name = (booster_name or "").strip().lower()
-    booster_label_map = get_chaos_pack_type_label_map()
 
-    display_booster_name = booster_label_map.get(
-        clean_booster_name,
-        " ".join(word.capitalize() for word in clean_booster_name.split()) if clean_booster_name else "Booster Pack"
-    )
+    if is_custom_draft_set_code(set_code):
+        display_booster_name = get_custom_draft_set_booster_label(clean_booster_name)
+    else:
+        booster_label_map = get_chaos_pack_type_label_map()
+
+        display_booster_name = booster_label_map.get(
+            clean_booster_name,
+            " ".join(word.capitalize() for word in clean_booster_name.split()) if clean_booster_name else "Booster Pack"
+        )
 
     set_code_clean = (set_code or "").strip().upper()
     return normalize_chaos_pack_display_name(
@@ -380,6 +416,23 @@ def choose_weighted_row(rows, weight_key):
 
 
 def get_chaos_pack_variants(set_code, booster_name):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_booster_name = (booster_name or "").strip().lower()
+
+    if is_custom_draft_set_code(clean_set_code):
+        if normalize_custom_draft_set_booster_name(clean_booster_name):
+            return [
+                {
+                    "set_code": clean_set_code,
+                    "booster_name": clean_booster_name,
+                    "booster_index": 0,
+                    "booster_weight": 1.0,
+                    "is_custom_draft_set": True,
+                }
+            ]
+
+        return []
+    
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -396,8 +449,8 @@ def get_chaos_pack_variants(set_code, booster_name):
         ORDER BY booster_index ASC
         """,
         (
-            (set_code or "").strip().upper(),
-            (booster_name or "").strip().lower(),
+            clean_set_code,
+            clean_booster_name,
         ),
     )
 
@@ -480,6 +533,75 @@ def get_eligible_chaos_packs(static_folder):
             "total_variant_weight": float(row["total_variant_weight"] or 0),
             "booster_type": booster_type,
         })
+
+    if "custom" in selected_chaos_pack_types:
+        custom_conn = get_db_connection()
+        custom_cursor = custom_conn.cursor()
+
+        custom_where_conditions = [
+            "cds.is_active = 1",
+            """
+            EXISTS (
+                SELECT 1
+                FROM custom_draft_set_cards cdsc
+                WHERE cdsc.set_code = cds.set_code
+            )
+            """,
+        ]
+        custom_params = []
+
+        if config.get("all_sets_enabled") == "0" and selected_set_codes:
+            custom_placeholders = ",".join(["?"] * len(selected_set_codes))
+            custom_where_conditions.append(f"cds.set_code IN ({custom_placeholders})")
+            custom_params.extend(sorted(selected_set_codes))
+        elif config.get("all_sets_enabled") == "0" and not selected_set_codes:
+            custom_where_conditions.append("1 = 0")
+
+        custom_where_clause = "WHERE " + " AND ".join(custom_where_conditions)
+
+        custom_cursor.execute(
+            f"""
+            SELECT
+                cds.set_code,
+                s.set_name,
+                s.release_date,
+                cds.is_active
+            FROM custom_draft_sets cds
+            INNER JOIN sets s ON s.set_code = cds.set_code
+            {custom_where_clause}
+            ORDER BY s.release_date DESC, s.set_name COLLATE NOCASE ASC
+            """,
+            custom_params,
+        )
+
+        custom_rows = custom_cursor.fetchall()
+        custom_conn.close()
+
+        for custom_row in custom_rows:
+            custom_set_code = (custom_row["set_code"] or "").strip().upper()
+
+            for custom_booster_name in ["mystery", "play", "collector"]:
+                art_info = get_chaos_pack_art_info(
+                    custom_set_code,
+                    custom_booster_name,
+                    static_folder,
+                )
+
+                packs.append({
+                    "set_code": custom_set_code,
+                    "booster_name": custom_booster_name,
+                    "display_name": build_default_chaos_pack_display_name(
+                        custom_set_code,
+                        custom_booster_name,
+                    ),
+                    "image_path": art_info["image_path"],
+                    "image_src": url_for("static", filename=art_info["image_path"]),
+                    "is_fallback": int(art_info["is_fallback"] or 0),
+                    "variant_count": 1,
+                    "total_variant_weight": 1.0,
+                    "booster_type": "custom",
+                    "is_custom_draft_set": True,
+                })
 
     return packs
 
@@ -762,6 +884,22 @@ def replace_basic_land_if_enabled(chosen_card, set_code, booster_name, sheet_nam
     return replacement_card
 
 def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_fn):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_booster_name = (booster_name or "").strip().lower()
+
+    if is_custom_draft_set_code(clean_set_code):
+        generated_cards = generate_custom_draft_set_pack_cards(
+            clean_set_code,
+            clean_booster_name,
+        )
+
+        write_debug_log_fn(
+            f"CUSTOM DRAFT SET PACK GENERATED | set={clean_set_code} | "
+            f"booster={clean_booster_name} | cards={len(generated_cards)}"
+        )
+
+        return generated_cards
+
     variant_contents = get_chaos_booster_variant_contents(set_code, booster_name, booster_index)
     opened_cards = []
 
@@ -1184,6 +1322,12 @@ def build_opened_chaos_pack_state(
         "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
         "total_cards": len(cards),
         "cards": cards,
+        "source_json": {
+            "source": "custom_draft_set" if is_custom_draft_set_code(set_code) else "mtgjson_booster",
+            "set_code": (set_code or "").strip().upper(),
+            "booster_name": (booster_name or "").strip().lower(),
+            "booster_index": int(booster_index),
+        },
     }
 
     set_chaos_session_state("pending_opened_pack", opened_pack_state)
@@ -1491,6 +1635,62 @@ def get_custom_pack_populate_options_for_set(set_code):
     config = get_config()
     selected_pack_types = get_selected_chaos_pack_types(config)
     booster_label_map = get_chaos_pack_type_label_map()
+
+    if is_custom_draft_set_code(clean_set_code):
+        if "custom" not in selected_pack_types:
+            return []
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT
+                cds.set_code
+            FROM custom_draft_sets cds
+            WHERE cds.set_code = ?
+              AND cds.is_active = 1
+              AND EXISTS (
+                    SELECT 1
+                    FROM custom_draft_set_cards cdsc
+                    WHERE cdsc.set_code = cds.set_code
+              )
+            """,
+            (clean_set_code,),
+        )
+
+        custom_set_row = cursor.fetchone()
+        conn.close()
+
+        if not custom_set_row:
+            return []
+
+        return [
+            {
+                "set_code": clean_set_code,
+                "booster_name": "mystery",
+                "booster_type": "custom",
+                "label": "Mystery Booster",
+                "variant_count": 1,
+                "total_variant_weight": 1.0,
+            },
+            {
+                "set_code": clean_set_code,
+                "booster_name": "play",
+                "booster_type": "custom",
+                "label": "Play Booster",
+                "variant_count": 1,
+                "total_variant_weight": 1.0,
+            },
+            {
+                "set_code": clean_set_code,
+                "booster_name": "collector",
+                "booster_type": "custom",
+                "label": "Collector Booster",
+                "variant_count": 1,
+                "total_variant_weight": 1.0,
+            },
+        ]
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1901,6 +2101,12 @@ def create_random_pack_preview_for_manage_packs(static_folder, write_debug_log_f
         "total_cards": len(cards),
         "cards": cards,
         "manage_pack_preview": True,
+        "source_json": {
+            "source": "custom_draft_set" if is_custom_draft_set_code(chosen_variant["set_code"]) else "mtgjson_booster",
+            "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+            "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+            "booster_index": int(chosen_variant["booster_index"] or 0),
+        },
     }
 
     set_chaos_session_state("pending_manage_pack_preview", preview_pack_state)
@@ -1998,6 +2204,12 @@ def create_specific_pack_preview_for_manage_packs(set_code, booster_name, static
         "total_cards": len(cards),
         "cards": cards,
         "manage_pack_preview": True,
+        "source_json": {
+            "source": "custom_draft_set" if is_custom_draft_set_code(chosen_variant["set_code"]) else "mtgjson_booster",
+            "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+            "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+            "booster_index": int(chosen_variant["booster_index"] or 0),
+        },
     }
 
     set_chaos_session_state("pending_manage_pack_preview", preview_pack_state)
@@ -2515,6 +2727,75 @@ def get_importable_campaign_pack_rows(static_folder, source_campaign_id=None, ta
             "already_in_target": int(row["already_in_target"] or 0) == 1,
             "image_src": url_for("static", filename=art_info["image_path"]),
         })
+
+    if "custom" in selected_chaos_pack_types:
+        custom_conn = get_db_connection()
+        custom_cursor = custom_conn.cursor()
+
+        custom_where_conditions = [
+            "cds.is_active = 1",
+            """
+            EXISTS (
+                SELECT 1
+                FROM custom_draft_set_cards cdsc
+                WHERE cdsc.set_code = cds.set_code
+            )
+            """,
+        ]
+        custom_params = []
+
+        if config.get("all_sets_enabled") == "0" and selected_set_codes:
+            custom_placeholders = ",".join(["?"] * len(selected_set_codes))
+            custom_where_conditions.append(f"cds.set_code IN ({custom_placeholders})")
+            custom_params.extend(sorted(selected_set_codes))
+        elif config.get("all_sets_enabled") == "0" and not selected_set_codes:
+            custom_where_conditions.append("1 = 0")
+
+        custom_where_clause = "WHERE " + " AND ".join(custom_where_conditions)
+
+        custom_cursor.execute(
+            f"""
+            SELECT
+                cds.set_code,
+                s.set_name,
+                s.release_date,
+                cds.is_active
+            FROM custom_draft_sets cds
+            INNER JOIN sets s ON s.set_code = cds.set_code
+            {custom_where_clause}
+            ORDER BY s.release_date DESC, s.set_name COLLATE NOCASE ASC
+            """,
+            custom_params,
+        )
+
+        custom_rows = custom_cursor.fetchall()
+        custom_conn.close()
+
+        for custom_row in custom_rows:
+            custom_set_code = (custom_row["set_code"] or "").strip().upper()
+
+            for custom_booster_name in ["mystery", "play", "collector"]:
+                art_info = get_chaos_pack_art_info(
+                    custom_set_code,
+                    custom_booster_name,
+                    static_folder,
+                )
+
+                packs.append({
+                    "set_code": custom_set_code,
+                    "booster_name": custom_booster_name,
+                    "display_name": build_default_chaos_pack_display_name(
+                        custom_set_code,
+                        custom_booster_name,
+                    ),
+                    "image_path": art_info["image_path"],
+                    "image_src": url_for("static", filename=art_info["image_path"]),
+                    "is_fallback": int(art_info["is_fallback"] or 0),
+                    "variant_count": 1,
+                    "total_variant_weight": 1.0,
+                    "booster_type": "custom",
+                    "is_custom_draft_set": True,
+                })
 
     return packs
 
