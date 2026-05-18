@@ -31,6 +31,7 @@ from paths import (
     BUNDLE_BASE_DIR,
     CHAOS_IMAGE_CACHE_DIR,
     CHAOS_TEMP_CACHE_DIR,
+    CUSTOM_SET_ICON_DIR,
     CAMPAIGN_PLAYER_PORTRAIT_DIR,
     EXPORT_ROOT_DIR,
     DATA_DOWNLOAD_DIR,
@@ -126,6 +127,15 @@ from db.exports import (
 from db.database import (
     ensure_column_exists,
     get_all_sets,
+    add_card_to_custom_draft_set,
+    delete_custom_draft_set_card,
+    generate_custom_draft_set_pack_cards,
+    get_custom_draft_pack_slot_options,
+    get_custom_draft_pack_slots,
+    get_custom_draft_pack_slots_for_booster,
+    get_custom_draft_set,
+    get_custom_draft_set_card_rows,
+    get_custom_draft_sets,
     get_card_by_key,
     get_config,
     get_db_connection,
@@ -137,6 +147,11 @@ from db.database import (
     set_config_value,
     set_import_metadata,
     update_config_values,
+    normalize_custom_draft_set_code,
+    search_chaos_cards_for_custom_draft_set,
+    update_custom_draft_pack_layout,
+    update_custom_draft_set_card_category,
+    upsert_custom_draft_set,
 )
 
 from modes.momir import (
@@ -777,6 +792,8 @@ def import_chaos_cards_from_all_printings():
             side = (card_obj.get("side") or "").strip().lower()
             frame_version = (card_obj.get("frameVersion") or "").strip().lower()
             border_color = (card_obj.get("borderColor") or "").strip().lower()
+            colors_json = json.dumps(safe_list(card_obj.get("colors")))
+            color_identity_json = json.dumps(safe_list(card_obj.get("colorIdentity")))
 
             if is_dual_faced_layout(layout) and side == "b":
                 continue
@@ -830,9 +847,11 @@ def import_chaos_cards_from_all_printings():
                     front_face_name,
                     back_face_name,
                     frame_version,
-                    border_color
+                    border_color,
+                    colors_json,
+                    color_identity_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_uuid,
@@ -859,6 +878,8 @@ def import_chaos_cards_from_all_printings():
                     back_face_name,
                     frame_version,
                     border_color,
+                    colors_json,
+                    color_identity_json,
                 ),
             )
 
@@ -1630,7 +1651,43 @@ def ensure_download_directories():
     os.makedirs(CHAOS_TEMP_CACHE_DIR, exist_ok=True)
     os.makedirs(CAMPAIGN_PLAYER_PORTRAIT_DIR, exist_ok=True)
     os.makedirs(ALTERNATE_SOURCE_DIR, exist_ok=True)
+    os.makedirs(CUSTOM_SET_ICON_DIR, exist_ok=True)
     os.makedirs(os.path.join(app.static_folder, SET_ICON_RELATIVE_DIR.replace("/", os.sep)), exist_ok=True)
+
+def save_custom_set_icon_file(uploaded_file, set_code):
+    if not uploaded_file:
+        return ""
+
+    original_filename = (uploaded_file.filename or "").strip()
+    if not original_filename:
+        return ""
+
+    safe_ext = os.path.splitext(original_filename)[1].strip().lower()
+    if safe_ext != ".svg":
+        raise ValueError("Set icon upload must be an SVG file.")
+
+    ensure_download_directories()
+
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    safe_set_code = safe_filename(clean_set_code)
+    output_filename = f"custom_set_icon_{safe_set_code}.svg"
+    output_path = os.path.join(CUSTOM_SET_ICON_DIR, output_filename)
+
+    uploaded_file.save(output_path)
+
+    relative_path = os.path.relpath(output_path, app.static_folder).replace("\\", "/")
+
+    # The file is outside static in normal development, so store a runtime-relative path instead.
+    # get_pack_label_set_icon_path() joins this with app.static_folder, so we also copy a static-safe version.
+    static_icon_dir = os.path.join(app.static_folder, "img", "set_icons")
+    os.makedirs(static_icon_dir, exist_ok=True)
+
+    static_output_filename = f"{safe_set_code}.svg"
+    static_output_path = os.path.join(static_icon_dir, static_output_filename)
+
+    shutil.copyfile(output_path, static_output_path)
+
+    return f"img/set_icons/{static_output_filename}"
 
 def save_campaign_player_portrait_file(uploaded_file, player_id):
     if not uploaded_file:
@@ -10782,6 +10839,388 @@ def debug_chaos_card():
         "results": results,
     })
 
+@app.route("/custom-draft-sets/add", methods=["POST"])
+def custom_draft_sets_add():
+    set_name = (request.form.get("set_name") or "").strip()
+    set_code = normalize_custom_draft_set_code(request.form.get("set_code"))
+    release_year = (request.form.get("release_year") or "").strip()
+
+    try:
+        icon_svg_path = ""
+        uploaded_icon = request.files.get("set_icon_file")
+        if uploaded_icon and uploaded_icon.filename:
+            icon_svg_path = save_custom_set_icon_file(uploaded_icon, set_code)
+
+        saved_set_code = upsert_custom_draft_set(
+            set_name=set_name,
+            set_code=set_code,
+            release_year=release_year,
+            special_category_1_name=request.form.get("special_category_1_name") or "",
+            special_category_2_name=request.form.get("special_category_2_name") or "",
+            special_category_3_name=request.form.get("special_category_3_name") or "",
+            icon_svg_path=icon_svg_path,
+            is_active=True,
+        )
+
+        flash(f"Custom draft set {saved_set_code} created.")
+        return redirect(url_for("custom_draft_set_manage", set_code=saved_set_code))
+
+    except Exception as exc:
+        flash(str(exc))
+        return redirect(url_for("sets"))
+
+
+@app.route("/custom-draft-sets/<path:set_code>", methods=["GET", "POST"])
+def custom_draft_set_manage(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if request.method == "POST":
+        try:
+            icon_svg_path = ""
+            uploaded_icon = request.files.get("set_icon_file")
+            if uploaded_icon and uploaded_icon.filename:
+                icon_svg_path = save_custom_set_icon_file(uploaded_icon, clean_set_code)
+
+            saved_set_code = upsert_custom_draft_set(
+                set_name=request.form.get("set_name") or "",
+                set_code=clean_set_code,
+                release_year=request.form.get("release_year") or "",
+                special_category_1_name=request.form.get("special_category_1_name") or "",
+                special_category_2_name=request.form.get("special_category_2_name") or "",
+                special_category_3_name=request.form.get("special_category_3_name") or "",
+                icon_svg_path=icon_svg_path,
+                is_active=request.form.get("is_active") == "on",
+            )
+
+            flash("Custom draft set saved.")
+            return redirect(url_for("custom_draft_set_manage", set_code=saved_set_code))
+
+        except Exception as exc:
+            flash(str(exc))
+            return redirect(url_for("custom_draft_set_manage", set_code=clean_set_code))
+
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        flash("Custom draft set was not found.")
+        return redirect(url_for("sets"))
+
+    pack_slots = get_custom_draft_pack_slots(clean_set_code)
+    custom_set_cards = get_custom_draft_set_card_rows(clean_set_code)
+
+    special_category_options = [
+        {
+            "value": 0,
+            "label": "None",
+        },
+        {
+            "value": 1,
+            "label": custom_set["special_category_1_name"] or "Special Slot Category 1",
+        },
+        {
+            "value": 2,
+            "label": custom_set["special_category_2_name"] or "Special Slot Category 2",
+        },
+        {
+            "value": 3,
+            "label": custom_set["special_category_3_name"] or "Special Slot Category 3",
+        },
+    ]
+
+    return render_template(
+        "custom_draft_set.html",
+        custom_set=custom_set,
+        pack_slots=pack_slots,
+        custom_set_cards=custom_set_cards,
+        special_category_options=special_category_options,
+    )
+
+def get_custom_draft_booster_label(booster_name):
+    clean_booster_name = str(booster_name or "").strip().lower()
+
+    if clean_booster_name == "mystery":
+        return "Mystery Booster"
+
+    if clean_booster_name == "play":
+        return "Play Booster"
+
+    if clean_booster_name == "collector":
+        return "Collector Booster"
+
+    return "Custom Booster"
+
+def build_custom_draft_set_pack_display_name(custom_set, booster_name):
+    booster_label = get_custom_draft_booster_label(booster_name)
+    set_name = custom_set["set_name"] if custom_set and custom_set["set_name"] else "Custom Draft Set"
+    set_code = custom_set["set_code"] if custom_set and custom_set["set_code"] else ""
+
+    if set_code:
+        return normalize_chaos_pack_display_name(f"{set_name} - {booster_label} ({set_code})")
+
+    return normalize_chaos_pack_display_name(f"{set_name} - {booster_label}")
+
+def normalize_custom_draft_booster_name(booster_name):
+    clean_booster_name = str(booster_name or "").strip().lower()
+
+    if clean_booster_name not in {"mystery", "play", "collector"}:
+        return ""
+
+    return clean_booster_name
+
+@app.route("/custom-draft-sets/<path:set_code>/layouts/<booster_name>", methods=["GET", "POST"])
+def custom_draft_set_layout_edit(set_code, booster_name):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    clean_booster_name = normalize_custom_draft_booster_name(booster_name)
+
+    if not clean_booster_name:
+        flash("Invalid custom draft pack layout.")
+        return redirect(url_for("custom_draft_set_manage", set_code=clean_set_code))
+
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        flash("Custom draft set was not found.")
+        return redirect(url_for("sets"))
+
+    if request.method == "POST":
+        slot_updates = []
+
+        for slot_number in range(1, 16):
+            slot_updates.append({
+                "slot_number": slot_number,
+                "color_rule": request.form.get(f"slot_{slot_number}_color_rule") or "any",
+                "rarity_rule": request.form.get(f"slot_{slot_number}_rarity_rule") or "any",
+                "special_category_rule": request.form.get(f"slot_{slot_number}_special_category_rule") or "none",
+                "foil_rule": request.form.get(f"slot_{slot_number}_foil_rule") or "no",
+            })
+
+        try:
+            update_custom_draft_pack_layout(
+                clean_set_code,
+                clean_booster_name,
+                slot_updates,
+            )
+            flash("Pack layout saved.")
+        except Exception as exc:
+            flash(str(exc))
+
+        return redirect(url_for(
+            "custom_draft_set_layout_edit",
+            set_code=clean_set_code,
+            booster_name=clean_booster_name,
+        ))
+
+    pack_slots = get_custom_draft_pack_slots_for_booster(
+        clean_set_code,
+        clean_booster_name,
+    )
+
+    slot_options = get_custom_draft_pack_slot_options()
+
+    special_category_labels = {
+        "none": "None",
+        "category_1": custom_set["special_category_1_name"] or "Special Slot Category 1",
+        "category_2": custom_set["special_category_2_name"] or "Special Slot Category 2",
+        "category_3": custom_set["special_category_3_name"] or "Special Slot Category 3",
+    }
+
+    return render_template(
+        "custom_draft_pack_layout.html",
+        custom_set=custom_set,
+        booster_name=clean_booster_name,
+        booster_label=get_custom_draft_booster_label(clean_booster_name),
+        pack_slots=pack_slots,
+        slot_options=slot_options,
+        special_category_labels=special_category_labels,
+    )
+
+@app.route("/custom-draft-sets/<path:set_code>/generate/<booster_name>", methods=["POST"])
+def custom_draft_set_generate_pack(set_code, booster_name):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    clean_booster_name = normalize_custom_draft_booster_name(booster_name)
+
+    if not clean_booster_name:
+        return jsonify({
+            "ok": False,
+            "message": "Invalid custom draft pack type.",
+        }), 400
+
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    try:
+        generated_cards = generate_custom_draft_set_pack_cards(
+            clean_set_code,
+            clean_booster_name,
+        )
+
+        pack_display_name = build_custom_draft_set_pack_display_name(
+            custom_set,
+            clean_booster_name,
+        )
+
+        preview_pack = {
+            "ok": True,
+            "source": "custom_draft_set",
+            "set_code": clean_set_code,
+            "booster_name": clean_booster_name,
+            "booster_index": 0,
+            "display_name": pack_display_name,
+            "pack_display_name": pack_display_name,
+            "pack_tracking_code": build_pack_tracking_code(
+                clean_set_code,
+                clean_booster_name,
+                0,
+            ),
+            "total_cards": len(generated_cards),
+            "bonus_pack_opened": False,
+            "cards": generated_cards,
+            "source_json": {
+                "source": "custom_draft_set",
+                "set_code": clean_set_code,
+                "booster_name": clean_booster_name,
+            },
+        }
+
+        set_chaos_session_state(
+            "pending_manage_pack_preview",
+            preview_pack,
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": "Custom draft set pack generated.",
+            "pack_display_name": pack_display_name,
+            "total_cards": len(generated_cards),
+            "view_url": url_for("campaign_chaos_pack_preview_view"),
+            "print_url": url_for("campaign_chaos_pack_preview_print"),
+            "save_url": url_for("campaign_chaos_pack_preview_save"),
+        })
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/search", methods=["GET"])
+def custom_draft_set_cards_search(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    search_text = (request.args.get("q") or "").strip()
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+            "results": [],
+        }), 404
+
+    rows = search_chaos_cards_for_custom_draft_set(
+        clean_set_code,
+        search_text,
+        limit=999,
+    )
+
+    results = []
+
+    for row in rows:
+        results.append({
+            "card_uuid": row["card_uuid"],
+            "card_name": row["card_name"],
+            "set_code": row["set_code"],
+            "collector_number": row["collector_number"] or "",
+            "rarity": row["rarity"] or "",
+            "type_line": row["type_line"] or "",
+            "mana_cost": row["mana_cost"] or "",
+            "mana_value": row["mana_value"],
+            "colors_json": row["colors_json"] or "[]",
+            "color_identity_json": row["color_identity_json"] or "[]",
+            "already_in_set": int(row["already_in_set"] or 0) == 1,
+            "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+        })
+
+    return jsonify({
+        "ok": True,
+        "results": results,
+    })
+
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/add", methods=["POST"])
+def custom_draft_set_cards_add(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    card_uuid = (payload.get("card_uuid") or "").strip()
+
+    try:
+        result = add_card_to_custom_draft_set(clean_set_code, card_uuid)
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/category", methods=["POST"])
+def custom_draft_set_cards_update_category(set_code, custom_set_card_id):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    special_category_index = payload.get("special_category_index", 0)
+
+    try:
+        result = update_custom_draft_set_card_category(
+            custom_set_card_id,
+            special_category_index,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/delete", methods=["POST"])
+def custom_draft_set_cards_delete(set_code, custom_set_card_id):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    try:
+        result = delete_custom_draft_set_card(custom_set_card_id)
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
 @app.route("/sets", methods=["GET", "POST"])
 def sets():
     if request.method == "POST":
@@ -10793,6 +11232,7 @@ def sets():
     selected_chaos_pack_types = get_selected_chaos_pack_types(config_values)
     all_sets = get_all_sets()
     selected_set_codes = get_selected_set_codes()
+    custom_draft_sets = get_custom_draft_sets()
 
     current_year = datetime.now().year
 
@@ -10801,6 +11241,7 @@ def sets():
         config=config_values,
         all_sets=all_sets,
         selected_set_codes=selected_set_codes,
+        custom_draft_sets=custom_draft_sets,
         current_year=current_year,
         current_game_mode=(config_values.get("game_mode") or "custom").strip().lower(),
         chaos_pack_type_options=CHAOS_PACK_TYPE_OPTIONS,

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - {{ booster_label }} Layout{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">{{ booster_label }} Layout</h1>
+                <p class="page-subtitle">
+                    {{ custom_set.set_name }} • {{ custom_set.set_code }} • Edit all 15 pack slots.
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a
+                    class="action-button secondary-button chaos-pack-view-back-button"
+                    href="{{ url_for('custom_draft_set_manage', set_code=custom_set.set_code) }}"
+                >
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <form
+        method="post"
+        action="{{ url_for('custom_draft_set_layout_edit', set_code=custom_set.set_code, booster_name=booster_name) }}"
+        class="config-form"
+    >
+        <div class="page-panel">
+            <div class="custom-draft-layout-header-row">
+                <div>
+                    <h2>Slot Rules</h2>
+                    <p class="page-subtitle">
+                        Each slot chooses one card using Color, Rarity, Special Slot Category, and Foil metadata.
+                    </p>
+                </div>
+
+                <button type="submit" class="action-button custom-draft-layout-save-top">
+                    Save Layout
+                </button>
+            </div>
+
+            <div class="custom-draft-layout-table">
+                <div class="custom-draft-layout-table-head">
+                    <div>Slot</div>
+                    <div>Color</div>
+                    <div>Rarity</div>
+                    <div>Special Slot Category</div>
+                    <div>Foil</div>
+                </div>
+
+                {% for slot in pack_slots %}
+                <div class="custom-draft-layout-row">
+                    <div class="custom-draft-layout-slot-number">
+                        Slot {{ slot.slot_number }}
+                    </div>
+
+                    <label class="custom-draft-layout-mobile-label">
+                        <span>Color</span>
+                        <select
+                            name="slot_{{ slot.slot_number }}_color_rule"
+                            class="custom-draft-filter-input"
+                        >
+                            {% for option in slot_options.color_options %}
+                            <option
+                                value="{{ option.value }}"
+                                {% if slot.color_rule == option.value %}selected{% endif %}
+                            >
+                                {{ option.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-layout-mobile-label">
+                        <span>Rarity</span>
+                        <select
+                            name="slot_{{ slot.slot_number }}_rarity_rule"
+                            class="custom-draft-filter-input"
+                        >
+                            {% for option in slot_options.rarity_options %}
+                            <option
+                                value="{{ option.value }}"
+                                {% if slot.rarity_rule == option.value %}selected{% endif %}
+                            >
+                                {{ option.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-layout-mobile-label">
+                        <span>Special Slot Category</span>
+                        <select
+                            name="slot_{{ slot.slot_number }}_special_category_rule"
+                            class="custom-draft-filter-input"
+                        >
+                            {% for option in slot_options.special_category_options %}
+                            <option
+                                value="{{ option.value }}"
+                                {% if slot.special_category_rule == option.value %}selected{% endif %}
+                            >
+                                {{ special_category_labels.get(option.value, option.label) }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-layout-mobile-label">
+                        <span>Foil</span>
+                        <select
+                            name="slot_{{ slot.slot_number }}_foil_rule"
+                            class="custom-draft-filter-input"
+                        >
+                            {% for option in slot_options.foil_options %}
+                            <option
+                                value="{{ option.value }}"
+                                {% if slot.foil_rule == option.value %}selected{% endif %}
+                            >
+                                {{ option.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="custom-draft-set-save-row">
+            <button type="submit" class="action-button">
+                Save Layout
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

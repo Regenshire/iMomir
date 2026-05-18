@@ -12,14 +12,165 @@
         </button>
     </div>
 
-    <form id="setsForm" method="post" class="config-form">
-        {% with messages = get_flashed_messages() %}
-            {% if messages %}
-                <div class="flash-message">
-                    {{ messages[0] }}
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <div class="sets-panel-header">
+            <h2>Custom Draft Sets</h2>
+
+            <button type="button" id="showCustomDraftSetAddButton" class="action-button">
+                Add Custom Set
+            </button>
+        </div>
+
+        <div id="customDraftSetAddPanel" class="custom-draft-set-add-panel hidden">
+            <form
+                method="post"
+                action="{{ url_for('custom_draft_sets_add') }}"
+                enctype="multipart/form-data"
+                class="custom-draft-set-add-form"
+            >
+                <div class="custom-draft-set-form-grid">
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Set Name</span>
+                        <input
+                            type="text"
+                            name="set_name"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Final Fantasy Custom"
+                            required
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Set Code</span>
+                        <input
+                            type="text"
+                            name="set_code"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="FIN"
+                            maxlength="12"
+                            required
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Release Year</span>
+                        <input
+                            type="number"
+                            name="release_year"
+                            class="campaign-add-pack-custom-input"
+                            min="1993"
+                            max="2100"
+                            value="{{ current_year if current_year else 2026 }}"
+                            required
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Upload Set Icon SVG</span>
+                        <input
+                            type="file"
+                            name="set_icon_file"
+                            class="campaign-player-file"
+                            accept=".svg,image/svg+xml"
+                        >
+                    </label>
                 </div>
-            {% endif %}
-        {% endwith %}
+
+                <div class="custom-draft-set-form-grid">
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Special Slot Category 1</span>
+                        <input
+                            type="text"
+                            name="special_category_1_name"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Mystical Archive"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Special Slot Category 2</span>
+                        <input
+                            type="text"
+                            name="special_category_2_name"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Bonus Sheet"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field">
+                        <span>Special Slot Category 3</span>
+                        <input
+                            type="text"
+                            name="special_category_3_name"
+                            class="campaign-add-pack-custom-input"
+                            placeholder="Special Guest"
+                            autocomplete="off"
+                        >
+                    </label>
+                </div>
+
+                <div class="custom-draft-set-actions">
+                    <button type="submit" class="action-button">
+                        Create Custom Set
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        {% if custom_draft_sets %}
+            <div class="custom-draft-set-list">
+                {% for custom_set in custom_draft_sets %}
+                <div class="custom-draft-set-row {% if not custom_set.is_active %}custom-draft-set-row-disabled{% endif %}">
+                    <div class="custom-draft-set-main">
+                        <div class="custom-draft-set-title-row">
+                            <div class="custom-draft-set-title">
+                                {{ custom_set.set_name }}
+                            </div>
+
+                            <span class="campaign-status-badge {% if custom_set.is_active %}campaign-status-enabled{% else %}campaign-status-disabled{% endif %}">
+                                {{ "Active" if custom_set.is_active else "Disabled" }}
+                            </span>
+                        </div>
+
+                        <div class="custom-draft-set-meta">
+                            <span>{{ custom_set.set_code }}</span>
+                            <span>{{ custom_set.release_date[:4] if custom_set.release_date else "----" }}</span>
+                            <span>{{ custom_set.card_count }} card(s)</span>
+                            <span>custom</span>
+                        </div>
+                    </div>
+
+                    <div class="custom-draft-set-actions">
+                        <a
+                            href="{{ url_for('custom_draft_set_manage', set_code=custom_set.set_code) }}"
+                            class="action-button secondary-button campaign-row-action-button"
+                        >
+                            Manage
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="card-placeholder custom-draft-set-empty">
+                No custom draft sets have been created yet.
+            </div>
+        {% endif %}
+    </div>
+
+    <form id="setsForm" method="post" class="config-form">
 
         <div class="page-panel">
             <h2>Set Selection</h2>
@@ -34,6 +185,7 @@
                 >
             </label>
         </div>
+
 
         <div class="page-panel">
             <h2>Set Filters</h2>
@@ -193,4 +345,18 @@
 
     </form>
 </div>
+<script>
+(function () {
+    const showButton = document.getElementById("showCustomDraftSetAddButton");
+    const addPanel = document.getElementById("customDraftSetAddPanel");
+
+    if (!showButton || !addPanel) {
+        return;
+    }
+
+    showButton.addEventListener("click", function () {
+        addPanel.classList.toggle("hidden");
+    });
+})();
+</script>
 {% endblock %}

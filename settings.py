@@ -303,6 +303,7 @@ CHAOS_PACK_TYPE_OPTIONS = [
     {"value": "vip", "label": "VIP Booster"},
     {"value": "six", "label": "Six Card Booster"},
     {"value": "collector-sample", "label": "Collector Sample Pack (2 cards)"},
+    {"value": "custom", "label": "Custom"},
 ]
 
 ALLOWED_CHAOS_BOOSTER_TYPES = {
