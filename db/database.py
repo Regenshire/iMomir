@@ -2317,6 +2317,346 @@ def search_chaos_cards_for_custom_draft_set(
     conn.close()
     return rows
 
+def resolve_most_recent_chaos_card_printing_for_import_item(import_item):
+    card_name = str(import_item.get("card_name") or "").strip()
+    requested_set_code = str(import_item.get("set_code") or "").strip().upper()
+    requested_collector_number = str(import_item.get("collector_number") or "").strip()
+
+    if not card_name:
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if requested_set_code and requested_collector_number:
+        cursor.execute(
+            """
+            SELECT
+                cc.card_uuid,
+                cc.card_name,
+                cc.set_code,
+                cc.collector_number,
+                s.release_date
+            FROM chaos_cards cc
+            LEFT JOIN sets s
+                ON s.set_code = cc.set_code
+            WHERE UPPER(COALESCE(cc.set_code, '')) = ?
+              AND LOWER(COALESCE(cc.collector_number, '')) = LOWER(?)
+            ORDER BY
+                CASE WHEN LOWER(COALESCE(cc.card_name, '')) = LOWER(?) THEN 0 ELSE 1 END,
+                CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC,
+                COALESCE(s.release_date, '') DESC,
+                cc.set_code ASC,
+                CAST(cc.collector_number AS INTEGER) ASC,
+                cc.collector_number ASC
+            LIMIT 1
+            """,
+            (
+                requested_set_code,
+                requested_collector_number,
+                card_name,
+            ),
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+        return row
+
+    if requested_set_code:
+        cursor.execute(
+            """
+            SELECT
+                cc.card_uuid,
+                cc.card_name,
+                cc.set_code,
+                cc.collector_number,
+                s.release_date
+            FROM chaos_cards cc
+            LEFT JOIN sets s
+                ON s.set_code = cc.set_code
+            WHERE LOWER(COALESCE(cc.card_name, '')) = LOWER(?)
+              AND UPPER(COALESCE(cc.set_code, '')) = ?
+            ORDER BY
+                CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC,
+                COALESCE(s.release_date, '') DESC,
+                CAST(cc.collector_number AS INTEGER) ASC,
+                cc.collector_number ASC
+            LIMIT 1
+            """,
+            (
+                card_name,
+                requested_set_code,
+            ),
+        )
+
+        row = cursor.fetchone()
+        conn.close()
+        return row
+
+    cursor.execute(
+        """
+        SELECT
+            cc.card_uuid,
+            cc.card_name,
+            cc.set_code,
+            cc.collector_number,
+            s.release_date
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        WHERE LOWER(COALESCE(cc.card_name, '')) = LOWER(?)
+        ORDER BY
+            CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC,
+            COALESCE(s.release_date, '') DESC,
+            cc.set_code ASC,
+            CAST(cc.collector_number AS INTEGER) ASC,
+            cc.collector_number ASC
+        LIMIT 1
+        """,
+        (card_name,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+    return row
+
+def search_chaos_cards_for_custom_draft_import_list(set_code, import_items, limit=9999):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    try:
+        parsed_limit = int(limit)
+    except (TypeError, ValueError):
+        parsed_limit = 9999
+
+    if parsed_limit < 1:
+        parsed_limit = 1
+
+    if parsed_limit > 9999:
+        parsed_limit = 9999
+
+    cleaned_items = []
+    seen_item_keys = set()
+
+    for item in import_items or []:
+        card_name = str(item.get("card_name") or "").strip()
+        requested_set_code = str(item.get("set_code") or "").strip().upper()
+        requested_collector_number = str(item.get("collector_number") or "").strip()
+
+        if not card_name:
+            continue
+
+        item_key = (
+            card_name.lower(),
+            requested_set_code,
+            requested_collector_number.lower(),
+        )
+
+        if item_key in seen_item_keys:
+            continue
+
+        seen_item_keys.add(item_key)
+
+        cleaned_items.append({
+            "card_name": card_name,
+            "set_code": requested_set_code,
+            "collector_number": requested_collector_number,
+        })
+
+    if not cleaned_items:
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    result_rows = []
+    seen_card_uuids = set()
+
+    base_select_sql = """
+        SELECT
+            cc.card_uuid,
+            cc.card_name,
+            cc.set_code,
+            s.release_date,
+            cc.collector_number,
+            cc.rarity,
+            cc.type_line,
+            cc.mana_cost,
+            cc.mana_value,
+            cc.colors_json,
+            cc.color_identity_json,
+            cc.edhrec_rank,
+            cc.edhrec_saltiness,
+            COALESCE(
+                cp.tcgplayer_normal_price,
+                cp.tcgplayer_foil_price,
+                cp.tcgplayer_etched_price
+            ) AS sort_price,
+            cc.is_dual_faced,
+            CASE
+                WHEN cdsc.custom_set_card_id IS NULL THEN 0
+                ELSE 1
+            END AS already_in_set
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        LEFT JOIN card_prices cp
+            ON cp.card_uuid = cc.card_uuid
+        LEFT JOIN custom_draft_set_cards cdsc
+            ON cdsc.card_uuid = cc.card_uuid
+           AND cdsc.set_code = ?
+    """
+
+    for item in cleaned_items:
+        if len(result_rows) >= parsed_limit:
+            break
+
+        card_name = item["card_name"]
+        requested_set_code = item["set_code"]
+        requested_collector_number = item["collector_number"]
+
+        params = [clean_set_code]
+
+        if requested_set_code and requested_collector_number:
+            where_sql = """
+                WHERE UPPER(COALESCE(cc.set_code, '')) = ?
+                  AND LOWER(COALESCE(cc.collector_number, '')) = LOWER(?)
+            """
+            params.extend([
+                requested_set_code,
+                requested_collector_number,
+            ])
+
+        elif requested_set_code:
+            where_sql = """
+                WHERE LOWER(COALESCE(cc.card_name, '')) = LOWER(?)
+                  AND UPPER(COALESCE(cc.set_code, '')) = ?
+            """
+            params.extend([
+                card_name,
+                requested_set_code,
+            ])
+
+        else:
+            where_sql = """
+                WHERE LOWER(COALESCE(cc.card_name, '')) = LOWER(?)
+            """
+            params.append(card_name)
+
+        cursor.execute(
+            f"""
+            {base_select_sql}
+            {where_sql}
+            ORDER BY
+                already_in_set ASC,
+                CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC,
+                cc.set_code ASC,
+                CAST(cc.collector_number AS INTEGER) ASC,
+                cc.collector_number ASC
+            LIMIT ?
+            """,
+            params + [parsed_limit - len(result_rows)],
+        )
+
+        for row in cursor.fetchall():
+            card_uuid = row["card_uuid"]
+
+            if card_uuid in seen_card_uuids:
+                continue
+
+            seen_card_uuids.add(card_uuid)
+            result_rows.append(row)
+
+            if len(result_rows) >= parsed_limit:
+                break
+
+    conn.close()
+    return result_rows
+
+def bulk_add_most_recent_cards_to_custom_draft_set(set_code, import_items):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not clean_set_code:
+        raise ValueError("Custom set code is required.")
+
+    cleaned_items = []
+    seen_item_names = set()
+
+    for item in import_items or []:
+        card_name = str(item.get("card_name") or "").strip()
+        requested_set_code = str(item.get("set_code") or "").strip().upper()
+        requested_collector_number = str(item.get("collector_number") or "").strip()
+
+        if not card_name:
+            continue
+
+        item_key = (
+            card_name.lower(),
+            requested_set_code,
+            requested_collector_number.lower(),
+        )
+
+        if item_key in seen_item_names:
+            continue
+
+        seen_item_names.add(item_key)
+
+        cleaned_items.append({
+            "card_name": card_name,
+            "set_code": requested_set_code,
+            "collector_number": requested_collector_number,
+        })
+
+    added_cards = []
+    skipped_cards = []
+    unresolved_cards = []
+
+    for item in cleaned_items:
+        resolved_row = resolve_most_recent_chaos_card_printing_for_import_item(item)
+
+        if not resolved_row:
+            unresolved_cards.append(item["card_name"])
+            continue
+
+        try:
+            add_result = add_card_to_custom_draft_set(
+                clean_set_code,
+                resolved_row["card_uuid"],
+            )
+
+            added_entry = {
+                "card_name": resolved_row["card_name"] or item["card_name"],
+                "set_code": resolved_row["set_code"] or "",
+                "collector_number": resolved_row["collector_number"] or "",
+                "release_date": resolved_row["release_date"] or "",
+                "inserted": bool(add_result.get("inserted")),
+            }
+
+            if add_result.get("inserted"):
+                added_cards.append(added_entry)
+            else:
+                skipped_cards.append(added_entry)
+
+        except Exception as exc:
+            skipped_cards.append({
+                "card_name": item["card_name"],
+                "set_code": item.get("set_code") or "",
+                "collector_number": item.get("collector_number") or "",
+                "release_date": "",
+                "inserted": False,
+                "message": str(exc),
+            })
+
+    return {
+        "ok": True,
+        "parsed_count": len(cleaned_items),
+        "added_count": len(added_cards),
+        "skipped_count": len(skipped_cards),
+        "unresolved_count": len(unresolved_cards),
+        "added": added_cards,
+        "skipped": skipped_cards,
+        "unresolved": unresolved_cards,
+    }
+
 def add_card_to_custom_draft_set(set_code, card_uuid):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_card_uuid = str(card_uuid or "").strip()
@@ -2378,6 +2718,214 @@ def add_card_to_custom_draft_set(set_code, card_uuid):
         "message": "Card added." if inserted else "Card is already in this custom set.",
     }
 
+def update_custom_draft_set_card_printing(set_code, custom_set_card_id, new_card_uuid):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    try:
+        parsed_card_id = int(custom_set_card_id)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid custom set card id.")
+
+    clean_new_card_uuid = str(new_card_uuid or "").strip()
+
+    if not clean_set_code:
+        raise ValueError("Custom set code is required.")
+
+    if not clean_new_card_uuid:
+        raise ValueError("New card UUID is required.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            custom_set_card_id,
+            card_uuid,
+            special_category_index
+        FROM custom_draft_set_cards
+        WHERE custom_set_card_id = ?
+          AND set_code = ?
+        """,
+        (
+            parsed_card_id,
+            clean_set_code,
+        ),
+    )
+
+    existing_row = cursor.fetchone()
+
+    if not existing_row:
+        conn.close()
+        raise ValueError("Custom set card row was not found.")
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            card_name
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (clean_new_card_uuid,),
+    )
+
+    new_card_row = cursor.fetchone()
+
+    if not new_card_row:
+        conn.close()
+        raise ValueError("Selected printing was not found in chaos_cards.")
+
+    cursor.execute(
+        """
+        SELECT custom_set_card_id
+        FROM custom_draft_set_cards
+        WHERE set_code = ?
+          AND card_uuid = ?
+          AND custom_set_card_id <> ?
+        """,
+        (
+            clean_set_code,
+            clean_new_card_uuid,
+            parsed_card_id,
+        ),
+    )
+
+    duplicate_row = cursor.fetchone()
+
+    if duplicate_row:
+        conn.close()
+        raise ValueError("That printing is already in this custom draft set.")
+
+    cursor.execute(
+        """
+        UPDATE custom_draft_set_cards
+        SET card_uuid = ?,
+            sort_name = ?
+        WHERE custom_set_card_id = ?
+          AND set_code = ?
+        """,
+        (
+            clean_new_card_uuid,
+            new_card_row["card_name"] or "",
+            parsed_card_id,
+            clean_set_code,
+        ),
+    )
+
+    updated = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "updated": updated,
+        "message": "Card printing updated.",
+    }
+
+def normalize_custom_set_card_id_list(custom_set_card_ids):
+    parsed_ids = []
+
+    for raw_card_id in custom_set_card_ids or []:
+        try:
+            parsed_card_id = int(raw_card_id)
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_card_id > 0 and parsed_card_id not in parsed_ids:
+            parsed_ids.append(parsed_card_id)
+
+    return parsed_ids
+
+
+def bulk_update_custom_draft_set_card_category(set_code, custom_set_card_ids, special_category_index):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    parsed_ids = normalize_custom_set_card_id_list(custom_set_card_ids)
+
+    if not clean_set_code:
+        raise ValueError("Custom set code is required.")
+
+    if not parsed_ids:
+        return {
+            "ok": False,
+            "updated": 0,
+            "message": "No cards were selected.",
+        }
+
+    try:
+        parsed_category = int(special_category_index)
+    except (TypeError, ValueError):
+        parsed_category = 0
+
+    if parsed_category not in {0, 1, 2, 3}:
+        parsed_category = 0
+
+    placeholders = ",".join(["?"] * len(parsed_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        UPDATE custom_draft_set_cards
+        SET special_category_index = ?
+        WHERE set_code = ?
+          AND custom_set_card_id IN ({placeholders})
+        """,
+        [parsed_category, clean_set_code] + parsed_ids,
+    )
+
+    updated = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "updated": int(updated or 0),
+        "message": f"Updated {int(updated or 0)} card(s).",
+    }
+
+
+def bulk_delete_custom_draft_set_cards(set_code, custom_set_card_ids):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    parsed_ids = normalize_custom_set_card_id_list(custom_set_card_ids)
+
+    if not clean_set_code:
+        raise ValueError("Custom set code is required.")
+
+    if not parsed_ids:
+        return {
+            "ok": False,
+            "deleted": 0,
+            "message": "No cards were selected.",
+        }
+
+    placeholders = ",".join(["?"] * len(parsed_ids))
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        DELETE FROM custom_draft_set_cards
+        WHERE set_code = ?
+          AND custom_set_card_id IN ({placeholders})
+        """,
+        [clean_set_code] + parsed_ids,
+    )
+
+    deleted = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "deleted": int(deleted or 0),
+        "message": f"Removed {int(deleted or 0)} card(s).",
+    }
 
 def update_custom_draft_set_card_category(custom_set_card_id, special_category_index):
     try:

@@ -278,6 +278,55 @@
                     </label>
                 </div>
 
+                <details class="custom-draft-bulk-import-panel">
+                    <summary>Bulk Import from Moxfield / Archidekt List</summary>
+
+                    <div class="custom-draft-bulk-import-body">
+                        <label class="custom-draft-filter-field">
+                            <span>Paste List</span>
+                            <textarea
+                                id="customDraftBulkImportText"
+                                class="campaign-add-pack-custom-textarea custom-draft-bulk-import-textarea"
+                                placeholder="Paste a Moxfield or Archidekt export list here..."
+                            ></textarea>
+                        </label>
+
+                        <div class="custom-draft-bulk-import-row">
+                            <label class="custom-draft-filter-field">
+                                <span>Upload List File</span>
+                                <input
+                                    type="file"
+                                    id="customDraftBulkImportFile"
+                                    class="campaign-player-file"
+                                    accept=".txt,.csv,.dek,.dec,text/plain,text/csv"
+                                >
+                            </label>
+
+                            <div class="custom-draft-bulk-import-button-stack">
+                                <button
+                                    type="button"
+                                    id="customDraftBulkImportButton"
+                                    class="action-button secondary-button custom-draft-bulk-import-button"
+                                >
+                                    Load List into Search Results
+                                </button>
+
+                                <button
+                                    type="button"
+                                    id="customDraftBulkImportAddMostRecentButton"
+                                    class="action-button custom-draft-bulk-import-button"
+                                >
+                                    Add Most Recent to Set
+                                </button>
+                            </div>
+                        </div>
+
+                        <p class="custom-draft-bulk-import-help">
+                            This does not automatically add cards. It loads matching printings into the grouped search results so you can choose the exact versions to add.
+                        </p>
+                    </div>
+                </details>
+
                 <div class="custom-draft-search-builder-grid">
                     <label class="custom-draft-filter-field">
                         <span>Rarity</span>
@@ -525,6 +574,28 @@
                     </label>
 
                     <label class="custom-draft-filter-field">
+                        <span>Special Slot</span>
+                        <select id="customDraftSpecialSlotFilter" class="custom-draft-filter-input">
+                            <option value="">Any</option>
+                            {% for option in special_category_options %}
+                            <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Set Code</span>
+                        <input
+                            type="text"
+                            id="customDraftCurrentSetCodeFilter"
+                            class="custom-draft-filter-input"
+                            maxlength="12"
+                            placeholder="Any"
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="custom-draft-filter-field">
                         <span>Sort By</span>
                         <select id="customDraftCurrentSortSelect" class="custom-draft-filter-input">
                             <option value="name_asc">Name A-Z</option>
@@ -555,10 +626,64 @@
             </div>
 
             {% if custom_set_cards %}
+                <div class="custom-draft-current-selection-toolbar">
+                    <div class="custom-draft-current-selection-links">
+                        <button
+                            type="button"
+                            id="customDraftSelectAllCurrentCardsButton"
+                            class="campaign-small-link-button"
+                        >
+                            Select All
+                        </button>
+
+                        <button
+                            type="button"
+                            id="customDraftClearCurrentCardSelectionButton"
+                            class="campaign-small-link-button"
+                        >
+                            Clear Selection
+                        </button>
+
+                        <span id="customDraftSelectedCardCountLabel" class="custom-draft-selected-count">
+                            0 selected
+                        </span>
+                    </div>
+
+                    <div class="custom-draft-current-bulk-actions">
+                        <select
+                            id="customDraftBulkSpecialSlotSelect"
+                            class="custom-draft-filter-input custom-draft-bulk-special-slot-select"
+                        >
+                            {% for option in special_category_options %}
+                            <option value="{{ option.value }}">{{ option.label }}</option>
+                            {% endfor %}
+                        </select>
+
+                        <button
+                            type="button"
+                            id="customDraftBulkApplySpecialSlotButton"
+                            class="action-button secondary-button custom-draft-bulk-button"
+                            disabled
+                        >
+                            Assign Special Slot
+                        </button>
+
+                        <button
+                            type="button"
+                            id="customDraftBulkRemoveCardsButton"
+                            class="action-button secondary-button campaign-danger-button custom-draft-bulk-button"
+                            disabled
+                        >
+                            Remove Selected
+                        </button>
+                    </div>
+                </div>
+
                 <div id="customDraftCurrentCardList" class="custom-draft-current-card-list">
                     {% for card in custom_set_cards %}
                     <div
                         class="custom-draft-current-card-row"
+                        data-custom-set-card-id="{{ card.custom_set_card_id }}"
                         data-card-search="{{ (card.card_name ~ ' ' ~ card.card_set_code ~ ' ' ~ (card.collector_number or '') ~ ' ' ~ (card.rarity or '') ~ ' ' ~ (card.type_line or '') ~ ' ' ~ (card.color_identity_json or '') ~ ' ' ~ (card.mana_value|string if card.mana_value is not none else ''))|lower }}"
                         data-rarity="{{ (card.rarity or '')|lower }}"
                         data-color-identity="{{ (card.color_identity_json or '[]')|lower }}"
@@ -566,10 +691,19 @@
                         data-type-line="{{ (card.type_line or '')|lower }}"
                         data-card-name="{{ (card.card_name or '')|lower }}"
                         data-set-code="{{ (card.card_set_code or '')|upper }}"
+                        data-special-category="{{ card.special_category_index }}"
                         data-edhrec-rank="{{ card.edhrec_rank if card.edhrec_rank is not none else '' }}"
                         data-edhrec-saltiness="{{ card.edhrec_saltiness if card.edhrec_saltiness is not none else '' }}"
                         data-sort-price="{{ card.sort_price if card.sort_price is not none else '' }}"
                     >
+                        <label class="custom-draft-current-card-select-wrap">
+                            <input
+                                type="checkbox"
+                                class="custom-draft-current-card-checkbox"
+                                value="{{ card.custom_set_card_id }}"
+                                aria-label="Select {{ card.card_name }}"
+                            >
+                        </label>
                         <div class="custom-draft-current-card-image-wrap">
                             <img
                                 src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
@@ -588,6 +722,29 @@
                                 <div class="custom-draft-current-card-title">
                                     {{ card.card_name }}
                                 </div>
+
+                                <button
+                                    type="button"
+                                    class="alternate-image-gear custom-draft-change-printing-button"
+                                    data-card-name="{{ card.card_name }}"
+                                    data-current-card-uuid="{{ card.card_uuid }}"
+                                    data-update-url="{{ url_for('custom_draft_set_cards_update_printing', set_code=custom_set.set_code, custom_set_card_id=card.custom_set_card_id) }}"
+                                    title="Change printing"
+                                    aria-label="Change printing for {{ card.card_name }}"
+                                >
+                                    <svg
+                                        class="custom-draft-change-printing-icon"
+                                        viewBox="0 0 24 24"
+                                        aria-hidden="true"
+                                        focusable="false"
+                                    >
+                                        <rect x="7" y="5" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+                                        <rect x="5" y="3" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+                                        <line x1="8" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                                        <line x1="8" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                                        <line x1="8" y1="14" x2="11" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                                    </svg>
+                                </button>
 
                                 <button
                                     type="button"
@@ -696,6 +853,10 @@
     const searchYearStartFilter = document.getElementById("customDraftSearchYearStartFilter");
     const searchYearEndFilter = document.getElementById("customDraftSearchYearEndFilter");
     const searchClearFiltersButton = document.getElementById("customDraftSearchClearFiltersButton");
+    const bulkImportText = document.getElementById("customDraftBulkImportText");
+    const bulkImportFile = document.getElementById("customDraftBulkImportFile");
+    const bulkImportButton = document.getElementById("customDraftBulkImportButton");
+    const bulkImportAddMostRecentButton = document.getElementById("customDraftBulkImportAddMostRecentButton");
 
     const currentFilterInput = document.getElementById("customDraftCurrentCardFilterInput");
     const rarityFilter = document.getElementById("customDraftRarityFilter");
@@ -704,7 +865,15 @@
     const manaValueFilter = document.getElementById("customDraftManaValueFilter");
     const typeFilter = document.getElementById("customDraftTypeFilter");
     const currentSortSelect = document.getElementById("customDraftCurrentSortSelect");
+    const specialSlotFilter = document.getElementById("customDraftSpecialSlotFilter");
+    const currentSetCodeFilter = document.getElementById("customDraftCurrentSetCodeFilter");
     const clearFiltersButton = document.getElementById("customDraftClearFiltersButton");
+    const selectAllCurrentCardsButton = document.getElementById("customDraftSelectAllCurrentCardsButton");
+    const clearCurrentCardSelectionButton = document.getElementById("customDraftClearCurrentCardSelectionButton");
+    const selectedCardCountLabel = document.getElementById("customDraftSelectedCardCountLabel");
+    const bulkSpecialSlotSelect = document.getElementById("customDraftBulkSpecialSlotSelect");
+    const bulkApplySpecialSlotButton = document.getElementById("customDraftBulkApplySpecialSlotButton");
+    const bulkRemoveCardsButton = document.getElementById("customDraftBulkRemoveCardsButton");
     const currentCardList = document.getElementById("customDraftCurrentCardList");
 
     const zoomOverlay = document.getElementById("customDraftCardZoomOverlay");
@@ -720,7 +889,13 @@
     const generatedSaveButton = document.getElementById("customDraftGeneratedSaveButton");
 
     const searchUrl = {{ url_for('custom_draft_set_cards_search', set_code=custom_set.set_code)|tojson }};
+    const bulkImportUrl = {{ url_for('custom_draft_set_cards_import_list', set_code=custom_set.set_code)|tojson }};
+    const bulkImportAddMostRecentUrl = {{ url_for('custom_draft_set_cards_import_list_add_most_recent', set_code=custom_set.set_code)|tojson }};
+    const bulkCategoryUrl = {{ url_for('custom_draft_set_cards_bulk_update_category', set_code=custom_set.set_code)|tojson }};
+    const bulkDeleteUrl = {{ url_for('custom_draft_set_cards_bulk_delete', set_code=custom_set.set_code)|tojson }};
     const addUrl = {{ url_for('custom_draft_set_cards_add', set_code=custom_set.set_code)|tojson }};
+
+    let activeChangePrintingState = null;
 
     const colorNameMap = {
         "W": "White",
@@ -836,6 +1011,51 @@
         }
 
         return true;
+    }
+
+    function normalizeCardNameForCompare(cardName) {
+        return String(cardName || "").trim().toLowerCase();
+    }
+
+    function setAddCardsModalTitle(titleText, subtitleText) {
+        const modalTitle = document.querySelector(".custom-draft-card-search-window-header h2");
+        const modalSubtitle = document.querySelector(".custom-draft-card-search-window-header .page-subtitle");
+
+        if (modalTitle) {
+            modalTitle.textContent = titleText || "Add Cards";
+        }
+
+        if (modalSubtitle) {
+            modalSubtitle.textContent = subtitleText || "Search by card name, set, color identity, rarity, mana value, year, spell type, EDHREC rank, or saltiness.";
+        }
+    }
+
+    function setChangePrintingMode(changeState) {
+        activeChangePrintingState = changeState || null;
+
+        if (activeChangePrintingState) {
+            setAddCardsModalTitle(
+                "Change Printing",
+                "Choose a replacement printing for " + activeChangePrintingState.cardName + ". The special slot category will be preserved."
+            );
+        } else {
+            setAddCardsModalTitle(
+                "Add Cards",
+                "Search by card name, set, color identity, rarity, mana value, year, spell type, EDHREC rank, or saltiness."
+            );
+        }
+    }
+
+    function getSearchResultsForActiveMode(results) {
+        if (!activeChangePrintingState) {
+            return results || [];
+        }
+
+        const targetCardName = normalizeCardNameForCompare(activeChangePrintingState.cardName);
+
+        return (results || []).filter(function (card) {
+            return normalizeCardNameForCompare(card.card_name) === targetCardName;
+        });
     }
 
     function setSearchStatus(messageText, isError) {
@@ -1007,7 +1227,12 @@
         row.dataset.manaValue = manaValue;
         row.dataset.typeLine = String(card.type_line || "").toLowerCase();
         row.dataset.cardName = String(card.card_name || "").toLowerCase();
+        row.dataset.displayCardName = String(card.card_name || "");
         row.dataset.setCode = String(card.set_code || "").toUpperCase();
+        row.dataset.releaseYear = String(card.release_year || "");
+        row.dataset.collectorNumber = String(card.collector_number || "");
+        row.dataset.rarityDisplay = String(card.rarity || "");
+        row.dataset.imageSrc = String(card.image_src || "");
         row.dataset.edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
         row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
         row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
@@ -1072,12 +1297,23 @@
         const addButton = document.createElement("button");
         addButton.type = "button";
         addButton.className = "action-button secondary-button custom-draft-card-add-button";
-        addButton.textContent = card.already_in_set ? "Added" : "Add";
-        addButton.disabled = Boolean(card.already_in_set);
+        if (activeChangePrintingState) {
+            const isCurrentPrinting = card.card_uuid === activeChangePrintingState.currentCardUuid;
 
-        addButton.addEventListener("click", async function () {
-            await addCardToSet(card.card_uuid, addButton);
-        });
+            addButton.textContent = isCurrentPrinting ? "Current" : "Switch";
+            addButton.disabled = Boolean(isCurrentPrinting);
+
+            addButton.addEventListener("click", async function () {
+                await changeCardPrinting(card.card_uuid, addButton);
+            });
+        } else {
+            addButton.textContent = card.already_in_set ? "Added" : "Add";
+            addButton.disabled = Boolean(card.already_in_set);
+
+            addButton.addEventListener("click", async function () {
+                await addCardToSet(card.card_uuid, addButton);
+            });
+        }
 
         actions.appendChild(addButton);
 
@@ -1148,12 +1384,17 @@
         main.appendChild(titleRow);
         main.appendChild(meta);
 
+        const addedPill = document.createElement("div");
+        addedPill.className = "custom-draft-card-search-group-added-pill hidden";
+        addedPill.textContent = "Added";
+
         const expandIcon = document.createElement("div");
         expandIcon.className = "custom-draft-card-search-group-expand-icon";
         expandIcon.textContent = startsExpanded ? "−" : "+";
 
         headerButton.appendChild(imageWrap);
         headerButton.appendChild(main);
+        headerButton.appendChild(addedPill);
         headerButton.appendChild(expandIcon);
 
         const printingsWrap = document.createElement("div");
@@ -1278,6 +1519,140 @@
         return searchUrl + "?" + params.toString();
     }
 
+    function buildBulkImportFormDataOrShowError() {
+        const importTextValue = bulkImportText ? (bulkImportText.value || "").trim() : "";
+        const hasFile = bulkImportFile && bulkImportFile.files && bulkImportFile.files.length > 0;
+
+        if (!importTextValue && !hasFile) {
+            setSearchStatus("Paste a list or upload a list file.", true);
+            clearSearchResults();
+            return null;
+        }
+
+        const formData = new FormData();
+
+        if (importTextValue) {
+            formData.append("import_text", importTextValue);
+        }
+
+        if (hasFile) {
+            formData.append("import_file", bulkImportFile.files[0]);
+        }
+
+        return formData;
+    }
+
+    async function runBulkImportSearch() {
+        if (!bulkImportButton) {
+            return;
+        }
+
+        const formData = buildBulkImportFormDataOrShowError();
+
+        if (!formData) {
+            return;
+        }
+
+        bulkImportButton.disabled = true;
+        bulkImportButton.classList.add("action-button-loading");
+        bulkImportButton.textContent = "Loading List...";
+        setSearchStatus("", false);
+
+        try {
+            const response = await fetch(bulkImportUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json"
+                },
+                body: formData
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Bulk import search failed.");
+            }
+
+            const modeResults = getSearchResultsForActiveMode(payload.results || []);
+            renderSearchResults(modeResults);
+
+            let statusText = "Loaded " + modeResults.length + " result(s) from " + (payload.parsed_count || 0) + " parsed card line(s).";
+
+            if (payload.unmatched_count) {
+                statusText += " " + payload.unmatched_count + " card name(s) were not matched.";
+            }
+
+            setSearchStatus(statusText, false);
+        } catch (error) {
+            console.error(error);
+            clearSearchResults();
+            setSearchStatus(error.message || "Bulk import search failed.", true);
+        } finally {
+            bulkImportButton.disabled = false;
+            bulkImportButton.classList.remove("action-button-loading");
+            bulkImportButton.textContent = "Load List into Search Results";
+        }
+    }
+
+    async function runBulkImportAddMostRecent() {
+        if (!bulkImportAddMostRecentButton) {
+            return;
+        }
+
+        const formData = buildBulkImportFormDataOrShowError();
+
+        if (!formData) {
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "This will add the most recent matching printing for each parsed card name directly to this custom set. Continue?"
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        bulkImportAddMostRecentButton.disabled = true;
+        bulkImportAddMostRecentButton.classList.add("action-button-loading");
+        bulkImportAddMostRecentButton.textContent = "Adding...";
+
+        setSearchStatus("", false);
+
+        try {
+            const response = await fetch(bulkImportAddMostRecentUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json"
+                },
+                body: formData
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Direct import failed.");
+            }
+
+            const statusText = payload.message || (
+                "Imported " + (payload.added_count || 0) + " card(s)."
+            );
+
+            setSearchStatus(statusText + " Reloading card list...", false);
+
+            window.setTimeout(function () {
+                window.location.reload();
+            }, 700);
+        } catch (error) {
+            console.error(error);
+            setSearchStatus(error.message || "Direct import failed.", true);
+        } finally {
+            bulkImportAddMostRecentButton.disabled = false;
+            bulkImportAddMostRecentButton.classList.remove("action-button-loading");
+            bulkImportAddMostRecentButton.textContent = "Add Most Recent to Set";
+        }
+    }
+
     async function runCardSearch() {
         if (!searchButton) {
             return;
@@ -1308,8 +1683,14 @@
                 throw new Error(payload.message || "Card search failed.");
             }
 
-            renderSearchResults(payload.results || []);
-            setSearchStatus("Loaded " + (payload.results || []).length + " result(s).", false);
+            const modeResults = getSearchResultsForActiveMode(payload.results || []);
+            renderSearchResults(modeResults);
+
+            if (activeChangePrintingState) {
+                setSearchStatus("Loaded " + modeResults.length + " printing(s) for " + activeChangePrintingState.cardName + ".", false);
+            } else {
+                setSearchStatus("Loaded " + (payload.results || []).length + " result(s).", false);
+            }
         } catch (error) {
             console.error(error);
             clearSearchResults();
@@ -1452,6 +1833,117 @@
         }
     }
 
+    function collapseSearchResultGroup(groupElement) {
+        if (!groupElement) {
+            return;
+        }
+
+        const headerButton = groupElement.querySelector(".custom-draft-card-search-group-header");
+        const expandIcon = groupElement.querySelector(".custom-draft-card-search-group-expand-icon");
+
+        groupElement.classList.remove("custom-draft-card-search-group-expanded");
+
+        if (headerButton) {
+            headerButton.setAttribute("aria-expanded", "false");
+        }
+
+        if (expandIcon) {
+            expandIcon.textContent = "+";
+        }
+    }
+
+    function updateSearchResultGroupFromAddedRow(resultRow) {
+        if (!resultRow) {
+            return;
+        }
+
+        const groupElement = resultRow.closest(".custom-draft-card-search-group");
+
+        if (!groupElement) {
+            return;
+        }
+
+        const groupImage = groupElement.querySelector(".custom-draft-card-search-group-image");
+        const groupMeta = groupElement.querySelector(".custom-draft-card-search-group-meta");
+        const addedPill = groupElement.querySelector(".custom-draft-card-search-group-added-pill");
+
+        const imageSrc = resultRow.dataset.imageSrc || "";
+        const displayCardName = resultRow.dataset.displayCardName || "";
+        const setCode = resultRow.dataset.setCode || "";
+        const releaseYear = resultRow.dataset.releaseYear || "";
+        const collectorNumber = resultRow.dataset.collectorNumber || "";
+        const rarityDisplay = resultRow.dataset.rarityDisplay || "";
+        const manaValue = resultRow.dataset.manaValue || "";
+        const typeLine = resultRow.dataset.typeLine || "";
+
+        if (groupImage && imageSrc) {
+            groupImage.src = imageSrc;
+            groupImage.alt = displayCardName || "Added card";
+            groupImage.dataset.zoomSrc = imageSrc;
+            groupImage.dataset.zoomAlt = displayCardName || "Added card";
+        }
+
+        if (groupMeta) {
+            groupMeta.textContent = [
+                "Added: " + (setCode || "?"),
+                releaseYear || "",
+                collectorNumber ? "#" + collectorNumber : "",
+                rarityDisplay || "",
+                manaValue ? "MV " + manaValue : "",
+                typeLine || ""
+            ].filter(Boolean).join(" • ");
+        }
+
+        if (addedPill) {
+            addedPill.classList.remove("hidden");
+        }
+
+        collapseSearchResultGroup(groupElement);
+    }
+
+    async function changeCardPrinting(cardUuid, button) {
+        if (!activeChangePrintingState || !cardUuid || !button) {
+            return;
+        }
+
+        button.disabled = true;
+        button.classList.add("action-button-loading");
+        button.textContent = "Switching...";
+
+        try {
+            const response = await fetch(activeChangePrintingState.updateUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    card_uuid: cardUuid
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to change printing.");
+            }
+
+            button.classList.remove("action-button-loading");
+            button.textContent = "Switched";
+            setSearchStatus(payload.message || "Printing updated. Reloading card list...", false);
+
+            window.setTimeout(function () {
+                window.location.reload();
+            }, 450);
+        } catch (error) {
+            console.error(error);
+            button.disabled = false;
+            button.classList.remove("action-button-loading");
+            button.textContent = "Switch";
+            window.alert(error.message || "Failed to change printing.");
+        }
+    }
+
     async function addCardToSet(cardUuid, button) {
         if (!cardUuid || !button) {
             return;
@@ -1486,6 +1978,7 @@
             const resultRow = button.closest(".custom-draft-card-search-row");
             if (resultRow) {
                 resultRow.classList.add("custom-draft-card-search-row-disabled");
+                updateSearchResultGroupFromAddedRow(resultRow);
             }
 
             setSearchStatus(payload.message || "Card added. Search results remain open.", false);
@@ -1498,9 +1991,157 @@
         }
     }
 
+    async function bulkAssignSpecialSlot() {
+        const selectedIds = getSelectedCustomSetCardIds();
+
+        if (!selectedIds.length) {
+            window.alert("Select at least one card first.");
+            return;
+        }
+
+        const categoryValue = bulkSpecialSlotSelect ? bulkSpecialSlotSelect.value || "0" : "0";
+
+        if (!bulkApplySpecialSlotButton) {
+            return;
+        }
+
+        bulkApplySpecialSlotButton.disabled = true;
+        bulkApplySpecialSlotButton.classList.add("action-button-loading");
+        bulkApplySpecialSlotButton.textContent = "Assigning...";
+
+        try {
+            const response = await fetch(bulkCategoryUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    custom_set_card_ids: selectedIds,
+                    special_category_index: categoryValue
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to assign special slot.");
+            }
+
+            selectedIds.forEach(function (cardId) {
+                const row = currentCardList.querySelector('.custom-draft-current-card-row[data-custom-set-card-id="' + CSS.escape(cardId) + '"]');
+
+                if (!row) {
+                    return;
+                }
+
+                row.dataset.specialCategory = categoryValue;
+
+                const select = row.querySelector(".custom-draft-card-category-select");
+                if (select) {
+                    select.value = categoryValue;
+                }
+            });
+
+            clearCurrentCardSelection();
+            filterCurrentCards();
+            window.alert(payload.message || "Selected cards were updated.");
+        } catch (error) {
+            console.error(error);
+            window.alert(error.message || "Failed to assign special slot.");
+        } finally {
+            bulkApplySpecialSlotButton.classList.remove("action-button-loading");
+            bulkApplySpecialSlotButton.textContent = "Assign Special Slot";
+            updateCurrentSelectionState();
+        }
+    }
+
+    async function bulkRemoveSelectedCards() {
+        const selectedIds = getSelectedCustomSetCardIds();
+
+        if (!selectedIds.length) {
+            window.alert("Select at least one card first.");
+            return;
+        }
+
+        const confirmed = window.confirm("Remove " + selectedIds.length + " selected card(s) from this custom draft set?");
+
+        if (!confirmed) {
+            return;
+        }
+
+        if (!bulkRemoveCardsButton) {
+            return;
+        }
+
+        bulkRemoveCardsButton.disabled = true;
+        bulkRemoveCardsButton.classList.add("action-button-loading");
+        bulkRemoveCardsButton.textContent = "Removing...";
+
+        try {
+            const response = await fetch(bulkDeleteUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    custom_set_card_ids: selectedIds
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to remove selected cards.");
+            }
+
+            selectedIds.forEach(function (cardId) {
+                const row = currentCardList.querySelector('.custom-draft-current-card-row[data-custom-set-card-id="' + CSS.escape(cardId) + '"]');
+
+                if (row) {
+                    row.remove();
+                }
+            });
+
+            clearCurrentCardSelection();
+            filterCurrentCards();
+            window.alert(payload.message || "Selected cards were removed.");
+        } catch (error) {
+            console.error(error);
+            window.alert(error.message || "Failed to remove selected cards.");
+        } finally {
+            bulkRemoveCardsButton.classList.remove("action-button-loading");
+            bulkRemoveCardsButton.textContent = "Remove Selected";
+            updateCurrentSelectionState();
+        }
+    }
+
     function bindCurrentCardControls() {
         const categorySelects = Array.from(document.querySelectorAll(".custom-draft-card-category-select"));
         const removeButtons = Array.from(document.querySelectorAll(".custom-draft-card-remove-button"));
+        const changePrintingButtons = Array.from(document.querySelectorAll(".custom-draft-change-printing-button"));
+        const currentCardCheckboxes = Array.from(document.querySelectorAll(".custom-draft-current-card-checkbox"));
+
+        currentCardCheckboxes.forEach(function (checkbox) {
+            checkbox.addEventListener("change", updateCurrentSelectionState);
+        });
+
+        if (selectAllCurrentCardsButton) {
+            selectAllCurrentCardsButton.addEventListener("click", selectAllVisibleCurrentCards);
+        }
+
+        if (clearCurrentCardSelectionButton) {
+            clearCurrentCardSelectionButton.addEventListener("click", clearCurrentCardSelection);
+        }
+
+        if (bulkApplySpecialSlotButton) {
+            bulkApplySpecialSlotButton.addEventListener("click", bulkAssignSpecialSlot);
+        }
+
+        if (bulkRemoveCardsButton) {
+            bulkRemoveCardsButton.addEventListener("click", bulkRemoveSelectedCards);
+        }
 
         categorySelects.forEach(function (select) {
             select.addEventListener("change", async function () {
@@ -1529,12 +2170,83 @@
                     if (!response.ok || !payload.ok) {
                         throw new Error(payload.message || "Failed to update special slot category.");
                     }
+
+                    const row = select.closest(".custom-draft-current-card-row");
+                    if (row) {
+                        row.dataset.specialCategory = select.value || "0";
+                    }
+
+                    filterCurrentCards();
                 } catch (error) {
                     console.error(error);
                     window.alert(error.message || "Failed to update special slot category.");
                 } finally {
                     select.disabled = false;
                 }
+            });
+        });
+
+        changePrintingButtons.forEach(function (button) {
+            button.addEventListener("click", async function () {
+                const cardName = button.dataset.cardName || "";
+                const currentCardUuid = button.dataset.currentCardUuid || "";
+                const updateUrl = button.dataset.updateUrl || "";
+
+                if (!cardName || !currentCardUuid || !updateUrl) {
+                    return;
+                }
+
+                setChangePrintingMode({
+                    cardName: cardName,
+                    currentCardUuid: currentCardUuid,
+                    updateUrl: updateUrl
+                });
+
+                clearSearchResults();
+                setSearchStatus("", false);
+
+                if (searchInput) {
+                    searchInput.value = cardName;
+                }
+
+                if (searchRarityFilter) {
+                    searchRarityFilter.value = "";
+                }
+
+                if (searchColorFilter) {
+                    searchColorFilter.value = "";
+                }
+
+                if (searchManaOperatorFilter) {
+                    searchManaOperatorFilter.value = "";
+                }
+
+                if (searchManaValueFilter) {
+                    searchManaValueFilter.value = "";
+                }
+
+                if (searchTypeFilter) {
+                    searchTypeFilter.value = "";
+                }
+
+                if (searchSetCodeFilter) {
+                    searchSetCodeFilter.value = "";
+                }
+
+                if (searchYearStartFilter) {
+                    searchYearStartFilter.value = "";
+                }
+
+                if (searchYearEndFilter) {
+                    searchYearEndFilter.value = "";
+                }
+
+                if (searchSortSelect) {
+                    searchSortSelect.value = "year_newest";
+                }
+
+                openAddCardsSearch();
+                await runCardSearch();
             });
         });
 
@@ -1765,6 +2477,77 @@
         });
     }
 
+    function getCurrentCardRows() {
+        if (!currentCardList) {
+            return [];
+        }
+
+        return Array.from(currentCardList.querySelectorAll(".custom-draft-current-card-row"));
+    }
+
+    function getVisibleCurrentCardRows() {
+        return getCurrentCardRows().filter(function (row) {
+            return !row.classList.contains("hidden");
+        });
+    }
+
+    function getSelectedCurrentCardCheckboxes() {
+        if (!currentCardList) {
+            return [];
+        }
+
+        return Array.from(currentCardList.querySelectorAll(".custom-draft-current-card-checkbox:checked"));
+    }
+
+    function getSelectedCustomSetCardIds() {
+        return getSelectedCurrentCardCheckboxes()
+            .map(function (checkbox) {
+                return checkbox.value || "";
+            })
+            .filter(Boolean);
+    }
+
+    function updateCurrentSelectionState() {
+        const selectedCount = getSelectedCustomSetCardIds().length;
+
+        if (selectedCardCountLabel) {
+            selectedCardCountLabel.textContent = selectedCount + " selected";
+        }
+
+        if (bulkApplySpecialSlotButton) {
+            bulkApplySpecialSlotButton.disabled = selectedCount === 0;
+        }
+
+        if (bulkRemoveCardsButton) {
+            bulkRemoveCardsButton.disabled = selectedCount === 0;
+        }
+
+        getCurrentCardRows().forEach(function (row) {
+            const checkbox = row.querySelector(".custom-draft-current-card-checkbox");
+            row.classList.toggle("custom-draft-current-card-row-selected", Boolean(checkbox && checkbox.checked));
+        });
+    }
+
+    function clearCurrentCardSelection() {
+        getSelectedCurrentCardCheckboxes().forEach(function (checkbox) {
+            checkbox.checked = false;
+        });
+
+        updateCurrentSelectionState();
+    }
+
+    function selectAllVisibleCurrentCards() {
+        getVisibleCurrentCardRows().forEach(function (row) {
+            const checkbox = row.querySelector(".custom-draft-current-card-checkbox");
+
+            if (checkbox) {
+                checkbox.checked = true;
+            }
+        });
+
+        updateCurrentSelectionState();
+    }
+
     function filterCurrentCards() {
         if (!currentCardList) {
             return;
@@ -1776,23 +2559,29 @@
         const manaOperator = manaOperatorFilter ? (manaOperatorFilter.value || "").trim() : "";
         const manaValue = manaValueFilter ? (manaValueFilter.value || "").trim() : "";
         const typeValue = typeFilter ? (typeFilter.value || "").trim().toLowerCase() : "";
+        const specialSlotValue = specialSlotFilter ? (specialSlotFilter.value || "").trim() : "";
+        const setCodeValue = currentSetCodeFilter ? (currentSetCodeFilter.value || "").trim().toUpperCase() : "";
 
-        const rows = Array.from(currentCardList.querySelectorAll(".custom-draft-current-card-row"));
+        const rows = getCurrentCardRows();
 
         rows.forEach(function (row) {
             const haystack = row.dataset.cardSearch || "";
             const rowRarity = row.dataset.rarity || "";
             const rowTypeLine = row.dataset.typeLine || "";
+            const rowSpecialCategory = row.dataset.specialCategory || "0";
+            const rowSetCode = row.dataset.setCode || "";
 
             const textMatches = !textQuery || haystack.indexOf(textQuery) !== -1;
             const rarityMatches = !rarityValue || rowRarity === rarityValue;
             const colorMatches = rowMatchesColorFilter(row, colorValue);
             const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
             const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
+            const specialSlotMatches = !specialSlotValue || rowSpecialCategory === specialSlotValue;
+            const setCodeMatches = !setCodeValue || rowSetCode.indexOf(setCodeValue) !== -1;
 
             row.classList.toggle(
                 "hidden",
-                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches)
+                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && specialSlotMatches && setCodeMatches)
             );
         });
 
@@ -1801,6 +2590,8 @@
             ".custom-draft-current-card-row",
             currentSortSelect ? currentSortSelect.value : "name_asc"
         );
+
+        updateCurrentSelectionState();
     }
 
     function renderExistingColorIdentityLabels() {
@@ -1899,10 +2690,14 @@
         searchOverlay.classList.add("hidden");
         searchOverlay.setAttribute("aria-hidden", "true");
         document.body.classList.remove("custom-draft-search-maximized-active");
+        setChangePrintingMode(null);
     }
 
     if (openAddCardsButton) {
-        openAddCardsButton.addEventListener("click", openAddCardsSearch);
+        openAddCardsButton.addEventListener("click", function () {
+            setChangePrintingMode(null);
+            openAddCardsSearch();
+        });
     }
 
     if (closeAddCardsButton) {
@@ -1911,6 +2706,14 @@
 
     if (searchButton) {
         searchButton.addEventListener("click", runCardSearch);
+    }
+
+    if (bulkImportButton) {
+        bulkImportButton.addEventListener("click", runBulkImportSearch);
+    }
+
+    if (bulkImportAddMostRecentButton) {
+        bulkImportAddMostRecentButton.addEventListener("click", runBulkImportAddMostRecent);
     }
 
     if (searchInput) {
@@ -1952,6 +2755,8 @@
         manaOperatorFilter,
         manaValueFilter,
         typeFilter,
+        specialSlotFilter,
+        currentSetCodeFilter,
         currentSortSelect
     ].forEach(function (filterElement) {
         if (filterElement) {
@@ -1997,6 +2802,14 @@
 
             if (typeFilter) {
                 typeFilter.value = "";
+            }
+
+            if (specialSlotFilter) {
+                specialSlotFilter.value = "";
+            }
+
+            if (currentSetCodeFilter) {
+                currentSetCodeFilter.value = "";
             }
 
             if (currentSortSelect) {
@@ -2049,6 +2862,14 @@
                 searchSortSelect.value = "name_asc";
             }
 
+            if (bulkImportText) {
+                bulkImportText.value = "";
+            }
+
+            if (bulkImportFile) {
+                bulkImportFile.value = "";
+            }
+
             clearSearchResults();
             setSearchStatus("", false);
         });
@@ -2079,6 +2900,7 @@
 
     renderExistingColorIdentityLabels();
     bindCurrentCardControls();
+    updateCurrentSelectionState();
     bindZoomableImages();
 })();
 </script>

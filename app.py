@@ -19,7 +19,7 @@ from PIL import Image, ImageEnhance, ImageOps, ImageFilter, ImageChops, ImageDra
 from reportlab.lib.units import mm
 from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
-from io import BytesIO
+from io import BytesIO, StringIO
 from pypdf import PdfWriter
 from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, send_file, url_for, has_request_context
 
@@ -128,6 +128,9 @@ from db.database import (
     ensure_column_exists,
     get_all_sets,
     add_card_to_custom_draft_set,
+    bulk_add_most_recent_cards_to_custom_draft_set,
+    bulk_delete_custom_draft_set_cards,
+    bulk_update_custom_draft_set_card_category,
     delete_custom_draft_set_card,
     generate_custom_draft_set_pack_cards,
     get_custom_draft_pack_slot_options,
@@ -148,9 +151,11 @@ from db.database import (
     set_import_metadata,
     update_config_values,
     normalize_custom_draft_set_code,
+    search_chaos_cards_for_custom_draft_import_list,
     search_chaos_cards_for_custom_draft_set,
     update_custom_draft_pack_layout,
     update_custom_draft_set_card_category,
+    update_custom_draft_set_card_printing,
     upsert_custom_draft_set,
 )
 
@@ -11133,6 +11138,367 @@ def custom_draft_set_generate_pack(set_code, booster_name):
             "message": str(exc),
         }), 400
 
+def parse_custom_draft_bulk_import_quantity(raw_value):
+    try:
+        parsed_quantity = int(float(str(raw_value or "1").strip()))
+    except (TypeError, ValueError):
+        parsed_quantity = 1
+
+    if parsed_quantity < 1:
+        parsed_quantity = 1
+
+    if parsed_quantity > 999:
+        parsed_quantity = 999
+
+    return parsed_quantity
+
+
+def parse_custom_draft_bulk_import_csv(raw_text):
+    clean_text = str(raw_text or "").strip()
+
+    if not clean_text:
+        return []
+
+    first_line = ""
+    for raw_line in clean_text.splitlines():
+        if raw_line.strip():
+            first_line = raw_line.strip()
+            break
+
+    if "," not in first_line:
+        return []
+
+    try:
+        reader = csv.DictReader(StringIO(clean_text))
+    except Exception:
+        return []
+
+    if not reader.fieldnames:
+        return []
+
+    normalized_field_lookup = {
+        str(field_name or "").strip().lower(): field_name
+        for field_name in reader.fieldnames
+    }
+
+    name_field = (
+        normalized_field_lookup.get("name")
+        or normalized_field_lookup.get("card name")
+        or normalized_field_lookup.get("card")
+    )
+
+    if not name_field:
+        return []
+
+    quantity_field = (
+        normalized_field_lookup.get("quantity")
+        or normalized_field_lookup.get("count")
+        or normalized_field_lookup.get("qty")
+        or normalized_field_lookup.get("amount")
+    )
+
+    set_field = (
+        normalized_field_lookup.get("set code")
+        or normalized_field_lookup.get("set")
+        or normalized_field_lookup.get("edition")
+        or normalized_field_lookup.get("edition code")
+    )
+
+    collector_field = (
+        normalized_field_lookup.get("collector number")
+        or normalized_field_lookup.get("collector #")
+        or normalized_field_lookup.get("number")
+        or normalized_field_lookup.get("collector_number")
+    )
+
+    parsed_items = []
+
+    for row in reader:
+        card_name = str(row.get(name_field) or "").strip()
+
+        if not card_name:
+            continue
+
+        quantity = parse_custom_draft_bulk_import_quantity(
+            row.get(quantity_field) if quantity_field else 1
+        )
+
+        parsed_items.append({
+            "card_name": card_name,
+            "quantity": quantity,
+            "set_code": str(row.get(set_field) or "").strip().upper() if set_field else "",
+            "collector_number": str(row.get(collector_field) or "").strip() if collector_field else "",
+        })
+
+    return parsed_items
+
+
+def parse_custom_draft_bulk_import_decklist(raw_text):
+    parsed_items = []
+    ignored_section_headers = {
+        "commander",
+        "mainboard",
+        "main deck",
+        "sideboard",
+        "maybeboard",
+        "considering",
+        "companions",
+        "companion",
+        "deck",
+        "lands",
+        "creatures",
+        "instants",
+        "sorceries",
+        "artifacts",
+        "enchantments",
+        "planeswalkers",
+        "battles",
+        "tokens",
+    }
+
+    for raw_line in str(raw_text or "").splitlines():
+        line = str(raw_line or "").strip()
+
+        if not line:
+            continue
+
+        if line.startswith("#") or line.startswith("//"):
+            continue
+
+        clean_header = re.sub(r"\s*\(\d+\)\s*$", "", line).strip().lower()
+        if clean_header in ignored_section_headers:
+            continue
+
+        if line.lower().startswith("sideboard:"):
+            line = line.split(":", 1)[1].strip()
+
+        if line.lower().startswith("sb:"):
+            line = line[3:].strip()
+
+        line = re.sub(r"\s+\*\w+\*$", "", line).strip()
+
+        quantity = 1
+        quantity_match = re.match(r"^(\d+)\s*x?\s+(.+)$", line, flags=re.IGNORECASE)
+
+        if quantity_match:
+            quantity = parse_custom_draft_bulk_import_quantity(quantity_match.group(1))
+            line = quantity_match.group(2).strip()
+
+        requested_set_code = ""
+        requested_collector_number = ""
+
+        specific_printing_match = re.match(
+            r"^(.*?)\s+\(([A-Za-z0-9]{2,10})\)\s+([A-Za-z0-9\-]+)\s*$",
+            line,
+        )
+
+        if specific_printing_match:
+            line = specific_printing_match.group(1).strip()
+            requested_set_code = specific_printing_match.group(2).strip().upper()
+            requested_collector_number = specific_printing_match.group(3).strip()
+
+        else:
+            set_only_match = re.match(
+                r"^(.*?)\s+\(([A-Za-z0-9]{2,10})\)\s*$",
+                line,
+            )
+
+            if set_only_match:
+                line = set_only_match.group(1).strip()
+                requested_set_code = set_only_match.group(2).strip().upper()
+
+            bracket_set_match = re.match(
+                r"^(.*?)\s+\[([A-Za-z0-9]{2,10})\]\s*$",
+                line,
+            )
+
+            if bracket_set_match:
+                line = bracket_set_match.group(1).strip()
+                requested_set_code = bracket_set_match.group(2).strip().upper()
+
+        card_name = line.strip()
+
+        if not card_name:
+            continue
+
+        parsed_items.append({
+            "card_name": card_name,
+            "quantity": quantity,
+            "set_code": requested_set_code,
+            "collector_number": requested_collector_number,
+        })
+
+    return parsed_items
+
+def parse_custom_draft_bulk_import_text(raw_text):
+    csv_items = parse_custom_draft_bulk_import_csv(raw_text)
+
+    if csv_items:
+        return csv_items
+
+    return parse_custom_draft_bulk_import_decklist(raw_text)
+
+
+def serialize_custom_draft_card_search_result(row):
+    return {
+        "card_uuid": row["card_uuid"],
+        "card_name": row["card_name"],
+        "set_code": row["set_code"],
+        "release_date": row["release_date"] or "",
+        "release_year": (row["release_date"] or "")[:4],
+        "collector_number": row["collector_number"] or "",
+        "rarity": row["rarity"] or "",
+        "type_line": row["type_line"] or "",
+        "mana_cost": row["mana_cost"] or "",
+        "mana_value": row["mana_value"],
+        "colors_json": row["colors_json"] or "[]",
+        "color_identity_json": row["color_identity_json"] or "[]",
+        "edhrec_rank": row["edhrec_rank"],
+        "edhrec_saltiness": row["edhrec_saltiness"],
+        "sort_price": row["sort_price"],
+        "already_in_set": int(row["already_in_set"] or 0) == 1,
+        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+    }
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/import-list", methods=["POST"])
+def custom_draft_set_cards_import_list(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    import_text_parts = []
+
+    form_import_text = request.form.get("import_text") or ""
+    if form_import_text.strip():
+        import_text_parts.append(form_import_text)
+
+    uploaded_file = request.files.get("import_file")
+    if uploaded_file and uploaded_file.filename:
+        file_bytes = uploaded_file.read()
+
+        try:
+            file_text = file_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            file_text = file_bytes.decode("latin-1", errors="replace")
+
+        if file_text.strip():
+            import_text_parts.append(file_text)
+
+    combined_import_text = "\n".join(import_text_parts).strip()
+
+    if not combined_import_text:
+        return jsonify({
+            "ok": False,
+            "message": "Paste a Moxfield/Archidekt list or upload a list file.",
+        }), 400
+
+    parsed_items = parse_custom_draft_bulk_import_text(combined_import_text)
+
+    if not parsed_items:
+        return jsonify({
+            "ok": False,
+            "message": "No card names could be parsed from the imported list.",
+        }), 400
+
+    rows = search_chaos_cards_for_custom_draft_import_list(
+        clean_set_code,
+        parsed_items,
+        limit=9999,
+    )
+
+    results = [
+        serialize_custom_draft_card_search_result(row)
+        for row in rows
+    ]
+
+    matched_names = {
+        str(row["card_name"] or "").strip().lower()
+        for row in rows
+    }
+
+    unmatched_items = []
+    for item in parsed_items:
+        item_name = str(item.get("card_name") or "").strip()
+        if item_name and item_name.lower() not in matched_names:
+            unmatched_items.append(item_name)
+
+    unmatched_unique = []
+    seen_unmatched = set()
+
+    for item_name in unmatched_items:
+        item_key = item_name.lower()
+        if item_key in seen_unmatched:
+            continue
+
+        seen_unmatched.add(item_key)
+        unmatched_unique.append(item_name)
+
+    return jsonify({
+        "ok": True,
+        "message": "Imported list loaded into search results.",
+        "parsed_count": len(parsed_items),
+        "result_count": len(results),
+        "unmatched_count": len(unmatched_unique),
+        "unmatched": unmatched_unique[:50],
+        "results": results,
+    })
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/import-list/add-most-recent", methods=["POST"])
+def custom_draft_set_cards_import_list_add_most_recent(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    import_text_parts = []
+
+    form_import_text = request.form.get("import_text") or ""
+    if form_import_text.strip():
+        import_text_parts.append(form_import_text)
+
+    uploaded_file = request.files.get("import_file")
+    if uploaded_file and uploaded_file.filename:
+        file_bytes = uploaded_file.read()
+
+        try:
+            file_text = file_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            file_text = file_bytes.decode("latin-1", errors="replace")
+
+        if file_text.strip():
+            import_text_parts.append(file_text)
+
+    combined_import_text = "\n".join(import_text_parts).strip()
+
+    if not combined_import_text:
+        return jsonify({
+            "ok": False,
+            "message": "Paste a Moxfield/Archidekt list or upload a list file.",
+        }), 400
+
+    parsed_items = parse_custom_draft_bulk_import_text(combined_import_text)
+
+    if not parsed_items:
+        return jsonify({
+            "ok": False,
+            "message": "No card names could be parsed from the imported list.",
+        }), 400
+
+    try:
+        result = bulk_add_most_recent_cards_to_custom_draft_set(
+            clean_set_code,
+            parsed_items,
+        )
+
+        result["message"] = (
+            f"Imported {result['added_count']} card(s). "
+            f"Skipped {result['skipped_count']} already-added or duplicate card(s). "
+            f"Unresolved {result['unresolved_count']} card name(s)."
+        )
+
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
 @app.route("/custom-draft-sets/<path:set_code>/cards/search", methods=["GET"])
 def custom_draft_set_cards_search(set_code):
     clean_set_code = normalize_custom_draft_set_code(set_code)
@@ -11160,28 +11526,10 @@ def custom_draft_set_cards_search(set_code):
         sort_option=request.args.get("sort") or "name_asc",
     )
 
-    results = []
-
-    for row in rows:
-        results.append({
-            "card_uuid": row["card_uuid"],
-            "card_name": row["card_name"],
-            "set_code": row["set_code"],
-            "release_date": row["release_date"] or "",
-            "release_year": (row["release_date"] or "")[:4],
-            "collector_number": row["collector_number"] or "",
-            "rarity": row["rarity"] or "",
-            "type_line": row["type_line"] or "",
-            "mana_cost": row["mana_cost"] or "",
-            "mana_value": row["mana_value"],
-            "colors_json": row["colors_json"] or "[]",
-            "color_identity_json": row["color_identity_json"] or "[]",
-            "edhrec_rank": row["edhrec_rank"],
-            "edhrec_saltiness": row["edhrec_saltiness"],
-            "sort_price": row["sort_price"],
-            "already_in_set": int(row["already_in_set"] or 0) == 1,
-            "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
-        })
+    results = [
+        serialize_custom_draft_card_search_result(row)
+        for row in rows
+    ]
 
     return jsonify({
         "ok": True,
@@ -11212,6 +11560,80 @@ def custom_draft_set_cards_add(set_code):
 
     return jsonify(result)
 
+@app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/printing", methods=["POST"])
+def custom_draft_set_cards_update_printing(set_code, custom_set_card_id):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    payload = request.get_json(silent=True) or {}
+    new_card_uuid = (payload.get("card_uuid") or "").strip()
+
+    try:
+        result = update_custom_draft_set_card_printing(
+            clean_set_code,
+            custom_set_card_id,
+            new_card_uuid,
+        )
+
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/bulk-category", methods=["POST"])
+def custom_draft_set_cards_bulk_update_category(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    custom_set_card_ids = payload.get("custom_set_card_ids") or []
+    special_category_index = payload.get("special_category_index", 0)
+
+    try:
+        result = bulk_update_custom_draft_set_card_category(
+            clean_set_code,
+            custom_set_card_ids,
+            special_category_index,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/bulk-delete", methods=["POST"])
+def custom_draft_set_cards_bulk_delete(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    custom_set_card_ids = payload.get("custom_set_card_ids") or []
+
+    try:
+        result = bulk_delete_custom_draft_set_cards(
+            clean_set_code,
+            custom_set_card_ids,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
 
 @app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/category", methods=["POST"])
 def custom_draft_set_cards_update_category(set_code, custom_set_card_id):
