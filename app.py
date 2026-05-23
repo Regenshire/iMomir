@@ -6746,8 +6746,50 @@ def resolve_image_export_bleed_source_path(cached_result, image_source, export_a
         "used_fullbleed_source": False,
     }
 
-def build_chaos_card_image_export_zip(tracked_pack_ids):
-    export_rows = get_tracked_pack_card_export_rows(tracked_pack_ids)
+def build_custom_draft_set_image_export_rows(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        raise ValueError("Custom draft set was not found.")
+
+    custom_set_cards = get_custom_draft_set_card_rows(clean_set_code)
+
+    if not custom_set_cards:
+        raise ValueError("This custom draft set does not have any cards to export.")
+
+    set_name = custom_set["set_name"] if custom_set["set_name"] else "Custom Draft Set"
+    pack_tracking_code = clean_set_code.replace("^", "CUSTOM")
+    pack_display_name = f"{set_name} ({clean_set_code})"
+
+    export_rows = []
+
+    for card_index, card in enumerate(custom_set_cards, start=1):
+        export_rows.append({
+            "tracked_pack_id": 0,
+            "pack_tracking_code": pack_tracking_code,
+            "pack_set_code": clean_set_code,
+            "pack_booster_name": "custom_set",
+            "booster_index": 0,
+            "pack_display_name": pack_display_name,
+
+            "tracked_pack_card_id": int(card["custom_set_card_id"]),
+            "card_order": card_index,
+            "card_uuid": (card["card_uuid"] or "").strip(),
+            "card_name": card["card_name"] or "",
+            "card_set_code": (card["card_set_code"] or "").strip().upper(),
+            "sheet_is_foil": 0,
+            "rarity": card["rarity"] or "",
+            "type_line": card["type_line"] or "",
+            "scryfall_id": "",
+            "collector_number": card["collector_number"] or "",
+        })
+
+    return export_rows
+
+def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
+    if export_rows is None:
+        export_rows = get_tracked_pack_card_export_rows(tracked_pack_ids or [])
 
     if not export_rows:
         raise ValueError("No selected pack cards were available for image export.")
@@ -10899,6 +10941,34 @@ def custom_draft_sets_add():
         flash(str(exc))
         return redirect(url_for("sets"))
 
+@app.route("/custom-draft-sets/<path:set_code>/export-zip", methods=["POST"])
+def custom_draft_set_export_zip(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    config = get_request_config()
+
+    if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
+        flash("Chaos Draft Card Image Export is disabled in Settings.")
+        return redirect(url_for("custom_draft_set_manage", set_code=clean_set_code))
+
+    try:
+        export_rows = build_custom_draft_set_image_export_rows(clean_set_code)
+        export_result = build_chaos_card_image_export_zip(export_rows=export_rows)
+    except Exception as exc:
+        write_debug_log(f"CUSTOM SET IMAGE EXPORT ERROR | set_code={clean_set_code} | error={str(exc)}")
+        return str(exc), 400
+
+    custom_set = get_custom_draft_set(clean_set_code)
+    set_name = custom_set["set_name"] if custom_set and custom_set["set_name"] else clean_set_code
+    download_filename = f"{safe_filename(set_name)}_{safe_filename(clean_set_code)}_image_export.zip"
+
+    return send_file(
+        export_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_filename,
+        max_age=0,
+    )
 
 @app.route("/custom-draft-sets/<path:set_code>", methods=["GET", "POST"])
 def custom_draft_set_manage(set_code):

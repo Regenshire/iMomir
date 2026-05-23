@@ -6611,3 +6611,394 @@ input {
         padding-top: 6px;
     }
 }
+
+/* ==========================================
+   Custom Draft Set Card List Stats / Maximize
+   ========================================== */
+
+.custom-draft-card-list-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.custom-draft-header-small-button {
+    width: auto;
+    min-width: 110px;
+    min-height: 40px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    padding: 8px 12px;
+}
+
+.custom-draft-set-stats-panel {
+    margin: 14px 0 16px 0;
+    border: 1px solid rgba(110, 156, 255, 0.35);
+    border-radius: 16px;
+    background: rgba(9, 12, 18, 0.34);
+    padding: 14px;
+}
+
+.custom-draft-set-stats-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.custom-draft-set-stats-summary > div {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--panel-2);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.custom-draft-set-stats-summary span {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.custom-draft-set-stats-summary strong {
+    color: var(--text);
+    font-size: 1.25rem;
+    line-height: 1;
+}
+
+.custom-draft-set-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.custom-draft-set-stats-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(18, 20, 26, 0.68);
+    padding: 12px;
+    min-width: 0;
+}
+
+.custom-draft-set-stats-card h3 {
+    margin: 0 0 10px 0;
+    font-size: 0.98rem;
+    color: var(--text);
+}
+
+.custom-draft-stat-bar-list,
+.custom-draft-stat-row-list,
+.custom-draft-stat-pill-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.custom-draft-stat-bar-row {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) 42px;
+    gap: 8px;
+    align-items: center;
+}
+
+.custom-draft-stat-bar-label {
+    color: var(--muted);
+    font-weight: 800;
+    text-align: right;
+}
+
+.custom-draft-stat-bar-wrap {
+    height: 16px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.28);
+    overflow: hidden;
+}
+
+.custom-draft-stat-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 190, 70, 0.95), rgba(32, 160, 220, 0.95));
+}
+
+.custom-draft-stat-bar-row strong {
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.custom-draft-stat-color-pill {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+    padding: 8px 10px;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.custom-draft-stat-color-pill span {
+    color: var(--text);
+    font-weight: 800;
+}
+
+.custom-draft-stat-color-pill strong {
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.custom-draft-stat-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    padding-bottom: 6px;
+}
+
+.custom-draft-stat-row span {
+    color: var(--text);
+    font-weight: 800;
+}
+
+.custom-draft-stat-row strong {
+    color: var(--muted);
+    font-size: 0.9rem;
+    text-align: right;
+}
+
+.custom-draft-current-list-maximized-active {
+    overflow: hidden;
+}
+
+.custom-draft-set-card-list-panel-maximized {
+    position: fixed;
+    inset: 12px;
+    z-index: 1450;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    max-width: none;
+    background: var(--panel);
+}
+
+.custom-draft-set-card-list-panel-maximized .custom-draft-current-card-tools {
+    flex: 0 0 auto;
+}
+
+.custom-draft-set-card-list-panel-maximized .custom-draft-current-selection-toolbar {
+    flex: 0 0 auto;
+}
+
+.custom-draft-set-card-list-panel-maximized .custom-draft-set-stats-panel {
+    flex: 0 0 auto;
+    max-height: 38vh;
+    overflow-y: auto;
+}
+
+.custom-draft-set-card-list-panel-maximized #customDraftCurrentCardList {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+@media (max-width: 900px) {
+    .custom-draft-set-stats-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .custom-draft-set-stats-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 700px) {
+    .custom-draft-card-list-header-actions {
+        justify-content: stretch;
+    }
+
+    .custom-draft-card-list-header-actions .custom-draft-card-count,
+    .custom-draft-header-small-button {
+        width: 100%;
+    }
+
+    .custom-draft-set-stats-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .custom-draft-set-card-list-panel-maximized {
+        inset: 8px;
+    }
+}
+
+/* ==========================================
+   Custom Draft Set Card List Maximize Fill Fix
+   ========================================== */
+
+.custom-draft-set-card-list-panel-maximized {
+    height: calc(100vh - 24px);
+    max-height: calc(100vh - 24px);
+}
+
+.custom-draft-set-card-list-panel-maximized .custom-draft-card-list-header,
+.custom-draft-set-card-list-panel-maximized .custom-draft-current-card-tools,
+.custom-draft-set-card-list-panel-maximized .custom-draft-current-selection-toolbar {
+    flex: 0 0 auto;
+}
+
+.custom-draft-set-card-list-panel-maximized #customDraftCurrentCardList {
+    flex: 1 1 auto;
+    height: 100%;
+    max-height: none !important;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    padding-bottom: 10px;
+}
+
+.custom-draft-set-card-list-panel-maximized .custom-draft-current-card-row {
+    flex: 0 0 auto;
+}
+
+@media (max-width: 700px) {
+    .custom-draft-set-card-list-panel-maximized {
+        height: calc(100vh - 16px);
+        max-height: calc(100vh - 16px);
+    }
+}
+
+/* ==========================================
+   Custom Draft Set Card List Copy Split Button
+   ========================================== */
+
+.custom-draft-copy-split {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(88px, 1fr) 44px;
+    width: auto;
+    min-width: 150px;
+}
+
+.custom-draft-copy-main-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    font-size: 0.92rem;
+    padding: 8px 12px;
+}
+
+.custom-draft-copy-menu-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 40px;
+    border-left: 1px solid var(--border);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    font-size: 0.9rem;
+    padding: 8px;
+}
+
+.custom-draft-copy-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 1700;
+    min-width: 170px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.custom-draft-copy-menu.hidden {
+    display: none !important;
+}
+
+.custom-draft-copy-menu-item {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    text-align: left;
+    padding: 9px 12px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.custom-draft-copy-menu-item:hover,
+.custom-draft-copy-menu-item-active {
+    background: rgba(72, 127, 255, 0.18);
+    border-color: rgba(110, 156, 255, 0.58);
+}
+
+/* Keep Add Cards / Change Printing overlay above maximized Set Card List */
+.custom-draft-card-search-overlay {
+    z-index: 2600;
+}
+
+.custom-draft-set-card-list-panel-maximized {
+    z-index: 1450;
+}
+
+@media (max-width: 700px) {
+    .custom-draft-copy-split {
+        width: 100%;
+    }
+}
+
+/* ==========================================
+   Custom Draft Alternate Image Indicators
+   ========================================== */
+
+.custom-draft-alternate-image-active {
+    color: #7dff9f !important;
+}
+
+.custom-draft-alternate-image-active:hover {
+    color: #b8ffc8 !important;
+}
+
+
+/* ==========================================
+   Custom Draft Alternate Image Text Line
+   ========================================== */
+
+.custom-draft-alternate-image-meta-line {
+    flex-basis: 100%;
+    display: block;
+}
+
+/* ==========================================
+   Custom Draft Set Export Button
+   ========================================== */
+
+.custom-draft-export-set-form {
+    margin: 0;
+}
+
+.custom-draft-export-set-button {
+    width: auto;
+    min-width: 180px;
+    min-height: 52px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .custom-draft-export-set-form,
+    .custom-draft-export-set-button {
+        width: 100%;
+    }
+}

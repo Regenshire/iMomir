@@ -14,6 +14,20 @@
             </div>
 
             <div class="chaos-pack-view-header-actions">
+                <form
+                    method="post"
+                    action="{{ url_for('custom_draft_set_export_zip', set_code=custom_set.set_code) }}"
+                    class="custom-draft-export-set-form"
+                    target="_blank"
+                >
+                    <button
+                        type="submit"
+                        class="action-button secondary-button custom-draft-export-set-button"
+                    >
+                        Export Set to Zip
+                    </button>
+                </form>
+
                 <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('sets') }}">
                     Back
                 </a>
@@ -482,7 +496,7 @@
         </div>
     </div>
 
-        <div class="page-panel">
+        <div id="customDraftSetCardListPanel" class="page-panel custom-draft-set-card-list-panel">
             <div class="custom-draft-card-list-header">
                 <div>
                     <h2>Set Card List</h2>
@@ -491,8 +505,103 @@
                     </p>
                 </div>
 
-                <div class="custom-draft-card-count">
-                    {{ custom_set_cards|length }} card(s)
+                <div class="custom-draft-card-list-header-actions">
+                    <div class="custom-draft-card-count">
+                        {{ custom_set_cards|length }} card(s)
+                    </div>
+
+                    <div class="custom-draft-copy-split">
+                        <button
+                            type="button"
+                            id="customDraftCopyVisibleCardsButton"
+                            class="action-button secondary-button custom-draft-copy-main-button"
+                            data-copy-format="simple"
+                        >
+                            Copy
+                        </button>
+
+                        <button
+                            type="button"
+                            id="customDraftCopyVisibleCardsMenuButton"
+                            class="action-button secondary-button custom-draft-copy-menu-button"
+                            aria-label="Choose copy format"
+                            title="Choose copy format"
+                        >
+                            ▾
+                        </button>
+
+                        <div id="customDraftCopyVisibleCardsMenu" class="custom-draft-copy-menu hidden">
+                            <button
+                                type="button"
+                                class="custom-draft-copy-menu-item custom-draft-copy-menu-item-active"
+                                data-copy-format="simple"
+                            >
+                                Simple
+                            </button>
+
+                            <button
+                                type="button"
+                                class="custom-draft-copy-menu-item"
+                                data-copy-format="detailed"
+                            >
+                                Detailed
+                            </button>
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        id="customDraftStatsToggleButton"
+                        class="action-button secondary-button custom-draft-header-small-button"
+                    >
+                        Stats
+                    </button>
+
+                    <button
+                        type="button"
+                        id="customDraftMaximizeCardListButton"
+                        class="action-button secondary-button custom-draft-header-small-button"
+                    >
+                        Maximize
+                    </button>
+                </div>
+            </div>
+
+            <div id="customDraftSetStatsPanel" class="custom-draft-set-stats-panel hidden">
+                <div class="custom-draft-set-stats-summary">
+                    <div>
+                        <span>Visible Cards</span>
+                        <strong id="customDraftStatsVisibleCount">0</strong>
+                    </div>
+                    <div>
+                        <span>Creatures</span>
+                        <strong id="customDraftStatsCreatureCount">0</strong>
+                    </div>
+                    <div>
+                        <span>Noncreatures</span>
+                        <strong id="customDraftStatsNonCreatureCount">0</strong>
+                    </div>
+                    <div>
+                        <span>Average MV</span>
+                        <strong id="customDraftStatsAverageManaValue">0.0</strong>
+                    </div>
+                </div>
+
+                <div class="custom-draft-set-stats-grid">
+                    <div class="custom-draft-set-stats-card">
+                        <h3>Mana Value Distribution</h3>
+                        <div id="customDraftStatsManaDistribution" class="custom-draft-stat-bar-list"></div>
+                    </div>
+
+                    <div class="custom-draft-set-stats-card">
+                        <h3>Color Identity</h3>
+                        <div id="customDraftStatsColorDistribution" class="custom-draft-stat-pill-list"></div>
+                    </div>
+
+                    <div class="custom-draft-set-stats-card">
+                        <h3>Card Types</h3>
+                        <div id="customDraftStatsTypeDistribution" class="custom-draft-stat-row-list"></div>
+                    </div>
                 </div>
             </div>
 
@@ -570,6 +679,25 @@
                             <option value="planeswalker">Planeswalker</option>
                             <option value="battle">Battle</option>
                             <option value="land">Land</option>
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Duplicates</span>
+                        <select id="customDraftDuplicateFilter" class="custom-draft-filter-input">
+                            <option value="">Any</option>
+                            <option value="duplicates_only">Duplicates Only</option>
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Alternate Image</span>
+                        <select id="customDraftAlternateImageFilter" class="custom-draft-filter-input">
+                            <option value="">Any</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="yes_remove_bleed">Yes - Remove Bleed</option>
+                            <option value="yes_no_bleed">Yes - No Bleed</option>
                         </select>
                     </label>
 
@@ -690,8 +818,12 @@
                         data-mana-value="{{ card.mana_value if card.mana_value is not none else '' }}"
                         data-type-line="{{ (card.type_line or '')|lower }}"
                         data-card-name="{{ (card.card_name or '')|lower }}"
+                        data-display-card-name="{{ card.card_name or '' }}"
                         data-set-code="{{ (card.card_set_code or '')|upper }}"
+                        data-collector-number="{{ card.collector_number or '' }}"
                         data-special-category="{{ card.special_category_index }}"
+                        data-has-alternate-source="{{ 1 if card.has_alternate_source else 0 }}"
+                        data-alternate-remove-bleed="{{ 1 if card.alternate_remove_bleed else 0 }}"
                         data-edhrec-rank="{{ card.edhrec_rank if card.edhrec_rank is not none else '' }}"
                         data-edhrec-saltiness="{{ card.edhrec_saltiness if card.edhrec_saltiness is not none else '' }}"
                         data-sort-price="{{ card.sort_price if card.sort_price is not none else '' }}"
@@ -748,7 +880,7 @@
 
                                 <button
                                     type="button"
-                                    class="alternate-image-gear alternate-image-button"
+                                    class="alternate-image-gear alternate-image-button {% if card.has_alternate_source %}custom-draft-alternate-image-active{% endif %}"
                                     data-card-uuid="{{ card.card_uuid }}"
                                     data-card-name="{{ card.card_name }}"
                                     title="Alternate image settings"
@@ -773,6 +905,12 @@
                                     Color Identity: Loading
                                 </span>
                                 <span>{{ card.type_line or "unknown type" }}</span>
+                                
+                                {% if card.has_alternate_source %}
+                                <span class="custom-draft-alternate-image-meta-line">
+                                    Alternate Image - {% if card.alternate_remove_bleed %}Remove Bleed{% else %}No Bleed{% endif %}
+                                </span>
+                                {% endif %}
                             </div>
                         </div>
 
@@ -864,6 +1002,8 @@
     const manaOperatorFilter = document.getElementById("customDraftManaOperatorFilter");
     const manaValueFilter = document.getElementById("customDraftManaValueFilter");
     const typeFilter = document.getElementById("customDraftTypeFilter");
+    const duplicateFilter = document.getElementById("customDraftDuplicateFilter");
+    const alternateImageFilter = document.getElementById("customDraftAlternateImageFilter");
     const currentSortSelect = document.getElementById("customDraftCurrentSortSelect");
     const specialSlotFilter = document.getElementById("customDraftSpecialSlotFilter");
     const currentSetCodeFilter = document.getElementById("customDraftCurrentSetCodeFilter");
@@ -875,6 +1015,20 @@
     const bulkApplySpecialSlotButton = document.getElementById("customDraftBulkApplySpecialSlotButton");
     const bulkRemoveCardsButton = document.getElementById("customDraftBulkRemoveCardsButton");
     const currentCardList = document.getElementById("customDraftCurrentCardList");
+    const currentCardListPanel = document.getElementById("customDraftSetCardListPanel");
+    const maximizeCardListButton = document.getElementById("customDraftMaximizeCardListButton");
+    const copyVisibleCardsButton = document.getElementById("customDraftCopyVisibleCardsButton");
+    const copyVisibleCardsMenuButton = document.getElementById("customDraftCopyVisibleCardsMenuButton");
+    const copyVisibleCardsMenu = document.getElementById("customDraftCopyVisibleCardsMenu");
+    const statsToggleButton = document.getElementById("customDraftStatsToggleButton");
+    const statsPanel = document.getElementById("customDraftSetStatsPanel");
+    const statsVisibleCount = document.getElementById("customDraftStatsVisibleCount");
+    const statsCreatureCount = document.getElementById("customDraftStatsCreatureCount");
+    const statsNonCreatureCount = document.getElementById("customDraftStatsNonCreatureCount");
+    const statsAverageManaValue = document.getElementById("customDraftStatsAverageManaValue");
+    const statsManaDistribution = document.getElementById("customDraftStatsManaDistribution");
+    const statsColorDistribution = document.getElementById("customDraftStatsColorDistribution");
+    const statsTypeDistribution = document.getElementById("customDraftStatsTypeDistribution");
 
     const zoomOverlay = document.getElementById("customDraftCardZoomOverlay");
     const zoomBackdrop = document.getElementById("customDraftCardZoomBackdrop");
@@ -896,6 +1050,7 @@
     const addUrl = {{ url_for('custom_draft_set_cards_add', set_code=custom_set.set_code)|tojson }};
 
     let activeChangePrintingState = null;
+    let currentVisibleCardCopyFormat = "simple";
 
     const colorNameMap = {
         "W": "White",
@@ -2477,6 +2632,438 @@
         });
     }
 
+    function getCurrentCardNameCounts() {
+        const nameCounts = {};
+
+        if (!currentCardList) {
+            return nameCounts;
+        }
+
+        Array.from(currentCardList.querySelectorAll(".custom-draft-current-card-row")).forEach(function (row) {
+            const cardName = row.dataset.cardName || "";
+
+            if (!cardName) {
+                return;
+            }
+
+            nameCounts[cardName] = (nameCounts[cardName] || 0) + 1;
+        });
+
+        return nameCounts;
+    }
+
+    function getVisibleCurrentCardCount() {
+        return getVisibleCurrentCardRows().length;
+    }
+
+    function getPrimaryCardType(typeLine) {
+        const cleanTypeLine = String(typeLine || "").toLowerCase();
+
+        if (cleanTypeLine.indexOf("creature") !== -1) {
+            return "Creature";
+        }
+
+        if (cleanTypeLine.indexOf("instant") !== -1) {
+            return "Instant";
+        }
+
+        if (cleanTypeLine.indexOf("sorcery") !== -1) {
+            return "Sorcery";
+        }
+
+        if (cleanTypeLine.indexOf("artifact") !== -1) {
+            return "Artifact";
+        }
+
+        if (cleanTypeLine.indexOf("enchantment") !== -1) {
+            return "Enchantment";
+        }
+
+        if (cleanTypeLine.indexOf("planeswalker") !== -1) {
+            return "Planeswalker";
+        }
+
+        if (cleanTypeLine.indexOf("battle") !== -1) {
+            return "Battle";
+        }
+
+        if (cleanTypeLine.indexOf("land") !== -1) {
+            return "Land";
+        }
+
+        return "Other";
+    }
+
+    function formatPercent(count, total) {
+        if (!total) {
+            return "0%";
+        }
+
+        return Math.round((count / total) * 100) + "%";
+    }
+
+    function renderStatRows(container, rows) {
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = "";
+
+        rows.forEach(function (rowData) {
+            const row = document.createElement("div");
+            row.className = "custom-draft-stat-row";
+
+            const label = document.createElement("span");
+            label.textContent = rowData.label;
+
+            const value = document.createElement("strong");
+            value.textContent = rowData.value;
+
+            row.appendChild(label);
+            row.appendChild(value);
+            container.appendChild(row);
+        });
+    }
+
+    function renderManaDistribution(container, buckets, maxCount) {
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = "";
+
+        Object.keys(buckets).forEach(function (bucketLabel) {
+            const count = buckets[bucketLabel];
+            const percent = maxCount ? Math.max(4, Math.round((count / maxCount) * 100)) : 0;
+
+            const row = document.createElement("div");
+            row.className = "custom-draft-stat-bar-row";
+
+            const label = document.createElement("span");
+            label.className = "custom-draft-stat-bar-label";
+            label.textContent = bucketLabel;
+
+            const barWrap = document.createElement("div");
+            barWrap.className = "custom-draft-stat-bar-wrap";
+
+            const bar = document.createElement("div");
+            bar.className = "custom-draft-stat-bar-fill";
+            bar.style.width = percent + "%";
+
+            const value = document.createElement("strong");
+            value.textContent = count;
+
+            barWrap.appendChild(bar);
+            row.appendChild(label);
+            row.appendChild(barWrap);
+            row.appendChild(value);
+
+            container.appendChild(row);
+        });
+    }
+
+    function renderColorDistribution(container, colorCounts, totalCards) {
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = "";
+
+        [
+            ["W", "White"],
+            ["U", "Blue"],
+            ["B", "Black"],
+            ["R", "Red"],
+            ["G", "Green"],
+            ["C", "Colorless"],
+            ["L", "Land"]
+        ].forEach(function (colorInfo) {
+            const colorKey = colorInfo[0];
+            const colorLabel = colorInfo[1];
+            const count = colorCounts[colorKey] || 0;
+
+            const pill = document.createElement("div");
+            pill.className = "custom-draft-stat-color-pill custom-draft-stat-color-" + colorKey.toLowerCase();
+
+            const label = document.createElement("span");
+            label.textContent = colorLabel;
+
+            const value = document.createElement("strong");
+            value.textContent = count + " • " + formatPercent(count, totalCards);
+
+            pill.appendChild(label);
+            pill.appendChild(value);
+            container.appendChild(pill);
+        });
+    }
+
+    function updateSetStatsRollout() {
+        const visibleRows = getVisibleCurrentCardRows();
+        const totalCards = visibleRows.length;
+
+        let creatureCount = 0;
+        let manaTotal = 0;
+        let manaCount = 0;
+
+        const manaBuckets = {
+            "0": 0,
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 0,
+            "6+": 0
+        };
+
+        const colorCounts = {
+            "W": 0,
+            "U": 0,
+            "B": 0,
+            "R": 0,
+            "G": 0,
+            "C": 0,
+            "L": 0
+        };
+
+        const typeCounts = {
+            "Creature": 0,
+            "Instant": 0,
+            "Sorcery": 0,
+            "Artifact": 0,
+            "Enchantment": 0,
+            "Planeswalker": 0,
+            "Battle": 0,
+            "Land": 0,
+            "Other": 0
+        };
+
+        visibleRows.forEach(function (row) {
+            const typeLine = row.dataset.typeLine || "";
+            const cleanTypeLine = typeLine.toLowerCase();
+            const primaryType = getPrimaryCardType(typeLine);
+
+            typeCounts[primaryType] = (typeCounts[primaryType] || 0) + 1;
+
+            if (cleanTypeLine.indexOf("creature") !== -1) {
+                creatureCount += 1;
+            }
+
+            const manaValue = Number(row.dataset.manaValue);
+
+            if (Number.isFinite(manaValue)) {
+                manaTotal += manaValue;
+                manaCount += 1;
+
+                if (manaValue >= 6) {
+                    manaBuckets["6+"] += 1;
+                } else {
+                    manaBuckets[String(Math.max(0, Math.floor(manaValue)))] += 1;
+                }
+            }
+
+            const colors = normalizeColorArray(row.dataset.colorIdentity || "[]");
+            const isLand = cleanTypeLine.indexOf("land") !== -1;
+
+            if (isLand) {
+                colorCounts["L"] += 1;
+            }
+
+            if (!colors.length) {
+                colorCounts["C"] += 1;
+            } else {
+                colors.forEach(function (colorSymbol) {
+                    if (colorCounts[colorSymbol] !== undefined) {
+                        colorCounts[colorSymbol] += 1;
+                    }
+                });
+            }
+        });
+
+        const nonCreatureCount = totalCards - creatureCount;
+        const averageManaValue = manaCount ? (manaTotal / manaCount) : 0;
+        const maxManaBucket = Math.max.apply(null, Object.keys(manaBuckets).map(function (bucketKey) {
+            return manaBuckets[bucketKey];
+        }));
+
+        if (statsVisibleCount) {
+            statsVisibleCount.textContent = totalCards;
+        }
+
+        if (statsCreatureCount) {
+            statsCreatureCount.textContent = creatureCount;
+        }
+
+        if (statsNonCreatureCount) {
+            statsNonCreatureCount.textContent = nonCreatureCount;
+        }
+
+        if (statsAverageManaValue) {
+            statsAverageManaValue.textContent = averageManaValue.toFixed(1);
+        }
+
+        renderManaDistribution(statsManaDistribution, manaBuckets, maxManaBucket);
+        renderColorDistribution(statsColorDistribution, colorCounts, totalCards);
+
+        renderStatRows(statsTypeDistribution, Object.keys(typeCounts)
+            .filter(function (typeName) {
+                return typeCounts[typeName] > 0;
+            })
+            .map(function (typeName) {
+                return {
+                    label: typeName,
+                    value: typeCounts[typeName] + " • " + formatPercent(typeCounts[typeName], totalCards)
+                };
+            })
+        );
+    }
+
+    function getFrontCardNameForExport(cardName) {
+        const cleanCardName = String(cardName || "").trim();
+
+        if (!cleanCardName) {
+            return "";
+        }
+
+        if (cleanCardName.indexOf(" // ") !== -1) {
+            return cleanCardName.split(" // ", 1)[0].trim();
+        }
+
+        return cleanCardName;
+    }
+
+    function buildVisibleCardExportText(copyFormat) {
+        const visibleRows = getVisibleCurrentCardRows();
+        const cleanCopyFormat = String(copyFormat || "simple").trim().toLowerCase();
+
+        return visibleRows
+            .map(function (row) {
+                const cardName = (row.dataset.displayCardName || row.dataset.cardName || "").trim();
+                const frontCardName = getFrontCardNameForExport(cardName);
+                const setCode = (row.dataset.setCode || "").trim().toUpperCase();
+                const collectorNumber = (row.dataset.collectorNumber || "").trim();
+
+                if (!frontCardName) {
+                    return "";
+                }
+
+                if (cleanCopyFormat === "detailed") {
+                    if (setCode && collectorNumber) {
+                        return "1 " + cardName + " (" + setCode + ") " + collectorNumber;
+                    }
+
+                    if (setCode) {
+                        return "1 " + cardName + " (" + setCode + ")";
+                    }
+
+                    return "1 " + cardName;
+                }
+
+                return "1 " + frontCardName;
+            })
+            .filter(Boolean)
+            .join("\n");
+    }
+
+    function closeVisibleCardCopyMenu() {
+        if (copyVisibleCardsMenu) {
+            copyVisibleCardsMenu.classList.add("hidden");
+        }
+    }
+
+    function updateVisibleCardCopyFormat(copyFormat) {
+        const cleanCopyFormat = String(copyFormat || "simple").trim().toLowerCase();
+
+        currentVisibleCardCopyFormat = cleanCopyFormat === "detailed"
+            ? "detailed"
+            : "simple";
+
+        if (copyVisibleCardsButton) {
+            copyVisibleCardsButton.dataset.copyFormat = currentVisibleCardCopyFormat;
+            copyVisibleCardsButton.textContent = "Copy";
+            copyVisibleCardsButton.title = currentVisibleCardCopyFormat === "detailed"
+                ? "Copy visible cards with set code and collector number"
+                : "Copy visible card names only";
+        }
+
+        if (copyVisibleCardsMenu) {
+            Array.from(copyVisibleCardsMenu.querySelectorAll(".custom-draft-copy-menu-item")).forEach(function (menuItem) {
+                menuItem.classList.toggle(
+                    "custom-draft-copy-menu-item-active",
+                    menuItem.dataset.copyFormat === currentVisibleCardCopyFormat
+                );
+            });
+        }
+    }
+
+    function toggleVisibleCardCopyMenu() {
+        if (!copyVisibleCardsMenu) {
+            return;
+        }
+
+        copyVisibleCardsMenu.classList.toggle("hidden");
+    }
+
+    async function copyVisibleCardsToClipboard() {
+        if (!copyVisibleCardsButton) {
+            return;
+        }
+
+        const exportText = buildVisibleCardExportText(currentVisibleCardCopyFormat);
+
+        if (!exportText) {
+            window.alert("There are no visible cards to copy.");
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(exportText);
+
+            const originalText = copyVisibleCardsButton.textContent;
+            copyVisibleCardsButton.textContent = "Copied";
+
+            window.setTimeout(function () {
+                copyVisibleCardsButton.textContent = originalText || "Copy Visible";
+            }, 1200);
+        } catch (error) {
+            console.error(error);
+
+            const fallbackTextArea = document.createElement("textarea");
+            fallbackTextArea.value = exportText;
+            fallbackTextArea.setAttribute("readonly", "readonly");
+            fallbackTextArea.style.position = "fixed";
+            fallbackTextArea.style.left = "-9999px";
+            document.body.appendChild(fallbackTextArea);
+            fallbackTextArea.select();
+
+            try {
+                document.execCommand("copy");
+                copyVisibleCardsButton.textContent = "Copied";
+
+                window.setTimeout(function () {
+                    copyVisibleCardsButton.textContent = "Copy Visible";
+                }, 1200);
+            } catch (fallbackError) {
+                console.error(fallbackError);
+                window.alert("Could not copy to clipboard.");
+            } finally {
+                document.body.removeChild(fallbackTextArea);
+            }
+        }
+    }
+
+    function setCardListMaximized(isMaximized) {
+        if (!currentCardListPanel) {
+            return;
+        }
+
+        currentCardListPanel.classList.toggle("custom-draft-set-card-list-panel-maximized", Boolean(isMaximized));
+        document.body.classList.toggle("custom-draft-current-list-maximized-active", Boolean(isMaximized));
+
+        if (maximizeCardListButton) {
+            maximizeCardListButton.textContent = isMaximized ? "Restore" : "Maximize";
+        }
+    }
+
     function getCurrentCardRows() {
         if (!currentCardList) {
             return [];
@@ -2559,8 +3146,11 @@
         const manaOperator = manaOperatorFilter ? (manaOperatorFilter.value || "").trim() : "";
         const manaValue = manaValueFilter ? (manaValueFilter.value || "").trim() : "";
         const typeValue = typeFilter ? (typeFilter.value || "").trim().toLowerCase() : "";
+        const duplicateValue = duplicateFilter ? (duplicateFilter.value || "").trim() : "";
+        const alternateImageValue = alternateImageFilter ? (alternateImageFilter.value || "").trim() : "";
         const specialSlotValue = specialSlotFilter ? (specialSlotFilter.value || "").trim() : "";
         const setCodeValue = currentSetCodeFilter ? (currentSetCodeFilter.value || "").trim().toUpperCase() : "";
+        const duplicateCardNameCounts = getCurrentCardNameCounts();
 
         const rows = getCurrentCardRows();
 
@@ -2570,18 +3160,35 @@
             const rowTypeLine = row.dataset.typeLine || "";
             const rowSpecialCategory = row.dataset.specialCategory || "0";
             const rowSetCode = row.dataset.setCode || "";
+            const rowCardName = row.dataset.cardName || "";
+            const rowHasAlternateSource = row.dataset.hasAlternateSource === "1";
+            const rowAlternateRemoveBleed = row.dataset.alternateRemoveBleed === "1";
 
             const textMatches = !textQuery || haystack.indexOf(textQuery) !== -1;
             const rarityMatches = !rarityValue || rowRarity === rarityValue;
             const colorMatches = rowMatchesColorFilter(row, colorValue);
             const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
             const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
+            const duplicateMatches = duplicateValue !== "duplicates_only" || (duplicateCardNameCounts[rowCardName] || 0) > 1;
+
+            let alternateImageMatches = true;
+
+            if (alternateImageValue === "yes") {
+                alternateImageMatches = rowHasAlternateSource;
+            } else if (alternateImageValue === "no") {
+                alternateImageMatches = !rowHasAlternateSource;
+            } else if (alternateImageValue === "yes_remove_bleed") {
+                alternateImageMatches = rowHasAlternateSource && rowAlternateRemoveBleed;
+            } else if (alternateImageValue === "yes_no_bleed") {
+                alternateImageMatches = rowHasAlternateSource && !rowAlternateRemoveBleed;
+            }
+
             const specialSlotMatches = !specialSlotValue || rowSpecialCategory === specialSlotValue;
             const setCodeMatches = !setCodeValue || rowSetCode.indexOf(setCodeValue) !== -1;
 
             row.classList.toggle(
                 "hidden",
-                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && specialSlotMatches && setCodeMatches)
+                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && duplicateMatches && alternateImageMatches && specialSlotMatches && setCodeMatches)
             );
         });
 
@@ -2592,6 +3199,7 @@
         );
 
         updateCurrentSelectionState();
+        updateSetStatsRollout();
     }
 
     function renderExistingColorIdentityLabels() {
@@ -2755,6 +3363,8 @@
         manaOperatorFilter,
         manaValueFilter,
         typeFilter,
+        duplicateFilter,
+        alternateImageFilter,
         specialSlotFilter,
         currentSetCodeFilter,
         currentSortSelect
@@ -2777,6 +3387,61 @@
             filterElement.addEventListener("change", filterSearchResults);
         }
     });
+
+    if (copyVisibleCardsButton) {
+        copyVisibleCardsButton.addEventListener("click", copyVisibleCardsToClipboard);
+    }
+
+    if (copyVisibleCardsMenuButton) {
+        copyVisibleCardsMenuButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            toggleVisibleCardCopyMenu();
+        });
+    }
+
+    if (copyVisibleCardsMenu) {
+        Array.from(copyVisibleCardsMenu.querySelectorAll(".custom-draft-copy-menu-item")).forEach(function (menuItem) {
+            menuItem.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                updateVisibleCardCopyFormat(menuItem.dataset.copyFormat || "simple");
+                closeVisibleCardCopyMenu();
+                copyVisibleCardsToClipboard();
+            });
+        });
+    }
+
+    document.addEventListener("click", function (event) {
+        if (
+            copyVisibleCardsMenu
+            && !copyVisibleCardsMenu.classList.contains("hidden")
+            && !event.target.closest(".custom-draft-copy-split")
+        ) {
+            closeVisibleCardCopyMenu();
+        }
+    });
+
+    if (statsToggleButton) {
+        statsToggleButton.addEventListener("click", function () {
+            if (!statsPanel) {
+                return;
+            }
+
+            const shouldShow = statsPanel.classList.contains("hidden");
+            statsPanel.classList.toggle("hidden", !shouldShow);
+            statsToggleButton.textContent = shouldShow ? "Hide Stats" : "Stats";
+            updateSetStatsRollout();
+        });
+    }
+
+    if (maximizeCardListButton) {
+        maximizeCardListButton.addEventListener("click", function () {
+            const isCurrentlyMaximized = currentCardListPanel && currentCardListPanel.classList.contains("custom-draft-set-card-list-panel-maximized");
+            setCardListMaximized(!isCurrentlyMaximized);
+        });
+    }
 
     if (clearFiltersButton) {
         clearFiltersButton.addEventListener("click", function () {
@@ -2802,6 +3467,14 @@
 
             if (typeFilter) {
                 typeFilter.value = "";
+            }
+
+            if (duplicateFilter) {
+                duplicateFilter.value = "";
+            }
+
+            if (alternateImageFilter) {
+                alternateImageFilter.value = "";
             }
 
             if (specialSlotFilter) {
@@ -2888,6 +3561,8 @@
             return;
         }
 
+        closeVisibleCardCopyMenu();
+
         if (zoomOverlay && !zoomOverlay.classList.contains("hidden")) {
             closeZoom();
             return;
@@ -2895,12 +3570,18 @@
 
         if (searchOverlay && !searchOverlay.classList.contains("hidden")) {
             closeAddCardsSearch();
+            return;
+        }
+
+        if (currentCardListPanel && currentCardListPanel.classList.contains("custom-draft-set-card-list-panel-maximized")) {
+            setCardListMaximized(false);
         }
     });
 
     renderExistingColorIdentityLabels();
     bindCurrentCardControls();
     updateCurrentSelectionState();
+    updateSetStatsRollout();
     bindZoomableImages();
 })();
 </script>

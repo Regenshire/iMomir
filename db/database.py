@@ -1969,6 +1969,47 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
                 cp.tcgplayer_foil_price,
                 cp.tcgplayer_etched_price
             ) AS sort_price,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND alt.card_uuid = cc.card_uuid
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND UPPER(COALESCE(alt.set_code, '')) = UPPER(COALESCE(cc.set_code, ''))
+                      AND LOWER(COALESCE(alt.collector_number, '')) = LOWER(COALESCE(cc.collector_number, ''))
+                )
+                THEN 1
+                ELSE 0
+            END AS has_alternate_source,
+            COALESCE(
+                (
+                    SELECT alt.remove_bleed
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND alt.card_uuid = cc.card_uuid
+                    ORDER BY
+                        alt.priority ASC,
+                        alt.alternate_source_id DESC
+                    LIMIT 1
+                ),
+                (
+                    SELECT alt.remove_bleed
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND UPPER(COALESCE(alt.set_code, '')) = UPPER(COALESCE(cc.set_code, ''))
+                      AND LOWER(COALESCE(alt.collector_number, '')) = LOWER(COALESCE(cc.collector_number, ''))
+                    ORDER BY
+                        alt.priority ASC,
+                        alt.alternate_source_id DESC
+                    LIMIT 1
+                ),
+                0
+            ) AS alternate_remove_bleed,
             cc.is_dual_faced
         FROM custom_draft_set_cards cdsc
         INNER JOIN chaos_cards cc ON cc.card_uuid = cdsc.card_uuid
