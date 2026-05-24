@@ -22,6 +22,12 @@
         {% endif %}
     {% endfor %}
 
+    {% if not card_database_ready %}
+        {% set setup_title = "Campaign Chaos Draft Setup Required" %}
+        {% set setup_message = "No card database has been loaded yet. Download the card database before spinning Campaign Mode packs." %}
+        {% include "_setup_required_panel.html" %}
+    {% endif %}
+
     <div class="campaign-mode-title-row">
         <h1 class="campaign-mode-external-title">Chaos Draft - Campaign Mode</h1>
 
@@ -156,7 +162,7 @@
             </div>
 
             <div id="chaosDraftIdleCta" class="chaos-draft-idle-cta">
-                <button type="button" id="chaosSpinButton" class="chaos-draft-spin-cta">
+                <button type="button" id="chaosSpinButton" class="chaos-draft-spin-cta" {% if not card_database_ready %}disabled{% endif %}>
                     <img
                         src="{{ url_for('static', filename='img/spinlogo1.png') }}"
                         alt="Spin"

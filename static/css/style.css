@@ -83,6 +83,7 @@ input {
 }
 
 .app-gear-button {
+    position: relative;
     width: 32px;
     height: 32px;
     border-radius: 12px;
@@ -97,6 +98,29 @@ input {
 
 .app-gear-button:hover {
     background: rgba(255, 255, 255, 0.06);
+}
+
+.app-gear-button-has-reminders {
+    color: #ffffff;
+}
+
+.app-gear-reminder-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #d93636;
+    border: 2px solid var(--panel);
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 800;
+    line-height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .app-gear-icon {
@@ -114,6 +138,40 @@ input {
         rgba(110, 128, 158, 0.65),
         rgba(0, 0, 0, 0)
     );
+}
+
+.config-reminder-inline-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    margin-left: 8px;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: #d93636;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1;
+}
+
+.config-reminder-list {
+    margin-top: 16px;
+}
+
+.config-reminder-row {
+    border-color: rgba(110, 156, 255, 0.35);
+}
+
+.config-reminder-row-warning {
+    border-color: rgba(255, 193, 7, 0.42);
+    background: rgba(82, 61, 18, 0.32);
+}
+
+.config-reminder-row-info {
+    border-color: rgba(110, 156, 255, 0.42);
+    background: rgba(72, 127, 255, 0.14);
 }
 
 .app-logo {
@@ -413,6 +471,102 @@ input {
   gap: 14px;
   border: 1px solid rgba(255, 193, 7, 0.35);
   background: linear-gradient(180deg, rgba(70, 54, 18, 0.96), rgba(44, 34, 12, 0.96));
+}
+
+.setup-guide-panel {
+    gap: 18px;
+}
+
+.setup-guide-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.setup-guide-badge {
+    min-height: 30px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(255, 193, 7, 0.18);
+    border: 1px solid rgba(255, 193, 7, 0.42);
+    color: #ffe08a;
+    font-weight: 800;
+    font-size: 0.82rem;
+    white-space: nowrap;
+}
+
+.setup-guide-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.setup-guide-step {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    border: 1px solid rgba(255, 224, 138, 0.22);
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.14);
+    padding: 12px;
+}
+
+.setup-guide-step-number {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: rgba(255, 193, 7, 0.22);
+    border: 1px solid rgba(255, 193, 7, 0.45);
+    color: #ffe08a;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+}
+
+.setup-guide-step-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.setup-guide-step-copy strong {
+    color: #fff2c4;
+    line-height: 1.25;
+}
+
+.setup-guide-step-copy span {
+    color: #f5e7b8;
+    font-size: 0.92rem;
+    line-height: 1.35;
+}
+
+.setup-guide-actions {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.setup-guide-actions .action-button {
+    width: auto;
+    min-width: 180px;
+}
+
+@media (max-width: 760px) {
+    .setup-guide-header {
+        flex-direction: column;
+    }
+
+    .setup-guide-steps {
+        grid-template-columns: 1fr;
+    }
+
+    .setup-guide-actions,
+    .setup-guide-actions .action-button {
+        width: 100%;
+    }
 }
 
 .setup-panel-title {

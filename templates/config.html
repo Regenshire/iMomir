@@ -22,6 +22,59 @@
 
 
     <form id="configForm" method="post" class="config-form">
+        <div id="section_reminders" class="page-panel collapsible-panel {% if global_reminder_state and global_reminder_state["has_reminders"] %}is-open{% endif %}" data-section="reminders">
+            <button type="button" class="collapsible-header">
+                <span>
+                    Reminders
+                    {% if global_reminder_state and global_reminder_state["has_reminders"] %}
+                    <span class="config-reminder-inline-badge">{{ global_reminder_state["count"] }}</span>
+                    {% endif %}
+                </span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
+                <div class="settings-grid">
+                    <label class="toggle-row" for="card_database_reminder_frequency">
+                        <span>Card Database Reminder</span>
+                        <select id="card_database_reminder_frequency" name="card_database_reminder_frequency">
+                            <option value="weekly" {% if config.get("card_database_reminder_frequency", "monthly") == "weekly" %}selected{% endif %}>Weekly</option>
+                            <option value="monthly" {% if config.get("card_database_reminder_frequency", "monthly") == "monthly" %}selected{% endif %}>Monthly</option>
+                            <option value="quarterly" {% if config.get("card_database_reminder_frequency", "monthly") == "quarterly" %}selected{% endif %}>Quarterly</option>
+                            <option value="yearly" {% if config.get("card_database_reminder_frequency", "monthly") == "yearly" %}selected{% endif %}>Yearly</option>
+                            <option value="never" {% if config.get("card_database_reminder_frequency", "monthly") == "never" %}selected{% endif %}>Never</option>
+                        </select>
+                    </label>
+                </div>
+
+                {% if global_reminder_state and global_reminder_state["items"] %}
+                    <div class="metadata-list config-reminder-list">
+                        {% for reminder in global_reminder_state["items"] %}
+                        <div class="metadata-row config-reminder-row config-reminder-row-{{ reminder.severity }}">
+                            <span>{{ reminder.title }}</span>
+                            <strong class="metadata-value-wrap">{{ reminder.message }}</strong>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="config-button-row">
+                        <a
+                            class="action-button"
+                            href="{{ url_for('config') }}?open=card_database&scroll=card_database"
+                        >
+                            Open Card Database Tools
+                        </a>
+                    </div>
+                {% else %}
+                    <div class="metadata-list config-reminder-list">
+                        <div class="metadata-row config-reminder-row">
+                            <span>Status</span>
+                            <strong class="metadata-value-wrap">No reminders right now.</strong>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
         <div id="section_game_modes" class="page-panel collapsible-panel {% if section_defaults.get('game_modes') == '1' %}is-open{% endif %}" data-section="game_modes">
             <button type="button" class="collapsible-header">
                 <span>Game Modes</span>

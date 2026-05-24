@@ -2,19 +2,9 @@
 content %}
 <div class="screen screen-home screen-medium">
   {% if not card_database_ready %}
-  <div class="page-panel setup-panel">
-    <h2 class="setup-panel-title">Initial Setup Required</h2>
-    <p class="setup-panel-text">
-      iMomir is not ready yet. Open Config and click <strong>Download Card Database</strong>.
-      This will load the card database, set list, and image index needed for normal use.
-    </p>
-    <a
-      class="action-button"
-      href="{{ url_for('config') }}?open=card_database&scroll=card_database"
-    >
-      Open Setup
-    </a>
-  </div>
+    {% set setup_title = "Initial Setup Required" %}
+    {% set setup_message = "iMomir is not ready yet. Download the card database before drawing cards or using game modes." %}
+    {% include "_setup_required_panel.html" %}
   {% endif %}
 
   <div class="mana-panel">

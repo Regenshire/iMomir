@@ -14,6 +14,12 @@
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
 >
+    {% if not card_database_ready %}
+        {% set setup_title = "Chaos Draft Setup Required" %}
+        {% set setup_message = "No card database has been loaded yet. Download the card database before spinning Chaos Draft packs." %}
+        {% include "_setup_required_panel.html" %}
+    {% endif %}
+
     <div class="page-panel chaos-draft-header-panel">
         <div class="chaos-draft-header-layout">
             <div class="chaos-draft-header-copy">
@@ -43,7 +49,7 @@
             </div>
 
             <div id="chaosDraftIdleCta" class="chaos-draft-idle-cta">
-                <button type="button" id="chaosSpinButton" class="chaos-draft-spin-cta">
+                <button type="button" id="chaosSpinButton" class="chaos-draft-spin-cta" {% if not card_database_ready %}disabled{% endif %}>
                     <img
                         src="{{ url_for('static', filename='img/spinlogo1.png') }}"
                         alt="Spin"

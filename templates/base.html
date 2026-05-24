@@ -52,12 +52,15 @@
           </div>
           <div class="app-tabs-right">
             <a
-              class="app-gear-button"
-              href="{{ url_for('config') }}?open=print_defaults,card_database,qr_code_print&scroll=qr_code_print"
-              aria-label="Open Config shortcuts"
-              title="Open Print Defaults and Card Database"
+              class="app-gear-button {% if global_reminder_state and global_reminder_state.has_reminders %}app-gear-button-has-reminders{% endif %}"
+              href="{% if global_reminder_state and global_reminder_state.has_reminders %}{{ url_for('config') }}?open=reminders,card_database&scroll=reminders{% else %}{{ url_for('config') }}?open=print_defaults,card_database,qr_code_print&scroll=qr_code_print{% endif %}"
+              aria-label="Open Config shortcuts{% if global_reminder_state and global_reminder_state.has_reminders %} - {{ global_reminder_state.count }} reminder{% if global_reminder_state.count != 1 %}s{% endif %}{% endif %}"
+              title="{% if global_reminder_state and global_reminder_state.has_reminders %}{{ global_reminder_state.count }} reminder{% if global_reminder_state.count != 1 %}s{% endif %}{% else %}Open Print Defaults and Card Database{% endif %}"
             >
               <i class="fa-solid fa-gear"></i>
+              {% if global_reminder_state and global_reminder_state.has_reminders %}
+              <span class="app-gear-reminder-badge">{{ global_reminder_state.count }}</span>
+              {% endif %}
             </a>
           </div>
         </nav>

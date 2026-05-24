@@ -411,13 +411,103 @@ def get_request_default_momir_variant():
         g._default_momir_variant_cache = _build_default_momir_variant(get_request_config())
     return g._default_momir_variant_cache
 
+def parse_utc_metadata_datetime(raw_value):
+    raw_value = (raw_value or "").strip()
+
+    if not raw_value:
+        return None
+
+    for date_format in (
+        "%Y-%m-%d %H:%M:%S UTC",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(raw_value, date_format).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+
+    return None
+
+
+def get_reminder_frequency_days(config):
+    reminder_frequency = (config.get("card_database_reminder_frequency") or "monthly").strip().lower()
+
+    reminder_frequency_days = {
+        "weekly": 7,
+        "monthly": 30,
+        "quarterly": 90,
+        "yearly": 365,
+    }
+
+    return reminder_frequency_days.get(reminder_frequency)
+
+
+def build_global_reminder_state(config=None, import_metadata=None):
+    if config is None:
+        config = get_request_config()
+
+    if import_metadata is None:
+        import_metadata = get_import_metadata()
+
+    reminder_items = []
+
+    reminder_frequency = (config.get("card_database_reminder_frequency") or "monthly").strip().lower()
+    if reminder_frequency not in {"weekly", "monthly", "quarterly", "yearly", "never"}:
+        reminder_frequency = "monthly"
+
+    card_database_ready = is_card_database_ready()
+    last_refresh_text = import_metadata.get("last_refresh_utc", "")
+    last_refresh_datetime = parse_utc_metadata_datetime(last_refresh_text)
+
+    if not card_database_ready:
+        reminder_items.append({
+            "key": "card_database_missing",
+            "severity": "warning",
+            "title": "Card Database Setup Needed",
+            "message": "Download the card database before using iMomir normally.",
+            "target_section": "card_database",
+        })
+    elif reminder_frequency != "never":
+        reminder_days = get_reminder_frequency_days(config)
+
+        if reminder_days and last_refresh_datetime:
+            age_days = (datetime.now(timezone.utc) - last_refresh_datetime).days
+
+            if age_days >= reminder_days:
+                reminder_items.append({
+                    "key": "card_database_due",
+                    "severity": "info",
+                    "title": "Card Database Update Due",
+                    "message": f"Your card database was last refreshed {age_days} day(s) ago.",
+                    "target_section": "card_database",
+                })
+        elif not last_refresh_datetime:
+            reminder_items.append({
+                "key": "card_database_unknown",
+                "severity": "warning",
+                "title": "Card Database Refresh Unknown",
+                "message": "The app could not determine when the card database was last refreshed.",
+                "target_section": "card_database",
+            })
+
+    return {
+        "count": len(reminder_items),
+        "items": reminder_items,
+        "has_reminders": len(reminder_items) > 0,
+        "card_database_reminder_frequency": reminder_frequency,
+    }
+
+
 @app.context_processor
 def inject_global_template_state():
     config = get_request_config()
     current_game_mode = (config.get("game_mode") or "custom").strip().lower()
+    global_reminder_state = build_global_reminder_state(config=config)
 
     return {
         "nav_current_game_mode": current_game_mode,
+        "global_reminder_state": global_reminder_state,
     }
 
 PACK_ART_DIR = get_pack_art_dir(app.static_folder)
@@ -577,6 +667,7 @@ def update_config_from_form(form_data):
         "chaos_draft_export_format": "none",
         "chaos_scryfall_image_quality": "png",
         "auto_clear_exports": "7",
+        "card_database_reminder_frequency": "monthly",
     }
 
     for key in checkbox_keys:
@@ -643,6 +734,11 @@ def update_config_from_form(form_data):
     if submitted_auto_clear_exports not in {"off", "1", "7", "30"}:
         submitted_auto_clear_exports = select_defaults["auto_clear_exports"]
     updated_config["auto_clear_exports"] = submitted_auto_clear_exports
+
+    submitted_card_database_reminder_frequency = (form_data.get("card_database_reminder_frequency") or "").strip().lower()
+    if submitted_card_database_reminder_frequency not in {"weekly", "monthly", "quarterly", "yearly", "never"}:
+        submitted_card_database_reminder_frequency = select_defaults["card_database_reminder_frequency"]
+    updated_config["card_database_reminder_frequency"] = submitted_card_database_reminder_frequency
 
     submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
     try:
