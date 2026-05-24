@@ -417,7 +417,24 @@
         alternateMessage.style.background = isError ? "#4b1f1f" : "";
     }
 
-    function refreshCardImages(cardUuid) {
+    function getAlternateStateFromPayload(payload) {
+        const sources = payload && Array.isArray(payload.alternate_sources)
+            ? payload.alternate_sources
+            : [];
+
+        const enabledSources = sources.filter(function (source) {
+            return Boolean(source.is_enabled);
+        });
+
+        return {
+            hasAlternateSource: enabledSources.length > 0,
+            removeBleed: enabledSources.some(function (source) {
+                return Boolean(source.remove_bleed);
+            })
+        };
+    }
+
+    function refreshCardImages(cardUuid, alternateState) {
         if (!cardUuid) {
             return;
         }
@@ -431,6 +448,42 @@
                 imageElement.setAttribute("data-zoom-src", cacheBustedUrl);
             }
         });
+
+        document.dispatchEvent(new CustomEvent("imomir:card-image-refreshed", {
+            detail: {
+                cardUuid: cardUuid,
+                imageUrl: cacheBustedUrl,
+                hasAlternateSource: alternateState ? Boolean(alternateState.hasAlternateSource) : null,
+                removeBleed: alternateState ? Boolean(alternateState.removeBleed) : null
+            }
+        }));
+    }
+
+    function refreshTrackedCardImages(cardUuid, reason, alternateState) {
+        if (!cardUuid) {
+            return;
+        }
+
+        const signature = [
+            cardUuid,
+            reason || "card-image",
+            alternateState ? String(Boolean(alternateState.hasAlternateSource)) : "",
+            alternateState ? String(Boolean(alternateState.removeBleed)) : "",
+            Date.now()
+        ].join("|");
+
+        if (window.iMomirRefresh && typeof window.iMomirRefresh.changed === "function") {
+            window.iMomirRefresh.changed(
+                "chaos-card-image:" + cardUuid,
+                signature,
+                function () {
+                    refreshCardImages(cardUuid, alternateState);
+                }
+            );
+            return;
+        }
+
+        refreshCardImages(cardUuid, alternateState);
     }
 
     function openAlternateModal(cardUuid, cardName) {
@@ -589,8 +642,10 @@
             }
 
             renderAlternateSources(payload);
+            return payload;
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
+            return null;
         }
     }
 
@@ -613,8 +668,12 @@
                 throw new Error(payload.message || "Could not update alternate source.");
             }
 
-            refreshCardImages(currentAlternateCardUuid);
-            await loadAlternateSources();
+            const latestPayload = await loadAlternateSources();
+            refreshTrackedCardImages(
+                currentAlternateCardUuid,
+                "alternate-source",
+                getAlternateStateFromPayload(latestPayload)
+            );
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
         }
@@ -640,7 +699,7 @@
                 throw new Error(payload.message || "Could not delete alternate source.");
             }
 
-            refreshCardImages(currentAlternateCardUuid);
+            refreshTrackedCardImages(currentAlternateCardUuid, "alternate-source");
             await loadAlternateSources();
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
@@ -673,8 +732,13 @@
                 throw new Error(payload.message || "Could not update frame template.");
             }
 
+            const latestPayload = await loadAlternateSources();
+            refreshTrackedCardImages(
+                currentAlternateCardUuid,
+                "alternate-frame-template",
+                getAlternateStateFromPayload(latestPayload)
+            );
             showAlternateMessage("Card frame template updated.", false);
-            await loadAlternateSources();
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
         }
@@ -739,9 +803,25 @@
                 }
 
                 updateAlternateSourceFieldVisibility();
-                refreshCardImages(currentAlternateCardUuid);
-                showAlternateMessage("Alternate image source added.", false);
-                await loadAlternateSources();
+
+                const latestPayload = await loadAlternateSources();
+                refreshTrackedCardImages(
+                    currentAlternateCardUuid,
+                    "alternate-source",
+                    getAlternateStateFromPayload(latestPayload)
+                );
+
+                const isDualFacedCard = Boolean(
+                    latestPayload
+                    && latestPayload.card
+                    && latestPayload.card.is_dual_faced
+                );
+
+                if (isDualFacedCard) {
+                    showAlternateMessage("Alternate image source added. Add the other face if needed.", false);
+                } else {
+                    closeAlternateModal();
+                }
             } catch (error) {
                 showAlternateMessage(error.message || String(error), true);
             }

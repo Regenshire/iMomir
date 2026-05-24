@@ -269,7 +269,18 @@
     }
 
     newDraftButton.addEventListener("click", async function () {
-        const confirmed = window.confirm("Start a new draft? This resets pack availability for this draft.");
+        let confirmed = true;
+
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            confirmed = await window.iMomirConfirm.show({
+                title: "Start New Draft",
+                message: "Start a new draft? This resets pack availability for this draft.",
+                confirmText: "Start New Draft",
+                cancelText: "Cancel"
+            });
+        } else {
+            confirmed = window.confirm("Start a new draft? This resets pack availability for this draft.");
+        }
 
         if (!confirmed) {
             return;

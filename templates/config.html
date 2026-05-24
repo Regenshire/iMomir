@@ -770,14 +770,27 @@
     const clearAllHistoryForm = document.getElementById("clearAllHistoryForm");
     const clearAllPacksForm = document.getElementById("clearAllPacksForm");
 
-    if (clearAllHistoryForm) {
-        clearAllHistoryForm.addEventListener("submit", function (event) {
-            const confirmation = window.prompt(
-                "This will permanently clear all iMomir history. Type DELETE to confirm."
-            );
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
 
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+        return window.confirm((options && options.message) || "Continue?");
+    }
+
+    if (clearAllHistoryForm) {
+        clearAllHistoryForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const confirmed = await confirmUiAction({
+                title: "Clear All History",
+                message: "This will permanently clear all iMomir history.",
+                confirmText: "Clear History",
+                cancelText: "Cancel",
+                danger: true
+            });
+
+            if (!confirmed) {
                 return;
             }
 
@@ -785,26 +798,24 @@
             if (hiddenInput) {
                 hiddenInput.value = "DELETE";
             }
+
+            clearAllHistoryForm.submit();
         });
     }
 
     if (clearAllPacksForm) {
-        clearAllPacksForm.addEventListener("submit", function (event) {
-            const backupWarning = window.confirm(
-                "This will permanently clear all saved packs. Use Backup All Packs first if you may need to restore them later.\n\nClick OK to continue to the DELETE confirmation, or Cancel to stop."
-            );
+        clearAllPacksForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
 
-            if (!backupWarning) {
-                event.preventDefault();
-                return;
-            }
+            const confirmed = await confirmUiAction({
+                title: "Clear All Saved Packs",
+                message: "This will permanently clear all saved packs. Use Backup All Packs first if you may need to restore them later.",
+                confirmText: "Clear All Packs",
+                cancelText: "Cancel",
+                danger: true
+            });
 
-            const confirmation = window.prompt(
-                "You are about to permanently clear all saved packs. Type DELETE to confirm."
-            );
-
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+            if (!confirmed) {
                 return;
             }
 
@@ -812,6 +823,8 @@
             if (hiddenInput) {
                 hiddenInput.value = "DELETE";
             }
+
+            clearAllPacksForm.submit();
         });
     }
 })();

@@ -384,6 +384,49 @@
     const deleteConfirmationInput = document.getElementById("campaignHistoryDeleteConfirmation");
     const deleteAllForm = document.getElementById("campaignHistoryDeleteAllForm");
 
+    function showUiMessage(messageText, isError) {
+        const cleanMessage = messageText || "";
+
+        if (!cleanMessage) {
+            return;
+        }
+
+        if (window.iMomirToast) {
+            if (isError) {
+                window.iMomirToast.error(cleanMessage);
+            } else {
+                window.iMomirToast.success(cleanMessage);
+            }
+            return;
+        }
+
+        console.log(cleanMessage);
+    }
+
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
+
+        return window.confirm((options && options.message) || "Continue?");
+    }
+
+    function submitFormWithAction(formElement, submitterElement) {
+        if (!formElement) {
+            return;
+        }
+
+        if (submitterElement && submitterElement.name) {
+            const actionInput = document.createElement("input");
+            actionInput.type = "hidden";
+            actionInput.name = submitterElement.name;
+            actionInput.value = submitterElement.value || "";
+            formElement.appendChild(actionInput);
+        }
+
+        formElement.submit();
+    }
+
     function getHistoryCheckboxes() {
         if (!historyForm) {
             return [];
@@ -428,7 +471,7 @@
             checkbox.addEventListener("change", syncHistoryOpeningInputs);
         });
 
-        historyForm.addEventListener("submit", function (event) {
+        historyForm.addEventListener("submit", async function (event) {
             syncHistoryOpeningInputs();
 
             const submitter = event.submitter;
@@ -441,22 +484,26 @@
                 event.preventDefault();
 
                 if (action === "delete") {
-                    window.alert("Select at least one history row to delete.");
+                    showUiMessage("Select at least one history row to delete.", true);
                 } else {
-                    window.alert("Select at least one pack to print.");
+                    showUiMessage("Select at least one pack to print.", true);
                 }
 
                 return;
             }
 
             if (action === "delete") {
-                const confirmation = window.prompt(
-                    "You are about to permanently delete " + selectedCount + " selected history row(s). Saved packs will not be deleted. Type DELETE to confirm."
-                );
+                event.preventDefault();
 
-                if (confirmation !== "DELETE") {
-                    event.preventDefault();
+                const confirmed = await confirmUiAction({
+                    title: "Delete History Rows",
+                    message: "You are about to permanently delete " + selectedCount + " selected history row(s). Saved packs will not be deleted.",
+                    confirmText: "Delete History",
+                    cancelText: "Cancel",
+                    danger: true
+                });
 
+                if (!confirmed) {
                     if (deleteConfirmationInput) {
                         deleteConfirmationInput.value = "";
                     }
@@ -467,18 +514,25 @@
                 if (deleteConfirmationInput) {
                     deleteConfirmationInput.value = "DELETE";
                 }
+
+                submitFormWithAction(historyForm, submitter);
             }
         });
     }
 
     if (deleteAllForm) {
-        deleteAllForm.addEventListener("submit", function (event) {
-            const confirmation = window.prompt(
-                "You are about to permanently delete all Campaign History. Saved packs will not be deleted. Type DELETE to confirm."
-            );
+        deleteAllForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
 
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+            const confirmed = await confirmUiAction({
+                title: "Delete All Campaign History",
+                message: "You are about to permanently delete all Campaign History. Saved packs will not be deleted.",
+                confirmText: "Delete All History",
+                cancelText: "Cancel",
+                danger: true
+            });
+
+            if (!confirmed) {
                 return;
             }
 
@@ -486,6 +540,8 @@
             if (hiddenInput) {
                 hiddenInput.value = "DELETE";
             }
+
+            deleteAllForm.submit();
         });
     }
 })();

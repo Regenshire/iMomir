@@ -812,6 +812,7 @@
                     <div
                         class="custom-draft-current-card-row"
                         data-custom-set-card-id="{{ card.custom_set_card_id }}"
+                        data-card-uuid="{{ card.card_uuid }}"
                         data-card-search="{{ (card.card_name ~ ' ' ~ card.card_set_code ~ ' ' ~ (card.collector_number or '') ~ ' ' ~ (card.rarity or '') ~ ' ' ~ (card.type_line or '') ~ ' ' ~ (card.color_identity_json or '') ~ ' ' ~ (card.mana_value|string if card.mana_value is not none else ''))|lower }}"
                         data-rarity="{{ (card.rarity or '')|lower }}"
                         data-color-identity="{{ (card.color_identity_json or '[]')|lower }}"
@@ -1059,6 +1060,33 @@
         "R": "Red",
         "G": "Green"
     };
+
+    function showUiMessage(messageText, isError) {
+        const cleanMessage = messageText || "";
+
+        if (!cleanMessage) {
+            return;
+        }
+
+        if (window.iMomirToast) {
+            if (isError) {
+                window.iMomirToast.error(cleanMessage);
+            } else {
+                window.iMomirToast.success(cleanMessage);
+            }
+            return;
+        }
+
+        console.log(cleanMessage);
+    }
+
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
+
+        return window.confirm((options && options.message) || "Continue?");
+    }
 
     function parseJsonArray(rawValue) {
         try {
@@ -1760,9 +1788,12 @@
             return;
         }
 
-        const confirmed = window.confirm(
-            "This will add the most recent matching printing for each parsed card name directly to this custom set. Continue?"
-        );
+        const confirmed = await confirmUiAction({
+            title: "Add Most Recent Printings",
+            message: "This will add the most recent matching printing for each parsed card name directly to this custom set.",
+            confirmText: "Add Cards",
+            cancelText: "Cancel"
+        });
 
         if (!confirmed) {
             return;
@@ -1954,7 +1985,7 @@
         const saveUrl = generatedSaveButton.dataset.saveUrl || "";
 
         if (!saveUrl) {
-            window.alert("No generated pack is ready to save.");
+            showUiMessage("No generated pack is ready to save.", true);
             return;
         }
 
@@ -2087,6 +2118,12 @@
             button.textContent = "Switched";
             setSearchStatus(payload.message || "Printing updated. Reloading card list...", false);
 
+            // Phase 2 target:
+            // Replace this full reload with a row-level refresh endpoint that returns
+            // the updated card metadata for this custom_set_card_id. For now, keep
+            // the reload because the current response does not include enough row data
+            // to safely update card name, set code, collector number, rarity, MV,
+            // EDHREC, saltiness, price, color identity, type line, image, and filters.
             window.setTimeout(function () {
                 window.location.reload();
             }, 450);
@@ -2095,7 +2132,7 @@
             button.disabled = false;
             button.classList.remove("action-button-loading");
             button.textContent = "Switch";
-            window.alert(error.message || "Failed to change printing.");
+            showUiMessage(error.message || "Failed to change printing.", true);
         }
     }
 
@@ -2142,7 +2179,7 @@
             button.disabled = false;
             button.classList.remove("action-button-loading");
             button.textContent = "Add";
-            window.alert(error.message || "Failed to add card.");
+            showUiMessage(error.message || "Failed to add card.", true);
         }
     }
 
@@ -2150,7 +2187,7 @@
         const selectedIds = getSelectedCustomSetCardIds();
 
         if (!selectedIds.length) {
-            window.alert("Select at least one card first.");
+            showUiMessage("Select at least one card first.", true);
             return;
         }
 
@@ -2200,9 +2237,10 @@
 
             clearCurrentCardSelection();
             filterCurrentCards();
+            showUiMessage(payload.message || "Selected cards removed.", false);
         } catch (error) {
             console.error(error);
-            window.alert(error.message || "Failed to assign special slot.");
+            showUiMessage(error.message || "Failed to assign special slot.", true);
         } finally {
             bulkApplySpecialSlotButton.classList.remove("action-button-loading");
             bulkApplySpecialSlotButton.textContent = "Assign Special Slot";
@@ -2214,11 +2252,17 @@
         const selectedIds = getSelectedCustomSetCardIds();
 
         if (!selectedIds.length) {
-            window.alert("Select at least one card first.");
+            showUiMessage("Select at least one card first.", true);
             return;
         }
 
-        const confirmed = window.confirm("Remove " + selectedIds.length + " selected card(s) from this custom draft set?");
+        const confirmed = await confirmUiAction({
+            title: "Remove Selected Cards",
+            message: "Remove " + selectedIds.length + " selected card(s) from this custom draft set?",
+            confirmText: "Remove Selected",
+            cancelText: "Cancel",
+            danger: true
+        });
 
         if (!confirmed) {
             return;
@@ -2262,7 +2306,7 @@
             filterCurrentCards();
         } catch (error) {
             console.error(error);
-            window.alert(error.message || "Failed to remove selected cards.");
+            showUiMessage(error.message || "Failed to remove selected cards.", true);
         } finally {
             bulkRemoveCardsButton.classList.remove("action-button-loading");
             bulkRemoveCardsButton.textContent = "Remove Selected";
@@ -2332,7 +2376,7 @@
                     filterCurrentCards();
                 } catch (error) {
                     console.error(error);
-                    window.alert(error.message || "Failed to update special slot category.");
+                    showUiMessage(error.message || "Failed to update special slot category.", true);
                 } finally {
                     select.disabled = false;
                 }
@@ -2412,7 +2456,13 @@
                     return;
                 }
 
-                const confirmed = window.confirm("Remove " + cardName + " from this custom draft set?");
+                const confirmed = await confirmUiAction({
+                    title: "Remove Card",
+                    message: "Remove " + cardName + " from this custom draft set?",
+                    confirmText: "Remove",
+                    cancelText: "Cancel",
+                    danger: true
+                });
 
                 if (!confirmed) {
                     return;
@@ -2436,13 +2486,19 @@
                         throw new Error(payload.message || "Failed to remove card.");
                     }
 
-                    window.location.reload();
+                    const row = button.closest(".custom-draft-current-card-row");
+                    if (row) {
+                        row.remove();
+                    }
+
+                    filterCurrentCards();
+                    showUiMessage(payload.message || "Card removed.", false);
                 } catch (error) {
                     console.error(error);
                     button.disabled = false;
                     button.classList.remove("action-button-loading");
                     button.textContent = "Remove";
-                    window.alert(error.message || "Failed to remove card.");
+                    showUiMessage(error.message || "Failed to remove card.", true);
                 }
             });
         });
@@ -3009,7 +3065,7 @@
         const exportText = buildVisibleCardExportText(currentVisibleCardCopyFormat);
 
         if (!exportText) {
-            window.alert("There are no visible cards to copy.");
+            showUiMessage("There are no visible cards to copy.", true);
             return;
         }
 
@@ -3042,7 +3098,7 @@
                 }, 1200);
             } catch (fallbackError) {
                 console.error(fallbackError);
-                window.alert("Could not copy to clipboard.");
+                showUiMessage("Could not copy to clipboard.", true);
             } finally {
                 document.body.removeChild(fallbackTextArea);
             }
@@ -3574,6 +3630,85 @@
         if (currentCardListPanel && currentCardListPanel.classList.contains("custom-draft-set-card-list-panel-maximized")) {
             setCardListMaximized(false);
         }
+    });
+
+    function findCurrentCardRowsByCardUuid(cardUuid) {
+        if (!cardUuid) {
+            return [];
+        }
+
+        const directRows = Array.from(document.querySelectorAll(
+            '.custom-draft-current-card-row[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+        ));
+
+        if (directRows.length) {
+            return directRows;
+        }
+
+        return Array.from(document.querySelectorAll(
+            '.alternate-image-button[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+        ))
+            .map(function (button) {
+                return button.closest(".custom-draft-current-card-row");
+            })
+            .filter(Boolean);
+    }
+
+    function updateCustomDraftAlternateImageRowState(cardUuid, detail) {
+        const matchingRows = findCurrentCardRowsByCardUuid(cardUuid);
+
+        matchingRows.forEach(function (row) {
+            const hasAlternateSource = detail.hasAlternateSource === null
+                ? row.dataset.hasAlternateSource === "1"
+                : Boolean(detail.hasAlternateSource);
+
+            const removeBleed = detail.removeBleed === null
+                ? row.dataset.alternateRemoveBleed === "1"
+                : Boolean(detail.removeBleed);
+
+            row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+            row.dataset.alternateRemoveBleed = removeBleed ? "1" : "0";
+
+            const gearButton = row.querySelector(".alternate-image-button");
+            if (gearButton) {
+                gearButton.classList.toggle("custom-draft-alternate-image-active", hasAlternateSource);
+            }
+
+            const metaWrap = row.querySelector(".custom-draft-current-card-meta");
+            if (!metaWrap) {
+                return;
+            }
+
+            let alternateMetaLine = metaWrap.querySelector(".custom-draft-alternate-image-meta-line");
+
+            if (hasAlternateSource) {
+                if (!alternateMetaLine) {
+                    alternateMetaLine = document.createElement("span");
+                    alternateMetaLine.className = "custom-draft-alternate-image-meta-line";
+                    metaWrap.appendChild(alternateMetaLine);
+                }
+
+                alternateMetaLine.textContent = removeBleed
+                    ? "Alternate Image - Remove Bleed"
+                    : "Alternate Image - No Bleed";
+            } else if (alternateMetaLine) {
+                alternateMetaLine.remove();
+            }
+        });
+    }
+
+    document.addEventListener("imomir:card-image-refreshed", function (event) {
+        const detail = event.detail || {};
+        const cardUuid = detail.cardUuid || "";
+
+        if (!cardUuid) {
+            return;
+        }
+
+        updateCustomDraftAlternateImageRowState(cardUuid, detail);
+
+        filterCurrentCards();
+        bindZoomableImages();
     });
 
     renderExistingColorIdentityLabels();

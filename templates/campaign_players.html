@@ -198,15 +198,29 @@
 (function () {
     const deleteForms = Array.from(document.querySelectorAll(".campaign-player-delete-form"));
 
-    deleteForms.forEach(function (form) {
-        form.addEventListener("submit", function (event) {
-            const playerName = form.dataset.playerName || "this player";
-            const confirmation = window.prompt(
-                "You are about to permanently delete " + playerName + ". Type DELETE to confirm."
-            );
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
 
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+        return window.confirm((options && options.message) || "Continue?");
+    }
+
+    deleteForms.forEach(function (form) {
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const playerName = form.dataset.playerName || "this player";
+
+            const confirmed = await confirmUiAction({
+                title: "Delete Player",
+                message: "You are about to permanently delete " + playerName + ".",
+                confirmText: "Delete Player",
+                cancelText: "Cancel",
+                danger: true
+            });
+
+            if (!confirmed) {
                 return;
             }
 
@@ -214,6 +228,8 @@
             if (hiddenInput) {
                 hiddenInput.value = "DELETE";
             }
+
+            form.submit();
         });
     });
 })();

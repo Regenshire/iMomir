@@ -205,15 +205,29 @@
 (function () {
     const deleteForms = Array.from(document.querySelectorAll(".campaign-save-delete-form"));
 
-    deleteForms.forEach(function (form) {
-        form.addEventListener("submit", function (event) {
-            const campaignName = form.dataset.campaignName || "this campaign";
-            const confirmation = window.prompt(
-                "You are about to permanently delete " + campaignName + ". Type DELETE to confirm."
-            );
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
 
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+        return window.confirm((options && options.message) || "Continue?");
+    }
+
+    deleteForms.forEach(function (form) {
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const campaignName = form.dataset.campaignName || "this campaign";
+
+            const confirmed = await confirmUiAction({
+                title: "Delete Campaign",
+                message: "You are about to permanently delete " + campaignName + ".",
+                confirmText: "Delete Campaign",
+                cancelText: "Cancel",
+                danger: true
+            });
+
+            if (!confirmed) {
                 return;
             }
 
@@ -221,6 +235,8 @@
             if (hiddenInput) {
                 hiddenInput.value = "DELETE";
             }
+
+            form.submit();
         });
     });
 })();

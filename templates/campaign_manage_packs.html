@@ -836,6 +836,49 @@
 
     let addPackModalHasSavedChanges = false;
 
+    function showUiMessage(messageText, isError) {
+        const cleanMessage = messageText || "";
+
+        if (!cleanMessage) {
+            return;
+        }
+
+        if (window.iMomirToast) {
+            if (isError) {
+                window.iMomirToast.error(cleanMessage);
+            } else {
+                window.iMomirToast.success(cleanMessage);
+            }
+            return;
+        }
+
+        console.log(cleanMessage);
+    }
+
+    async function confirmUiAction(options) {
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            return await window.iMomirConfirm.show(options || {});
+        }
+
+        return window.confirm((options && options.message) || "Continue?");
+    }
+
+    function submitFormWithAction(formElement, submitterElement) {
+        if (!formElement) {
+            return;
+        }
+
+        if (submitterElement && submitterElement.name) {
+            const actionInput = document.createElement("input");
+            actionInput.type = "hidden";
+            actionInput.name = submitterElement.name;
+            actionInput.value = submitterElement.value || "";
+            formElement.appendChild(actionInput);
+        }
+
+        formElement.submit();
+    }
+
     if (!form) {
         return;
     }
@@ -865,24 +908,32 @@
     }
 
     if (deleteSelectedButton && deleteConfirmationInput) {
-        deleteSelectedButton.addEventListener("click", function (event) {
+        deleteSelectedButton.addEventListener("click", async function (event) {
             const selectedCount = getSelectedCheckboxes().length;
 
             if (selectedCount <= 0) {
+                showUiMessage("Select at least one saved pack first.", true);
+                event.preventDefault();
                 return;
             }
 
-            const confirmation = window.prompt(
-                "You are about to permanently delete " + selectedCount + " saved pack(s). Type DELETE to confirm."
-            );
+            event.preventDefault();
 
-            if (confirmation !== "DELETE") {
-                event.preventDefault();
+            const confirmed = await confirmUiAction({
+                title: "Delete Saved Packs",
+                message: "You are about to permanently delete " + selectedCount + " saved pack(s). This cannot be undone.",
+                confirmText: "Delete Packs",
+                cancelText: "Cancel",
+                danger: true
+            });
+
+            if (!confirmed) {
                 deleteConfirmationInput.value = "";
                 return;
             }
 
             deleteConfirmationInput.value = "DELETE";
+            submitFormWithAction(form, deleteSelectedButton);
         });
     }
 
@@ -1918,7 +1969,7 @@
     }
 
     if (summaryForm) {
-        summaryForm.addEventListener("submit", function (event) {
+        summaryForm.addEventListener("submit", async function (event) {
             syncSummaryPackInputs();
 
             const selectedRows = getSummaryCheckedRows();
@@ -1927,20 +1978,24 @@
 
             if (selectedRows.length <= 0) {
                 event.preventDefault();
-                window.alert("Select at least one pack summary row first.");
+                showUiMessage("Select at least one pack summary row first.", true);
                 return;
             }
 
             if (action === "delete") {
+                event.preventDefault();
+
                 const selectedPackInputCount = Array.from(summaryForm.querySelectorAll(".campaign-summary-pack-id:not(:disabled)")).length;
 
-                const confirmation = window.prompt(
-                    "You are about to delete " + selectedPackInputCount + " selected pack(s). Type DELETE to confirm."
-                );
+                const confirmed = await confirmUiAction({
+                    title: "Delete Selected Packs",
+                    message: "You are about to permanently delete " + selectedPackInputCount + " selected pack(s). This cannot be undone.",
+                    confirmText: "Delete Packs",
+                    cancelText: "Cancel",
+                    danger: true
+                });
 
-                if (confirmation !== "DELETE") {
-                    event.preventDefault();
-
+                if (!confirmed) {
                     if (summaryDeleteConfirmationInput) {
                         summaryDeleteConfirmationInput.value = "";
                     }
@@ -1951,6 +2006,8 @@
                 if (summaryDeleteConfirmationInput) {
                     summaryDeleteConfirmationInput.value = "DELETE";
                 }
+
+                submitFormWithAction(summaryForm, submitter);
             }
         });
     }
