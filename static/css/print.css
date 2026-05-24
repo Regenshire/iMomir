@@ -1,11 +1,8 @@
 .print-page {
+    position: relative;
     margin: 0;
     padding: 0;
     background: #ffffff;
-}
-
-.print-page {
-    position: relative;
 }
 
 .print-sheet {
@@ -171,8 +168,4 @@
     background: #1f6feb;
     border-color: #1f6feb;
     color: #ffffff;
-}
-
-.print-now-button.hidden {
-
 }
