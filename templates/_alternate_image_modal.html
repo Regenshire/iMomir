@@ -128,9 +128,9 @@
                     <label class="toggle-row" for="alternateImageFaceKind">
                         <span>Face Kind</span>
                         <select name="face_kind" id="alternateImageFaceKind">
-                            <option value="single">Single</option>
-                            <option value="front">Front</option>
-                            <option value="back">Back</option>
+                            <option id="alternateImageFaceKindSingleOption" value="single">Single</option>
+                            <option id="alternateImageFaceKindFrontOption" value="front">Front</option>
+                            <option id="alternateImageFaceKindBackOption" value="back">Back</option>
                         </select>
                     </label>
 
@@ -234,6 +234,9 @@
     const alternateSaveFrameButton = document.getElementById("alternateImageSaveFrameButton");
     const alternateAddButton = document.getElementById("alternateImageAddButton");
     const alternateFaceKind = document.getElementById("alternateImageFaceKind");
+    const alternateFaceKindSingleOption = document.getElementById("alternateImageFaceKindSingleOption");
+    const alternateFaceKindFrontOption = document.getElementById("alternateImageFaceKindFrontOption");
+    const alternateFaceKindBackOption = document.getElementById("alternateImageFaceKindBackOption");
     const alternateFileInput = document.getElementById("alternateImageFile");
     const alternateLocalPathInput = document.getElementById("alternateImageLocalPath");
     const alternateNotesInput = document.getElementById("alternateImageNotes");
@@ -258,6 +261,64 @@
         } catch (error) {
             return "";
         }
+    }
+
+    function getAlternateFaceKindLabel(faceKind, card) {
+        const cleanFaceKind = String(faceKind || "single").trim().toLowerCase();
+        const frontFaceName = card && card.front_face_name ? String(card.front_face_name) : "Front";
+        const backFaceName = card && card.back_face_name ? String(card.back_face_name) : "Back";
+
+        if (cleanFaceKind === "front") {
+            return "Front - " + frontFaceName;
+        }
+
+        if (cleanFaceKind === "back") {
+            return "Back - " + backFaceName;
+        }
+
+        return "Single";
+    }
+
+    function configureAlternateImageFaceKindOptions(card) {
+        const isDualFaced = Boolean(card && card.is_dual_faced);
+        const frontFaceName = card && card.front_face_name ? String(card.front_face_name) : "Front";
+        const backFaceName = card && card.back_face_name ? String(card.back_face_name) : "Back";
+
+        if (alternateFaceKindSingleOption) {
+            alternateFaceKindSingleOption.textContent = "Single";
+            alternateFaceKindSingleOption.disabled = isDualFaced;
+            alternateFaceKindSingleOption.hidden = isDualFaced;
+        }
+
+        if (alternateFaceKindFrontOption) {
+            alternateFaceKindFrontOption.textContent = "Front - " + frontFaceName;
+            alternateFaceKindFrontOption.disabled = !isDualFaced;
+            alternateFaceKindFrontOption.hidden = !isDualFaced;
+        }
+
+        if (alternateFaceKindBackOption) {
+            alternateFaceKindBackOption.textContent = "Back - " + backFaceName;
+            alternateFaceKindBackOption.disabled = !isDualFaced;
+            alternateFaceKindBackOption.hidden = !isDualFaced;
+        }
+
+        if (alternateFaceKind) {
+            alternateFaceKind.value = isDualFaced ? "front" : "single";
+        }
+    }
+
+    function getActiveAlternateSourceSummary(sources, card) {
+        const activeSources = (sources || []).filter(function (source) {
+            return Boolean(source.is_enabled);
+        });
+
+        if (!activeSources.length) {
+            return "Scryfall / default image";
+        }
+
+        return activeSources.map(function (source) {
+            return getAlternateFaceKindLabel(source.face_kind, card) + ": " + source.source_name;
+        }).join(" | ");
     }
 
     function updateAlternateSourceFieldVisibility() {
@@ -424,6 +485,10 @@
     function renderAlternateSources(payload) {
         const sources = payload.alternate_sources || [];
         const activeSource = payload.active_source;
+        const card = payload.card || {};
+        const isDualFaced = Boolean(card.is_dual_faced);
+
+        configureAlternateImageFaceKindOptions(card);
 
         currentActiveAlternateSourceId = activeSource ? activeSource.alternate_source_id : null;
 
@@ -432,14 +497,10 @@
             activeSource ? (activeSource.export_frame_template || "auto") : "auto"
         );
 
-        setAlternateInputLocked(Boolean(activeSource));
+        setAlternateInputLocked(Boolean(activeSource) && !isDualFaced);
 
         if (alternateActiveSource) {
-            if (activeSource) {
-                alternateActiveSource.textContent = activeSource.source_name + " (" + activeSource.face_kind + ")";
-            } else {
-                alternateActiveSource.textContent = "Scryfall / default image";
-            }
+            alternateActiveSource.textContent = getActiveAlternateSourceSummary(sources, card);
         }
 
         if (!alternateSourceList) {
@@ -470,7 +531,7 @@
                 }
             }
 
-            left.textContent = source.source_name + " • " + source.face_kind + bleedText;
+            left.textContent = source.source_name + " • " + getAlternateFaceKindLabel(source.face_kind, payload.card || {}) + bleedText;
 
             const right = document.createElement("strong");
             right.className = "metadata-value-wrap alternate-source-actions";

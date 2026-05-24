@@ -2200,7 +2200,6 @@
 
             clearCurrentCardSelection();
             filterCurrentCards();
-            window.alert(payload.message || "Selected cards were updated.");
         } catch (error) {
             console.error(error);
             window.alert(error.message || "Failed to assign special slot.");
@@ -2261,7 +2260,6 @@
 
             clearCurrentCardSelection();
             filterCurrentCards();
-            window.alert(payload.message || "Selected cards were removed.");
         } catch (error) {
             console.error(error);
             window.alert(error.message || "Failed to remove selected cards.");
