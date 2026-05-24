@@ -2038,6 +2038,160 @@
         }
     }
 
+    function formatCurrentCardNumber(rawValue, digits) {
+        const parsedValue = Number(rawValue);
+
+        if (!Number.isFinite(parsedValue)) {
+            return "?";
+        }
+
+        return parsedValue.toFixed(digits);
+    }
+
+    function formatCurrentCardPrice(rawValue) {
+        const parsedValue = Number(rawValue);
+
+        if (!Number.isFinite(parsedValue)) {
+            return "?";
+        }
+
+        return "$" + parsedValue.toFixed(2);
+    }
+
+    function buildCurrentCardSearchTextFromCard(card) {
+        return [
+            card.card_name || "",
+            card.card_set_code || "",
+            card.collector_number || "",
+            card.rarity || "",
+            card.type_line || "",
+            card.color_identity_json || "[]",
+            card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value)
+        ].join(" ").toLowerCase();
+    }
+
+    function updateCurrentCardRowFromPrintingPayload(card) {
+        if (!card || !currentCardList) {
+            return null;
+        }
+
+        const row = currentCardList.querySelector(
+            '.custom-draft-current-card-row[data-custom-set-card-id="' + CSS.escape(String(card.custom_set_card_id)) + '"]'
+        );
+
+        if (!row) {
+            return null;
+        }
+
+        const cardUuid = card.card_uuid || "";
+        const cardName = card.card_name || "";
+        const setCode = card.card_set_code || "";
+        const collectorNumber = card.collector_number || "";
+        const rarity = card.rarity || "";
+        const typeLine = card.type_line || "";
+        const colorIdentityJson = card.color_identity_json || "[]";
+        const manaValue = card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value);
+        const hasAlternateSource = Boolean(card.has_alternate_source);
+        const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
+        const imageSrc = card.image_src || ("/chaos-card-image/" + encodeURIComponent(cardUuid));
+        const cacheBustedImageSrc = imageSrc + "?v=" + Date.now();
+
+        row.dataset.cardUuid = cardUuid;
+        row.dataset.cardSearch = buildCurrentCardSearchTextFromCard(card);
+        row.dataset.rarity = String(rarity).toLowerCase();
+        row.dataset.colorIdentity = String(colorIdentityJson).toLowerCase();
+        row.dataset.manaValue = manaValue;
+        row.dataset.typeLine = String(typeLine).toLowerCase();
+        row.dataset.cardName = String(cardName).toLowerCase();
+        row.dataset.displayCardName = cardName;
+        row.dataset.setCode = String(setCode).toUpperCase();
+        row.dataset.collectorNumber = collectorNumber;
+        row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+        row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
+        row.dataset.edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
+        row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
+        row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
+
+        const checkbox = row.querySelector(".custom-draft-current-card-checkbox");
+        if (checkbox) {
+            checkbox.setAttribute("aria-label", "Select " + cardName);
+        }
+
+        const image = row.querySelector(".custom-draft-current-card-image");
+        if (image) {
+            image.src = cacheBustedImageSrc;
+            image.alt = cardName;
+            image.dataset.zoomSrc = cacheBustedImageSrc;
+            image.dataset.zoomAlt = cardName;
+            image.setAttribute("aria-label", "Zoom " + cardName);
+        }
+
+        const title = row.querySelector(".custom-draft-current-card-title");
+        if (title) {
+            title.textContent = cardName;
+        }
+
+        const changePrintingButton = row.querySelector(".custom-draft-change-printing-button");
+        if (changePrintingButton) {
+            changePrintingButton.dataset.cardName = cardName;
+            changePrintingButton.dataset.currentCardUuid = cardUuid;
+            changePrintingButton.setAttribute("aria-label", "Change printing for " + cardName);
+        }
+
+        const alternateButton = row.querySelector(".alternate-image-button");
+        if (alternateButton) {
+            alternateButton.dataset.cardUuid = cardUuid;
+            alternateButton.dataset.cardName = cardName;
+            alternateButton.classList.toggle("custom-draft-alternate-image-active", hasAlternateSource);
+            alternateButton.setAttribute("aria-label", "Alternate image settings for " + cardName);
+        }
+
+        const removeButton = row.querySelector(".custom-draft-card-remove-button");
+        if (removeButton) {
+            removeButton.dataset.cardName = cardName;
+        }
+
+        const metaWrap = row.querySelector(".custom-draft-current-card-meta");
+        if (metaWrap) {
+            metaWrap.innerHTML = "";
+
+            [
+                setCode,
+                "#" + (collectorNumber || "?"),
+                rarity || "unknown rarity",
+                "MV " + formatCurrentCardNumber(card.mana_value, 1),
+                "EDHREC " + (card.edhrec_rank === null || card.edhrec_rank === undefined ? "?" : card.edhrec_rank),
+                "Salt " + formatCurrentCardNumber(card.edhrec_saltiness, 2),
+                "Price " + formatCurrentCardPrice(card.sort_price)
+            ].forEach(function (metaText) {
+                const span = document.createElement("span");
+                span.textContent = metaText;
+                metaWrap.appendChild(span);
+            });
+
+            const colorSpan = document.createElement("span");
+            colorSpan.className = "custom-draft-color-identity";
+            colorSpan.dataset.colorJson = colorIdentityJson;
+            colorSpan.textContent = "Color Identity: " + getColorIdentityLabel(colorIdentityJson, typeLine);
+            metaWrap.appendChild(colorSpan);
+
+            const typeSpan = document.createElement("span");
+            typeSpan.textContent = typeLine || "unknown type";
+            metaWrap.appendChild(typeSpan);
+
+            if (hasAlternateSource) {
+                const alternateSpan = document.createElement("span");
+                alternateSpan.className = "custom-draft-alternate-image-meta-line";
+                alternateSpan.textContent = alternateRemoveBleed
+                    ? "Alternate Image - Remove Bleed"
+                    : "Alternate Image - No Bleed";
+                metaWrap.appendChild(alternateSpan);
+            }
+        }
+
+        return row;
+    }
+
     function updateSearchResultGroupFromAddedRow(resultRow) {
         if (!resultRow) {
             return;
@@ -2116,17 +2270,31 @@
 
             button.classList.remove("action-button-loading");
             button.textContent = "Switched";
-            setSearchStatus(payload.message || "Printing updated. Reloading card list...", false);
 
-            // Phase 2 target:
-            // Replace this full reload with a row-level refresh endpoint that returns
-            // the updated card metadata for this custom_set_card_id. For now, keep
-            // the reload because the current response does not include enough row data
-            // to safely update card name, set code, collector number, rarity, MV,
-            // EDHREC, saltiness, price, color identity, type line, image, and filters.
-            window.setTimeout(function () {
-                window.location.reload();
-            }, 450);
+            const updatedRow = updateCurrentCardRowFromPrintingPayload(payload.card);
+
+            if (!updatedRow) {
+                setSearchStatus(payload.message || "Printing updated. Reloading card list...", false);
+
+                window.setTimeout(function () {
+                    window.location.reload();
+                }, 450);
+
+                return;
+            }
+
+            const resultRow = button.closest(".custom-draft-card-search-row");
+            if (resultRow) {
+                updateSearchResultGroupFromAddedRow(resultRow);
+            }
+
+            setSearchStatus(payload.message || "Printing updated.", false);
+
+            closeAddCardsSearch();
+            filterCurrentCards();
+            updateSetStatsRollout();
+            bindZoomableImages();
+            showUiMessage(payload.message || "Printing updated.", false);
         } catch (error) {
             console.error(error);
             button.disabled = false;

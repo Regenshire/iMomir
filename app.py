@@ -11530,6 +11530,27 @@ def serialize_custom_draft_card_search_result(row):
         "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
     }
 
+def serialize_custom_draft_current_card_result(row):
+    return {
+        "custom_set_card_id": int(row["custom_set_card_id"]),
+        "card_uuid": row["card_uuid"] or "",
+        "card_name": row["card_name"] or "",
+        "card_set_code": row["card_set_code"] or "",
+        "collector_number": row["collector_number"] or "",
+        "rarity": row["rarity"] or "",
+        "type_line": row["type_line"] or "",
+        "mana_value": row["mana_value"],
+        "colors_json": row["colors_json"] or "[]",
+        "color_identity_json": row["color_identity_json"] or "[]",
+        "edhrec_rank": row["edhrec_rank"],
+        "edhrec_saltiness": row["edhrec_saltiness"],
+        "sort_price": row["sort_price"],
+        "special_category_index": int(row["special_category_index"] or 0),
+        "has_alternate_source": int(row["has_alternate_source"] or 0) == 1,
+        "alternate_remove_bleed": int(row["alternate_remove_bleed"] or 0) == 1,
+        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+    }
+
 @app.route("/custom-draft-sets/<path:set_code>/cards/import-list", methods=["POST"])
 def custom_draft_set_cards_import_list(set_code):
     clean_set_code = normalize_custom_draft_set_code(set_code)
@@ -11743,7 +11764,23 @@ def custom_draft_set_cards_update_printing(set_code, custom_set_card_id):
             new_card_uuid,
         )
 
-        return jsonify(result)
+        updated_card = None
+
+        for row in get_custom_draft_set_card_rows(clean_set_code):
+            if int(row["custom_set_card_id"]) == int(custom_set_card_id):
+                updated_card = serialize_custom_draft_current_card_result(row)
+                break
+
+        if not updated_card:
+            return jsonify({
+                "ok": False,
+                "message": "Printing was updated, but the updated card row could not be loaded.",
+            }), 500
+
+        return jsonify({
+            **result,
+            "card": updated_card,
+        })
 
     except Exception as exc:
         return jsonify({
