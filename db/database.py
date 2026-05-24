@@ -24,6 +24,32 @@ def ensure_column_exists(cursor, table_name, column_name, column_definition):
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"
         )
 
+def normalize_search_text_for_sql(value):
+    normalized_value = str(value or "").strip().lower()
+
+    replacements = {
+        "’": "'",
+        "`": "'",
+        "´": "'",
+        "‘": "'",
+        "ʼ": "'",
+        "‐": "-",
+        "-": "-",
+        "–": "-",
+        "—": "-",
+    }
+
+    for source_character, replacement_character in replacements.items():
+        normalized_value = normalized_value.replace(source_character, replacement_character)
+
+    normalized_value = normalized_value.replace("'", "")
+    normalized_value = normalized_value.replace("-", "")
+    normalized_value = normalized_value.replace(",", "")
+    normalized_value = normalized_value.replace(".", "")
+    normalized_value = " ".join(normalized_value.split())
+
+    return normalized_value
+
 def table_exists_with_cursor(cursor, table_name):
     cursor.execute(
         """
@@ -2020,9 +2046,47 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
     params = [clean_set_code]
 
     if clean_search_text:
-        sql += """
+        normalized_search_text = normalize_search_text_for_sql(clean_search_text)
+        like_value = f"%{clean_search_text}%"
+        normalized_like_value = f"%{normalized_search_text}%"
+
+        normalized_card_name_sql = """
+            LOWER(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    COALESCE(cc.card_name, ''),
+                                                    '’', ''
+                                                ),
+                                                '''', ''
+                                            ),
+                                            '`', ''
+                                        ),
+                                        '´', ''
+                                    ),
+                                    '‘', ''
+                                ),
+                                'ʼ', ''
+                            ),
+                            '-', ''
+                        ),
+                        ',', ''
+                    ),
+                    '.', ''
+                )
+            )
+        """
+
+        sql += f"""
           AND (
                 LOWER(cc.card_name) LIKE ?
+             OR {normalized_card_name_sql} LIKE ?
              OR LOWER(cc.set_code) LIKE ?
              OR LOWER(COALESCE(cc.collector_number, '')) LIKE ?
              OR LOWER(COALESCE(cc.rarity, '')) LIKE ?
@@ -2030,8 +2094,7 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
           )
         """
 
-        like_value = f"%{clean_search_text}%"
-        params.extend([like_value, like_value, like_value, like_value, like_value])
+        params.extend([like_value, normalized_like_value, like_value, like_value, like_value, like_value])
 
     sql += """
         ORDER BY
@@ -2123,12 +2186,48 @@ def search_chaos_cards_for_custom_draft_set(
     params = [clean_set_code]
 
     if clean_search_text:
+        normalized_search_text = normalize_search_text_for_sql(clean_search_text)
         like_value = f"%{clean_search_text}%"
+        normalized_like_value = f"%{normalized_search_text}%"
+
+        normalized_card_name_sql = """
+            LOWER(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    COALESCE(cc.card_name, ''),
+                                                    '’', ''
+                                                ),
+                                                '''', ''
+                                            ),
+                                            '`', ''
+                                        ),
+                                        '´', ''
+                                    ),
+                                    '‘', ''
+                                ),
+                                'ʼ', ''
+                            ),
+                            '-', ''
+                        ),
+                        ',', ''
+                    ),
+                    '.', ''
+                )
+            )
+        """
 
         where_clauses.append(
-            """
+            f"""
             (
                     LOWER(cc.card_name) LIKE ?
+                 OR {normalized_card_name_sql} LIKE ?
                  OR LOWER(cc.set_code) LIKE ?
                  OR LOWER(COALESCE(cc.collector_number, '')) LIKE ?
                  OR LOWER(COALESCE(cc.rarity, '')) LIKE ?
@@ -2136,7 +2235,7 @@ def search_chaos_cards_for_custom_draft_set(
             )
             """
         )
-        params.extend([like_value, like_value, like_value, like_value, like_value])
+        params.extend([like_value, normalized_like_value, like_value, like_value, like_value, like_value])
 
     if clean_rarity_filter:
         where_clauses.append("LOWER(COALESCE(cc.rarity, '')) = ?")
@@ -2245,15 +2344,55 @@ def search_chaos_cards_for_custom_draft_set(
     search_rank_sql = ""
 
     if clean_search_text:
+        normalized_search_text = normalize_search_text_for_sql(clean_search_text)
+        normalized_prefix_value = f"{normalized_search_text}%"
+
+        normalized_card_name_sql = """
+            LOWER(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    COALESCE(cc.card_name, ''),
+                                                    '’', ''
+                                                ),
+                                                '''', ''
+                                            ),
+                                            '`', ''
+                                        ),
+                                        '´', ''
+                                    ),
+                                    '‘', ''
+                                ),
+                                'ʼ', ''
+                            ),
+                            '-', ''
+                        ),
+                        ',', ''
+                    ),
+                    '.', ''
+                )
+            )
+        """
+
         order_exact_params = [
             clean_search_text,
             f"{clean_search_text}%",
+            normalized_search_text,
+            normalized_prefix_value,
         ]
-        search_rank_sql = """
+        search_rank_sql = f"""
             CASE
                 WHEN LOWER(cc.card_name) = ? THEN 0
                 WHEN LOWER(cc.card_name) LIKE ? THEN 1
-                ELSE 2
+                WHEN {normalized_card_name_sql} = ? THEN 2
+                WHEN {normalized_card_name_sql} LIKE ? THEN 3
+                ELSE 4
             END,
         """
 
