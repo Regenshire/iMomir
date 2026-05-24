@@ -680,7 +680,20 @@
     }
 
     async function deleteAlternateSource(alternateSourceId) {
-        const confirmed = window.confirm("Delete this alternate image source?");
+        let confirmed = true;
+
+        if (window.iMomirConfirm && typeof window.iMomirConfirm.show === "function") {
+            confirmed = await window.iMomirConfirm.show({
+                title: "Delete Alternate Source",
+                message: "Delete this alternate image source? This cannot be undone.",
+                confirmText: "Delete Source",
+                cancelText: "Cancel",
+                danger: true
+            });
+        } else {
+            confirmed = window.confirm("Delete this alternate image source?");
+        }
+
         if (!confirmed) {
             return;
         }
@@ -699,8 +712,12 @@
                 throw new Error(payload.message || "Could not delete alternate source.");
             }
 
-            refreshTrackedCardImages(currentAlternateCardUuid, "alternate-source");
-            await loadAlternateSources();
+            const latestPayload = await loadAlternateSources();
+            refreshTrackedCardImages(
+                currentAlternateCardUuid,
+                "alternate-source-delete",
+                getAlternateStateFromPayload(latestPayload)
+            );
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
         }
