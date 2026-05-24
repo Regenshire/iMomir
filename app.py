@@ -9,6 +9,7 @@ import shutil
 import socket
 import threading
 import time
+import traceback
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ from paths import (
     IMAGE_CACHE_DIR,
     LOG_PATH,
     RUNTIME_BASE_DIR,
+    RUNTIME_PACK_ART_DIR,
     SCRYFALL_DEFAULT_CARDS_PATH,
     SCRYFALL_DOWNLOAD_DIR,
     SET_BOOSTER_CONTENTS_CSV_PATH,
@@ -225,6 +227,7 @@ from modes.chaos import (
     get_chaos_pack_art_info,
     get_chaos_pack_art_relpath,
     get_chaos_pack_type_label_map,
+    is_custom_draft_set_code,
     get_chaos_pack_variants,
     get_chaos_session_state,
     get_eligible_chaos_packs,
@@ -512,6 +515,17 @@ def inject_global_template_state():
 
 PACK_ART_DIR = get_pack_art_dir(app.static_folder)
 
+def runtime_pack_art_url(relative_pack_art_path):
+    clean_path = str(relative_pack_art_path or "").replace("\\", "/").strip("/")
+
+    if not clean_path:
+        return ""
+
+    if clean_path.startswith("data/img/pack_art/"):
+        clean_path = clean_path[len("data/img/pack_art/"):]
+
+    return url_for("runtime_pack_art", pack_art_path=clean_path)
+
 SCRYFALL_SETS_API_URL = "https://api.scryfall.com/sets"
 SET_ICON_RELATIVE_DIR = "img/set_icons"
 
@@ -550,6 +564,36 @@ def write_debug_log(message):
             log_file.write(f"[{timestamp}] {message}\n")
     except Exception:
         pass
+
+def write_error_log(message, exc=None):
+    try:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+        with open(LOG_PATH, "a", encoding="utf-8") as log_file:
+            log_file.write(f"[{timestamp}] ERROR | {message}\n")
+
+            if exc is not None:
+                log_file.write(f"[{timestamp}] ERROR DETAIL | {repr(exc)}\n")
+                log_file.write(traceback.format_exc())
+                log_file.write("\n")
+    except Exception:
+        pass
+
+
+def jsonify_pack_generation_error(context_label, user_message, exc, extra=None, status_code=500):
+    extra = extra or {}
+
+    write_error_log(
+        f"{context_label} | extra={json.dumps(extra, default=str)}",
+        exc=exc,
+    )
+
+    return jsonify({
+        "ok": False,
+        "message": user_message,
+        "error_code": context_label,
+        "debug_message": str(exc),
+    }), status_code
 
 image_download_status = {
     "is_running": False,
@@ -1759,6 +1803,7 @@ def ensure_download_directories():
     os.makedirs(CAMPAIGN_PLAYER_PORTRAIT_DIR, exist_ok=True)
     os.makedirs(ALTERNATE_SOURCE_DIR, exist_ok=True)
     os.makedirs(CUSTOM_SET_ICON_DIR, exist_ok=True)
+    os.makedirs(RUNTIME_PACK_ART_DIR, exist_ok=True)
     os.makedirs(os.path.join(app.static_folder, SET_ICON_RELATIVE_DIR.replace("/", os.sep)), exist_ok=True)
 
 def save_custom_set_icon_file(uploaded_file, set_code):
@@ -4690,6 +4735,79 @@ def build_chaos_pack_title_card_image_bytes(
     output_buffer = BytesIO()
     image.convert("RGB").save(output_buffer, format="PNG")
     return output_buffer.getvalue()
+
+def build_custom_draft_set_pack_art_image_bytes(
+    pack_display_name,
+    set_code=None,
+    booster_name=None,
+    pack_tracking_code="",
+    icon_fallback_set_code=None,
+):
+    title_card_bytes = build_chaos_pack_title_card_image_bytes(
+        pack_display_name,
+        set_code=set_code,
+        booster_name=booster_name,
+        pack_tracking_code=pack_tracking_code,
+        icon_fallback_set_code=icon_fallback_set_code,
+    )
+
+    packback_path = os.path.join(
+        app.static_folder,
+        "img",
+        "pack_art",
+        "_fallback",
+        "packback.png",
+    )
+
+    if not os.path.exists(packback_path):
+        write_debug_log(
+            f"CUSTOM SET PACK ART FALLBACK | packback missing | path={packback_path}"
+        )
+        return title_card_bytes
+
+    try:
+        with Image.open(packback_path) as packback_source:
+            packback_rgba = packback_source.convert("RGBA")
+
+        with Image.open(BytesIO(title_card_bytes)) as title_card_source:
+            title_card_image = title_card_source.convert("RGB")
+
+        packback_rgb = packback_rgba.convert("RGB")
+        packback_alpha = packback_rgba.getchannel("A")
+
+        target_width_px = 350
+        scale_ratio = target_width_px / max(1, title_card_image.width)
+        target_height_px = max(1, int(round(title_card_image.height * scale_ratio)))
+
+        resized_title_card = title_card_image.resize(
+            (target_width_px, target_height_px),
+            Image.LANCZOS,
+        )
+
+        brightness_enhancer = ImageEnhance.Brightness(resized_title_card)
+        resized_title_card = brightness_enhancer.enhance(1.33)
+
+        overlay_image = Image.new("RGB", packback_rgb.size, (0, 0, 0))
+
+        paste_x = int((packback_rgb.width - resized_title_card.width) / 2)
+        paste_y = int((packback_rgb.height - resized_title_card.height) / 2)
+
+        overlay_image.paste(resized_title_card, (paste_x, paste_y))
+
+        blended_rgb = ImageChops.lighter(packback_rgb, overlay_image)
+        blended_rgba = blended_rgb.convert("RGBA")
+        blended_rgba.putalpha(packback_alpha)
+
+        output_buffer = BytesIO()
+        blended_rgba.save(output_buffer, format="PNG")
+        return output_buffer.getvalue()
+
+    except Exception as exc:
+        write_error_log(
+            "CUSTOM SET PACK ART COMPOSITE FAILED",
+            exc=exc,
+        )
+        return title_card_bytes
 
 def normalize_alternate_face_kind(face_kind):
     normalized_face_kind = (face_kind or "single").strip().lower()
@@ -9317,6 +9435,41 @@ def campaign_chaos_players():
         import_campaign_options=import_campaign_options,
     )
 
+@app.route("/runtime-pack-art/<path:pack_art_path>", methods=["GET"])
+def runtime_pack_art(pack_art_path):
+    normalized_path = str(pack_art_path or "").replace("\\", "/").strip("/")
+    safe_parts = []
+
+    for part in normalized_path.split("/"):
+        clean_part = str(part or "").strip()
+
+        if not clean_part:
+            continue
+
+        if clean_part in {".", ".."}:
+            return ("Not found", 404)
+
+        # Runtime pack art needs to preserve custom set codes such as TST^.
+        # Do not use safe_filename() here because it converts ^ to _.
+        if not re.match(r"^[A-Za-z0-9_.\-\^]+$", clean_part):
+            return ("Not found", 404)
+
+        safe_parts.append(clean_part)
+
+    if not safe_parts:
+        return ("Not found", 404)
+
+    candidate_path = os.path.abspath(os.path.join(RUNTIME_PACK_ART_DIR, *safe_parts))
+    runtime_pack_art_root = os.path.abspath(RUNTIME_PACK_ART_DIR)
+
+    if os.path.commonpath([runtime_pack_art_root, candidate_path]) != runtime_pack_art_root:
+        return ("Not found", 404)
+
+    if not os.path.exists(candidate_path):
+        return ("Not found", 404)
+
+    return send_file(candidate_path)
+
 @app.route("/campaign-chaos/player-portrait/<filename>", methods=["GET"])
 def campaign_chaos_player_portrait(filename):
     safe_name = safe_filename(filename)
@@ -9920,20 +10073,34 @@ def campaign_chaos_packs_search_options():
 
 @app.route("/campaign-chaos/packs/add-random", methods=["POST"])
 def campaign_chaos_packs_add_random():
-    result = create_random_pack_preview_for_manage_packs(
-        app.static_folder,
-        write_debug_log,
-    )
+    try:
+        result = create_random_pack_preview_for_manage_packs(
+            app.static_folder,
+            write_debug_log,
+        )
 
-    if not result.get("ok"):
-        return jsonify(result), 400
+        if not result.get("ok"):
+            write_error_log(
+                "MANAGE PACK RANDOM FAILED | result=" + json.dumps(result, default=str)
+            )
+            return jsonify(result), 400
 
-    return jsonify({
-        **result,
-        "view_url": url_for("campaign_chaos_pack_preview_view"),
-        "print_url": url_for("campaign_chaos_pack_preview_print"),
-        "save_url": url_for("campaign_chaos_pack_preview_save"),
-    })
+        return jsonify({
+            **result,
+            "view_url": url_for("campaign_chaos_pack_preview_view"),
+            "print_url": url_for("campaign_chaos_pack_preview_print"),
+            "save_url": url_for("campaign_chaos_pack_preview_save"),
+        })
+
+    except Exception as exc:
+        return jsonify_pack_generation_error(
+            "MANAGE_PACK_RANDOM_EXCEPTION",
+            "iMomir could not generate a random saved pack. Check the log for details.",
+            exc,
+            extra={
+                "route": "campaign_chaos_packs_add_random",
+            },
+        )
 
 @app.route("/campaign-chaos/packs/add-specific-random", methods=["POST"])
 def campaign_chaos_packs_add_specific_random():
@@ -9942,22 +10109,53 @@ def campaign_chaos_packs_add_specific_random():
     set_code = (payload.get("set_code") or "").strip()
     booster_name = (payload.get("booster_name") or "").strip()
 
-    result = create_specific_pack_preview_for_manage_packs(
-        set_code,
-        booster_name,
-        app.static_folder,
-        write_debug_log,
-    )
+    if not set_code or not booster_name:
+        return jsonify({
+            "ok": False,
+            "message": "Set code and booster type are required to generate this pack.",
+            "error_code": "MISSING_SPECIFIC_PACK_INPUT",
+        }), 400
 
-    if not result.get("ok"):
-        return jsonify(result), 400
+    try:
+        if is_custom_draft_set_code(set_code):
+            result = build_custom_draft_set_manage_pack_preview(
+                normalize_custom_draft_set_code(set_code),
+                booster_name,
+            )
+        else:
+            result = create_specific_pack_preview_for_manage_packs(
+                set_code,
+                booster_name,
+                app.static_folder,
+                write_debug_log,
+            )
 
-    return jsonify({
-        **result,
-        "view_url": url_for("campaign_chaos_pack_preview_view"),
-        "print_url": url_for("campaign_chaos_pack_preview_print"),
-        "save_url": url_for("campaign_chaos_pack_preview_save"),
-    })
+        if not result.get("ok"):
+            write_error_log(
+                "MANAGE PACK SPECIFIC FAILED | result="
+                + json.dumps(result, default=str)
+                + f" | set_code={set_code} | booster_name={booster_name}"
+            )
+            return jsonify(result), 400
+
+        return jsonify({
+            **result,
+            "view_url": url_for("campaign_chaos_pack_preview_view"),
+            "print_url": url_for("campaign_chaos_pack_preview_print"),
+            "save_url": url_for("campaign_chaos_pack_preview_save"),
+        })
+
+    except Exception as exc:
+        return jsonify_pack_generation_error(
+            "MANAGE_PACK_SPECIFIC_EXCEPTION",
+            "iMomir could not generate this pack. The custom set may have a missing or invalid pack layout, or one of the slot rules may not have enough matching cards.",
+            exc,
+            extra={
+                "route": "campaign_chaos_packs_add_specific_random",
+                "set_code": set_code,
+                "booster_name": booster_name,
+            },
+        )
 
 @app.route("/campaign-chaos/packs/custom-populate-options", methods=["GET"])
 def campaign_chaos_packs_custom_populate_options():
@@ -9998,22 +10196,41 @@ def campaign_chaos_packs_add_custom_preview():
     pack_name = (payload.get("pack_name") or "").strip()
     decklist_text = payload.get("decklist_text") or ""
 
-    result = create_custom_pack_preview_for_manage_packs(
-        set_code,
-        pack_name,
-        decklist_text,
-        write_debug_log,
-    )
+    try:
+        result = create_custom_pack_preview_for_manage_packs(
+            set_code,
+            pack_name,
+            decklist_text,
+            write_debug_log,
+        )
 
-    if not result.get("ok"):
-        return jsonify(result), 400
+        if not result.get("ok"):
+            write_error_log(
+                "MANAGE PACK CUSTOM PREVIEW FAILED | result="
+                + json.dumps(result, default=str)
+                + f" | set_code={set_code} | pack_name={pack_name}"
+            )
+            return jsonify(result), 400
 
-    return jsonify({
-        **result,
-        "view_url": url_for("campaign_chaos_pack_preview_view"),
-        "print_url": url_for("campaign_chaos_pack_preview_print"),
-        "save_url": url_for("campaign_chaos_pack_preview_save"),
-    })
+        return jsonify({
+            **result,
+            "view_url": url_for("campaign_chaos_pack_preview_view"),
+            "print_url": url_for("campaign_chaos_pack_preview_print"),
+            "save_url": url_for("campaign_chaos_pack_preview_save"),
+        })
+
+    except Exception as exc:
+        return jsonify_pack_generation_error(
+            "MANAGE_PACK_CUSTOM_PREVIEW_EXCEPTION",
+            "iMomir could not generate the custom pack preview. Check the decklist and set code, then try again.",
+            exc,
+            extra={
+                "route": "campaign_chaos_packs_add_custom_preview",
+                "set_code": set_code,
+                "pack_name": pack_name,
+                "decklist_line_count": len((decklist_text or "").splitlines()),
+            },
+        )
 
 @app.route("/campaign-chaos/packs/preview/view", methods=["GET"])
 def campaign_chaos_pack_preview_view():
@@ -11034,7 +11251,13 @@ def custom_draft_sets_add():
             is_active=True,
         )
 
-        flash(f"Custom draft set {saved_set_code} created.")
+        pack_art_result = ensure_custom_draft_set_default_pack_art(saved_set_code)
+
+        if pack_art_result.get("ok"):
+            flash(f"Custom draft set {saved_set_code} created. Default custom pack art was generated.")
+        else:
+            flash(f"Custom draft set {saved_set_code} created, but default custom pack art could not be generated.")
+
         return redirect(url_for("custom_draft_set_manage", set_code=saved_set_code))
 
     except Exception as exc:
@@ -11092,7 +11315,13 @@ def custom_draft_set_manage(set_code):
                 is_active=request.form.get("is_active") == "on",
             )
 
-            flash("Custom draft set saved.")
+            pack_art_result = ensure_custom_draft_set_default_pack_art(saved_set_code)
+
+            if pack_art_result.get("ok"):
+                flash(f"Custom draft set saved. Custom pack art was updated ({pack_art_result.get('created_count', 0)} file(s)).")
+            else:
+                flash(f"Custom draft set saved, but some custom pack art could not be updated ({pack_art_result.get('created_count', 0)} file(s) generated).")
+
             return redirect(url_for("custom_draft_set_manage", set_code=saved_set_code))
 
         except Exception as exc:
@@ -11158,6 +11387,223 @@ def build_custom_draft_set_pack_display_name(custom_set, booster_name):
         return normalize_chaos_pack_display_name(f"{set_name} - {booster_label} ({set_code})")
 
     return normalize_chaos_pack_display_name(f"{set_name} - {booster_label}")
+
+def ensure_custom_draft_set_default_pack_art(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        return {
+            "ok": False,
+            "created": False,
+            "created_count": 0,
+            "message": "Custom draft set was not found.",
+            "relative_paths": [],
+            "absolute_paths": [],
+        }
+
+    ensure_download_directories()
+
+    pack_art_dir = os.path.join(
+        RUNTIME_PACK_ART_DIR,
+        clean_set_code,
+    )
+
+    os.makedirs(pack_art_dir, exist_ok=True)
+
+    pack_art_targets = [
+        {
+            "filename": "default.png",
+            "booster_name": "Custom Set",
+            "pack_display_name": normalize_chaos_pack_display_name(
+                f"{custom_set['set_name'] or 'Custom Draft Set'} ({clean_set_code})"
+            ),
+            "pack_tracking_code": "15 CARDS",
+        },
+        {
+            "filename": "play.png",
+            "booster_name": "Play Booster",
+            "pack_display_name": build_custom_draft_set_pack_display_name(
+                custom_set,
+                "play",
+            ),
+            "pack_tracking_code": "15 CARDS",
+        },
+        {
+            "filename": "collector.png",
+            "booster_name": "Collector Booster",
+            "pack_display_name": build_custom_draft_set_pack_display_name(
+                custom_set,
+                "collector",
+            ),
+            "pack_tracking_code": "15 CARDS",
+        },
+        {
+            "filename": "mystery.png",
+            "booster_name": "Mystery Booster",
+            "pack_display_name": build_custom_draft_set_pack_display_name(
+                custom_set,
+                "mystery",
+            ),
+            "pack_tracking_code": "15 CARDS",
+        },
+    ]
+
+    created_relative_paths = []
+    created_absolute_paths = []
+    failures = []
+
+    for target in pack_art_targets:
+        output_path = os.path.join(pack_art_dir, target["filename"])
+        relative_path = f"data/img/pack_art/{clean_set_code}/{target['filename']}"
+
+        try:
+            pack_art_bytes = build_custom_draft_set_pack_art_image_bytes(
+                target["pack_display_name"],
+                set_code=clean_set_code,
+                booster_name=target["booster_name"],
+                pack_tracking_code=target["pack_tracking_code"],
+                icon_fallback_set_code=clean_set_code,
+            )
+
+            with open(output_path, "wb") as output_file:
+                output_file.write(pack_art_bytes)
+
+            created_relative_paths.append(relative_path)
+            created_absolute_paths.append(output_path)
+
+            write_debug_log(
+                "CUSTOM SET RUNTIME PACK ART GENERATED | "
+                f"set_code={clean_set_code} | booster={target['booster_name']} | "
+                f"path={relative_path} | style=packback_lighten_composite"
+            )
+
+        except Exception as exc:
+            failures.append({
+                "filename": target["filename"],
+                "booster_name": target["booster_name"],
+                "message": str(exc),
+            })
+
+            write_error_log(
+                "CUSTOM SET RUNTIME PACK ART GENERATION FAILED | "
+                f"set_code={clean_set_code} | booster={target['booster_name']} | path={relative_path}",
+                exc=exc,
+            )
+
+    if failures:
+        return {
+            "ok": False,
+            "created": len(created_relative_paths) > 0,
+            "created_count": len(created_relative_paths),
+            "message": f"Generated {len(created_relative_paths)} custom pack art file(s), but {len(failures)} failed.",
+            "relative_paths": created_relative_paths,
+            "absolute_paths": created_absolute_paths,
+            "failures": failures,
+        }
+
+    return {
+        "ok": True,
+        "created": True,
+        "created_count": len(created_relative_paths),
+        "message": f"Generated {len(created_relative_paths)} custom pack art file(s).",
+        "relative_paths": created_relative_paths,
+        "absolute_paths": created_absolute_paths,
+        "failures": [],
+    }
+
+def build_custom_draft_set_manage_pack_preview(clean_set_code, clean_booster_name):
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        return {
+            "ok": False,
+            "message": "Custom draft set was not found.",
+            "error_code": "CUSTOM_SET_NOT_FOUND",
+        }
+
+    normalized_booster_name = normalize_custom_draft_booster_name(clean_booster_name)
+
+    if not normalized_booster_name:
+        return {
+            "ok": False,
+            "message": "Invalid custom draft pack type.",
+            "error_code": "INVALID_CUSTOM_SET_BOOSTER",
+        }
+
+    try:
+        generated_cards = generate_custom_draft_set_pack_cards(
+            clean_set_code,
+            normalized_booster_name,
+        )
+    except Exception as exc:
+        write_error_log(
+            "CUSTOM SET PACK GENERATION FAILED | "
+            f"set_code={clean_set_code} | booster_name={normalized_booster_name}",
+            exc=exc,
+        )
+
+        return {
+            "ok": False,
+            "message": (
+                "This custom set pack could not be generated. "
+                "Review the pack layout rules and make sure each slot has enough matching cards."
+            ),
+            "debug_message": str(exc),
+            "error_code": "CUSTOM_SET_PACK_GENERATION_FAILED",
+        }
+
+    pack_display_name = build_custom_draft_set_pack_display_name(
+        custom_set,
+        normalized_booster_name,
+    )
+
+    pack_tracking_code = build_pack_tracking_code(
+        clean_set_code,
+        normalized_booster_name,
+        0,
+    )
+
+    preview_pack = {
+        "ok": True,
+        "source": "custom_draft_set",
+        "set_code": clean_set_code,
+        "booster_name": normalized_booster_name,
+        "booster_index": 0,
+        "display_name": pack_display_name,
+        "pack_display_name": pack_display_name,
+        "pack_tracking_code": pack_tracking_code,
+        "total_cards": len(generated_cards),
+        "bonus_pack_opened": False,
+        "cards": generated_cards,
+        "manage_pack_preview": True,
+        "source_json": {
+            "source": "custom_draft_set",
+            "set_code": clean_set_code,
+            "booster_name": normalized_booster_name,
+            "booster_index": 0,
+        },
+    }
+
+    set_chaos_session_state(
+        "pending_manage_pack_preview",
+        preview_pack,
+    )
+
+    return {
+        "ok": True,
+        "message": "Custom draft set pack generated. Review it before saving.",
+        "pack_tracking_code": pack_tracking_code,
+        "set_code": clean_set_code,
+        "booster_name": normalized_booster_name,
+        "booster_index": 0,
+        "pack_display_name": pack_display_name,
+        "total_cards": len(generated_cards),
+        "bonus_pack_opened": False,
+        "view_url": url_for("campaign_chaos_pack_preview_view"),
+        "print_url": url_for("campaign_chaos_pack_preview_print"),
+        "save_url": url_for("campaign_chaos_pack_preview_save"),
+    }
 
 def normalize_custom_draft_booster_name(booster_name):
     clean_booster_name = str(booster_name or "").strip().lower()

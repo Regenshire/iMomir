@@ -1225,6 +1225,41 @@
         addPackStatus.classList.remove("hidden");
     }
 
+    async function readJsonResponseOrThrow(response, fallbackMessage) {
+        const contentType = response.headers.get("content-type") || "";
+        const responseText = await response.text();
+
+        if (contentType.indexOf("application/json") === -1) {
+            console.error("Expected JSON response but received:", {
+                status: response.status,
+                statusText: response.statusText,
+                contentType: contentType,
+                bodyPreview: responseText.slice(0, 1000)
+            });
+
+            throw new Error(
+                fallbackMessage ||
+                "The server returned an unexpected error page instead of JSON. Check logs/logs.txt for details."
+            );
+        }
+
+        try {
+            return JSON.parse(responseText);
+        } catch (error) {
+            console.error("Invalid JSON response:", {
+                status: response.status,
+                statusText: response.statusText,
+                contentType: contentType,
+                bodyPreview: responseText.slice(0, 1000)
+            });
+
+            throw new Error(
+                fallbackMessage ||
+                "The server returned invalid JSON. Check logs/logs.txt for details."
+            );
+        }
+    }
+
     function resetImportCampaignPanel() {
         if (addPackImportCampaignPanel) {
             addPackImportCampaignPanel.classList.add("hidden");
@@ -1401,7 +1436,7 @@
                 }
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "Campaign pack import lookup failed because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Failed to load campaign packs.");
@@ -1453,7 +1488,7 @@
                 })
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "Campaign pack import failed because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Failed to import selected packs.");
@@ -1638,7 +1673,7 @@
                 }
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "Search failed because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Search failed.");
@@ -1685,7 +1720,7 @@
                 })
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "This pack could not be generated because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Failed to generate selected pack.");
@@ -1695,7 +1730,11 @@
             showGeneratedPackPreview(payload);
         } catch (error) {
             console.error(error);
-            setAddPackStatus(error.message || "Failed to generate selected pack.", true);
+            setAddPackStatus(
+                error.message ||
+                "This pack could not be generated. Check that the custom set has a valid pack layout and enough cards matching each slot rule.",
+                true
+            );
         } finally {
             if (buttonElement) {
                 buttonElement.disabled = false;
@@ -1824,7 +1863,7 @@
                 })
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "Custom pack populate failed because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Failed to populate custom pack.");
@@ -1894,7 +1933,7 @@
                 })
             });
 
-            const payload = await response.json();
+            const payload = await readJsonResponseOrThrow(response, "Custom pack preview failed because the server returned an unexpected response.");
 
             if (!response.ok || !payload.ok) {
                 throw new Error(payload.message || "Failed to generate custom pack.");
@@ -2070,7 +2109,7 @@
                     }
                 });
 
-                const payload = await response.json();
+                const payload = await readJsonResponseOrThrow(response, "Random pack generation failed because the server returned an unexpected response.");
 
                 if (!response.ok || !payload.ok) {
                     throw new Error(payload.message || "Failed to add random pack.");

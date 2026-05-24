@@ -8,6 +8,8 @@ from io import BytesIO
 from flask import url_for
 from pypdf import PdfWriter
 
+from paths import RUNTIME_PACK_ART_DIR
+
 from settings import (
     ALLOWED_CHAOS_BOOSTER_TYPES,
     CHAOS_DUPLICATE_CONTROL_ENABLED,
@@ -259,6 +261,28 @@ def get_chaos_pack_art_relpath(set_code, booster_name, static_folder):
             set_code_variants.append(raw_set_code.lower())
 
     for set_code_variant in set_code_variants:
+        direct_relpath = f"data/img/pack_art/{set_code_variant}/{normalized_booster_key}.png"
+        direct_abspath = os.path.join(
+            RUNTIME_PACK_ART_DIR,
+            set_code_variant,
+            f"{normalized_booster_key}.png",
+        )
+
+        if os.path.exists(direct_abspath):
+            return direct_relpath
+
+    for set_code_variant in set_code_variants:
+        default_relpath = f"data/img/pack_art/{set_code_variant}/default.png"
+        default_abspath = os.path.join(
+            RUNTIME_PACK_ART_DIR,
+            set_code_variant,
+            "default.png",
+        )
+
+        if os.path.exists(default_abspath):
+            return default_relpath
+
+    for set_code_variant in set_code_variants:
         direct_relpath = f"img/pack_art/{set_code_variant}/{normalized_booster_key}.png"
         direct_abspath = os.path.join(static_folder, direct_relpath.replace("/", os.sep))
 
@@ -304,8 +328,13 @@ def get_chaos_pack_art_info(set_code, booster_name, static_folder):
         )
         image_path = (row["image_path"] or "").strip() or default_image_path
 
-        static_abs_path = os.path.join(static_folder, image_path.replace("/", os.sep))
-        if not os.path.exists(static_abs_path):
+        if image_path.startswith("data/img/pack_art/"):
+            runtime_relative_path = image_path[len("data/img/pack_art/"):].replace("/", os.sep)
+            image_abs_path = os.path.join(RUNTIME_PACK_ART_DIR, runtime_relative_path)
+        else:
+            image_abs_path = os.path.join(static_folder, image_path.replace("/", os.sep))
+
+        if not os.path.exists(image_abs_path):
             image_path = default_image_path
 
         return {
@@ -319,6 +348,20 @@ def get_chaos_pack_art_info(set_code, booster_name, static_folder):
         "image_path": default_image_path,
         "is_fallback": 1,
     }
+
+def get_chaos_pack_art_image_src(image_path):
+    clean_image_path = (image_path or "").strip()
+
+    if not clean_image_path:
+        clean_image_path = "img/pack_art/_fallback/booster_default.png"
+
+    if clean_image_path.startswith("data/img/pack_art/"):
+        return url_for(
+            "runtime_pack_art",
+            pack_art_path=clean_image_path[len("data/img/pack_art/"):],
+        )
+
+    return url_for("static", filename=clean_image_path)
 
 
 def clear_chaos_pack_history():
@@ -527,7 +570,7 @@ def get_eligible_chaos_packs(static_folder):
             "booster_name": booster_name_raw,
             "display_name": art_info["display_name"],
             "image_path": art_info["image_path"],
-            "image_src": url_for("static", filename=art_info["image_path"]),
+            "image_src": get_chaos_pack_art_image_src(art_info["image_path"]),
             "is_fallback": int(art_info["is_fallback"] or 0),
             "variant_count": int(row["variant_count"] or 0),
             "total_variant_weight": float(row["total_variant_weight"] or 0),
@@ -595,7 +638,7 @@ def get_eligible_chaos_packs(static_folder):
                         custom_booster_name,
                     ),
                     "image_path": art_info["image_path"],
-                    "image_src": url_for("static", filename=art_info["image_path"]),
+                    "image_src": get_chaos_pack_art_image_src(art_info["image_path"]),
                     "is_fallback": int(art_info["is_fallback"] or 0),
                     "variant_count": 1,
                     "total_variant_weight": 1.0,
@@ -2753,77 +2796,8 @@ def get_importable_campaign_pack_rows(static_folder, source_campaign_id=None, ta
             "opened_count": int(row["opened_count"] or 0),
             "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
             "already_in_target": int(row["already_in_target"] or 0) == 1,
-            "image_src": url_for("static", filename=art_info["image_path"]),
+            "image_src": get_chaos_pack_art_image_src(art_info["image_path"]),
         })
-
-    if "custom" in selected_chaos_pack_types:
-        custom_conn = get_db_connection()
-        custom_cursor = custom_conn.cursor()
-
-        custom_where_conditions = [
-            "cds.is_active = 1",
-            """
-            EXISTS (
-                SELECT 1
-                FROM custom_draft_set_cards cdsc
-                WHERE cdsc.set_code = cds.set_code
-            )
-            """,
-        ]
-        custom_params = []
-
-        if config.get("all_sets_enabled") == "0" and selected_set_codes:
-            custom_placeholders = ",".join(["?"] * len(selected_set_codes))
-            custom_where_conditions.append(f"cds.set_code IN ({custom_placeholders})")
-            custom_params.extend(sorted(selected_set_codes))
-        elif config.get("all_sets_enabled") == "0" and not selected_set_codes:
-            custom_where_conditions.append("1 = 0")
-
-        custom_where_clause = "WHERE " + " AND ".join(custom_where_conditions)
-
-        custom_cursor.execute(
-            f"""
-            SELECT
-                cds.set_code,
-                s.set_name,
-                s.release_date,
-                cds.is_active
-            FROM custom_draft_sets cds
-            INNER JOIN sets s ON s.set_code = cds.set_code
-            {custom_where_clause}
-            ORDER BY s.release_date DESC, s.set_name COLLATE NOCASE ASC
-            """,
-            custom_params,
-        )
-
-        custom_rows = custom_cursor.fetchall()
-        custom_conn.close()
-
-        for custom_row in custom_rows:
-            custom_set_code = (custom_row["set_code"] or "").strip().upper()
-
-            for custom_booster_name in ["mystery", "play", "collector"]:
-                art_info = get_chaos_pack_art_info(
-                    custom_set_code,
-                    custom_booster_name,
-                    static_folder,
-                )
-
-                packs.append({
-                    "set_code": custom_set_code,
-                    "booster_name": custom_booster_name,
-                    "display_name": build_default_chaos_pack_display_name(
-                        custom_set_code,
-                        custom_booster_name,
-                    ),
-                    "image_path": art_info["image_path"],
-                    "image_src": url_for("static", filename=art_info["image_path"]),
-                    "is_fallback": int(art_info["is_fallback"] or 0),
-                    "variant_count": 1,
-                    "total_variant_weight": 1.0,
-                    "booster_type": "custom",
-                    "is_custom_draft_set": True,
-                })
 
     return packs
 
@@ -2929,10 +2903,7 @@ def get_campaign_pack_art_image_src(set_code, booster_name, static_folder):
     art_info = get_chaos_pack_art_info(set_code, booster_name, static_folder)
     image_path = (art_info.get("image_path") or "").strip()
 
-    if not image_path:
-        image_path = "img/pack_art/_fallback/booster_default.png"
-
-    return url_for("static", filename=image_path)
+    return get_chaos_pack_art_image_src(image_path)
 
 def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, excluded_tracked_pack_ids=None):
     ensure_tracked_pack_campaign_schema()
@@ -5180,7 +5151,7 @@ def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=
             "opened_count": int(row["opened_count"] or 0),
             "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
             "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
-            "image_src": url_for("static", filename=art_info["image_path"]),
+            "image_src": get_chaos_pack_art_image_src(art_info["image_path"]),
         })
 
     return packs

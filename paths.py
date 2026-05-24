@@ -25,6 +25,8 @@ CHAOS_TEMP_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_temp_cache")
 CAMPAIGN_PLAYER_PORTRAIT_DIR = os.path.join(DATA_ROOT_DIR, "campaign_player_portraits")
 ALTERNATE_SOURCE_DIR = os.path.join(DATA_ROOT_DIR, "alternate_sources")
 CUSTOM_SET_ICON_DIR = os.path.join(DATA_ROOT_DIR, "custom_set_icons")
+RUNTIME_IMAGE_DIR = os.path.join(DATA_ROOT_DIR, "img")
+RUNTIME_PACK_ART_DIR = os.path.join(RUNTIME_IMAGE_DIR, "pack_art")
 
 EXPORT_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "Export")
 
@@ -54,3 +56,7 @@ def get_static_dir():
 
 def get_pack_art_dir(static_folder):
     return os.path.join(static_folder, "img", "pack_art")
+
+
+def get_runtime_pack_art_dir():
+    return RUNTIME_PACK_ART_DIR
