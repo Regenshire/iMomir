@@ -22,59 +22,227 @@
 
 
     <form id="configForm" method="post" class="config-form">
-        <div id="section_reminders" class="page-panel collapsible-panel {% if global_reminder_state and global_reminder_state["has_reminders"] %}is-open{% endif %}" data-section="reminders">
-            <button type="button" class="collapsible-header">
+        <div id="section_reminders" class="page-panel collapsible-panel {% if global_reminder_state and global_reminder_state['has_reminders'] %}is-open{% endif %}" data-section="reminders">
+            {% set release_update_state = global_reminder_state.release_update_state if global_reminder_state else {} %}
+            {% set release_has_update = release_update_state.update_available %}
+            {% set release_card_class = 'reminder-card-warning' if release_has_update else ('reminder-card-danger' if release_update_state.error else 'reminder-card-info') %}
+
+            <button type="button" class="collapsible-header reminder-collapsible-header">
                 <span>
                     Reminders
                     {% if global_reminder_state and global_reminder_state["has_reminders"] %}
                     <span class="config-reminder-inline-badge">{{ global_reminder_state["count"] }}</span>
                     {% endif %}
                 </span>
-                <span class="collapsible-chevron">▾</span>
+
+                <span class="reminder-header-actions">
+                    <span
+                        id="openReminderSettingsButton"
+                        class="reminder-settings-inline-icon"
+                        role="button"
+                        tabindex="0"
+                        aria-label="Open reminder settings"
+                        title="Reminder Settings"
+                    >
+                        ⚙
+                    </span>
+                    <span class="collapsible-chevron">▾</span>
+                </span>
             </button>
 
             <div class="collapsible-body">
-                <div class="settings-grid">
-                    <label class="toggle-row" for="card_database_reminder_frequency">
-                        <span>Card Database Reminder</span>
-                        <select id="card_database_reminder_frequency" name="card_database_reminder_frequency">
-                            <option value="weekly" {% if config.get("card_database_reminder_frequency", "monthly") == "weekly" %}selected{% endif %}>Weekly</option>
-                            <option value="monthly" {% if config.get("card_database_reminder_frequency", "monthly") == "monthly" %}selected{% endif %}>Monthly</option>
-                            <option value="quarterly" {% if config.get("card_database_reminder_frequency", "monthly") == "quarterly" %}selected{% endif %}>Quarterly</option>
-                            <option value="yearly" {% if config.get("card_database_reminder_frequency", "monthly") == "yearly" %}selected{% endif %}>Yearly</option>
-                            <option value="never" {% if config.get("card_database_reminder_frequency", "monthly") == "never" %}selected{% endif %}>Never</option>
-                        </select>
-                    </label>
+                <div class="reminder-card-list">
+            {% set non_release_reminders = namespace(count=0) %}
+
+            {% if global_reminder_state and global_reminder_state["items"] %}
+                {% for reminder in global_reminder_state["items"] %}
+                    {% if reminder.title != "iMomir Update Available" %}
+                        {% set non_release_reminders.count = non_release_reminders.count + 1 %}
+                        <div class="reminder-card reminder-card-{{ reminder.severity }}">
+                            <div class="reminder-card-header">
+                                <div class="reminder-card-title-wrap">
+                                    <div class="reminder-card-title">{{ reminder.title }}</div>
+                                </div>
+                            </div>
+
+                            <div class="reminder-card-body">
+                                <div class="reminder-card-message">
+                                    {{ reminder.message }}
+                                </div>
+
+                                {% if reminder.action_url %}
+                                <div class="reminder-card-actions">
+                                    <a
+                                        href="{{ reminder.action_url }}"
+                                        class="action-button secondary-button"
+                                        {% if reminder.action_url.startswith('http') %}
+                                            target="_blank" rel="noopener noreferrer"
+                                        {% endif %}
+                                    >
+                                        {{ reminder.action_label or "Open" }}
+                                    </a>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+
+            {% if non_release_reminders.count == 0 %}
+            <div class="reminder-card reminder-card-neutral">
+                <div class="reminder-card-header">
+                    <div class="reminder-card-title-wrap">
+                        <div class="reminder-card-title">General Reminders</div>
+                    </div>
                 </div>
 
-                {% if global_reminder_state and global_reminder_state["items"] %}
-                    <div class="metadata-list config-reminder-list">
-                        {% for reminder in global_reminder_state["items"] %}
-                        <div class="metadata-row config-reminder-row config-reminder-row-{{ reminder.severity }}">
-                            <span>{{ reminder.title }}</span>
-                            <strong class="metadata-value-wrap">{{ reminder.message }}</strong>
-                        </div>
-                        {% endfor %}
+                <div class="reminder-card-body">
+                    <div class="reminder-card-message">
+                        No additional reminders right now.
                     </div>
+                </div>
+            </div>
+            {% endif %}
 
-                    <div class="config-button-row">
-                        <a
-                            class="action-button"
-                            href="{{ url_for('config') }}?open=card_database&scroll=card_database"
-                        >
-                            Open Card Database Tools
-                        </a>
-                    </div>
-                {% else %}
-                    <div class="metadata-list config-reminder-list">
-                        <div class="metadata-row config-reminder-row">
-                            <span>Status</span>
-                            <strong class="metadata-value-wrap">No reminders right now.</strong>
+                    <div class="reminder-card {{ release_card_class }}">
+                        <div class="reminder-card-header">
+                            <div class="reminder-card-title-wrap">
+                                <div class="reminder-card-title">Release Status</div>
+                                <div class="reminder-card-subtitle">
+                                    {% if release_has_update %}
+                                        A newer version of iMomir is available.
+                                    {% elif release_update_state.error %}
+                                        iMomir could not complete the last release check.
+                                    {% elif release_update_state.latest_version %}
+                                        iMomir release tracking is working normally.
+                                    {% else %}
+                                        iMomir has not checked GitHub releases yet.
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="reminder-card-body">
+                            <div class="reminder-card-message">
+                                {% if release_has_update %}
+                                    Version {{ release_update_state.latest_version }} is available. You are currently running {{ release_update_state.current_version }}.
+                                {% elif release_update_state.error %}
+                                    {{ release_update_state.error }}
+                                {% elif release_update_state.latest_version %}
+                                    You are currently running {{ release_update_state.current_version }}. The latest GitHub release is {{ release_update_state.latest_version }}.
+                                {% else %}
+                                    Release information has not been loaded yet.
+                                {% endif %}
+                            </div>
+
+                            <div class="reminder-card-meta">
+                                <div class="reminder-card-meta-row">
+                                    <span>Installed Version</span>
+                                    <strong>{{ release_update_state.current_version or "Unknown" }}</strong>
+                                </div>
+                                <div class="reminder-card-meta-row">
+                                    <span>Latest GitHub Release</span>
+                                    <strong>
+                                        {% if release_update_state.latest_version %}
+                                            {{ release_update_state.latest_version }}
+                                        {% elif release_update_state.error %}
+                                            Unknown
+                                        {% else %}
+                                            Not checked yet
+                                        {% endif %}
+                                    </strong>
+                                </div>
+                                <div class="reminder-card-meta-row">
+                                    <span>Last Release Check</span>
+                                    <strong>{{ release_update_state.last_checked_utc or "Never" }}</strong>
+                                </div>
+                            </div>
+
+                            <div class="reminder-card-actions">
+                                <button
+                                    type="submit"
+                                    form="configForm"
+                                    formaction="{{ url_for('config_check_new_releases') }}"
+                                    formmethod="post"
+                                    class="action-button secondary-button"
+                                >
+                                    Check for Releases Now
+                                </button>
+
+                                {% if release_update_state.release_url %}
+                                <a
+                                    class="action-button"
+                                    href="{{ release_update_state.release_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    View Latest Release
+                                </a>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-                {% endif %}
+                </div>
             </div>
         </div>
+
+        <div id="reminderSettingsModal" class="reminder-modal-backdrop hidden" aria-hidden="true">
+            <div class="reminder-modal">
+                <div class="reminder-modal-header">
+                    <div>
+                        <div class="reminder-modal-title">Reminder Settings</div>
+                        <div class="reminder-modal-subtitle">
+                            Control how iMomir checks and displays reminder-related notifications.
+                        </div>
+                    </div>
+
+                    <button
+                        type="button"
+                        id="closeReminderSettingsButton"
+                        class="reminder-modal-close"
+                        aria-label="Close reminder settings"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                <div class="reminder-modal-body">
+                    <div class="settings-grid">
+                        <label class="toggle-row" for="card_database_reminder_frequency">
+                            <span>Card Database Reminder</span>
+                            <select id="card_database_reminder_frequency" name="card_database_reminder_frequency">
+                                <option value="weekly" {% if config.get("card_database_reminder_frequency", "monthly") == "weekly" %}selected{% endif %}>Weekly</option>
+                                <option value="monthly" {% if config.get("card_database_reminder_frequency", "monthly") == "monthly" %}selected{% endif %}>Monthly</option>
+                                <option value="quarterly" {% if config.get("card_database_reminder_frequency", "monthly") == "quarterly" %}selected{% endif %}>Quarterly</option>
+                                <option value="yearly" {% if config.get("card_database_reminder_frequency", "monthly") == "yearly" %}selected{% endif %}>Yearly</option>
+                                <option value="never" {% if config.get("card_database_reminder_frequency", "monthly") == "never" %}selected{% endif %}>Never</option>
+                            </select>
+                        </label>
+
+                        <label class="toggle-row settings-field">
+                            <span>Check for New Releases</span>
+                            <input
+                                type="checkbox"
+                                name="check_new_releases"
+                                {% if config.get("check_new_releases", "1") == "1" %}checked{% endif %}
+                            >
+                        </label>
+                    </div>
+                </div>
+
+                <div class="reminder-modal-footer">
+                    <button type="button" id="cancelReminderSettingsButton" class="action-button secondary-button">
+                        Close
+                    </button>
+
+                    <button type="submit" form="configForm" class="action-button">
+                        Save Config
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <div id="section_game_modes" class="page-panel collapsible-panel {% if section_defaults.get('game_modes') == '1' %}is-open{% endif %}" data-section="game_modes">
             <button type="button" class="collapsible-header">
                 <span>Game Modes</span>
@@ -882,4 +1050,67 @@
     }
 })();
 </script>
+<script>
+(function () {
+    const openButton = document.getElementById("openReminderSettingsButton");
+    const closeButton = document.getElementById("closeReminderSettingsButton");
+    const cancelButton = document.getElementById("cancelReminderSettingsButton");
+    const modal = document.getElementById("reminderSettingsModal");
+
+    if (!openButton || !modal) {
+        return;
+    }
+
+    function openReminderModal() {
+        modal.classList.remove("hidden");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+    }
+
+    function closeReminderModal() {
+        modal.classList.add("hidden");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+    }
+
+    openButton.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openReminderModal();
+    });
+
+    openButton.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            event.stopPropagation();
+            openReminderModal();
+        }
+    });
+
+    if (closeButton) {
+        closeButton.addEventListener("click", function () {
+            closeReminderModal();
+        });
+    }
+
+    if (cancelButton) {
+        cancelButton.addEventListener("click", function () {
+            closeReminderModal();
+        });
+    }
+
+    modal.addEventListener("click", function (event) {
+        if (event.target === modal) {
+            closeReminderModal();
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !modal.classList.contains("hidden")) {
+            closeReminderModal();
+        }
+    });
+})();
+</script>
 {% endblock %}
+

@@ -55,6 +55,11 @@ from paths import (
 from settings import (
     ALLOWED_CHAOS_BOOSTER_TYPES,
     APP_SECRET_KEY,
+    APP_VERSION,
+    GITHUB_LATEST_RELEASE_API_URL,
+    GITHUB_RELEASE_OWNER,
+    GITHUB_RELEASE_REPO,
+    UPDATE_CHECK_INTERVAL_HOURS,
     CARD_SEARCH_DEFAULT_TITLE,
     CARD_SEARCH_DEFAULT_VARIANT,
     CARD_SEARCH_DEFAULT_VARIANTS,
@@ -432,6 +437,222 @@ def parse_utc_metadata_datetime(raw_value):
 
     return None
 
+def normalize_release_version(value):
+    version_text = str(value or "").strip()
+
+    if version_text.lower().startswith("v"):
+        version_text = version_text[1:]
+
+    return version_text.strip()
+
+
+def parse_release_version_parts(value):
+    version_text = normalize_release_version(value)
+
+    parts = []
+    for raw_part in re.split(r"[^0-9]+", version_text):
+        if raw_part == "":
+            continue
+
+        try:
+            parts.append(int(raw_part))
+        except ValueError:
+            parts.append(0)
+
+    while len(parts) < 3:
+        parts.append(0)
+
+    return tuple(parts[:3])
+
+
+def is_release_version_newer(latest_version, current_version):
+    latest_parts = parse_release_version_parts(latest_version)
+    current_parts = parse_release_version_parts(current_version)
+
+    return latest_parts > current_parts
+
+def build_empty_release_update_state():
+    return {
+        "current_version": APP_VERSION,
+        "latest_version": "",
+        "latest_name": "",
+        "release_url": "",
+        "release_notes": "",
+        "published_at": "",
+        "last_checked_utc": "",
+        "update_available": False,
+        "check_enabled": False,
+        "error": "",
+    }
+
+
+def get_cached_release_update_state(import_metadata=None):
+    if import_metadata is None:
+        import_metadata = get_import_metadata()
+
+    latest_version = import_metadata.get("imomir_update_latest_version", "")
+    update_available = (
+        bool(latest_version)
+        and is_release_version_newer(latest_version, APP_VERSION)
+    )
+
+    cached_update_available_value = (import_metadata.get("imomir_update_available") or "0").strip()
+
+    if cached_update_available_value != ("1" if update_available else "0"):
+        try:
+            set_import_metadata("imomir_update_available", "1" if update_available else "0")
+        except Exception:
+            pass
+
+    return {
+        "current_version": APP_VERSION,
+        "latest_version": latest_version,
+        "latest_name": import_metadata.get("imomir_update_latest_name", ""),
+        "release_url": import_metadata.get("imomir_update_release_url", ""),
+        "release_notes": import_metadata.get("imomir_update_release_notes", ""),
+        "published_at": import_metadata.get("imomir_update_published_at", ""),
+        "last_checked_utc": import_metadata.get("imomir_update_last_checked_utc", ""),
+        "update_available": update_available,
+        "check_enabled": False,
+        "error": import_metadata.get("imomir_update_error", ""),
+    }
+
+
+def should_check_for_github_release(config, import_metadata=None, force=False):
+    if force:
+        return True
+
+    if (config.get("check_new_releases") or "1").strip() != "1":
+        return False
+
+    if import_metadata is None:
+        import_metadata = get_import_metadata()
+
+    last_checked_text = import_metadata.get("imomir_update_last_checked_utc", "")
+    last_checked_datetime = parse_utc_metadata_datetime(last_checked_text)
+
+    if not last_checked_datetime:
+        return True
+
+    age_seconds = (datetime.now(timezone.utc) - last_checked_datetime).total_seconds()
+    return age_seconds >= (UPDATE_CHECK_INTERVAL_HOURS * 60 * 60)
+
+
+def check_github_latest_release():
+    checked_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": f"iMomir/{APP_VERSION}",
+    }
+
+    try:
+        response = requests.get(
+            GITHUB_LATEST_RELEASE_API_URL,
+            headers=headers,
+            timeout=8,
+        )
+
+        if response.status_code == 404:
+            set_import_metadata("imomir_update_last_checked_utc", checked_at_utc)
+            set_import_metadata("imomir_update_latest_version", "")
+            set_import_metadata("imomir_update_latest_name", "")
+            set_import_metadata("imomir_update_release_url", "")
+            set_import_metadata("imomir_update_release_notes", "")
+            set_import_metadata("imomir_update_published_at", "")
+            set_import_metadata("imomir_update_available", "0")
+            set_import_metadata("imomir_update_error", "No GitHub Releases were found for this repository yet.")
+
+            return {
+                **build_empty_release_update_state(),
+                "last_checked_utc": checked_at_utc,
+                "check_enabled": True,
+                "error": "No GitHub Releases were found for this repository yet.",
+            }
+
+        response.raise_for_status()
+        release_payload = response.json()
+
+        latest_version = normalize_release_version(release_payload.get("tag_name") or "")
+        latest_name = release_payload.get("name") or latest_version
+        release_url = release_payload.get("html_url") or ""
+        release_notes = release_payload.get("body") or ""
+        published_at = release_payload.get("published_at") or ""
+
+        update_available = (
+            bool(latest_version)
+            and is_release_version_newer(latest_version, APP_VERSION)
+        )
+
+        set_import_metadata("imomir_update_last_checked_utc", checked_at_utc)
+        set_import_metadata("imomir_update_latest_version", latest_version)
+        set_import_metadata("imomir_update_latest_name", latest_name)
+        set_import_metadata("imomir_update_release_url", release_url)
+        set_import_metadata("imomir_update_release_notes", release_notes[:4000])
+        set_import_metadata("imomir_update_published_at", published_at)
+        set_import_metadata("imomir_update_available", "1" if update_available else "0")
+        set_import_metadata("imomir_update_error", "")
+
+        write_debug_log(
+            "GITHUB RELEASE CHECK | "
+            f"current={APP_VERSION} | latest={latest_version} | update_available={update_available}"
+        )
+
+        return {
+            "current_version": APP_VERSION,
+            "latest_version": latest_version,
+            "latest_name": latest_name,
+            "release_url": release_url,
+            "release_notes": release_notes,
+            "published_at": published_at,
+            "last_checked_utc": checked_at_utc,
+            "update_available": update_available,
+            "check_enabled": True,
+            "error": "",
+        }
+
+    except Exception as exc:
+        set_import_metadata("imomir_update_last_checked_utc", checked_at_utc)
+        set_import_metadata("imomir_update_error", str(exc))
+
+        write_error_log(
+            "GITHUB RELEASE CHECK FAILED",
+            exc=exc,
+        )
+
+        cached_state = get_cached_release_update_state()
+        cached_state["current_version"] = APP_VERSION
+        cached_state["last_checked_utc"] = checked_at_utc
+        cached_state["check_enabled"] = True
+        cached_state["error"] = str(exc)
+
+        return cached_state
+
+
+def get_release_update_state(config=None, import_metadata=None, force=False):
+    if config is None:
+        config = get_request_config() if has_request_context() else get_config()
+
+    if import_metadata is None:
+        import_metadata = get_import_metadata()
+
+    check_enabled = (config.get("check_new_releases") or "1").strip() == "1"
+
+    if not check_enabled and not force:
+        cached_state = get_cached_release_update_state(import_metadata)
+        cached_state["current_version"] = APP_VERSION
+        cached_state["check_enabled"] = False
+        cached_state["update_available"] = False
+        return cached_state
+
+    if should_check_for_github_release(config, import_metadata=import_metadata, force=force):
+        return check_github_latest_release()
+
+    cached_state = get_cached_release_update_state(import_metadata)
+    cached_state["current_version"] = APP_VERSION
+    cached_state["check_enabled"] = check_enabled
+
+    return cached_state
 
 def get_reminder_frequency_days(config):
     reminder_frequency = (config.get("card_database_reminder_frequency") or "monthly").strip().lower()
@@ -454,6 +675,24 @@ def build_global_reminder_state(config=None, import_metadata=None):
         import_metadata = get_import_metadata()
 
     reminder_items = []
+
+    release_update_state = get_release_update_state(
+        config=config,
+        import_metadata=import_metadata,
+    )
+
+    if release_update_state.get("check_enabled") and release_update_state.get("update_available"):
+        latest_version = release_update_state.get("latest_version") or "new version"
+
+        reminder_items.append({
+            "key": "imomir_update_available",
+            "severity": "info",
+            "title": "iMomir Update Available",
+            "message": f"Version {latest_version} is available. You are running {APP_VERSION}.",
+            "target_section": "reminders",
+            "action_url": release_update_state.get("release_url") or "",
+            "action_label": "View GitHub Release",
+        })
 
     reminder_frequency = (config.get("card_database_reminder_frequency") or "monthly").strip().lower()
     if reminder_frequency not in {"weekly", "monthly", "quarterly", "yearly", "never"}:
@@ -499,6 +738,7 @@ def build_global_reminder_state(config=None, import_metadata=None):
         "items": reminder_items,
         "has_reminders": len(reminder_items) > 0,
         "card_database_reminder_frequency": reminder_frequency,
+        "release_update_state": release_update_state,
     }
 
 
@@ -701,6 +941,7 @@ def update_config_from_form(form_data):
         "sound_enabled",
         "debug_log",
         "display_pack_prices",
+        "check_new_releases",
     }
 
     select_defaults = {
@@ -8893,6 +9134,29 @@ def card_search():
         featured_card=featured_card,
         featured_card_print_href=featured_card_print_href,
     )
+
+@app.route("/config/check-new-releases", methods=["POST"])
+def config_check_new_releases():
+    config_values = get_config()
+    release_state = get_release_update_state(
+        config=config_values,
+        import_metadata=get_import_metadata(),
+        force=True,
+    )
+
+    if release_state.get("update_available"):
+        flash(
+            f"iMomir update available: {release_state.get('latest_version')}. "
+            f"You are running {APP_VERSION}."
+        )
+    elif release_state.get("error"):
+        flash(f"Release check failed: {release_state.get('error')}")
+    elif release_state.get("latest_version"):
+        flash(f"iMomir is up to date. Current version: {APP_VERSION}.")
+    else:
+        flash("Release check complete. No GitHub Releases were found yet.")
+
+    return redirect(url_for("config") + "?open=reminders&scroll=reminders")
 
 @app.route("/config", methods=["GET", "POST"])
 def config():

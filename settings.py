@@ -1,3 +1,11 @@
+APP_VERSION = "1.9.0"
+GITHUB_RELEASE_OWNER = "Regenshire"
+GITHUB_RELEASE_REPO = "iMomir"
+GITHUB_LATEST_RELEASE_API_URL = (
+    f"https://api.github.com/repos/{GITHUB_RELEASE_OWNER}/{GITHUB_RELEASE_REPO}/releases/latest"
+)
+UPDATE_CHECK_INTERVAL_HOURS = 24
+
 MTGJSON_ATOMIC_URL = "https://mtgjson.com/api/v5/AtomicCards.json"
 MTGJSON_SET_LIST_URL = "https://mtgjson.com/api/v5/SetList.json"
 MTGJSON_ALL_PRINTINGS_URL = "https://mtgjson.com/api/v5/AllPrintings.json.gz"
@@ -89,6 +97,7 @@ DEFAULT_CONFIG = {
     "chaos_draft_export_format": "none",
     "chaos_scryfall_image_quality": "png",
     "display_pack_prices": "1",
+    "check_new_releases": "1",
     "pack_price_source": "tcgplayer-retail",
 }
 

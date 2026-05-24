@@ -7013,3 +7013,228 @@ input {
         width: 100%;
     }
 }
+
+/* =========================
+   Reminder Panel Cleanup
+   ========================= */
+.reminder-collapsible-header {
+    position: relative;
+}
+
+.reminder-header-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-left: auto;
+}
+
+.reminder-settings-inline-icon {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.reminder-settings-inline-icon:hover {
+    color: var(--text);
+    background: transparent;
+}
+
+.reminder-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.reminder-card {
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+    overflow: hidden;
+}
+
+.reminder-card-header {
+    padding: 16px 18px 10px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reminder-card-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.reminder-card-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.reminder-card-subtitle {
+    font-size: 13px;
+    color: rgba(221, 230, 255, 0.76);
+}
+
+.reminder-card-body {
+    padding: 16px 18px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.reminder-card-message {
+    font-size: 15px;
+    line-height: 1.5;
+    color: #e6ecff;
+}
+
+.reminder-card-meta {
+    display: grid;
+    gap: 10px;
+}
+
+.reminder-card-meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.reminder-card-meta-row span {
+    color: rgba(221, 230, 255, 0.78);
+}
+
+.reminder-card-meta-row strong {
+    color: #ffffff;
+    text-align: right;
+}
+
+.reminder-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.reminder-card-info {
+    border-color: rgba(72, 118, 255, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(72, 118, 255, 0.06);
+}
+
+.reminder-card-warning {
+    border-color: rgba(255, 190, 55, 0.34);
+    box-shadow: inset 0 0 0 1px rgba(255, 190, 55, 0.08);
+}
+
+.reminder-card-danger {
+    border-color: rgba(255, 102, 102, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(255, 102, 102, 0.08);
+}
+
+.reminder-card-success {
+    border-color: rgba(54, 214, 128, 0.34);
+    box-shadow: inset 0 0 0 1px rgba(54, 214, 128, 0.08);
+}
+
+.reminder-card-neutral {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.reminder-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(0, 0, 0, 0.68);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.reminder-modal {
+    width: min(680px, 100%);
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    border-radius: 20px;
+    background: #171d29;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.reminder-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 22px 22px 16px 22px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.reminder-modal-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.reminder-modal-subtitle {
+    margin-top: 6px;
+    color: rgba(221, 230, 255, 0.75);
+    line-height: 1.45;
+}
+
+.reminder-modal-close {
+    width: 42px;
+    height: 42px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #ffffff;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.reminder-modal-body {
+    padding: 20px 22px;
+}
+
+.reminder-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 0 22px 22px 22px;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+@media (max-width: 700px) {
+    .reminder-card-meta-row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .reminder-card-meta-row strong {
+        text-align: left;
+    }
+
+    .reminder-modal-footer {
+        flex-direction: column;
+    }
+
+    .reminder-modal-footer .action-button {
+        width: 100%;
+    }
+}
