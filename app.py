@@ -12672,15 +12672,19 @@ def custom_draft_set_cards_search(set_code):
     search_text = (request.args.get("q") or "").strip()
 
     try:
-        result_limit = int(request.args.get("limit") or 999)
+        page = max(1, int(request.args.get("page") or 1))
     except (TypeError, ValueError):
-        result_limit = 999
+        page = 1
 
-    if result_limit < 1:
-        result_limit = 1
+    try:
+        page_size = int(request.args.get("page_size") or 50)
+    except (TypeError, ValueError):
+        page_size = 50
 
-    if result_limit > 9999:
-        result_limit = 9999
+    if page_size < 10:
+        page_size = 10
+    if page_size > 1000:
+        page_size = 1000
 
     if not get_custom_draft_set(clean_set_code):
         return jsonify({
@@ -12689,10 +12693,9 @@ def custom_draft_set_cards_search(set_code):
             "results": [],
         }), 404
 
-    rows = search_chaos_cards_for_custom_draft_set(
+    rows, total_count = search_chaos_cards_for_custom_draft_set(
         clean_set_code,
         search_text,
-        limit=result_limit,
         rarity_filter=request.args.getlist("rarity") or request.args.get("rarity") or "",
         color_identity_filter=request.args.getlist("color_identity") or request.args.get("color_identity") or "",
         mana_operator=request.args.get("mana_operator") or "",
@@ -12703,7 +12706,12 @@ def custom_draft_set_cards_search(set_code):
         year_end=request.args.get("year_end") or "",
         sort_option=request.args.get("sort") or "name_asc",
         digital_filter=request.args.get("digital") or "",
+        page=page,
+        page_size=page_size,
     )
+
+    import math
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count else 1
 
     results = [
         serialize_custom_draft_card_search_result(row)
@@ -12713,6 +12721,10 @@ def custom_draft_set_cards_search(set_code):
     return jsonify({
         "ok": True,
         "results": results,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
     })
 
 

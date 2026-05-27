@@ -6304,7 +6304,10 @@ input {
     display: block;
     width: 100%;
     min-height: 0;
-    overflow: visible;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: rgba(18, 20, 26, 0.55);
 }
 
 .custom-draft-card-search-group + .custom-draft-card-search-group {
@@ -6317,7 +6320,7 @@ input {
     width: 100%;
     min-height: 132px;
     border: 0;
-    background: rgba(34, 38, 48, 0.92);
+    background: transparent;
     color: var(--text);
     display: grid;
     grid-template-columns: 80px minmax(0, 1fr) auto 42px;
@@ -6330,7 +6333,7 @@ input {
 }
 
 .custom-draft-card-search-group-header:hover {
-    background: rgba(46, 54, 72, 0.96);
+    background: rgba(46, 54, 72, 0.42);
 }
 
 .custom-draft-card-search-group-image-wrap {
@@ -6388,28 +6391,62 @@ input {
 }
 
 @media (max-width: 700px) {
+    .custom-draft-search-footer-bar {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+        gap: 8px;
+    }
+
+    .custom-draft-search-pagination {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .custom-draft-card-search-status {
+        width: 100%;
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+        align-items: flex-start;
+    }
+
     .custom-draft-card-search-window .custom-draft-card-search-results {
-        height: calc(100vh - 520px);
+        height: calc(100vh - 560px);
         min-height: 220px;
     }
 
     .custom-draft-card-search-group-header {
-        grid-template-columns: 70px minmax(0, 1fr) auto 38px;
+        grid-template-columns: 70px minmax(0, 1fr) 38px;
+        grid-template-areas:
+            "image main icon"
+            "image added icon";
         min-height: 116px;
     }
 
-    .custom-draft-card-search-group-added-pill {
-        font-size: 0.76rem;
-        padding: 4px 8px;
-    }
-
     .custom-draft-card-search-group-image-wrap {
+        grid-area: image;
         width: 70px;
         height: 98px;
         min-width: 70px;
         min-height: 98px;
         max-width: 70px;
         max-height: 98px;
+    }
+
+    .custom-draft-card-search-group-main {
+        grid-area: main;
+    }
+
+    .custom-draft-card-search-group-added-pill {
+        grid-area: added;
+        justify-self: start;
+        font-size: 0.76rem;
+        padding: 4px 8px;
+    }
+
+    .custom-draft-card-search-group-expand-icon {
+        grid-area: icon;
     }
 }
 
@@ -6524,6 +6561,114 @@ input {
     opacity: 1 !important;
     cursor: not-allowed;
     box-shadow: 0 0 0 1px rgba(66, 205, 111, 0.16);
+}
+
+.custom-draft-search-footer-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 2px;
+    min-height: 44px;
+}
+
+.custom-draft-current-pagination-footer {
+    margin: 0 0 14px 0;
+}
+
+.custom-draft-search-pagination {
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+
+.custom-draft-search-pagination-hidden {
+    visibility: hidden;
+}
+
+.custom-draft-page-arrow {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--button);
+    color: var(--text);
+    font-size: 1.2rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.custom-draft-page-arrow:disabled {
+    opacity: 0.42;
+    cursor: default;
+}
+
+.custom-draft-page-arrow:not(:disabled):hover {
+    background: var(--button-hover);
+}
+
+.custom-draft-page-label-prefix,
+.custom-draft-page-label-suffix {
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.custom-draft-page-input {
+    width: 54px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-align: center;
+    padding: 0 6px;
+    -moz-appearance: textfield;
+}
+
+.custom-draft-page-input::-webkit-outer-spin-button,
+.custom-draft-page-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.custom-draft-card-search-status {
+    min-height: 38px;
+    margin: 0;
+    border: 1px solid rgba(66, 205, 111, 0.45);
+    border-radius: 12px;
+    background: rgba(66, 205, 111, 0.12);
+    color: #d8f5df;
+    padding: 9px 12px;
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.25;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.custom-draft-card-search-status.hidden {
+    display: none !important;
+}
+
+.custom-draft-card-search-status.custom-draft-card-search-status-error {
+    border-color: rgba(255, 120, 120, 0.55);
+    background: rgba(120, 40, 40, 0.24);
+    color: #ffd0d0;
 }
 
 /* ==========================================
@@ -7344,4 +7489,57 @@ body.modal-open {
     height: 18px;
     margin: 0;
     cursor: pointer;
+}
+
+.custom-draft-search-text-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.custom-draft-search-text-input-wrap .custom-draft-search-text-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.custom-draft-bulk-import-toggle-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color, #cfd5df);
+    border-radius: 8px;
+    background: var(--surface-2, #f3f5f8);
+    color: var(--text-secondary, #374151);
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.custom-draft-bulk-import-toggle-button:hover {
+    background: var(--surface-3, #e5e7eb);
+    border-color: var(--border-strong, #9ca3af);
+}
+
+.custom-draft-bulk-import-toggle-active {
+    background: var(--accent-subtle, #eff6ff) !important;
+    border-color: var(--accent, #1f6feb) !important;
+    color: var(--accent, #1f6feb) !important;
+}
+
+.custom-draft-bulk-import-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.custom-draft-bulk-import-panel {
+    display: none;
+    padding: 12px 0 4px;
+}
+
+.custom-draft-bulk-import-panel-open {
+    display: block;
 }

@@ -282,19 +282,38 @@
                 <div class="custom-draft-card-search-text-row">
                     <label class="custom-draft-filter-field custom-draft-search-text-field">
                         <span>Search Text</span>
-                        <input
-                            type="text"
-                            id="customDraftCardSearchInput"
-                            class="campaign-add-pack-custom-input"
-                            placeholder="Optional: card name, rarity, type, collector number..."
-                            autocomplete="off"
-                        >
+                        <div class="custom-draft-search-text-input-wrap">
+                            <input
+                                type="text"
+                                id="customDraftCardSearchInput"
+                                class="campaign-add-pack-custom-input custom-draft-search-text-input"
+                                placeholder="Optional: card name, rarity, type, collector number..."
+                                autocomplete="off"
+                            >
+                            <button
+                                type="button"
+                                id="customDraftBulkImportToggleButton"
+                                class="custom-draft-bulk-import-toggle-button"
+                                aria-expanded="false"
+                                aria-controls="customDraftBulkImportPanel"
+                                title="Bulk import from Moxfield / Archidekt list"
+                                aria-label="Bulk import cards from a list"
+                            >
+                                <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" class="custom-draft-bulk-import-icon">
+                                    <rect x="3" y="2" width="9" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
+                                    <rect x="5" y="4" width="9" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none"/>
+                                    <line x1="6" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                                    <line x1="6" y1="9.5" x2="10" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                                    <line x1="6" y1="12" x2="8.5" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                                    <line x1="14" y1="13" x2="14" y2="18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+                                    <polyline points="11.5,15.5 14,18 16.5,15.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                                </svg>
+                            </button>
+                        </div>
                     </label>
                 </div>
 
-                <details class="custom-draft-bulk-import-panel">
-                    <summary>Bulk Import from Moxfield / Archidekt List</summary>
-
+                <div class="custom-draft-bulk-import-panel" id="customDraftBulkImportPanel" aria-hidden="true">
                     <div class="custom-draft-bulk-import-body">
                         <label class="custom-draft-filter-field">
                             <span>Paste List</span>
@@ -339,7 +358,7 @@
                             This does not automatically add cards. It loads matching printings into the grouped search results so you can choose the exact versions to add.
                         </p>
                     </div>
-                </details>
+                </div>
 
                 <div class="custom-draft-search-builder-grid">
                     <div id="customDraftSearchRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
@@ -531,14 +550,13 @@
                     </label>
 
                     <label class="custom-draft-filter-field">
-                        <span>Top</span>
-                        <select id="customDraftSearchLimitFilter" class="custom-draft-filter-input">
+                        <span>Per Page</span>
+                        <select id="customDraftSearchPageSizeSelect" class="custom-draft-filter-input">
                             <option value="100">100</option>
                             <option value="250">250</option>
-                            <option value="500">500</option>
-                            <option value="999" selected>999</option>
-                            <option value="2500">2500</option>
-                            <option value="9999">9999</option>
+                            <option value="500" selected>500</option>
+                            <option value="750">750</option>
+                            <option value="1000">1000</option>
                         </select>
                     </label>
                 </div>
@@ -585,7 +603,24 @@
                     </label>
                 </div>
 
-                <div id="customDraftCardSearchStatus" class="custom-draft-card-search-status hidden"></div>
+                <div class="custom-draft-search-footer-bar">
+                    <div id="customDraftCardSearchPagination" class="custom-draft-search-pagination custom-draft-search-pagination-hidden">
+                        <button type="button" id="customDraftSearchPrevButton" class="custom-draft-page-arrow" disabled aria-label="Previous page">‹</button>
+                        <span class="custom-draft-page-label-prefix">Page</span>
+                        <input
+                            type="number"
+                            id="customDraftSearchPageInput"
+                            class="custom-draft-page-input"
+                            value="1"
+                            min="1"
+                            step="1"
+                            aria-label="Current page"
+                        >
+                        <span id="customDraftSearchPageTotal" class="custom-draft-page-label-suffix">of —</span>
+                        <button type="button" id="customDraftSearchNextButton" class="custom-draft-page-arrow" disabled aria-label="Next page">›</button>
+                    </div>
+                    <div id="customDraftCardSearchStatus" class="custom-draft-card-search-status hidden"></div>
+                </div>
                 <div id="customDraftCardSearchResults" class="custom-draft-card-search-results hidden"></div>
             </div>
         </div>
@@ -902,6 +937,17 @@
                     </label>
 
                     <label class="custom-draft-filter-field">
+                        <span>Per Page</span>
+                        <select id="customDraftCurrentPageSizeSelect" class="custom-draft-filter-input">
+                            <option value="50">50</option>
+                            <option value="100" selected>100</option>
+                            <option value="250">250</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
                         <span>Sort By</span>
                         <select id="customDraftCurrentSortSelect" class="custom-draft-filter-input">
                             <option value="name_asc">Name A-Z</option>
@@ -983,6 +1029,26 @@
                             Remove Selected
                         </button>
                     </div>
+                </div>
+
+                <div class="custom-draft-search-footer-bar custom-draft-current-pagination-footer">
+                    <div id="customDraftCurrentCardPagination" class="custom-draft-search-pagination">
+                        <button type="button" id="customDraftCurrentPrevButton" class="custom-draft-page-arrow" disabled aria-label="Previous Set Card List page">‹</button>
+                        <span class="custom-draft-page-label-prefix">Page</span>
+                        <input
+                            type="number"
+                            id="customDraftCurrentPageInput"
+                            class="custom-draft-page-input"
+                            value="1"
+                            min="1"
+                            step="1"
+                            aria-label="Current Set Card List page"
+                        >
+                        <span id="customDraftCurrentPageTotal" class="custom-draft-page-label-suffix">of —</span>
+                        <button type="button" id="customDraftCurrentNextButton" class="custom-draft-page-arrow" disabled aria-label="Next Set Card List page">›</button>
+                    </div>
+
+                    <div id="customDraftCurrentPaginationStatus" class="custom-draft-card-search-status"></div>
                 </div>
 
                 <div id="customDraftCurrentCardList" class="custom-draft-current-card-list">
@@ -1151,6 +1217,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script>
 (function () {
     const searchInput = document.getElementById("customDraftCardSearchInput");
@@ -1170,7 +1237,12 @@
     const searchYearStartFilter = document.getElementById("customDraftSearchYearStartFilter");
     const searchYearEndFilter = document.getElementById("customDraftSearchYearEndFilter");
     const searchDigitalFilter = document.getElementById("customDraftSearchDigitalFilter");
-    const searchLimitFilter = document.getElementById("customDraftSearchLimitFilter");
+    const searchPageSizeSelect = document.getElementById("customDraftSearchPageSizeSelect");
+    const searchPaginationBar = document.getElementById("customDraftCardSearchPagination");
+    const searchPrevButton = document.getElementById("customDraftSearchPrevButton");
+    const searchNextButton = document.getElementById("customDraftSearchNextButton");
+    const searchPageInput = document.getElementById("customDraftSearchPageInput");
+    const searchPageTotal = document.getElementById("customDraftSearchPageTotal");
     const searchClearFiltersButton = document.getElementById("customDraftSearchClearFiltersButton");
     const bulkImportText = document.getElementById("customDraftBulkImportText");
     const bulkImportFile = document.getElementById("customDraftBulkImportFile");
@@ -1189,6 +1261,13 @@
     const specialSlotFilter = document.getElementById("customDraftSpecialSlotFilter");
     const currentSetCodeFilter = document.getElementById("customDraftCurrentSetCodeFilter");
     const digitalFilter = document.getElementById("customDraftDigitalFilter");
+    const currentCardPageSizeSelect = document.getElementById("customDraftCurrentPageSizeSelect");
+    const currentCardPaginationBar = document.getElementById("customDraftCurrentCardPagination");
+    const currentCardPrevButton = document.getElementById("customDraftCurrentPrevButton");
+    const currentCardNextButton = document.getElementById("customDraftCurrentNextButton");
+    const currentCardPageInput = document.getElementById("customDraftCurrentPageInput");
+    const currentCardPageTotal = document.getElementById("customDraftCurrentPageTotal");
+    const currentCardPaginationStatus = document.getElementById("customDraftCurrentPaginationStatus");
     const clearFiltersButton = document.getElementById("customDraftClearFiltersButton");
     const selectAllCurrentCardsButton = document.getElementById("customDraftSelectAllCurrentCardsButton");
     const clearCurrentCardSelectionButton = document.getElementById("customDraftClearCurrentCardSelectionButton");
@@ -1233,8 +1312,51 @@
 
     let activeChangePrintingState = null;
     let currentVisibleCardCopyFormat = "simple";
+    let currentSearchPage = 1;
+    let currentSearchTotalPages = 1;
+    let currentCardPage = 1;
+    let currentCardTotalPages = 1;
+    let lastSearchParams = null;
     const clientAddedCardUuidLookup = new Set();
     const clientAddedPrintingKeyLookup = new Set();
+
+    const addCardsPageSizeStorageKey = "iMomir.customDraftSet.addCards.pageSize";
+    const currentCardsPageSizeStorageKey = "iMomir.customDraftSet.currentCards.pageSize";
+
+    function getClientSetting(settingKey, fallbackValue) {
+        try {
+            const storedValue = window.localStorage.getItem(settingKey);
+
+            if (storedValue !== null && storedValue !== undefined && storedValue !== "") {
+                return storedValue;
+            }
+        } catch (error) {
+            console.warn("Could not read local setting:", settingKey, error);
+        }
+
+        return fallbackValue;
+    }
+
+    function setClientSetting(settingKey, settingValue) {
+        try {
+            window.localStorage.setItem(settingKey, String(settingValue));
+        } catch (error) {
+            console.warn("Could not save local setting:", settingKey, error);
+        }
+    }
+
+    function applySavedSelectValue(selectElement, storageKey, fallbackValue) {
+        if (!selectElement) {
+            return;
+        }
+
+        const savedValue = getClientSetting(storageKey, fallbackValue);
+        const hasSavedOption = Array.from(selectElement.options).some(function (option) {
+            return option.value === savedValue;
+        });
+
+        selectElement.value = hasSavedOption ? savedValue : fallbackValue;
+    }
 
     const colorNameMap = {
         "W": "White",
@@ -1690,9 +1812,25 @@
             return;
         }
 
-        searchStatus.textContent = messageText || "";
+        const cleanMessage = String(messageText || "").trim();
+
+        searchStatus.textContent = cleanMessage;
         searchStatus.classList.toggle("custom-draft-card-search-status-error", Boolean(isError));
-        searchStatus.classList.toggle("hidden", !messageText);
+        searchStatus.classList.toggle("hidden", !cleanMessage);
+    }
+
+    function getCustomDraftSearchLoadingPhrase() {
+        if (
+            window.iMomirCustomDraftSearchPhrases
+            && typeof window.iMomirCustomDraftSearchPhrases.getLoadingPhrase === "function"
+        ) {
+            return window.iMomirCustomDraftSearchPhrases.getLoadingPhrase({
+                colorValues: getSelectedColorValues(searchColorFilter),
+                typeValue: searchTypeFilter ? searchTypeFilter.value : ""
+            });
+        }
+
+        return "Searching the library...";
     }
 
     function clearSearchResults() {
@@ -1702,6 +1840,79 @@
 
         searchResults.innerHTML = "";
         searchResults.classList.add("hidden");
+    }
+
+    function hidePagination() {
+        if (searchPaginationBar) {
+            searchPaginationBar.classList.add("custom-draft-search-pagination-hidden");
+        }
+
+        if (searchPageInput) {
+            searchPageInput.value = 1;
+            searchPageInput.max = 1;
+        }
+
+        if (searchPageTotal) {
+            searchPageTotal.textContent = "of —";
+        }
+
+        if (searchPrevButton) {
+            searchPrevButton.disabled = true;
+        }
+
+        if (searchNextButton) {
+            searchNextButton.disabled = true;
+        }
+    }
+
+    function updatePaginationBar(page, totalPages) {
+        if (!searchPaginationBar) {
+            return;
+        }
+
+        searchPaginationBar.classList.remove("custom-draft-search-pagination-hidden");
+
+        if (searchPageInput) {
+            searchPageInput.value = page;
+            searchPageInput.max = totalPages;
+        }
+
+        if (searchPageTotal) {
+            searchPageTotal.textContent = "of " + totalPages;
+        }
+
+        if (searchPrevButton) {
+            searchPrevButton.disabled = page <= 1;
+        }
+
+        if (searchNextButton) {
+            searchNextButton.disabled = page >= totalPages;
+        }
+    }
+
+    function setPaginationLoadingState(page) {
+        if (!searchPaginationBar) {
+            return;
+        }
+
+        searchPaginationBar.classList.remove("custom-draft-search-pagination-hidden");
+
+        if (searchPageInput) {
+            searchPageInput.value = page || currentSearchPage || 1;
+            searchPageInput.max = currentSearchTotalPages || 1;
+        }
+
+        if (searchPageTotal) {
+            searchPageTotal.textContent = "of " + (currentSearchTotalPages || "—");
+        }
+
+        if (searchPrevButton) {
+            searchPrevButton.disabled = true;
+        }
+
+        if (searchNextButton) {
+            searchNextButton.disabled = true;
+        }
     }
 
     function getCardReleaseYear(card) {
@@ -2098,8 +2309,7 @@
         const groupElement = document.createElement("div");
         groupElement.className = "custom-draft-card-search-group";
 
-        const isSinglePrinting = group.cards.length === 1;
-        const startsExpanded = isSinglePrinting;
+        const startsExpanded = false;
 
         groupElement.classList.toggle("custom-draft-card-search-group-expanded", startsExpanded);
 
@@ -2246,8 +2456,9 @@
         );
     }
 
-    function buildAdvancedCardSearchUrl() {
+    function buildAdvancedCardSearchUrl(page) {
         const params = new URLSearchParams();
+        const requestedPage = page || 1;
 
         if (searchInput && (searchInput.value || "").trim()) {
             params.set("q", (searchInput.value || "").trim());
@@ -2289,9 +2500,11 @@
             params.set("digital", searchDigitalFilter.value);
         }
 
-        if (searchLimitFilter && searchLimitFilter.value) {
-            params.set("limit", searchLimitFilter.value);
+        if (searchPageSizeSelect && searchPageSizeSelect.value) {
+            params.set("page_size", searchPageSizeSelect.value);
         }
+
+        params.set("page", String(requestedPage));
 
         if (searchSortSelect && searchSortSelect.value) {
             params.set("sort", searchSortSelect.value);
@@ -2437,7 +2650,7 @@
         }
     }
 
-    async function runCardSearch() {
+    async function runCardSearch(page) {
         if (!searchButton) {
             return;
         }
@@ -2445,16 +2658,20 @@
         if (!getAdvancedSearchHasAnyValue()) {
             setSearchStatus("Enter a text search or choose at least one search option.", true);
             clearSearchResults();
+            hidePagination();
             return;
         }
+
+        const requestedPage = page || 1;
 
         searchButton.disabled = true;
         searchButton.classList.add("action-button-loading");
         searchButton.textContent = "Searching...";
-        setSearchStatus("", false);
+        setSearchStatus(getCustomDraftSearchLoadingPhrase(), false);
+        setPaginationLoadingState(requestedPage);
 
         try {
-            const response = await fetch(buildAdvancedCardSearchUrl(), {
+            const response = await fetch(buildAdvancedCardSearchUrl(requestedPage), {
                 method: "GET",
                 headers: {
                     "Accept": "application/json"
@@ -2467,17 +2684,30 @@
                 throw new Error(payload.message || "Card search failed.");
             }
 
+            currentSearchPage = payload.page || 1;
+            currentSearchTotalPages = payload.total_pages || 1;
+            const totalCount = payload.total_count || 0;
+            const pageSize = payload.page_size || 50;
+
             const modeResults = getSearchResultsForActiveMode(payload.results || []);
             renderSearchResults(modeResults);
 
             if (activeChangePrintingState) {
                 setSearchStatus("Loaded " + modeResults.length + " printing(s) for " + activeChangePrintingState.cardName + ".", false);
             } else {
-                setSearchStatus("Loaded " + (payload.results || []).length + " result(s).", false);
+                const start = (currentSearchPage - 1) * pageSize + 1;
+                const end = Math.min(currentSearchPage * pageSize, totalCount);
+                setSearchStatus(
+                    "Showing " + start + "–" + end + " of " + totalCount + " result(s).",
+                    false
+                );
             }
+
+            updatePaginationBar(currentSearchPage, currentSearchTotalPages);
         } catch (error) {
             console.error(error);
             clearSearchResults();
+            hidePagination();
             setSearchStatus(error.message || "Card search failed.", true);
         } finally {
             searchButton.disabled = false;
@@ -3299,7 +3529,13 @@
     }
 
     function getNumericSortValue(rawValue, nullValue) {
-        const parsedValue = Number(rawValue);
+        const cleanValue = String(rawValue ?? "").trim();
+
+        if (!cleanValue) {
+            return nullValue;
+        }
+
+        const parsedValue = Number(cleanValue);
 
         if (!Number.isFinite(parsedValue)) {
             return nullValue;
@@ -3444,20 +3680,10 @@
                     : visibleCount + " of " + totalCount + " printing(s)";
             }
 
-            if (visibleCount === 1 && rows.length > 1) {
-                const headerButton = groupElement.querySelector(".custom-draft-card-search-group-header");
-                const expandIcon = groupElement.querySelector(".custom-draft-card-search-group-expand-icon");
-
-                groupElement.classList.add("custom-draft-card-search-group-expanded");
-
-                if (headerButton) {
-                    headerButton.setAttribute("aria-expanded", "true");
-                }
-
-                if (expandIcon) {
-                    expandIcon.textContent = "−";
-                }
-            }
+            /*
+             * Do not auto-expand groups when filtering leaves only one visible printing.
+             * Search results should remain collapsed unless the user explicitly opens a group.
+             */
         });
     }
 
@@ -3907,6 +4133,93 @@
         });
     }
 
+    function getCurrentFilteredCardRows() {
+        return getCurrentCardRows().filter(function (row) {
+            return row.dataset.currentFilterVisible === "1";
+        });
+    }
+
+    function getCurrentCardPageSize() {
+        const parsedPageSize = Number(currentCardPageSizeSelect ? currentCardPageSizeSelect.value : 100);
+
+        if (!Number.isFinite(parsedPageSize)) {
+            return 100;
+        }
+
+        return Math.max(1, Math.min(parsedPageSize, 1000));
+    }
+
+    function updateCurrentCardPaginationControls(filteredCount, pageSize) {
+        currentCardTotalPages = Math.max(1, Math.ceil(filteredCount / pageSize));
+
+        if (currentCardPage > currentCardTotalPages) {
+            currentCardPage = currentCardTotalPages;
+        }
+
+        if (currentCardPage < 1) {
+            currentCardPage = 1;
+        }
+
+        if (currentCardPageInput) {
+            currentCardPageInput.value = currentCardPage;
+            currentCardPageInput.max = currentCardTotalPages;
+        }
+
+        if (currentCardPageTotal) {
+            currentCardPageTotal.textContent = "of " + currentCardTotalPages;
+        }
+
+        if (currentCardPrevButton) {
+            currentCardPrevButton.disabled = currentCardPage <= 1;
+        }
+
+        if (currentCardNextButton) {
+            currentCardNextButton.disabled = currentCardPage >= currentCardTotalPages;
+        }
+
+        if (currentCardPaginationStatus) {
+            if (!filteredCount) {
+                currentCardPaginationStatus.textContent = "No visible cards.";
+                return;
+            }
+
+            const start = ((currentCardPage - 1) * pageSize) + 1;
+            const end = Math.min(currentCardPage * pageSize, filteredCount);
+
+            currentCardPaginationStatus.textContent = "Showing " + start + "–" + end + " of " + filteredCount + " card(s).";
+        }
+    }
+
+    function applyCurrentCardPagination() {
+        const pageSize = getCurrentCardPageSize();
+        const filteredRows = getCurrentFilteredCardRows();
+        const startIndex = (currentCardPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+
+        updateCurrentCardPaginationControls(filteredRows.length, pageSize);
+
+        getCurrentCardRows().forEach(function (row) {
+            const isFilterVisible = row.dataset.currentFilterVisible === "1";
+            const filteredIndex = filteredRows.indexOf(row);
+            const isPageVisible = filteredIndex >= startIndex && filteredIndex < endIndex;
+
+            row.classList.toggle("hidden", !(isFilterVisible && isPageVisible));
+        });
+    }
+
+    function goToCurrentCardPage(pageNumber) {
+        const parsedPageNumber = Number(pageNumber);
+
+        if (!Number.isFinite(parsedPageNumber)) {
+            return;
+        }
+
+        currentCardPage = Math.max(1, Math.min(parsedPageNumber, currentCardTotalPages || 1));
+        applyCurrentCardPagination();
+        updateCurrentSelectionState();
+        updateSetStatsRollout();
+    }
+
     function getSelectedCurrentCardCheckboxes() {
         if (!currentCardList) {
             return [];
@@ -4017,10 +4330,10 @@
             const setCodeMatches = !setCodeValue || rowSetCode.indexOf(setCodeValue) !== -1;
             const digitalMatches = rowMatchesDigitalFilter(row, digitalValue);
 
-            row.classList.toggle(
-                "hidden",
-                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && duplicateMatches && alternateImageMatches && specialSlotMatches && setCodeMatches && digitalMatches)
-            );
+            const isFilterVisible = textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && duplicateMatches && alternateImageMatches && specialSlotMatches && setCodeMatches && digitalMatches;
+
+            row.dataset.currentFilterVisible = isFilterVisible ? "1" : "0";
+            row.classList.toggle("hidden", !isFilterVisible);
         });
 
         sortRowsInContainer(
@@ -4028,6 +4341,9 @@
             ".custom-draft-current-card-row",
             currentSortSelect ? currentSortSelect.value : "name_asc"
         );
+
+        currentCardPage = 1;
+        applyCurrentCardPagination();
 
         updateCurrentSelectionState();
         updateSetStatsRollout();
@@ -4105,6 +4421,29 @@
         generatedSaveButton.addEventListener("click", saveGeneratedPreviewPack);
     }
 
+    const bulkImportToggleButton = document.getElementById("customDraftBulkImportToggleButton");
+    const bulkImportPanel = document.getElementById("customDraftBulkImportPanel");
+
+    function setBulkImportPanelOpen(isOpen) {
+        if (!bulkImportPanel || !bulkImportToggleButton) {
+            return;
+        }
+
+        bulkImportPanel.classList.toggle("custom-draft-bulk-import-panel-open", Boolean(isOpen));
+        bulkImportPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
+        bulkImportToggleButton.classList.toggle("custom-draft-bulk-import-toggle-active", Boolean(isOpen));
+        bulkImportToggleButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+
+    if (bulkImportToggleButton) {
+        bulkImportToggleButton.addEventListener("click", function () {
+            const isOpen = bulkImportPanel
+                ? bulkImportPanel.classList.contains("custom-draft-bulk-import-panel-open")
+                : false;
+            setBulkImportPanelOpen(!isOpen);
+        });
+    }
+
     function openAddCardsSearch() {
         if (!searchOverlay) {
             return;
@@ -4126,6 +4465,7 @@
             return;
         }
 
+        setBulkImportPanelOpen(false);
         searchOverlay.classList.add("hidden");
         searchOverlay.setAttribute("aria-hidden", "true");
         document.body.classList.remove("custom-draft-search-maximized-active");
@@ -4173,7 +4513,7 @@
         searchYearStartFilter,
         searchYearEndFilter,
         searchDigitalFilter,
-        searchLimitFilter
+        searchPageSizeSelect
     ].forEach(function (searchFilterElement) {
         if (!searchFilterElement) {
             return;
@@ -4182,10 +4522,54 @@
         searchFilterElement.addEventListener("keydown", function (event) {
             if (event.key === "Enter") {
                 event.preventDefault();
-                runCardSearch();
+                runCardSearch(1);
             }
         });
     });
+
+    if (searchPageSizeSelect) {
+        searchPageSizeSelect.addEventListener("change", function () {
+            setClientSetting(addCardsPageSizeStorageKey, searchPageSizeSelect.value || "500");
+
+            if (searchResults && !searchResults.classList.contains("hidden") && getAdvancedSearchHasAnyValue()) {
+                runCardSearch(1);
+            }
+        });
+    }
+
+    if (searchPrevButton) {
+        searchPrevButton.addEventListener("click", function () {
+            if (currentSearchPage > 1) {
+                runCardSearch(currentSearchPage - 1);
+            }
+        });
+    }
+
+    if (searchNextButton) {
+        searchNextButton.addEventListener("click", function () {
+            if (currentSearchPage < currentSearchTotalPages) {
+                runCardSearch(currentSearchPage + 1);
+            }
+        });
+    }
+
+    if (searchPageInput) {
+        searchPageInput.addEventListener("change", function () {
+            const requestedPage = parseInt(searchPageInput.value, 10);
+            if (!Number.isFinite(requestedPage)) {
+                return;
+            }
+            const clampedPage = Math.max(1, Math.min(requestedPage, currentSearchTotalPages));
+            runCardSearch(clampedPage);
+        });
+
+        searchPageInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                searchPageInput.blur();
+            }
+        });
+    }
 
     bindColorCheckboxGroup(searchColorFilter, filterSearchResults);
 
@@ -4208,6 +4592,39 @@
     });
 
     bindColorCheckboxGroup(colorFilter, filterCurrentCards);
+
+    if (currentCardPageSizeSelect) {
+        currentCardPageSizeSelect.addEventListener("change", function () {
+            setClientSetting(currentCardsPageSizeStorageKey, currentCardPageSizeSelect.value || "100");
+            currentCardPage = 1;
+            filterCurrentCards();
+        });
+    }
+
+    if (currentCardPrevButton) {
+        currentCardPrevButton.addEventListener("click", function () {
+            goToCurrentCardPage(currentCardPage - 1);
+        });
+    }
+
+    if (currentCardNextButton) {
+        currentCardNextButton.addEventListener("click", function () {
+            goToCurrentCardPage(currentCardPage + 1);
+        });
+    }
+
+    if (currentCardPageInput) {
+        currentCardPageInput.addEventListener("change", function () {
+            goToCurrentCardPage(currentCardPageInput.value);
+        });
+
+        currentCardPageInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                currentCardPageInput.blur();
+            }
+        });
+    }
 
     [
         searchManaOperatorFilter,
@@ -4370,10 +4787,6 @@
                 searchDigitalFilter.value = "exclude";
             }
 
-            if (searchLimitFilter) {
-                searchLimitFilter.value = "999";
-            }
-
             if (searchSortSelect) {
                 searchSortSelect.value = "name_asc";
             }
@@ -4387,6 +4800,7 @@
             }
 
             clearSearchResults();
+            hidePagination();
             setSearchStatus("", false);
         });
     }
@@ -4500,10 +4914,13 @@
         bindZoomableImages();
     });
 
+    applySavedSelectValue(searchPageSizeSelect, addCardsPageSizeStorageKey, "500");
+    applySavedSelectValue(currentCardPageSizeSelect, currentCardsPageSizeStorageKey, "100");
+
     renderExistingColorIdentityLabels();
     bindCurrentCardControls();
     updateCurrentSelectionState();
-    updateSetStatsRollout();
+    filterCurrentCards();
     bindZoomableImages();
 })();
 </script>

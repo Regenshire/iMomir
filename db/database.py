@@ -2160,7 +2160,7 @@ def get_custom_draft_digital_set_sql(
 def search_chaos_cards_for_custom_draft_set(
     set_code,
     search_text="",
-    limit=999,
+    limit=None,
     rarity_filter="",
     color_identity_filter="",
     mana_operator="",
@@ -2171,6 +2171,8 @@ def search_chaos_cards_for_custom_draft_set(
     year_end=None,
     sort_option="name_asc",
     digital_filter="",
+    page=1,
+    page_size=50,
 ):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_search_text = str(search_text or "").strip().lower()
@@ -2231,15 +2233,21 @@ def search_chaos_cards_for_custom_draft_set(
         clean_digital_filter = ""
 
     try:
-        parsed_limit = int(limit)
+        parsed_page = max(1, int(page))
     except (TypeError, ValueError):
-        parsed_limit = 999
+        parsed_page = 1
 
-    if parsed_limit < 1:
-        parsed_limit = 1
+    try:
+        parsed_page_size = int(page_size)
+    except (TypeError, ValueError):
+        parsed_page_size = 50
 
-    if parsed_limit > 9999:
-        parsed_limit = 9999
+    if parsed_page_size < 10:
+        parsed_page_size = 10
+    if parsed_page_size > 1000:
+        parsed_page_size = 1000
+
+    parsed_offset = (parsed_page - 1) * parsed_page_size
 
     parsed_mana_value = None
     if mana_value not in {None, ""}:
@@ -2609,6 +2617,26 @@ def search_chaos_cards_for_custom_draft_set(
 
     sort_sql = sort_sql_map.get(clean_sort_option, sort_sql_map["name_asc"])
 
+    # Get total count first (without LIMIT/OFFSET)
+    count_where_params = list(params)
+    cursor.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        LEFT JOIN card_prices cp
+            ON cp.card_uuid = cc.card_uuid
+        LEFT JOIN custom_draft_set_cards cdsc
+            ON cdsc.card_uuid = cc.card_uuid
+           AND cdsc.set_code = ?
+        {where_sql}
+        """,
+        count_where_params + order_exact_params[:0],
+    )
+    count_row = cursor.fetchone()
+    total_count = count_row[0] if count_row else 0
+
     cursor.execute(
         f"""
         SELECT
@@ -2648,14 +2676,14 @@ def search_chaos_cards_for_custom_draft_set(
             already_in_set DESC,
             {search_rank_sql}
             {sort_sql}
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        params + order_exact_params + [parsed_limit],
+        params + order_exact_params + [parsed_page_size, parsed_offset],
     )
 
     rows = cursor.fetchall()
     conn.close()
-    return rows
+    return rows, total_count
 
 def resolve_most_recent_chaos_card_printing_for_import_item(import_item):
     card_name = str(import_item.get("card_name") or "").strip()
