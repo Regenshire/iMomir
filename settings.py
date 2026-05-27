@@ -87,6 +87,7 @@ DEFAULT_CONFIG = {
     "print_pack_tracking_code": "0",
     "enable_track_packs": "0",
     "enable_chaos_card_image_export": "0",
+    "export_separate_special_slots": "0",
     "use_pack_image_for_title": "0",
     "momir_default_token_variant": "dark",
     "open_print_in_new_tab": "1",

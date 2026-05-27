@@ -342,33 +342,107 @@
                 </details>
 
                 <div class="custom-draft-search-builder-grid">
-                    <label class="custom-draft-filter-field">
+                    <div id="customDraftSearchRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
                         <span>Rarity</span>
-                        <select id="customDraftSearchRarityFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="common">Common</option>
-                            <option value="uncommon">Uncommon</option>
-                            <option value="rare">Rare</option>
-                            <option value="mythic">Mythic</option>
-                        </select>
-                    </label>
 
-                    <label class="custom-draft-filter-field">
+                        <button
+                            type="button"
+                            class="custom-draft-multi-select-button"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                        >
+                            <span class="custom-draft-multi-select-label">Any</span>
+                            <span class="custom-draft-multi-select-chevron">▾</span>
+                        </button>
+
+                        <div class="custom-draft-multi-select-menu hidden">
+                            <label>
+                                <input type="checkbox" value="common">
+                                <span>Common</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="uncommon">
+                                <span>Uncommon</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="rare">
+                                <span>Rare</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="mythic">
+                                <span>Mythic</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="customDraftSearchColorFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any" data-all-label="All colors">
                         <span>Color Identity</span>
-                        <select id="customDraftSearchColorFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="colorless">Colorless</option>
-                            <option value="w">White</option>
-                            <option value="u">Blue</option>
-                            <option value="b">Black</option>
-                            <option value="r">Red</option>
-                            <option value="g">Green</option>
-                            <option value="multi">Multi</option>
-                            <option value="land">Land</option>
-                            <option value="colorless_multi">Colorless/Multi</option>
-                            <option value="colorless_multi_land">Colorless/Multi/Land</option>
-                        </select>
-                    </label>
+
+                        <button
+                            type="button"
+                            class="custom-draft-multi-select-button"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                        >
+                            <span class="custom-draft-multi-select-label">Any</span>
+                            <span class="custom-draft-multi-select-chevron">▾</span>
+                        </button>
+
+                        <div class="custom-draft-multi-select-menu hidden">
+                            <label>
+                                <input type="checkbox" value="w">
+                                <span>White</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="u">
+                                <span>Blue</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="b">
+                                <span>Black</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="r">
+                                <span>Red</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="g">
+                                <span>Green</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="colorless">
+                                <span>Colorless</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="land">
+                                <span>Land</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_selected">
+                                <span>Multi (Selected Colors Only)</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_has_selected">
+                                <span>Multi (Has Selected)</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_any">
+                                <span>Multi (Any)</span>
+                            </label>
+                        </div>
+                    </div>
 
                     <label class="custom-draft-filter-field">
                         <span>Set Code</span>
@@ -445,6 +519,27 @@
                             step="1"
                             placeholder="Any"
                         >
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Digital Cards</span>
+                        <select id="customDraftSearchDigitalFilter" class="custom-draft-filter-input">
+                            <option value="exclude" selected>Exclude MTGO/Arena/Alchemy</option>
+                            <option value="">Include Digital</option>
+                            <option value="only">Digital Only</option>
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Top</span>
+                        <select id="customDraftSearchLimitFilter" class="custom-draft-filter-input">
+                            <option value="100">100</option>
+                            <option value="250">250</option>
+                            <option value="500">500</option>
+                            <option value="999" selected>999</option>
+                            <option value="2500">2500</option>
+                            <option value="9999">9999</option>
+                        </select>
                     </label>
                 </div>
 
@@ -615,33 +710,107 @@
                 >
 
                 <div class="custom-draft-filter-grid">
-                    <label class="custom-draft-filter-field">
+                    <div id="customDraftRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
                         <span>Rarity</span>
-                        <select id="customDraftRarityFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="common">Common</option>
-                            <option value="uncommon">Uncommon</option>
-                            <option value="rare">Rare</option>
-                            <option value="mythic">Mythic</option>
-                        </select>
-                    </label>
 
-                    <label class="custom-draft-filter-field">
+                        <button
+                            type="button"
+                            class="custom-draft-multi-select-button"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                        >
+                            <span class="custom-draft-multi-select-label">Any</span>
+                            <span class="custom-draft-multi-select-chevron">▾</span>
+                        </button>
+
+                        <div class="custom-draft-multi-select-menu hidden">
+                            <label>
+                                <input type="checkbox" value="common">
+                                <span>Common</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="uncommon">
+                                <span>Uncommon</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="rare">
+                                <span>Rare</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="mythic">
+                                <span>Mythic</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="customDraftColorFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any" data-all-label="All colors">
                         <span>Color Identity</span>
-                        <select id="customDraftColorFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="colorless">Colorless</option>
-                            <option value="w">White</option>
-                            <option value="u">Blue</option>
-                            <option value="b">Black</option>
-                            <option value="r">Red</option>
-                            <option value="g">Green</option>
-                            <option value="multi">Multi</option>
-                            <option value="land">Land</option>
-                            <option value="colorless_multi">Colorless/Multi</option>
-                            <option value="colorless_multi_land">Colorless/Multi/Land</option>
-                        </select>
-                    </label>
+
+                        <button
+                            type="button"
+                            class="custom-draft-multi-select-button"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                        >
+                            <span class="custom-draft-multi-select-label">Any</span>
+                            <span class="custom-draft-multi-select-chevron">▾</span>
+                        </button>
+
+                        <div class="custom-draft-multi-select-menu hidden">
+                            <label>
+                                <input type="checkbox" value="w">
+                                <span>White</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="u">
+                                <span>Blue</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="b">
+                                <span>Black</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="r">
+                                <span>Red</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="g">
+                                <span>Green</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="colorless">
+                                <span>Colorless</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="land">
+                                <span>Land</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_selected">
+                                <span>Multi (Selected Colors Only)</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_has_selected">
+                                <span>Multi (Has Selected)</span>
+                            </label>
+
+                            <label>
+                                <input type="checkbox" value="multi_any">
+                                <span>Multi (Any)</span>
+                            </label>
+                        </div>
+                    </div>
 
                     <label class="custom-draft-filter-field">
                         <span>Mana Value Rule</span>
@@ -721,6 +890,15 @@
                             placeholder="Any"
                             autocomplete="off"
                         >
+                    </label>
+
+                    <label class="custom-draft-filter-field">
+                        <span>Digital Cards</span>
+                        <select id="customDraftDigitalFilter" class="custom-draft-filter-input">
+                            <option value="">Include Digital</option>
+                            <option value="exclude">Exclude MTGO/Arena</option>
+                            <option value="only">Digital Only</option>
+                        </select>
                     </label>
 
                     <label class="custom-draft-filter-field">
@@ -991,6 +1169,8 @@
     const searchSortSelect = document.getElementById("customDraftSearchSortSelect");
     const searchYearStartFilter = document.getElementById("customDraftSearchYearStartFilter");
     const searchYearEndFilter = document.getElementById("customDraftSearchYearEndFilter");
+    const searchDigitalFilter = document.getElementById("customDraftSearchDigitalFilter");
+    const searchLimitFilter = document.getElementById("customDraftSearchLimitFilter");
     const searchClearFiltersButton = document.getElementById("customDraftSearchClearFiltersButton");
     const bulkImportText = document.getElementById("customDraftBulkImportText");
     const bulkImportFile = document.getElementById("customDraftBulkImportFile");
@@ -1008,6 +1188,7 @@
     const currentSortSelect = document.getElementById("customDraftCurrentSortSelect");
     const specialSlotFilter = document.getElementById("customDraftSpecialSlotFilter");
     const currentSetCodeFilter = document.getElementById("customDraftCurrentSetCodeFilter");
+    const digitalFilter = document.getElementById("customDraftDigitalFilter");
     const clearFiltersButton = document.getElementById("customDraftClearFiltersButton");
     const selectAllCurrentCardsButton = document.getElementById("customDraftSelectAllCurrentCardsButton");
     const clearCurrentCardSelectionButton = document.getElementById("customDraftClearCurrentCardSelectionButton");
@@ -1052,6 +1233,8 @@
 
     let activeChangePrintingState = null;
     let currentVisibleCardCopyFormat = "simple";
+    const clientAddedCardUuidLookup = new Set();
+    const clientAddedPrintingKeyLookup = new Set();
 
     const colorNameMap = {
         "W": "White",
@@ -1122,38 +1305,73 @@
         }).join("/");
     }
 
-    function rowMatchesColorFilter(row, selectedColor) {
-        if (!selectedColor) {
+    function rowMatchesColorFilter(row, selectedColorValues) {
+        if (!selectedColorValues || !selectedColorValues.length) {
             return true;
         }
 
         const colors = normalizeColorArray(row.dataset.colorIdentity || "[]");
+        const lowerColors = colors.map(function (colorSymbol) {
+            return String(colorSymbol || "").toLowerCase();
+        });
+
         const typeLine = String(row.dataset.typeLine || "").toLowerCase();
         const isLand = typeLine.indexOf("land") !== -1;
         const isColorless = colors.length === 0;
         const isMulti = colors.length >= 2;
+        const isMonoColor = colors.length === 1;
 
-        if (selectedColor === "colorless") {
-            return isColorless && !isLand;
+        const selectedValues = selectedColorValues.map(function (selectedValue) {
+            return String(selectedValue || "").trim().toLowerCase();
+        });
+
+        const selectedColorSymbols = selectedValues.filter(function (selectedValue) {
+            return ["w", "u", "b", "r", "g"].indexOf(selectedValue) !== -1;
+        });
+
+        if (selectedValues.indexOf("colorless") !== -1 && isColorless && !isLand) {
+            return true;
         }
 
-        if (selectedColor === "land") {
-            return isLand;
+        if (selectedValues.indexOf("land") !== -1 && isLand) {
+            return true;
         }
 
-        if (selectedColor === "multi") {
-            return isMulti;
+        if (selectedValues.indexOf("multi_any") !== -1 && isMulti) {
+            return true;
         }
 
-        if (selectedColor === "colorless_multi") {
-            return isColorless || isMulti;
+        if (selectedValues.indexOf("multi_has_selected") !== -1 && isMulti) {
+            if (!selectedColorSymbols.length) {
+                return true;
+            }
+
+            return lowerColors.some(function (cardColor) {
+                return selectedColorSymbols.indexOf(cardColor) !== -1;
+            });
         }
 
-        if (selectedColor === "colorless_multi_land") {
-            return isColorless || isMulti || isLand;
+        if (selectedValues.indexOf("multi_selected") !== -1 && isMulti) {
+            if (!selectedColorSymbols.length) {
+                return true;
+            }
+
+            const hasOnlySelectedColors = lowerColors.every(function (cardColor) {
+                return selectedColorSymbols.indexOf(cardColor) !== -1;
+            });
+
+            const hasAtLeastOneSelectedColor = lowerColors.some(function (cardColor) {
+                return selectedColorSymbols.indexOf(cardColor) !== -1;
+            });
+
+            return hasOnlySelectedColors && hasAtLeastOneSelectedColor;
         }
 
-        return colors.length === 1 && colors[0].toLowerCase() === selectedColor;
+        if (selectedColorSymbols.length && isMonoColor) {
+            return selectedColorSymbols.indexOf(lowerColors[0]) !== -1;
+        }
+
+        return false;
     }
 
     function rowMatchesManaFilter(row, operatorValue, targetValueRaw) {
@@ -1194,6 +1412,232 @@
         }
 
         return true;
+    }
+
+    function getSelectedMultiSelectValues(containerElement) {
+        if (!containerElement) {
+            return [];
+        }
+
+        return Array.from(containerElement.querySelectorAll('input[type="checkbox"]:checked'))
+            .map(function (checkbox) {
+                return String(checkbox.value || "").trim().toLowerCase();
+            })
+            .filter(Boolean);
+    }
+
+    function getSelectedRarityValues(containerElement) {
+        return getSelectedMultiSelectValues(containerElement);
+    }
+
+    function getSelectedColorValues(containerElement) {
+        return getSelectedMultiSelectValues(containerElement);
+    }
+
+    function clearMultiSelectValues(containerElement) {
+        if (!containerElement) {
+            return;
+        }
+
+        Array.from(containerElement.querySelectorAll('input[type="checkbox"]')).forEach(function (checkbox) {
+            checkbox.checked = false;
+        });
+
+        updateMultiSelectLabel(containerElement);
+    }
+
+    function clearRarityValues(containerElement) {
+        clearMultiSelectValues(containerElement);
+    }
+
+    function clearColorValues(containerElement) {
+        clearMultiSelectValues(containerElement);
+    }
+
+    function rowMatchesRarityFilter(rowRarity, selectedRarities) {
+        if (!selectedRarities || !selectedRarities.length) {
+            return true;
+        }
+
+        return selectedRarities.indexOf(String(rowRarity || "").trim().toLowerCase()) !== -1;
+    }
+
+    const digitalSetCodeLookup = new Set([
+        "AKR",
+        "ANA",
+        "ANB",
+        "EA1",
+        "HBG",
+        "J21",
+        "KLR",
+        "MED",
+        "ME2",
+        "ME3",
+        "ME4",
+        "PRM",
+        "PZ1",
+        "PZ2",
+        "SIR",
+        "SIS",
+        "TPR",
+        "VMA"
+    ]);
+
+    function isDigitalSetCode(setCode) {
+        const cleanSetCode = String(setCode || "").trim().toUpperCase();
+
+        if (!cleanSetCode) {
+            return false;
+        }
+
+        if (cleanSetCode.charAt(0) === "Y") {
+            return true;
+        }
+
+        return digitalSetCodeLookup.has(cleanSetCode);
+    }
+
+    function rowMatchesDigitalFilter(row, digitalFilterValue) {
+        const cleanDigitalFilter = String(digitalFilterValue || "").trim().toLowerCase();
+
+        if (!cleanDigitalFilter) {
+            return true;
+        }
+
+        const isDigital = isDigitalSetCode(row.dataset.setCode || "");
+
+        if (cleanDigitalFilter === "exclude") {
+            return !isDigital;
+        }
+
+        if (cleanDigitalFilter === "only") {
+            return isDigital;
+        }
+
+        return true;
+    }
+
+    function getMultiSelectLabelForValue(containerElement, rawValue) {
+        const cleanValue = String(rawValue || "").trim().toLowerCase();
+
+        const matchingInput = containerElement
+            ? containerElement.querySelector('input[type="checkbox"][value="' + CSS.escape(cleanValue) + '"]')
+            : null;
+
+        if (matchingInput) {
+            const matchingLabel = matchingInput.closest("label");
+
+            if (matchingLabel) {
+                const labelSpan = matchingLabel.querySelector("span");
+
+                if (labelSpan && labelSpan.textContent) {
+                    return labelSpan.textContent.trim();
+                }
+            }
+        }
+
+        return rawValue;
+    }
+
+    function updateMultiSelectLabel(containerElement) {
+        if (!containerElement) {
+            return;
+        }
+
+        const labelElement = containerElement.querySelector(".custom-draft-multi-select-label");
+        const selectedValues = getSelectedMultiSelectValues(containerElement);
+        const totalValues = containerElement.querySelectorAll('input[type="checkbox"]').length;
+        const placeholderText = containerElement.dataset.placeholder || "Any";
+        const allLabelText = containerElement.dataset.allLabel || "All";
+
+        if (!labelElement) {
+            return;
+        }
+
+        if (!selectedValues.length) {
+            labelElement.textContent = placeholderText;
+            return;
+        }
+
+        if (totalValues > 0 && selectedValues.length === totalValues) {
+            labelElement.textContent = allLabelText;
+            return;
+        }
+
+        labelElement.textContent = selectedValues
+            .map(function (selectedValue) {
+                return getMultiSelectLabelForValue(containerElement, selectedValue);
+            })
+            .join(", ");
+    }
+
+    function updateRarityMultiSelectLabel(containerElement) {
+        updateMultiSelectLabel(containerElement);
+    }
+
+    function closeCustomDraftMultiSelect(containerElement) {
+        if (!containerElement) {
+            return;
+        }
+
+        const button = containerElement.querySelector(".custom-draft-multi-select-button");
+        const menu = containerElement.querySelector(".custom-draft-multi-select-menu");
+
+        if (button) {
+            button.setAttribute("aria-expanded", "false");
+        }
+
+        if (menu) {
+            menu.classList.add("hidden");
+        }
+    }
+
+    function closeRarityMultiSelect(containerElement) {
+        closeCustomDraftMultiSelect(containerElement);
+    }
+
+    function bindCustomDraftMultiSelect(containerElement, callback) {
+        if (!containerElement || typeof callback !== "function") {
+            return;
+        }
+
+        const button = containerElement.querySelector(".custom-draft-multi-select-button");
+        const menu = containerElement.querySelector(".custom-draft-multi-select-menu");
+
+        if (button && menu) {
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const shouldOpen = menu.classList.contains("hidden");
+
+                document.querySelectorAll(".custom-draft-multi-select").forEach(function (otherContainer) {
+                    if (otherContainer !== containerElement) {
+                        closeCustomDraftMultiSelect(otherContainer);
+                    }
+                });
+
+                menu.classList.toggle("hidden", !shouldOpen);
+                button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+            });
+        }
+
+        Array.from(containerElement.querySelectorAll('input[type="checkbox"]')).forEach(function (checkbox) {
+            checkbox.addEventListener("change", function () {
+                updateMultiSelectLabel(containerElement);
+                callback();
+            });
+        });
+
+        updateMultiSelectLabel(containerElement);
+    }
+
+    function bindRarityCheckboxGroup(containerElement, callback) {
+        bindCustomDraftMultiSelect(containerElement, callback);
+    }
+
+    function bindColorCheckboxGroup(containerElement, callback) {
+        bindCustomDraftMultiSelect(containerElement, callback);
     }
 
     function normalizeCardNameForCompare(cardName) {
@@ -1327,6 +1771,89 @@
         };
     }
 
+    function normalizeCustomDraftLookupText(rawValue) {
+        return String(rawValue || "")
+            .trim()
+            .toLowerCase()
+            .replace(/[’'`´‘ʼ]/g, "")
+            .replace(/[.,]/g, "")
+            .replace(/\s+/g, " ");
+    }
+
+    function buildCurrentSetPrintingKey(cardName, setCode, collectorNumber) {
+        const cleanCardName = normalizeCustomDraftLookupText(cardName);
+        const cleanSetCode = String(setCode || "").trim().toUpperCase();
+        const cleanCollectorNumber = normalizeCustomDraftLookupText(collectorNumber);
+
+        if (!cleanCardName || !cleanSetCode || !cleanCollectorNumber) {
+            return "";
+        }
+
+        return cleanCardName + "|" + cleanSetCode + "|" + cleanCollectorNumber;
+    }
+
+    function getCurrentSetCardLookup() {
+        const lookup = {
+            cardUuids: new Set(clientAddedCardUuidLookup),
+            printingKeys: new Set(clientAddedPrintingKeyLookup)
+        };
+
+        if (!currentCardList) {
+            return lookup;
+        }
+
+        Array.from(currentCardList.querySelectorAll(".custom-draft-current-card-row")).forEach(function (row) {
+            const cardUuid = String(row.dataset.cardUuid || "").trim();
+            const printingKey = buildCurrentSetPrintingKey(
+                row.dataset.displayCardName || row.dataset.cardName || "",
+                row.dataset.setCode || "",
+                row.dataset.collectorNumber || ""
+            );
+
+            if (cardUuid) {
+                lookup.cardUuids.add(cardUuid);
+            }
+
+            if (printingKey) {
+                lookup.printingKeys.add(printingKey);
+            }
+        });
+
+        return lookup;
+    }
+
+    function getSearchCardPrintingKey(card) {
+        if (!card) {
+            return "";
+        }
+
+        return buildCurrentSetPrintingKey(
+            card.card_name || "",
+            card.set_code || "",
+            card.collector_number || ""
+        );
+    }
+
+    function isSearchCardAlreadyInCurrentSet(card) {
+        if (card && card.already_in_set) {
+            return true;
+        }
+
+        const lookup = getCurrentSetCardLookup();
+        const cardUuid = String(card && card.card_uuid ? card.card_uuid : "").trim();
+        const printingKey = getSearchCardPrintingKey(card);
+
+        if (cardUuid && lookup.cardUuids.has(cardUuid)) {
+            return true;
+        }
+
+        if (printingKey && lookup.printingKeys.has(printingKey)) {
+            return true;
+        }
+
+        return false;
+    }
+
     function getGroupedSearchCards(cards) {
         const groupLookup = new Map();
 
@@ -1353,6 +1880,13 @@
             group.representative_card = getMostRecentCardPrinting(group.cards);
 
             group.cards.sort(function (cardA, cardB) {
+                const cardAAlreadyInSet = isSearchCardAlreadyInCurrentSet(cardA);
+                const cardBAlreadyInSet = isSearchCardAlreadyInCurrentSet(cardB);
+
+                if (cardAAlreadyInSet !== cardBAlreadyInSet) {
+                    return cardAAlreadyInSet ? -1 : 1;
+                }
+
                 const rowA = buildVirtualSearchCardRow(cardA);
                 const rowB = buildVirtualSearchCardRow(cardB);
 
@@ -1366,7 +1900,7 @@
             });
 
             group.already_in_set_count = group.cards.filter(function (card) {
-                return Boolean(card.already_in_set);
+                return isSearchCardAlreadyInCurrentSet(card);
             }).length;
         });
 
@@ -1405,6 +1939,8 @@
             manaValue
         ].join(" ").toLowerCase();
 
+        row.dataset.cardUuid = String(card.card_uuid || "");
+        row.dataset.printingKey = getSearchCardPrintingKey(card);
         row.dataset.rarity = String(card.rarity || "").toLowerCase();
         row.dataset.colorIdentity = String(card.color_identity_json || "[]").toLowerCase();
         row.dataset.manaValue = manaValue;
@@ -1420,7 +1956,9 @@
         row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
         row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
 
-        if (card.already_in_set) {
+        const alreadyInCurrentSet = isSearchCardAlreadyInCurrentSet(card);
+
+        if (alreadyInCurrentSet) {
             row.classList.add("custom-draft-card-search-row-disabled");
         }
 
@@ -1490,8 +2028,8 @@
                 await changeCardPrinting(card.card_uuid, addButton);
             });
         } else {
-            addButton.textContent = card.already_in_set ? "Added" : "Add";
-            addButton.disabled = Boolean(card.already_in_set);
+            addButton.textContent = alreadyInCurrentSet ? "Added" : "Add";
+            addButton.disabled = alreadyInCurrentSet;
 
             addButton.addEventListener("click", async function () {
                 await addCardToSet(card.card_uuid, addButton);
@@ -1505,6 +2043,54 @@
         row.appendChild(actions);
 
         return row;
+    }
+
+    function refreshSearchResultAddedStates() {
+        if (!searchResults) {
+            return;
+        }
+
+        Array.from(searchResults.querySelectorAll(".custom-draft-card-search-row")).forEach(function (row) {
+            const cardUuid = String(row.dataset.cardUuid || "").trim();
+            const printingKey = String(row.dataset.printingKey || "").trim();
+            const lookup = getCurrentSetCardLookup();
+
+            const isAlreadyAdded = (
+                (cardUuid && lookup.cardUuids.has(cardUuid))
+                || (printingKey && lookup.printingKeys.has(printingKey))
+            );
+
+            if (!isAlreadyAdded) {
+                return;
+            }
+
+            row.classList.add("custom-draft-card-search-row-disabled");
+
+            const addButton = row.querySelector(".custom-draft-card-add-button");
+            if (addButton && !activeChangePrintingState) {
+                addButton.textContent = "Added";
+                addButton.disabled = true;
+            }
+        });
+
+        Array.from(searchResults.querySelectorAll(".custom-draft-card-search-group")).forEach(function (groupElement) {
+            const disabledRows = Array.from(groupElement.querySelectorAll(".custom-draft-card-search-row-disabled"));
+            const addedPill = groupElement.querySelector(".custom-draft-card-search-group-added-pill");
+            const groupMeta = groupElement.querySelector(".custom-draft-card-search-group-meta");
+
+            if (addedPill) {
+                addedPill.classList.toggle("hidden", disabledRows.length === 0);
+                addedPill.textContent = disabledRows.length > 1
+                    ? disabledRows.length + " Added"
+                    : "Added";
+            }
+
+            if (groupMeta && disabledRows.length > 0 && groupMeta.textContent.indexOf("already added") === -1) {
+                groupMeta.textContent = groupMeta.textContent
+                    ? groupMeta.textContent + " • " + disabledRows.length + " already added"
+                    : disabledRows.length + " already added";
+            }
+        });
     }
 
     function createSearchResultGroup(group) {
@@ -1568,8 +2154,11 @@
         main.appendChild(meta);
 
         const addedPill = document.createElement("div");
-        addedPill.className = "custom-draft-card-search-group-added-pill hidden";
-        addedPill.textContent = "Added";
+        addedPill.className = "custom-draft-card-search-group-added-pill";
+        addedPill.classList.toggle("hidden", !(group.already_in_set_count > 0));
+        addedPill.textContent = group.already_in_set_count > 1
+            ? group.already_in_set_count + " Added"
+            : "Added";
 
         const expandIcon = document.createElement("div");
         expandIcon.className = "custom-draft-card-search-group-expand-icon";
@@ -1637,6 +2226,7 @@
             searchResults.appendChild(createSearchResultGroup(group));
         });
 
+        refreshSearchResultAddedStates();
         bindZoomableImages();
         searchResults.classList.remove("hidden");
         filterSearchResults();
@@ -1645,8 +2235,8 @@
     function getAdvancedSearchHasAnyValue() {
         return Boolean(
             (searchInput && (searchInput.value || "").trim()) ||
-            (searchRarityFilter && (searchRarityFilter.value || "").trim()) ||
-            (searchColorFilter && (searchColorFilter.value || "").trim()) ||
+            getSelectedRarityValues(searchRarityFilter).length > 0 ||
+            getSelectedColorValues(searchColorFilter).length > 0 ||
             (searchManaOperatorFilter && (searchManaOperatorFilter.value || "").trim()) ||
             (searchManaValueFilter && (searchManaValueFilter.value || "").trim()) ||
             (searchTypeFilter && (searchTypeFilter.value || "").trim()) ||
@@ -1663,13 +2253,13 @@
             params.set("q", (searchInput.value || "").trim());
         }
 
-        if (searchRarityFilter && searchRarityFilter.value) {
-            params.set("rarity", searchRarityFilter.value);
-        }
+        getSelectedRarityValues(searchRarityFilter).forEach(function (rarityValue) {
+            params.append("rarity", rarityValue);
+        });
 
-        if (searchColorFilter && searchColorFilter.value) {
-            params.set("color_identity", searchColorFilter.value);
-        }
+        getSelectedColorValues(searchColorFilter).forEach(function (colorValue) {
+            params.append("color_identity", colorValue);
+        });
 
         if (searchManaOperatorFilter && searchManaOperatorFilter.value) {
             params.set("mana_operator", searchManaOperatorFilter.value);
@@ -1693,6 +2283,14 @@
 
         if (searchYearEndFilter && (searchYearEndFilter.value || "").trim()) {
             params.set("year_end", (searchYearEndFilter.value || "").trim());
+        }
+
+        if (searchDigitalFilter && searchDigitalFilter.value) {
+            params.set("digital", searchDigitalFilter.value);
+        }
+
+        if (searchLimitFilter && searchLimitFilter.value) {
+            params.set("limit", searchLimitFilter.value);
         }
 
         if (searchSortSelect && searchSortSelect.value) {
@@ -2337,6 +2935,17 @@
 
             const resultRow = button.closest(".custom-draft-card-search-row");
             if (resultRow) {
+                const resultCardUuid = String(resultRow.dataset.cardUuid || cardUuid || "").trim();
+                const resultPrintingKey = String(resultRow.dataset.printingKey || "").trim();
+
+                if (resultCardUuid) {
+                    clientAddedCardUuidLookup.add(resultCardUuid);
+                }
+
+                if (resultPrintingKey) {
+                    clientAddedPrintingKeyLookup.add(resultPrintingKey);
+                }
+
                 resultRow.classList.add("custom-draft-card-search-row-disabled");
                 updateSearchResultGroupFromAddedRow(resultRow);
             }
@@ -2574,13 +3183,9 @@
                     searchInput.value = cardName;
                 }
 
-                if (searchRarityFilter) {
-                    searchRarityFilter.value = "";
-                }
+                clearRarityValues(searchRarityFilter);
 
-                if (searchColorFilter) {
-                    searchColorFilter.value = "";
-                }
+                clearColorValues(searchColorFilter);
 
                 if (searchManaOperatorFilter) {
                     searchManaOperatorFilter.value = "";
@@ -2797,11 +3402,12 @@
             return;
         }
 
-        const rarityValue = searchRarityFilter ? (searchRarityFilter.value || "").trim().toLowerCase() : "";
-        const colorValue = searchColorFilter ? (searchColorFilter.value || "").trim().toLowerCase() : "";
+        const selectedRarities = getSelectedRarityValues(searchRarityFilter);
+        const selectedColors = getSelectedColorValues(searchColorFilter);
         const manaOperator = searchManaOperatorFilter ? (searchManaOperatorFilter.value || "").trim() : "";
         const manaValue = searchManaValueFilter ? (searchManaValueFilter.value || "").trim() : "";
         const typeValue = searchTypeFilter ? (searchTypeFilter.value || "").trim().toLowerCase() : "";
+        const digitalValue = searchDigitalFilter ? (searchDigitalFilter.value || "").trim().toLowerCase() : "";
 
         const groups = Array.from(searchResults.querySelectorAll(".custom-draft-card-search-group"));
 
@@ -2813,12 +3419,13 @@
                 const rowRarity = row.dataset.rarity || "";
                 const rowTypeLine = row.dataset.typeLine || "";
 
-                const rarityMatches = !rarityValue || rowRarity === rarityValue;
-                const colorMatches = rowMatchesColorFilter(row, colorValue);
+                const rarityMatches = rowMatchesRarityFilter(rowRarity, selectedRarities);
+                const colorMatches = rowMatchesColorFilter(row, selectedColors);
                 const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
                 const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
+                const digitalMatches = rowMatchesDigitalFilter(row, digitalValue);
 
-                const isVisible = rarityMatches && colorMatches && manaMatches && typeMatches;
+                const isVisible = rarityMatches && colorMatches && manaMatches && typeMatches && digitalMatches;
 
                 row.classList.toggle("hidden", !isVisible);
 
@@ -3363,8 +3970,8 @@
         }
 
         const textQuery = (currentFilterInput ? currentFilterInput.value : "").trim().toLowerCase();
-        const rarityValue = rarityFilter ? (rarityFilter.value || "").trim().toLowerCase() : "";
-        const colorValue = colorFilter ? (colorFilter.value || "").trim().toLowerCase() : "";
+        const selectedRarities = getSelectedRarityValues(rarityFilter);
+        const selectedColors = getSelectedColorValues(colorFilter);
         const manaOperator = manaOperatorFilter ? (manaOperatorFilter.value || "").trim() : "";
         const manaValue = manaValueFilter ? (manaValueFilter.value || "").trim() : "";
         const typeValue = typeFilter ? (typeFilter.value || "").trim().toLowerCase() : "";
@@ -3372,6 +3979,7 @@
         const alternateImageValue = alternateImageFilter ? (alternateImageFilter.value || "").trim() : "";
         const specialSlotValue = specialSlotFilter ? (specialSlotFilter.value || "").trim() : "";
         const setCodeValue = currentSetCodeFilter ? (currentSetCodeFilter.value || "").trim().toUpperCase() : "";
+        const digitalValue = digitalFilter ? (digitalFilter.value || "").trim().toLowerCase() : "";
         const duplicateCardNameCounts = getCurrentCardNameCounts();
 
         const rows = getCurrentCardRows();
@@ -3387,8 +3995,8 @@
             const rowAlternateRemoveBleed = row.dataset.alternateRemoveBleed === "1";
 
             const textMatches = !textQuery || haystack.indexOf(textQuery) !== -1;
-            const rarityMatches = !rarityValue || rowRarity === rarityValue;
-            const colorMatches = rowMatchesColorFilter(row, colorValue);
+            const rarityMatches = rowMatchesRarityFilter(rowRarity, selectedRarities);
+            const colorMatches = rowMatchesColorFilter(row, selectedColors);
             const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
             const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
             const duplicateMatches = duplicateValue !== "duplicates_only" || (duplicateCardNameCounts[rowCardName] || 0) > 1;
@@ -3407,10 +4015,11 @@
 
             const specialSlotMatches = !specialSlotValue || rowSpecialCategory === specialSlotValue;
             const setCodeMatches = !setCodeValue || rowSetCode.indexOf(setCodeValue) !== -1;
+            const digitalMatches = rowMatchesDigitalFilter(row, digitalValue);
 
             row.classList.toggle(
                 "hidden",
-                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && duplicateMatches && alternateImageMatches && specialSlotMatches && setCodeMatches)
+                !(textMatches && rarityMatches && colorMatches && manaMatches && typeMatches && duplicateMatches && alternateImageMatches && specialSlotMatches && setCodeMatches && digitalMatches)
             );
         });
 
@@ -3556,15 +4165,15 @@
     }
 
     [
-        searchRarityFilter,
-        searchColorFilter,
         searchManaOperatorFilter,
         searchManaValueFilter,
         searchTypeFilter,
         searchSetCodeFilter,
         searchSortSelect,
         searchYearStartFilter,
-        searchYearEndFilter
+        searchYearEndFilter,
+        searchDigitalFilter,
+        searchLimitFilter
     ].forEach(function (searchFilterElement) {
         if (!searchFilterElement) {
             return;
@@ -3578,10 +4187,10 @@
         });
     });
 
+    bindColorCheckboxGroup(searchColorFilter, filterSearchResults);
+
     [
         currentFilterInput,
-        rarityFilter,
-        colorFilter,
         manaOperatorFilter,
         manaValueFilter,
         typeFilter,
@@ -3589,6 +4198,7 @@
         alternateImageFilter,
         specialSlotFilter,
         currentSetCodeFilter,
+        digitalFilter,
         currentSortSelect
     ].forEach(function (filterElement) {
         if (filterElement) {
@@ -3597,12 +4207,13 @@
         }
     });
 
+    bindColorCheckboxGroup(colorFilter, filterCurrentCards);
+
     [
-        searchRarityFilter,
-        searchColorFilter,
         searchManaOperatorFilter,
         searchManaValueFilter,
-        searchTypeFilter
+        searchTypeFilter,
+        searchDigitalFilter
     ].forEach(function (filterElement) {
         if (filterElement) {
             filterElement.addEventListener("input", filterSearchResults);
@@ -3643,6 +4254,12 @@
         ) {
             closeVisibleCardCopyMenu();
         }
+
+        if (!event.target.closest(".custom-draft-multi-select")) {
+            document.querySelectorAll(".custom-draft-multi-select").forEach(function (containerElement) {
+                closeCustomDraftMultiSelect(containerElement);
+            });
+        }
     });
 
     if (statsToggleButton) {
@@ -3671,13 +4288,9 @@
                 currentFilterInput.value = "";
             }
 
-            if (rarityFilter) {
-                rarityFilter.value = "";
-            }
+            clearRarityValues(rarityFilter);
 
-            if (colorFilter) {
-                colorFilter.value = "";
-            }
+            clearColorValues(colorFilter);
 
             if (manaOperatorFilter) {
                 manaOperatorFilter.value = "";
@@ -3707,6 +4320,10 @@
                 currentSetCodeFilter.value = "";
             }
 
+            if (digitalFilter) {
+                digitalFilter.value = "";
+            }
+
             if (currentSortSelect) {
                 currentSortSelect.value = "name_asc";
             }
@@ -3721,13 +4338,9 @@
                 searchInput.value = "";
             }
 
-            if (searchRarityFilter) {
-                searchRarityFilter.value = "";
-            }
+            clearRarityValues(searchRarityFilter);
 
-            if (searchColorFilter) {
-                searchColorFilter.value = "";
-            }
+            clearColorValues(searchColorFilter);
 
             if (searchManaOperatorFilter) {
                 searchManaOperatorFilter.value = "";
@@ -3751,6 +4364,14 @@
 
             if (searchYearEndFilter) {
                 searchYearEndFilter.value = "";
+            }
+
+            if (searchDigitalFilter) {
+                searchDigitalFilter.value = "exclude";
+            }
+
+            if (searchLimitFilter) {
+                searchLimitFilter.value = "999";
             }
 
             if (searchSortSelect) {

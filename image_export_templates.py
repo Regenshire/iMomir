@@ -311,6 +311,121 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "card_corner_radius_pct": 0.16,
         "fallback_rgb": (20, 17, 15),
     },
+
+    "classic_floating": {
+        "template_name": "Classic Floating Frame",
+        "inherits": "1993",
+
+        # Based on the 1993 frame, but make the export box feel more like a
+        # "floating" tag instead of something attached directly to the edge.
+        "overlay_box": {
+            "x1": 0.285,
+            "y1": 0.904,
+            "x2": 0.715,
+            "y2": 0.948,
+        },
+        "text_box": {
+            "x1": 0.305,
+            "y1": 0.902,
+            "x2": 0.695,
+            "y2": 0.937,
+        },
+        "text_align": "center",
+
+        # Fully rounded floating badge.
+        "overlay_corner_radius_pct": 0.040,
+        "overlay_round_corners": {
+            "top_left": True,
+            "top_right": True,
+            "bottom_right": True,
+            "bottom_left": True,
+        },
+
+        # Sample from the lower classic frame matte area so the floating label
+        # picks up a natural old-frame tone.
+        "overlay_fill_sample_regions": [
+            {"x1": 0.500, "y1": 0.940, "x2": 0.550, "y2": 0.945},
+            {"x1": 0.800, "y1": 0.940, "x2": 0.940, "y2": 0.945},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+        ],
+
+        "bleed_fill_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.800, "y1": 0.980, "x2": 0.940, "y2": 0.985},
+        ],
+
+        "card_corner_radius_pct": 0.00,
+        "fallback_rgb": (20, 17, 15),
+    },
+
+    "classic_floating_below": {
+        "template_name": "Classic Floating Frame - Below",
+        "inherits": "1993",
+
+        # Based on the 1993 frame, but make the export box feel more like a
+        # "floating" tag instead of something attached directly to the edge.
+        "overlay_box": {
+            "x1": 0.285,
+            "y1": 0.944,
+            "x2": 0.715,
+            "y2": 0.988,
+        },
+        "text_box": {
+            "x1": 0.220,
+            "y1": 0.971,
+            "x2": 0.780,
+            "y2": 0.994,
+        },
+        "text_align": "center",
+
+        # Hide the overlay badge entirely. This template draws text directly
+        # over the card art/frame instead of placing it in a filled box.
+        "overlay_box_enabled": False,
+
+        # Explicit text styling for this template.
+        "text_fill_rgb_override": (255, 255, 255),
+        "text_font_family": "Plantin MT Pro",
+        "text_font_size_pt": 18.0,
+        "text_font_bold": False,
+        "text_shadow_enabled": True,
+
+        # Fully rounded floating badge.
+        "overlay_corner_radius_pct": 0.040,
+        "overlay_round_corners": {
+            "top_left": True,
+            "top_right": True,
+            "bottom_right": True,
+            "bottom_left": True,
+        },
+
+        # Sample from the lower classic frame matte area so the floating label
+        # picks up a natural old-frame tone.
+        "overlay_fill_sample_regions": [
+            {"x1": 0.500, "y1": 0.940, "x2": 0.550, "y2": 0.945},
+            {"x1": 0.800, "y1": 0.940, "x2": 0.940, "y2": 0.945},
+        ],
+
+        "card_matte_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+        ],
+
+        "bleed_fill_sample_regions": [
+            {"x1": 0.500, "y1": 0.980, "x2": 0.550, "y2": 0.985},
+            {"x1": 0.800, "y1": 0.980, "x2": 0.940, "y2": 0.985},
+        ],
+
+        "card_corner_radius_pct": 0.00,
+        "fallback_rgb": (20, 17, 15),
+    },
 }
 
 CARD_WIDTH_MM = 63.0

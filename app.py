@@ -935,6 +935,7 @@ def update_config_from_form(form_data):
         "enable_track_packs",
         "enable_chaos_card_image_export",
         "export_add_bleed",
+        "export_separate_special_slots",
         "chaos_replace_basic_lands",
         "use_pack_image_for_title",
         "open_print_in_new_tab",
@@ -6516,6 +6517,35 @@ def make_image_export_filename_safe(value):
 
     return clean_value or "CARD"
 
+def make_image_export_folder_safe(value):
+    clean_value = str(value or "").strip()
+
+    if not clean_value:
+        return "Special Slot"
+
+    # Keep spaces because folder/XML names should be user-readable,
+    # but remove characters that are invalid or painful on Windows.
+    clean_value = re.sub(r'[<>:"/\\\\|?*]+', "_", clean_value)
+    clean_value = re.sub(r"\s+", " ", clean_value)
+    clean_value = clean_value.strip(" ._")
+
+    if len(clean_value) > 80:
+        clean_value = clean_value[:80].strip(" ._")
+
+    return clean_value or "Special Slot"
+
+
+def get_configured_export_separate_special_slots():
+    try:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+    except Exception:
+        config = {}
+
+    return (config.get("export_separate_special_slots") or "0").strip() == "1"
+
 def sample_image_region_rgb(image, x1, y1, x2, y2):
     width, height = image.size
 
@@ -6743,6 +6773,125 @@ def apply_overlay_with_cutouts(image, box, radius_px, corners, fill_rgb, cutouts
 
     return image
 
+def load_image_export_label_font(template_config, fallback_font_size, allow_template_point_size=True):
+    template_config = template_config or {}
+
+    requested_family = str(template_config.get("text_font_family") or "").strip()
+    requested_bold = bool(template_config.get("text_font_bold", True))
+    requested_point_size = template_config.get("text_font_size_pt")
+
+    font_size = int(fallback_font_size or 12)
+
+    if allow_template_point_size and requested_point_size not in {None, ""}:
+        try:
+            # Image export card images are effectively treated like 300 DPI print assets.
+            # 4 pt ≈ 17 px at 300 DPI.
+            font_size = max(1, int(round(float(requested_point_size) * 300.0 / 72.0)))
+        except (TypeError, ValueError):
+            pass
+
+    candidate_font_names = []
+
+    if requested_family:
+        clean_family = requested_family.strip()
+
+        if clean_family.lower() == "gotham":
+            if requested_bold:
+                candidate_font_names.extend([
+                    "Gotham-Bold.ttf",
+                    "Gotham Bold.ttf",
+                    "GothamBold.ttf",
+                    "Gotham-Bold.otf",
+                    "Gotham Bold.otf",
+                    "GothamBold.otf",
+                ])
+            else:
+                candidate_font_names.extend([
+                    "Gotham.ttf",
+                    "Gotham-Book.ttf",
+                    "Gotham Book.ttf",
+                    "GothamBook.ttf",
+                    "Gotham.otf",
+                    "Gotham-Book.otf",
+                    "Gotham Book.otf",
+                    "GothamBook.otf",
+                ])
+
+        if clean_family.lower() in {"plantin mt pro", "plantin"}:
+            if requested_bold:
+                candidate_font_names.extend([
+                    "PlantinMTPro-Bold.otf",
+                    "PlantinMTProBold.otf",
+                    "Plantin MT Pro Bold.otf",
+                    "PlantinMTPro-Bold.ttf",
+                    "PlantinMTProBold.ttf",
+                    "Plantin MT Pro Bold.ttf",
+                ])
+            else:
+                candidate_font_names.extend([
+                    "PlantinMTPro-Regular.otf",
+                    "PlantinMTPro-Roman.otf",
+                    "PlantinMTProRg.otf",
+                    "PlantinMTPro.otf",
+                    "Plantin MT Pro.otf",
+                    "PlantinMTPro-Regular.ttf",
+                    "PlantinMTPro-Roman.ttf",
+                    "PlantinMTProRg.ttf",
+                    "PlantinMTPro.ttf",
+                    "Plantin MT Pro.ttf",
+                ])
+
+        candidate_font_names.extend([
+            f"{clean_family}.ttf",
+            f"{clean_family}.otf",
+        ])
+
+    if requested_bold:
+        candidate_font_names.extend([
+            "arialbd.ttf",
+            "Arial Bold.ttf",
+            "DejaVuSans-Bold.ttf",
+        ])
+    else:
+        candidate_font_names.extend([
+            "arial.ttf",
+            "Arial.ttf",
+            "DejaVuSans.ttf",
+        ])
+
+    checked_paths = []
+
+    for font_name in candidate_font_names:
+        font_name = str(font_name or "").strip()
+        if not font_name:
+            continue
+
+        candidate_paths = [font_name]
+
+        try:
+            candidate_paths.append(os.path.join(app.static_folder, "fonts", font_name))
+        except Exception:
+            pass
+
+        if os.name == "nt":
+            candidate_paths.extend([
+                os.path.join("C:\\Windows\\Fonts", font_name),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts", font_name),
+            ])
+
+        for candidate_path in candidate_paths:
+            if not candidate_path or candidate_path in checked_paths:
+                continue
+
+            checked_paths.append(candidate_path)
+
+            try:
+                return ImageFont.truetype(candidate_path, font_size)
+            except Exception:
+                continue
+
+    return ImageFont.load_default()
+
 def get_readable_overlay_text_rgb(background_rgb, template_config=None):
     template_config = template_config or {}
 
@@ -6813,16 +6962,19 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
         template_config=template_config,
     )
 
-    source_image = apply_overlay_with_cutouts(
-        image=source_image,
-        box=(overlay_left, overlay_top, overlay_right, overlay_bottom),
-        radius_px=overlay_radius_px,
-        corners=template_config.get("overlay_round_corners") or {},
-        fill_rgb=overlay_fill_rgb,
-        cutouts=template_config.get("overlay_cutouts") or [],
-        image_width=image_width,
-        image_height=image_height,
-    )
+    overlay_box_enabled = bool(template_config.get("overlay_box_enabled", True))
+
+    if overlay_box_enabled:
+        source_image = apply_overlay_with_cutouts(
+            image=source_image,
+            box=(overlay_left, overlay_top, overlay_right, overlay_bottom),
+            radius_px=overlay_radius_px,
+            corners=template_config.get("overlay_round_corners") or {},
+            fill_rgb=overlay_fill_rgb,
+            cutouts=template_config.get("overlay_cutouts") or [],
+            image_width=image_width,
+            image_height=image_height,
+        )
 
     draw = ImageDraw.Draw(source_image)
 
@@ -6834,16 +6986,20 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     max_text_width = max(20, text_right - text_left)
     max_text_height = max(14, text_bottom - text_top)
 
+    requested_point_size = template_config.get("text_font_size_pt")
+    has_fixed_template_font_size = requested_point_size not in {None, ""}
+
     font_size = max(12, int(max_text_height * 0.82))
     font = None
     text_width = 0
     text_height = 0
 
-    while font_size >= 10:
-        try:
-            font = ImageFont.truetype("arialbd.ttf", font_size)
-        except Exception:
-            font = ImageFont.load_default()
+    if has_fixed_template_font_size:
+        font = load_image_export_label_font(
+            template_config,
+            fallback_font_size=font_size,
+            allow_template_point_size=True,
+        )
 
         try:
             text_bbox = draw.textbbox((0, 0), label_text, font=font)
@@ -6853,10 +7009,26 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
             text_width = len(label_text) * 8
             text_height = 14
 
-        if text_width <= max_text_width and text_height <= max_text_height:
-            break
+    else:
+        while font_size >= 10:
+            font = load_image_export_label_font(
+                template_config,
+                fallback_font_size=font_size,
+                allow_template_point_size=False,
+            )
 
-        font_size -= 1
+            try:
+                text_bbox = draw.textbbox((0, 0), label_text, font=font)
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+            except Exception:
+                text_width = len(label_text) * 8
+                text_height = 14
+
+            if text_width <= max_text_width and text_height <= max_text_height:
+                break
+
+            font_size -= 1
 
     text_align = (template_config.get("text_align") or "left").strip().lower()
 
@@ -6868,6 +7040,18 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
         text_x = text_left
 
     text_y = text_top + max(0, (max_text_height - text_height) // 2)
+
+    text_shadow_enabled = bool(template_config.get("text_shadow_enabled", not overlay_box_enabled))
+
+    if text_shadow_enabled:
+        shadow_offset_px = max(1, int(round(min(image_width, image_height) * 0.0015)))
+
+        draw.text(
+            (text_x + shadow_offset_px, text_y + shadow_offset_px),
+            label_text,
+            fill=tuple(template_config.get("text_shadow_rgb") or (0, 0, 0)),
+            font=font,
+        )
 
     draw.text(
         (text_x, text_y),
@@ -6886,6 +7070,7 @@ def build_export_card_image(
     template_key_override=None,
     add_export_bleed=False,
     use_bleed_template=False,
+    skip_card_corner_radius=False,
 ):
     with Image.open(source_image_path) as source_image:
         image = source_image.convert("RGB")
@@ -6960,6 +7145,7 @@ def build_export_card_image(
         # so do not apply a second rounded mask to the expanded bleed canvas.
         if (
             not add_export_bleed
+            and not skip_card_corner_radius
             and (template_config.get("card_corner_mode") or "").strip().lower() == "rounded_mask"
         ):
             radius_px = max(
@@ -6992,6 +7178,7 @@ def build_chaos_template_rendered_card_image(
     template_key_override=None,
     add_export_bleed=False,
     use_bleed_template=False,
+    skip_card_corner_radius=False,
 ):
     """
     Shared Chaos Draft card rendering path.
@@ -7017,6 +7204,7 @@ def build_chaos_template_rendered_card_image(
         template_key_override=template_key_override,
         add_export_bleed=add_export_bleed,
         use_bleed_template=use_bleed_template,
+        skip_card_corner_radius=skip_card_corner_radius,
     )
 
     return output_image_path
@@ -7217,6 +7405,12 @@ def build_custom_draft_set_image_export_rows(set_code):
     pack_tracking_code = clean_set_code.replace("^", "CUSTOM")
     pack_display_name = f"{set_name} ({clean_set_code})"
 
+    special_category_labels = {
+        1: custom_set["special_category_1_name"] or "Special Slot Category 1",
+        2: custom_set["special_category_2_name"] or "Special Slot Category 2",
+        3: custom_set["special_category_3_name"] or "Special Slot Category 3",
+    }
+
     export_rows = []
 
     for card_index, card in enumerate(custom_set_cards, start=1):
@@ -7238,17 +7432,23 @@ def build_custom_draft_set_image_export_rows(set_code):
             "type_line": card["type_line"] or "",
             "scryfall_id": "",
             "collector_number": card["collector_number"] or "",
+            "special_category_index": int(card["special_category_index"] or 0),
+            "special_category_name": special_category_labels.get(
+                int(card["special_category_index"] or 0),
+                "",
+            ),
         })
 
     return export_rows
 
-def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
+def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, separate_special_slots=False):
     if export_rows is None:
         export_rows = get_tracked_pack_card_export_rows(tracked_pack_ids or [])
 
     if not export_rows:
         raise ValueError("No selected pack cards were available for image export.")
 
+    separate_special_slots = bool(separate_special_slots)
     export_add_bleed = get_configured_export_add_bleed()
     export_info = get_next_image_export_folder()
     export_folder = export_info["folder_path"]
@@ -7292,6 +7492,8 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
 
     regular_xml_cards = []
     foil_xml_cards = []
+    special_regular_xml_cards_by_group = {}
+    special_foil_xml_cards_by_group = {}
     export_warnings = []
 
     exported_filename_counts = {}
@@ -7329,8 +7531,21 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
             front_page_entry = page_entries[0]
 
         is_foil = int(export_row.get("sheet_is_foil") or 0) == 1
-        finish_folder_name = "Foil" if is_foil else "Regular"
-        finish_output_dir = images_foil_dir if is_foil else images_regular_dir
+
+        special_category_name = ""
+        special_category_folder_name = ""
+
+        if separate_special_slots:
+            special_category_name = str(export_row.get("special_category_name") or "").strip()
+            special_category_folder_name = make_image_export_folder_safe(special_category_name) if special_category_name else ""
+
+        if special_category_folder_name:
+            finish_folder_name = special_category_folder_name
+            finish_output_dir = os.path.join(images_dir, special_category_folder_name)
+            os.makedirs(finish_output_dir, exist_ok=True)
+        else:
+            finish_folder_name = "Foil" if is_foil else "Regular"
+            finish_output_dir = images_foil_dir if is_foil else images_regular_dir
 
         friendly_card_name = make_image_export_id_safe(export_row["card_name"])
         export_id = (
@@ -7392,6 +7607,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
                 template_key_override=front_image_source.get("export_frame_template") or "auto",
                 add_export_bleed=front_bleed_source["add_export_bleed"],
                 use_bleed_template=front_bleed_source["use_bleed_template"],
+                skip_card_corner_radius=front_bleed_source["used_fullbleed_source"],
             )
         except Exception as exc:
             write_debug_log(
@@ -7441,6 +7657,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
                         template_key_override=back_image_source.get("export_frame_template") or "auto",
                         add_export_bleed=back_bleed_source["add_export_bleed"],
                         use_bleed_template=back_bleed_source["use_bleed_template"],
+                        skip_card_corner_radius=back_bleed_source["used_fullbleed_source"],
                     )
                     back_relative_xml_path = f"\\Images\\{finish_folder_name}\\{back_filename}"
                 except Exception as exc:
@@ -7468,7 +7685,18 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
             "pack_tracking_code": export_row["pack_tracking_code"],
         }
 
-        if is_foil:
+        if special_category_folder_name:
+            target_lookup = special_foil_xml_cards_by_group if is_foil else special_regular_xml_cards_by_group
+
+            if special_category_folder_name not in target_lookup:
+                target_lookup[special_category_folder_name] = {
+                    "display_name": special_category_name,
+                    "cards": [],
+                }
+
+            target_lookup[special_category_folder_name]["cards"].append(xml_entry)
+
+        elif is_foil:
             foil_xml_cards.append(xml_entry)
         else:
             regular_xml_cards.append(xml_entry)
@@ -7532,18 +7760,53 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None):
         foil_value=True,
     )
 
+    for folder_name, group_data in special_regular_xml_cards_by_group.items():
+        special_xml_path = os.path.join(export_folder, f"{folder_name}.xml")
+
+        write_card_image_export_xml(
+            special_xml_path,
+            group_data["cards"],
+            foil_value=False,
+        )
+
+    for folder_name, group_data in special_foil_xml_cards_by_group.items():
+        special_foil_xml_path = os.path.join(export_folder, f"{folder_name} Foil.xml")
+
+        write_card_image_export_xml(
+            special_foil_xml_path,
+            group_data["cards"],
+            foil_value=True,
+        )
+
     zip_filename = f"{export_folder_name}.zip"
     zip_path = os.path.join(EXPORT_ROOT_DIR, zip_filename)
 
     zip_image_export_folder(export_folder, zip_path)
 
+    special_regular_count = sum(
+        len(group_data["cards"])
+        for group_data in special_regular_xml_cards_by_group.values()
+    )
+
+    special_foil_count = sum(
+        len(group_data["cards"])
+        for group_data in special_foil_xml_cards_by_group.values()
+    )
+
     return {
         "export_folder": export_folder,
         "zip_path": zip_path,
         "zip_filename": zip_filename,
-        "regular_count": len(regular_xml_cards),
-        "foil_count": len(foil_xml_cards),
-        "total_count": len(regular_xml_cards) + len(foil_xml_cards),
+        "regular_count": len(regular_xml_cards) + special_regular_count,
+        "foil_count": len(foil_xml_cards) + special_foil_count,
+        "special_regular_count": special_regular_count,
+        "special_foil_count": special_foil_count,
+        "total_count": (
+            len(regular_xml_cards)
+            + len(foil_xml_cards)
+            + special_regular_count
+            + special_foil_count
+        ),
     }
 
 def get_scryfall_bulk_default_cards_download_uri():
@@ -11540,7 +11803,10 @@ def custom_draft_set_export_zip(set_code):
 
     try:
         export_rows = build_custom_draft_set_image_export_rows(clean_set_code)
-        export_result = build_chaos_card_image_export_zip(export_rows=export_rows)
+        export_result = build_chaos_card_image_export_zip(
+            export_rows=export_rows,
+            separate_special_slots=(config.get("export_separate_special_slots") or "0").strip() == "1",
+        )
     except Exception as exc:
         write_debug_log(f"CUSTOM SET IMAGE EXPORT ERROR | set_code={clean_set_code} | error={str(exc)}")
         return str(exc), 400
@@ -12405,6 +12671,17 @@ def custom_draft_set_cards_search(set_code):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     search_text = (request.args.get("q") or "").strip()
 
+    try:
+        result_limit = int(request.args.get("limit") or 999)
+    except (TypeError, ValueError):
+        result_limit = 999
+
+    if result_limit < 1:
+        result_limit = 1
+
+    if result_limit > 9999:
+        result_limit = 9999
+
     if not get_custom_draft_set(clean_set_code):
         return jsonify({
             "ok": False,
@@ -12415,9 +12692,9 @@ def custom_draft_set_cards_search(set_code):
     rows = search_chaos_cards_for_custom_draft_set(
         clean_set_code,
         search_text,
-        limit=999,
-        rarity_filter=request.args.get("rarity") or "",
-        color_identity_filter=request.args.get("color_identity") or "",
+        limit=result_limit,
+        rarity_filter=request.args.getlist("rarity") or request.args.get("rarity") or "",
+        color_identity_filter=request.args.getlist("color_identity") or request.args.get("color_identity") or "",
         mana_operator=request.args.get("mana_operator") or "",
         mana_value=request.args.get("mana_value") or "",
         type_filter=request.args.get("type") or "",
@@ -12425,6 +12702,7 @@ def custom_draft_set_cards_search(set_code):
         year_start=request.args.get("year_start") or "",
         year_end=request.args.get("year_end") or "",
         sort_option=request.args.get("sort") or "name_asc",
+        digital_filter=request.args.get("digital") or "",
     )
 
     results = [

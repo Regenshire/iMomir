@@ -750,12 +750,15 @@
             }
 
             const latestPayload = await loadAlternateSources();
+
             refreshTrackedCardImages(
                 currentAlternateCardUuid,
                 "alternate-frame-template",
                 getAlternateStateFromPayload(latestPayload)
             );
-            showAlternateMessage("Card frame template updated.", false);
+
+            closeAlternateModal();
+            showUiMessage(payload.message || "Card frame template updated.", false);
         } catch (error) {
             showAlternateMessage(error.message || String(error), true);
         }

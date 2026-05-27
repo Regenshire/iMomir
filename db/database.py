@@ -2110,6 +2110,53 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
     conn.close()
     return rows
 
+def get_custom_draft_digital_set_sql(
+    set_code_sql="cc.set_code",
+    set_name_sql="s.set_name",
+    set_type_sql="s.set_type",
+    card_name_sql="cc.card_name",
+):
+    digital_set_codes = [
+        "AKR",
+        "ANA",
+        "ANB",
+        "EA1",
+        "HBG",
+        "J21",
+        "KLR",
+        "MED",
+        "ME2",
+        "ME3",
+        "ME4",
+        "PRM",
+        "PZ1",
+        "PZ2",
+        "SIR",
+        "SIS",
+        "TPR",
+        "VMA",
+        "Y22",
+        "Y23",
+        "Y24",
+        "Y25",
+        "Y26",
+    ]
+
+    digital_set_code_sql = ", ".join("'" + set_code + "'" for set_code in digital_set_codes)
+
+    return f"""
+        (
+            UPPER(COALESCE({set_code_sql}, '')) IN ({digital_set_code_sql})
+            OR UPPER(COALESCE({set_code_sql}, '')) LIKE 'Y%'
+            OR LOWER(COALESCE({card_name_sql}, '')) LIKE 'a-%'
+            OR LOWER(COALESCE({set_type_sql}, '')) IN ('alchemy')
+            OR LOWER(COALESCE({set_name_sql}, '')) LIKE '%magic online%'
+            OR LOWER(COALESCE({set_name_sql}, '')) LIKE '%mtg arena%'
+            OR LOWER(COALESCE({set_name_sql}, '')) LIKE '%arena%'
+            OR LOWER(COALESCE({set_name_sql}, '')) LIKE '%alchemy%'
+        )
+    """
+
 def search_chaos_cards_for_custom_draft_set(
     set_code,
     search_text="",
@@ -2123,15 +2170,65 @@ def search_chaos_cards_for_custom_draft_set(
     year_start=None,
     year_end=None,
     sort_option="name_asc",
+    digital_filter="",
 ):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_search_text = str(search_text or "").strip().lower()
-    clean_rarity_filter = str(rarity_filter or "").strip().lower()
-    clean_color_identity_filter = str(color_identity_filter or "").strip().lower()
+
+    valid_rarity_values = {"common", "uncommon", "rare", "mythic"}
+
+    if isinstance(rarity_filter, (list, tuple, set)):
+        raw_rarity_values = rarity_filter
+    else:
+        raw_rarity_values = str(rarity_filter or "").replace("|", ",").split(",")
+
+    clean_rarity_filters = []
+
+    for raw_rarity_value in raw_rarity_values:
+        clean_rarity_value = str(raw_rarity_value or "").strip().lower()
+
+        if clean_rarity_value in valid_rarity_values and clean_rarity_value not in clean_rarity_filters:
+            clean_rarity_filters.append(clean_rarity_value)
+
+    clean_rarity_filter = ",".join(clean_rarity_filters)
+    valid_color_identity_values = {
+        "colorless",
+        "land",
+        "w",
+        "u",
+        "b",
+        "r",
+        "g",
+        "multi_selected",
+        "multi_has_selected",
+        "multi_any",
+    }
+
+    if isinstance(color_identity_filter, (list, tuple, set)):
+        raw_color_identity_values = color_identity_filter
+    else:
+        raw_color_identity_values = str(color_identity_filter or "").replace("|", ",").split(",")
+
+    clean_color_identity_filters = []
+
+    for raw_color_identity_value in raw_color_identity_values:
+        clean_color_identity_value = str(raw_color_identity_value or "").strip().lower()
+
+        if (
+            clean_color_identity_value in valid_color_identity_values
+            and clean_color_identity_value not in clean_color_identity_filters
+        ):
+            clean_color_identity_filters.append(clean_color_identity_value)
+
+    clean_color_identity_filter = ",".join(clean_color_identity_filters)
     clean_mana_operator = str(mana_operator or "").strip()
     clean_type_filter = str(type_filter or "").strip().lower()
     clean_set_code_filter = str(set_code_filter or "").strip().upper()
     clean_sort_option = str(sort_option or "name_asc").strip().lower()
+    clean_digital_filter = str(digital_filter or "").strip().lower()
+
+    if clean_digital_filter not in {"exclude", "only"}:
+        clean_digital_filter = ""
 
     try:
         parsed_limit = int(limit)
@@ -2141,8 +2238,8 @@ def search_chaos_cards_for_custom_draft_set(
     if parsed_limit < 1:
         parsed_limit = 1
 
-    if parsed_limit > 999:
-        parsed_limit = 999
+    if parsed_limit > 9999:
+        parsed_limit = 9999
 
     parsed_mana_value = None
     if mana_value not in {None, ""}:
@@ -2174,6 +2271,7 @@ def search_chaos_cards_for_custom_draft_set(
         clean_set_code_filter,
         parsed_year_start is not None,
         parsed_year_end is not None,
+        clean_digital_filter == "only",
     ])
 
     if not has_any_filter:
@@ -2237,70 +2335,111 @@ def search_chaos_cards_for_custom_draft_set(
         )
         params.extend([like_value, normalized_like_value, like_value, like_value, like_value, like_value])
 
-    if clean_rarity_filter:
-        where_clauses.append("LOWER(COALESCE(cc.rarity, '')) = ?")
-        params.append(clean_rarity_filter)
+    if clean_rarity_filters:
+        rarity_placeholders = ",".join(["?"] * len(clean_rarity_filters))
+        where_clauses.append(f"LOWER(COALESCE(cc.rarity, '')) IN ({rarity_placeholders})")
+        params.extend(clean_rarity_filters)
 
     color_json_sql = "UPPER(COALESCE(cc.color_identity_json, '[]'))"
     type_line_sql = "LOWER(COALESCE(cc.type_line, ''))"
 
-    if clean_color_identity_filter == "colorless":
-        where_clauses.append(f"{color_json_sql} = '[]'")
-        where_clauses.append(f"{type_line_sql} NOT LIKE '%land%'")
+    color_count_sql = f"""
+        (
+            (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
+            (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
+            (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
+            (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
+            (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
+        )
+    """
 
-    elif clean_color_identity_filter == "land":
-        where_clauses.append(f"{type_line_sql} LIKE '%land%'")
+    color_filter_clauses = []
+    selected_color_symbols = [
+        color_value.upper()
+        for color_value in clean_color_identity_filters
+        if color_value in {"w", "u", "b", "r", "g"}
+    ]
 
-    elif clean_color_identity_filter in {"w", "u", "b", "r", "g"}:
-        color_symbol = clean_color_identity_filter.upper()
-
-        where_clauses.append(f"{color_json_sql} LIKE ?")
-        params.append(f'%"{color_symbol}"%')
-
-    elif clean_color_identity_filter == "multi":
-        where_clauses.append(
-            f"""
-            (
-                (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
-                (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
-                (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
-                (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
-                (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
-            ) >= 2
-            """
+    if "colorless" in clean_color_identity_filters:
+        color_filter_clauses.append(
+            f"({color_json_sql} = '[]' AND {type_line_sql} NOT LIKE '%land%')"
         )
 
-    elif clean_color_identity_filter == "colorless_multi":
-        where_clauses.append(
+    if "land" in clean_color_identity_filters:
+        color_filter_clauses.append(f"({type_line_sql} LIKE '%land%')")
+
+    # Single selected colors should mean mono-color only.
+    if selected_color_symbols:
+        mono_color_symbol_clauses = []
+
+        for color_symbol in selected_color_symbols:
+            mono_color_symbol_clauses.append(f"({color_json_sql} LIKE ?)")
+            params.append(f'%"{color_symbol}"%')
+
+        color_filter_clauses.append(
             f"""
             (
-                {color_json_sql} = '[]'
-                OR (
-                    (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
-                ) >= 2
+                {color_count_sql} = 1
+                AND (
+                    {" OR ".join(mono_color_symbol_clauses)}
+                )
             )
             """
         )
 
-    elif clean_color_identity_filter == "colorless_multi_land":
-        where_clauses.append(
-            f"""
-            (
-                {color_json_sql} = '[]'
-                OR {type_line_sql} LIKE '%land%'
-                OR (
-                    (CASE WHEN {color_json_sql} LIKE '%"W"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"U"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"B"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"R"%' THEN 1 ELSE 0 END) +
-                    (CASE WHEN {color_json_sql} LIKE '%"G"%' THEN 1 ELSE 0 END)
-                ) >= 2
+    if "multi_any" in clean_color_identity_filters:
+        color_filter_clauses.append(f"({color_count_sql} >= 2)")
+
+    if "multi_has_selected" in clean_color_identity_filters:
+        if selected_color_symbols:
+            multi_has_selected_clauses = []
+
+            for color_symbol in selected_color_symbols:
+                multi_has_selected_clauses.append(f"({color_json_sql} LIKE ?)")
+                params.append(f'%"{color_symbol}"%')
+
+            color_filter_clauses.append(
+                f"""
+                (
+                    {color_count_sql} >= 2
+                    AND (
+                        {" OR ".join(multi_has_selected_clauses)}
+                    )
+                )
+                """
             )
-            """
+        else:
+            color_filter_clauses.append(f"({color_count_sql} >= 2)")
+
+    if "multi_selected" in clean_color_identity_filters:
+        multi_selected_clauses = [
+            f"({color_count_sql} >= 2)",
+        ]
+
+        if selected_color_symbols:
+            # Must have at least one selected color.
+            has_selected_color_clauses = []
+
+            for color_symbol in selected_color_symbols:
+                has_selected_color_clauses.append(f"({color_json_sql} LIKE ?)")
+                params.append(f'%"{color_symbol}"%')
+
+            multi_selected_clauses.append(
+                "(" + " OR ".join(has_selected_color_clauses) + ")"
+            )
+
+            # Must not have any unselected color.
+            for color_symbol in {"W", "U", "B", "R", "G"} - set(selected_color_symbols):
+                multi_selected_clauses.append(f"({color_json_sql} NOT LIKE ?)")
+                params.append(f'%"{color_symbol}"%')
+
+        color_filter_clauses.append(
+            "(" + " AND ".join(multi_selected_clauses) + ")"
+        )
+
+    if color_filter_clauses:
+        where_clauses.append(
+            "(" + " OR ".join(color_filter_clauses) + ")"
         )
 
     if clean_mana_operator and parsed_mana_value is not None:
@@ -2332,9 +2471,30 @@ def search_chaos_cards_for_custom_draft_set(
         where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) >= ?")
         params.append(parsed_year_start)
 
-    if parsed_year_end is not None:
-        where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) <= ?")
-        params.append(parsed_year_end)
+    if clean_digital_filter:
+        digital_set_sql = get_custom_draft_digital_set_sql(
+            set_code_sql="cc.set_code",
+            set_name_sql="s.set_name",
+            set_type_sql="s.set_type",
+            card_name_sql="cc.card_name",
+        )
+
+        if clean_digital_filter == "exclude":
+            where_clauses.append(f"NOT {digital_set_sql}")
+            where_clauses.append(
+                """
+                UPPER(COALESCE(cc.set_code, '')) NOT IN (
+                    'UGL',
+                    'UNH',
+                    'UST',
+                    'UND',
+                    'UNF',
+                    'SUNF'
+                )
+                """
+            )
+        elif clean_digital_filter == "only":
+            where_clauses.append(digital_set_sql)
 
     where_sql = ""
     if where_clauses:
@@ -2485,8 +2645,8 @@ def search_chaos_cards_for_custom_draft_set(
            AND cdsc.set_code = ?
         {where_sql}
         ORDER BY
+            already_in_set DESC,
             {search_rank_sql}
-            already_in_set ASC,
             {sort_sql}
         LIMIT ?
         """,
@@ -2727,7 +2887,7 @@ def search_chaos_cards_for_custom_draft_import_list(set_code, import_items, limi
             {base_select_sql}
             {where_sql}
             ORDER BY
-                already_in_set ASC,
+                already_in_set DESC,
                 CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) DESC,
                 cc.set_code ASC,
                 CAST(cc.collector_number AS INTEGER) ASC,

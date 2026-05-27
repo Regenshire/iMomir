@@ -631,6 +631,15 @@
                             {% if config.get("export_add_bleed", "0") == "1" %}checked{% endif %}
                         >
                     </label>
+                    
+                    <label class="toggle-row settings-field">
+                        <span>Export - Separate Special Slots</span>
+                        <input
+                            type="checkbox"
+                            name="export_separate_special_slots"
+                            {% if config.get("export_separate_special_slots", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
 
                     <label class="toggle-row settings-field">
                         <span>Print Pack Tracking Code</span>
