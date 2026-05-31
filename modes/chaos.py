@@ -1485,6 +1485,63 @@ def build_chaos_spin_result(static_folder, write_debug_log_fn=None):
 
     return spin_result
 
+def get_custom_pack_normalized_card_name_sql(column_sql):
+    return f"""
+        LOWER(
+            REPLACE(
+                REPLACE(
+                    REPLACE(
+                        REPLACE(
+                            REPLACE(
+                                REPLACE(
+                                    REPLACE(
+                                        REPLACE(
+                                            REPLACE(
+                                                REPLACE(
+                                                    REPLACE(
+                                                        COALESCE({column_sql}, ''),
+                                                        '…', ''
+                                                    ),
+                                                    '.', ''
+                                                ),
+                                                ' ', ''
+                                            ),
+                                            '’', ''
+                                        ),
+                                        '''', ''
+                                    ),
+                                    '`', ''
+                                ),
+                                '´', ''
+                            ),
+                            '‘', ''
+                        ),
+                        'ʼ', ''
+                    ),
+                    '-', ''
+                ),
+                ',', ''
+            )
+        )
+    """
+
+def normalize_custom_pack_card_name_for_lookup(card_name):
+    clean_name = str(card_name or "").strip().lower()
+
+    clean_name = clean_name.replace("…", "")
+    clean_name = clean_name.replace(".", "")
+    clean_name = clean_name.replace(" ", "")
+    clean_name = clean_name.replace("’", "")
+    clean_name = clean_name.replace("'", "")
+    clean_name = clean_name.replace("`", "")
+    clean_name = clean_name.replace("´", "")
+    clean_name = clean_name.replace("‘", "")
+    clean_name = clean_name.replace("ʼ", "")
+    clean_name = clean_name.replace("-", "")
+    clean_name = clean_name.replace(",", "")
+
+    return clean_name
+
 def parse_custom_pack_decklist_text(decklist_text):
     parsed_cards = []
 
@@ -1583,9 +1640,28 @@ def resolve_custom_pack_card_by_name(
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    normalized_clean_name = normalize_custom_pack_card_name_for_lookup(clean_name)
+    normalized_card_name_sql = get_custom_pack_normalized_card_name_sql("card_name")
+
     if clean_requested_set_code and clean_collector_number:
+        collector_number_conditions = [
+            "LOWER(COALESCE(collector_number, '')) = LOWER(?)"
+        ]
+        collector_number_params = [clean_collector_number]
+
+        if clean_collector_number.isdigit():
+            collector_number_conditions.append(
+                """
+                (
+                    COALESCE(collector_number, '') GLOB '[0-9]*'
+                    AND CAST(COALESCE(collector_number, '0') AS INTEGER) = CAST(? AS INTEGER)
+                )
+                """
+            )
+            collector_number_params.append(clean_collector_number)
+
         cursor.execute(
-            """
+            f"""
             SELECT
                 card_uuid,
                 set_code,
@@ -1597,17 +1673,26 @@ def resolve_custom_pack_card_by_name(
                 collector_number
             FROM chaos_cards
             WHERE set_code = ?
-              AND LOWER(COALESCE(collector_number, '')) = LOWER(?)
+              AND (
+                    {" OR ".join(collector_number_conditions)}
+              )
             ORDER BY
-                CASE WHEN LOWER(card_name) = LOWER(?) THEN 0 ELSE 1 END,
+                CASE
+                    WHEN LOWER(card_name) = LOWER(?) THEN 0
+                    WHEN {normalized_card_name_sql} = ? THEN 1
+                    ELSE 2
+                END,
                 is_booster DESC,
                 collector_number ASC
             LIMIT 1
             """,
             (
-                clean_requested_set_code,
-                clean_collector_number,
-                clean_name,
+                [clean_requested_set_code]
+                + collector_number_params
+                + [
+                    clean_name,
+                    normalized_clean_name,
+                ]
             ),
         )
 
@@ -1618,7 +1703,7 @@ def resolve_custom_pack_card_by_name(
 
     if clean_requested_set_code:
         cursor.execute(
-            """
+            f"""
             SELECT
                 card_uuid,
                 set_code,
@@ -1630,13 +1715,17 @@ def resolve_custom_pack_card_by_name(
                 collector_number
             FROM chaos_cards
             WHERE set_code = ?
-              AND LOWER(card_name) = LOWER(?)
+              AND (
+                    LOWER(card_name) = LOWER(?)
+                    OR {normalized_card_name_sql} = ?
+              )
             ORDER BY is_booster DESC, collector_number ASC
             LIMIT 1
             """,
             (
                 clean_requested_set_code,
                 clean_name,
+                normalized_clean_name,
             ),
         )
 
@@ -1647,7 +1736,7 @@ def resolve_custom_pack_card_by_name(
 
     if clean_preferred_set_code:
         cursor.execute(
-            """
+            f"""
             SELECT
                 card_uuid,
                 set_code,
@@ -1659,13 +1748,17 @@ def resolve_custom_pack_card_by_name(
                 collector_number
             FROM chaos_cards
             WHERE set_code = ?
-              AND LOWER(card_name) = LOWER(?)
+              AND (
+                    LOWER(card_name) = LOWER(?)
+                    OR {normalized_card_name_sql} = ?
+              )
             ORDER BY is_booster DESC, collector_number ASC
             LIMIT 1
             """,
             (
                 clean_preferred_set_code,
                 clean_name,
+                normalized_clean_name,
             ),
         )
 
@@ -1675,7 +1768,7 @@ def resolve_custom_pack_card_by_name(
             return row
 
     cursor.execute(
-        """
+        f"""
         SELECT
             card_uuid,
             set_code,
@@ -1687,10 +1780,14 @@ def resolve_custom_pack_card_by_name(
             collector_number
         FROM chaos_cards
         WHERE LOWER(card_name) = LOWER(?)
+           OR {normalized_card_name_sql} = ?
         ORDER BY set_code ASC, is_booster DESC, collector_number ASC
         LIMIT 1
         """,
-        (clean_name,),
+        (
+            clean_name,
+            normalized_clean_name,
+        ),
     )
 
     row = cursor.fetchone()
@@ -5258,6 +5355,7 @@ def get_tracked_pack_state_by_id(tracked_pack_id):
     cursor.execute(
         """
         SELECT
+            tracked_pack_card_id,
             card_order,
             card_uuid,
             card_name,
@@ -5287,6 +5385,7 @@ def get_tracked_pack_state_by_id(tracked_pack_id):
 
     for card_row in card_rows:
         cards.append({
+            "tracked_pack_card_id": int(card_row["tracked_pack_card_id"]),
             "card_uuid": card_row["card_uuid"],
             "card_name": card_row["card_name"],
             "set_code": card_row["set_code"],

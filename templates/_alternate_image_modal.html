@@ -202,6 +202,13 @@
                             id="alternateImageRemoveBleed"
                         >
                     </label>
+                    <label class="toggle-row settings-field hidden" id="alternateImageFoilRow">
+                        <span>Foil</span>
+                        <input
+                            type="checkbox"
+                            id="alternateImageFoil"
+                        >
+                    </label>
                 </div>
 
                 <div class="config-button-row" style="margin-top: 1rem;">
@@ -241,6 +248,8 @@
     const alternateLocalPathInput = document.getElementById("alternateImageLocalPath");
     const alternateNotesInput = document.getElementById("alternateImageNotes");
     const alternateRemoveBleedInput = document.getElementById("alternateImageRemoveBleed");
+    const alternateFoilRow = document.getElementById("alternateImageFoilRow");
+    const alternateFoilInput = document.getElementById("alternateImageFoil");
 
     let currentActiveAlternateSourceId = null;
 
@@ -253,6 +262,7 @@
     const alternateLocalFileFields = Array.from(document.querySelectorAll(".alternate-source-field-local-file"));
 
     let currentAlternateCardUuid = "";
+    let currentFoilUpdateUrl = "";
 
     function getDomainFromUrl(rawUrl) {
         try {
@@ -385,8 +395,9 @@
             alternateSaveFrameButton.classList.toggle("hidden", !isLocked);
         }
 
-        if (alternateExportFrameTemplate) {
-            alternateExportFrameTemplate.disabled = false;
+        if (alternateFoilInput) {
+            alternateFoilInput.disabled = !currentFoilUpdateUrl;
+            alternateFoilInput.readOnly = false;
         }
     }
 
@@ -486,7 +497,68 @@
         refreshCardImages(cardUuid, alternateState);
     }
 
-    function openAlternateModal(cardUuid, cardName) {
+    function setAlternateFoilContext(options) {
+        const contextOptions = options || {};
+
+        currentFoilUpdateUrl = contextOptions.foilUpdateUrl || "";
+
+        if (alternateFoilRow) {
+            alternateFoilRow.classList.toggle("hidden", !currentFoilUpdateUrl);
+        }
+
+        if (alternateFoilInput) {
+            alternateFoilInput.checked = String(contextOptions.isFoil || "0") === "1";
+            alternateFoilInput.disabled = !currentFoilUpdateUrl;
+        }
+    }
+
+    async function saveAlternateFoilState() {
+        if (!alternateFoilInput || !currentFoilUpdateUrl) {
+            return;
+        }
+
+        const requestedFoilState = alternateFoilInput.checked;
+
+        alternateFoilInput.disabled = true;
+
+        try {
+            const response = await fetch(currentFoilUpdateUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    is_foil: requestedFoilState
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not update foil status.");
+            }
+
+            document.dispatchEvent(new CustomEvent("imomir:card-image-refreshed", {
+                detail: {
+                    cardUuid: currentAlternateCardUuid,
+                    imageUrl: "",
+                    hasAlternateSource: null,
+                    removeBleed: null,
+                    isFoil: requestedFoilState
+                }
+            }));
+
+            showAlternateMessage(payload.message || "Foil status updated.", false);
+        } catch (error) {
+            alternateFoilInput.checked = !requestedFoilState;
+            showAlternateMessage(error.message || String(error), true);
+        } finally {
+            alternateFoilInput.disabled = false;
+        }
+    }
+
+    function openAlternateModal(cardUuid, cardName, options) {
         currentAlternateCardUuid = cardUuid || "";
 
         if (!currentAlternateCardUuid || !alternateOverlay) {
@@ -515,6 +587,7 @@
 
         showAlternateMessage("", false);
         currentActiveAlternateSourceId = null;
+        setAlternateFoilContext(options);
         setAlternateInputLocked(false);
 
         updateAlternateSourceFieldVisibility();
@@ -533,6 +606,7 @@
         alternateOverlay.classList.add("hidden");
         alternateOverlay.setAttribute("aria-hidden", "true");
         currentAlternateCardUuid = "";
+        currentFoilUpdateUrl = "";
     }
 
     function renderAlternateSources(payload) {
@@ -764,15 +838,19 @@
         }
     }
 
-    if (alternateSaveFrameButton) {
-        alternateSaveFrameButton.addEventListener("click", saveAlternateFrameTemplate);
+    if (alternateFoilInput) {
+        alternateFoilInput.addEventListener("change", saveAlternateFoilState);
     }
 
     alternateButtons.forEach(function (button) {
         button.addEventListener("click", function () {
             openAlternateModal(
                 button.getAttribute("data-card-uuid") || "",
-                button.getAttribute("data-card-name") || ""
+                button.getAttribute("data-card-name") || "",
+                {
+                    foilUpdateUrl: button.getAttribute("data-foil-update-url") || "",
+                    isFoil: button.getAttribute("data-is-foil") || "0"
+                }
             );
         });
     });

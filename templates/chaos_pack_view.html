@@ -27,6 +27,8 @@
             class="chaos-pack-view-card"
             data-card-uuid="{{ card.card_uuid }}"
             data-card-name="{{ card.card_name }}"
+            data-tracked-pack-card-id="{{ card.tracked_pack_card_id }}"
+            data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
         >
             <div class="chaos-pack-view-image-wrap">
                 <img
@@ -45,6 +47,8 @@
                         class="alternate-image-gear alternate-image-button"
                         data-card-uuid="{{ card.card_uuid }}"
                         data-card-name="{{ card.card_name }}"
+                        data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
+                        data-foil-update-url="{{ url_for('campaign_chaos_pack_card_update_foil', tracked_pack_card_id=card.tracked_pack_card_id) }}"
                         title="Alternate image settings"
                         aria-label="Alternate image settings for {{ card.card_name }}"
                     >
@@ -62,8 +66,11 @@
                     {% endif %}
                 </div>
 
-                {% if card.special_badges %}
+                {% if card.sheet_is_foil %}
                 <div class="chaos-pack-view-badges">
+                    <span class="chaos-pack-view-badge">Foil</span>
+                </div>
+                {% endif %}
                     {% for badge in card.special_badges %}
                     <span class="chaos-pack-view-badge">{{ badge }}</span>
                     {% endfor %}

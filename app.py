@@ -162,7 +162,9 @@ from db.database import (
     search_chaos_cards_for_custom_draft_set,
     update_custom_draft_pack_layout,
     update_custom_draft_set_card_category,
+    update_custom_draft_set_card_foil,
     update_custom_draft_set_card_printing,
+    update_tracked_pack_card_foil,
     upsert_custom_draft_set,
 )
 
@@ -7427,7 +7429,7 @@ def build_custom_draft_set_image_export_rows(set_code):
             "card_uuid": (card["card_uuid"] or "").strip(),
             "card_name": card["card_name"] or "",
             "card_set_code": (card["card_set_code"] or "").strip().upper(),
-            "sheet_is_foil": 0,
+            "sheet_is_foil": int(card["sheet_is_foil"] or 0),
             "rarity": card["rarity"] or "",
             "type_line": card["type_line"] or "",
             "scryfall_id": "",
@@ -11087,6 +11089,24 @@ def chaos_draft_save_pack():
 
     return jsonify(result)
 
+@app.route("/campaign-chaos/pack-cards/<int:tracked_pack_card_id>/foil", methods=["POST"])
+def campaign_chaos_pack_card_update_foil(tracked_pack_card_id):
+    payload = request.get_json(silent=True) or {}
+    is_foil = bool(payload.get("is_foil"))
+
+    try:
+        result = update_tracked_pack_card_foil(
+            tracked_pack_card_id,
+            is_foil,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
 @app.route("/chaos/cards/<card_uuid>/alternate-sources", methods=["GET"])
 @app.route("/campaign-chaos/cards/<card_uuid>/alternate-sources", methods=["GET"])
 def campaign_chaos_card_alternate_sources(card_uuid):
@@ -12833,6 +12853,32 @@ def custom_draft_set_cards_bulk_delete(set_code):
         result = bulk_delete_custom_draft_set_cards(
             clean_set_code,
             custom_set_card_ids,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    return jsonify(result)
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/foil", methods=["POST"])
+def custom_draft_set_cards_update_foil(set_code, custom_set_card_id):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    payload = request.get_json(silent=True) or {}
+    is_foil = bool(payload.get("is_foil"))
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    try:
+        result = update_custom_draft_set_card_foil(
+            clean_set_code,
+            custom_set_card_id,
+            is_foil,
         )
     except Exception as exc:
         return jsonify({

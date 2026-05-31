@@ -104,6 +104,10 @@
             class="chaos-pack-view-card"
             data-card-uuid="{{ card.card_uuid }}"
             data-card-name="{{ card.card_name }}"
+            data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
+            {% if not pack.is_preview and card.tracked_pack_card_id %}
+            data-tracked-pack-card-id="{{ card.tracked_pack_card_id }}"
+            {% endif %}
         >
             <div class="chaos-pack-view-image-wrap">
                 <img
@@ -127,6 +131,10 @@
                         class="alternate-image-gear alternate-image-button"
                         data-card-uuid="{{ card.card_uuid }}"
                         data-card-name="{{ card.card_name }}"
+                        data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
+                        {% if not pack.is_preview and card.tracked_pack_card_id %}
+                        data-foil-update-url="{{ url_for('campaign_chaos_pack_card_update_foil', tracked_pack_card_id=card.tracked_pack_card_id) }}"
+                        {% endif %}
                         title="Alternate image settings"
                         aria-label="Alternate image settings for {{ card.card_name }}"
                     >
@@ -144,10 +152,14 @@
                     {% endif %}
                 </div>
 
-                {% if card.special_badges %}
+                {% if card.sheet_is_foil or card.special_badges %}
                 <div class="chaos-pack-view-badges">
+                    {% if card.sheet_is_foil and "Foil" not in card.special_badges %}
+                    <span class="chaos-pack-view-badge campaign-pack-foil-badge">Foil</span>
+                    {% endif %}
+
                     {% for badge in card.special_badges %}
-                    <span class="chaos-pack-view-badge">{{ badge }}</span>
+                    <span class="chaos-pack-view-badge {% if badge == 'Foil' %}campaign-pack-foil-badge{% endif %}">{{ badge }}</span>
                     {% endfor %}
                 </div>
                 {% endif %}
@@ -175,6 +187,61 @@
     const zoomBackdrop = document.getElementById("campaignPackZoomBackdrop");
     const zoomImage = document.getElementById("campaignPackZoomImage");
     const zoomableImages = Array.from(document.querySelectorAll(".campaign-pack-detail-zoomable"));
+
+    function updateCampaignPackFoilBadge(cardUuid, isFoil) {
+        if (!cardUuid) {
+            return;
+        }
+
+        const matchingCards = Array.from(document.querySelectorAll(
+            '.chaos-pack-view-card[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+        ));
+
+        matchingCards.forEach(function (cardElement) {
+            cardElement.dataset.isFoil = isFoil ? "1" : "0";
+
+            const gearButton = cardElement.querySelector(".alternate-image-button");
+            if (gearButton) {
+                gearButton.dataset.isFoil = isFoil ? "1" : "0";
+            }
+
+            let foilBadge = cardElement.querySelector(".campaign-pack-foil-badge");
+
+            if (isFoil) {
+                if (!foilBadge) {
+                    const badgeWrap = document.createElement("div");
+                    badgeWrap.className = "chaos-pack-view-badges campaign-pack-foil-badge";
+
+                    const badge = document.createElement("span");
+                    badge.className = "chaos-pack-view-badge";
+                    badge.textContent = "Foil";
+
+                    badgeWrap.appendChild(badge);
+
+                    const infoWrap = cardElement.querySelector(".chaos-pack-view-info");
+                    const existingBadges = infoWrap ? infoWrap.querySelector(".chaos-pack-view-badges") : null;
+
+                    if (infoWrap && existingBadges) {
+                        infoWrap.insertBefore(badgeWrap, existingBadges);
+                    } else if (infoWrap) {
+                        infoWrap.appendChild(badgeWrap);
+                    }
+                }
+            } else if (foilBadge) {
+                foilBadge.remove();
+            }
+        });
+    }
+
+    document.addEventListener("imomir:card-image-refreshed", function (event) {
+        const detail = event.detail || {};
+
+        if (detail.isFoil === null || detail.isFoil === undefined) {
+            return;
+        }
+
+        updateCampaignPackFoilBadge(detail.cardUuid || "", Boolean(detail.isFoil));
+    });
 
     if (zoomOverlay && zoomBackdrop && zoomImage && zoomableImages.length) {
         function openZoom(imageElement) {

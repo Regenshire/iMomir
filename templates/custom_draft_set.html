@@ -700,7 +700,7 @@
             <div id="customDraftSetStatsPanel" class="custom-draft-set-stats-panel hidden">
                 <div class="custom-draft-set-stats-summary">
                     <div>
-                        <span>Visible Cards</span>
+                        <span>Matching Cards</span>
                         <strong id="customDraftStatsVisibleCount">0</strong>
                     </div>
                     <div>
@@ -1069,6 +1069,7 @@
                         data-special-category="{{ card.special_category_index }}"
                         data-has-alternate-source="{{ 1 if card.has_alternate_source else 0 }}"
                         data-alternate-remove-bleed="{{ 1 if card.alternate_remove_bleed else 0 }}"
+                        data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
                         data-edhrec-rank="{{ card.edhrec_rank if card.edhrec_rank is not none else '' }}"
                         data-edhrec-saltiness="{{ card.edhrec_saltiness if card.edhrec_saltiness is not none else '' }}"
                         data-sort-price="{{ card.sort_price if card.sort_price is not none else '' }}"
@@ -1128,6 +1129,8 @@
                                     class="alternate-image-gear alternate-image-button {% if card.has_alternate_source %}custom-draft-alternate-image-active{% endif %}"
                                     data-card-uuid="{{ card.card_uuid }}"
                                     data-card-name="{{ card.card_name }}"
+                                    data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
+                                    data-foil-update-url="{{ url_for('custom_draft_set_cards_update_foil', set_code=custom_set.set_code, custom_set_card_id=card.custom_set_card_id) }}"
                                     title="Alternate image settings"
                                     aria-label="Alternate image settings for {{ card.card_name }}"
                                 >
@@ -1150,6 +1153,10 @@
                                     Color Identity: Loading
                                 </span>
                                 <span>{{ card.type_line or "unknown type" }}</span>
+
+                                {% if card.sheet_is_foil %}
+                                <span class="custom-draft-foil-meta-line">Foil</span>
+                                {% endif %}
                                 
                                 {% if card.has_alternate_source %}
                                 <span class="custom-draft-alternate-image-meta-line">
@@ -2936,6 +2943,7 @@
         row.dataset.collectorNumber = collectorNumber;
         row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
         row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
+        row.dataset.isFoil = row.dataset.isFoil || "0";
         row.dataset.edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
         row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
         row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
@@ -2970,6 +2978,7 @@
         if (alternateButton) {
             alternateButton.dataset.cardUuid = cardUuid;
             alternateButton.dataset.cardName = cardName;
+            alternateButton.dataset.isFoil = row.dataset.isFoil || "0";
             alternateButton.classList.toggle("custom-draft-alternate-image-active", hasAlternateSource);
             alternateButton.setAttribute("aria-label", "Alternate image settings for " + cardName);
         }
@@ -3006,6 +3015,13 @@
             const typeSpan = document.createElement("span");
             typeSpan.textContent = typeLine || "unknown type";
             metaWrap.appendChild(typeSpan);
+
+            if (row.dataset.isFoil === "1") {
+                const foilSpan = document.createElement("span");
+                foilSpan.className = "custom-draft-foil-meta-line";
+                foilSpan.textContent = "Foil";
+                metaWrap.appendChild(foilSpan);
+            }
 
             if (hasAlternateSource) {
                 const alternateSpan = document.createElement("span");
@@ -3853,7 +3869,7 @@
     }
 
     function updateSetStatsRollout() {
-        const visibleRows = getVisibleCurrentCardRows();
+        const visibleRows = getCurrentFilteredCardRows();
         const totalCards = visibleRows.length;
 
         let creatureCount = 0;
@@ -4874,6 +4890,15 @@
             row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
             row.dataset.alternateRemoveBleed = removeBleed ? "1" : "0";
 
+            if (detail.isFoil !== null && detail.isFoil !== undefined) {
+                row.dataset.isFoil = Boolean(detail.isFoil) ? "1" : "0";
+
+                const foilButton = row.querySelector(".alternate-image-button");
+                if (foilButton) {
+                    foilButton.dataset.isFoil = row.dataset.isFoil;
+                }
+            }
+
             const gearButton = row.querySelector(".alternate-image-button");
             if (gearButton) {
                 gearButton.classList.toggle("custom-draft-alternate-image-active", hasAlternateSource);
@@ -4882,6 +4907,25 @@
             const metaWrap = row.querySelector(".custom-draft-current-card-meta");
             if (!metaWrap) {
                 return;
+            }
+
+            let foilMetaLine = metaWrap.querySelector(".custom-draft-foil-meta-line");
+
+            if (row.dataset.isFoil === "1") {
+                if (!foilMetaLine) {
+                    foilMetaLine = document.createElement("span");
+                    foilMetaLine.className = "custom-draft-foil-meta-line";
+                    foilMetaLine.textContent = "Foil";
+
+                    const alternateLine = metaWrap.querySelector(".custom-draft-alternate-image-meta-line");
+                    if (alternateLine) {
+                        metaWrap.insertBefore(foilMetaLine, alternateLine);
+                    } else {
+                        metaWrap.appendChild(foilMetaLine);
+                    }
+                }
+            } else if (foilMetaLine) {
+                foilMetaLine.remove();
             }
 
             let alternateMetaLine = metaWrap.querySelector(".custom-draft-alternate-image-meta-line");
