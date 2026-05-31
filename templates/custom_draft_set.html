@@ -630,9 +630,7 @@
             <div class="custom-draft-card-list-header">
                 <div>
                     <h2>Set Card List</h2>
-                    <p class="page-subtitle">
-                        Manage cards currently assigned to this custom draft set.
-                    </p>
+
                 </div>
 
                 <div class="custom-draft-card-list-header-actions">
@@ -682,17 +680,75 @@
                     <button
                         type="button"
                         id="customDraftStatsToggleButton"
-                        class="action-button secondary-button custom-draft-header-small-button"
+                        class="custom-draft-header-icon-button"
+                        title="Show Stats"
+                        aria-label="Show Stats"
+                        aria-pressed="false"
                     >
-                        Stats
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-header-icon">
+                            <rect x="4" y="11" width="3.5" height="8" rx="1" fill="currentColor"></rect>
+                            <rect x="10.25" y="6" width="3.5" height="13" rx="1" fill="currentColor"></rect>
+                            <rect x="16.5" y="3" width="3.5" height="16" rx="1" fill="currentColor"></rect>
+                        </svg>
                     </button>
+
+                    <div class="custom-draft-view-toggle" aria-label="Set Card List view mode">
+                        <button
+                            type="button"
+                            id="customDraftListViewButton"
+                            class="custom-draft-view-toggle-button custom-draft-view-toggle-button-active"
+                            data-view-mode="list"
+                            title="List View"
+                            aria-label="List View"
+                            aria-pressed="true"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-header-icon">
+                                <rect x="4" y="6" width="3" height="3" rx="0.8" fill="currentColor"></rect>
+                                <rect x="9" y="6.5" width="11" height="2" rx="1" fill="currentColor"></rect>
+                                <rect x="4" y="11" width="3" height="3" rx="0.8" fill="currentColor"></rect>
+                                <rect x="9" y="11.5" width="11" height="2" rx="1" fill="currentColor"></rect>
+                                <rect x="4" y="16" width="3" height="3" rx="0.8" fill="currentColor"></rect>
+                                <rect x="9" y="16.5" width="11" height="2" rx="1" fill="currentColor"></rect>
+                            </svg>
+                        </button>
+
+                        <button
+                            type="button"
+                            id="customDraftGridViewButton"
+                            class="custom-draft-view-toggle-button"
+                            data-view-mode="grid"
+                            title="Grid View"
+                            aria-label="Grid View"
+                            aria-pressed="false"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-header-icon">
+                                <rect x="4" y="4" width="6.5" height="6.5" rx="1.4" fill="currentColor"></rect>
+                                <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.4" fill="currentColor"></rect>
+                                <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.4" fill="currentColor"></rect>
+                                <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.4" fill="currentColor"></rect>
+                            </svg>
+                        </button>
+                    </div>
 
                     <button
                         type="button"
                         id="customDraftMaximizeCardListButton"
-                        class="action-button secondary-button custom-draft-header-small-button"
+                        class="custom-draft-header-icon-button"
+                        title="Maximize"
+                        aria-label="Maximize"
+                        aria-pressed="false"
                     >
-                        Maximize
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-header-icon custom-draft-maximize-icon">
+                            <path d="M5 9V5h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M19 9V5h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M5 15v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M19 15v4h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-header-icon custom-draft-restore-icon">
+                            <path d="M9 4h9v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path>
+                            <path d="M6 8h9v12H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path>
+                        </svg>
                     </button>
                 </div>
             </div>
@@ -735,16 +791,34 @@
                 </div>
             </div>
 
-            <div class="custom-draft-current-card-tools">
-                <input
-                    type="text"
-                    id="customDraftCurrentCardFilterInput"
-                    class="campaign-add-pack-custom-input"
-                    placeholder="Filter current set cards..."
-                    autocomplete="off"
-                >
+            <div id="customDraftCurrentCardTools" class="custom-draft-current-card-tools">
+                <div class="custom-draft-current-filter-header">
+                    <div class="custom-draft-current-filter-title">Filters</div>
 
-                <div class="custom-draft-filter-grid">
+                    <button
+                        type="button"
+                        id="customDraftCurrentFilterToggleButton"
+                        class="custom-draft-current-filter-toggle"
+                        title="Collapse Filters"
+                        aria-label="Collapse Filters"
+                        aria-expanded="true"
+                    >
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="custom-draft-current-filter-toggle-icon">
+                            <path d="M7 14l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <div id="customDraftCurrentFilterBody" class="custom-draft-current-filter-body">
+                    <input
+                        type="text"
+                        id="customDraftCurrentCardFilterInput"
+                        class="campaign-add-pack-custom-input"
+                        placeholder="Filter current set cards..."
+                        autocomplete="off"
+                    >
+
+                    <div class="custom-draft-filter-grid">
                     <div id="customDraftRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
                         <span>Rarity</span>
 
@@ -974,6 +1048,7 @@
                     >
                         Clear Filters
                     </button>
+                    </div>
                 </div>
             </div>
 
@@ -1074,14 +1149,6 @@
                         data-edhrec-saltiness="{{ card.edhrec_saltiness if card.edhrec_saltiness is not none else '' }}"
                         data-sort-price="{{ card.sort_price if card.sort_price is not none else '' }}"
                     >
-                        <label class="custom-draft-current-card-select-wrap">
-                            <input
-                                type="checkbox"
-                                class="custom-draft-current-card-checkbox"
-                                value="{{ card.custom_set_card_id }}"
-                                aria-label="Select {{ card.card_name }}"
-                            >
-                        </label>
                         <div class="custom-draft-current-card-image-wrap">
                             <img
                                 src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
@@ -1097,6 +1164,15 @@
 
                         <div class="custom-draft-current-card-main">
                             <div class="custom-draft-current-card-title-row">
+                                <label class="custom-draft-current-card-select-wrap">
+                                    <input
+                                        type="checkbox"
+                                        class="custom-draft-current-card-checkbox"
+                                        value="{{ card.custom_set_card_id }}"
+                                        aria-label="Select {{ card.card_name }}"
+                                    >
+                                </label>
+
                                 <div class="custom-draft-current-card-title">
                                     {{ card.card_name }}
                                 </div>
@@ -1196,6 +1272,8 @@
                     </div>
                     {% endfor %}
                 </div>
+
+                <div id="customDraftCurrentCardGrid" class="chaos-pack-view-grid custom-draft-current-card-grid hidden"></div>
             {% else %}
                 <div id="customDraftCurrentCardList" class="card-placeholder custom-draft-set-empty">
                     No cards have been added to this custom draft set yet.
@@ -1256,6 +1334,8 @@
     const bulkImportButton = document.getElementById("customDraftBulkImportButton");
     const bulkImportAddMostRecentButton = document.getElementById("customDraftBulkImportAddMostRecentButton");
 
+    const currentCardTools = document.getElementById("customDraftCurrentCardTools");
+    const currentFilterToggleButton = document.getElementById("customDraftCurrentFilterToggleButton");
     const currentFilterInput = document.getElementById("customDraftCurrentCardFilterInput");
     const rarityFilter = document.getElementById("customDraftRarityFilter");
     const colorFilter = document.getElementById("customDraftColorFilter");
@@ -1285,6 +1365,9 @@
     const currentCardList = document.getElementById("customDraftCurrentCardList");
     const currentCardListPanel = document.getElementById("customDraftSetCardListPanel");
     const maximizeCardListButton = document.getElementById("customDraftMaximizeCardListButton");
+    const currentCardGrid = document.getElementById("customDraftCurrentCardGrid");
+    const listViewButton = document.getElementById("customDraftListViewButton");
+    const gridViewButton = document.getElementById("customDraftGridViewButton");
     const copyVisibleCardsButton = document.getElementById("customDraftCopyVisibleCardsButton");
     const copyVisibleCardsMenuButton = document.getElementById("customDraftCopyVisibleCardsMenuButton");
     const copyVisibleCardsMenu = document.getElementById("customDraftCopyVisibleCardsMenu");
@@ -1329,6 +1412,9 @@
 
     const addCardsPageSizeStorageKey = "iMomir.customDraftSet.addCards.pageSize";
     const currentCardsPageSizeStorageKey = "iMomir.customDraftSet.currentCards.pageSize";
+    const currentCardsViewModeStorageKey = "iMomir.customDraftSet.currentCards.viewMode";
+
+    let currentCardViewMode = "list";
 
     function getClientSetting(settingKey, fallbackValue) {
         try {
@@ -4122,6 +4208,35 @@
         }
     }
 
+    function setCurrentFiltersCollapsed(isCollapsed) {
+        if (!currentCardTools) {
+            return;
+        }
+
+        currentCardTools.classList.toggle("custom-draft-current-card-tools-collapsed", Boolean(isCollapsed));
+
+        if (currentFilterToggleButton) {
+            currentFilterToggleButton.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+            currentFilterToggleButton.setAttribute("aria-label", isCollapsed ? "Expand Filters" : "Collapse Filters");
+            currentFilterToggleButton.setAttribute("title", isCollapsed ? "Expand Filters" : "Collapse Filters");
+        }
+    }
+
+    function getCurrentFiltersCollapsed() {
+        return Boolean(
+            currentCardTools
+            && currentCardTools.classList.contains("custom-draft-current-card-tools-collapsed")
+        );
+    }
+
+    function collapseCurrentFiltersAfterScroll() {
+        if (getCurrentFiltersCollapsed()) {
+            return;
+        }
+
+        setCurrentFiltersCollapsed(true);
+    }
+
     function setCardListMaximized(isMaximized) {
         if (!currentCardListPanel) {
             return;
@@ -4130,8 +4245,15 @@
         currentCardListPanel.classList.toggle("custom-draft-set-card-list-panel-maximized", Boolean(isMaximized));
         document.body.classList.toggle("custom-draft-current-list-maximized-active", Boolean(isMaximized));
 
+        if (isMaximized) {
+            setCurrentFiltersCollapsed(true);
+        }
+
         if (maximizeCardListButton) {
-            maximizeCardListButton.textContent = isMaximized ? "Restore" : "Maximize";
+            maximizeCardListButton.classList.toggle("custom-draft-header-icon-button-active", Boolean(isMaximized));
+            maximizeCardListButton.setAttribute("aria-pressed", isMaximized ? "true" : "false");
+            maximizeCardListButton.setAttribute("aria-label", isMaximized ? "Restore" : "Maximize");
+            maximizeCardListButton.setAttribute("title", isMaximized ? "Restore" : "Maximize");
         }
     }
 
@@ -4147,6 +4269,215 @@
         return getCurrentCardRows().filter(function (row) {
             return !row.classList.contains("hidden");
         });
+    }
+
+    function getCurrentCardMetaText(row, prefixText) {
+        if (!row) {
+            return "";
+        }
+
+        const cleanPrefix = String(prefixText || "").trim().toLowerCase();
+
+        const metaSpans = Array.from(row.querySelectorAll(".custom-draft-current-card-meta span"));
+
+        for (const span of metaSpans) {
+            const textValue = String(span.textContent || "").trim();
+
+            if (textValue.toLowerCase().indexOf(cleanPrefix) === 0) {
+                return textValue;
+            }
+        }
+
+        return "";
+    }
+
+    function createCurrentCardGridCard(row) {
+        const cardUuid = row.dataset.cardUuid || "";
+        const cardName = row.dataset.displayCardName || row.dataset.cardName || "Unknown Card";
+        const imageElement = row.querySelector(".custom-draft-current-card-image");
+        const sourceGearButton = row.querySelector(".alternate-image-button");
+        const sourceChangePrintingButton = row.querySelector(".custom-draft-change-printing-button");
+        const imageSrc = imageElement ? (imageElement.getAttribute("src") || "") : "";
+        const zoomSrc = imageElement ? (imageElement.getAttribute("data-zoom-src") || imageSrc) : imageSrc;
+        const priceText = getCurrentCardMetaText(row, "Price");
+        const isFoil = row.dataset.isFoil === "1";
+        const hasAlternateSource = row.dataset.hasAlternateSource === "1";
+
+        const cardElement = document.createElement("div");
+        cardElement.className = "chaos-pack-view-card custom-draft-current-grid-card";
+        cardElement.dataset.cardUuid = cardUuid;
+        cardElement.dataset.cardName = cardName;
+        cardElement.dataset.customSetCardId = row.dataset.customSetCardId || "";
+        cardElement.dataset.isFoil = isFoil ? "1" : "0";
+
+        const imageWrap = document.createElement("div");
+        imageWrap.className = "chaos-pack-view-image-wrap";
+
+        const image = document.createElement("img");
+        image.className = "chaos-pack-view-image custom-draft-card-zoomable";
+        image.src = imageSrc;
+        image.alt = cardName;
+        image.setAttribute("role", "button");
+        image.setAttribute("tabindex", "0");
+        image.setAttribute("data-zoom-src", zoomSrc);
+        image.setAttribute("data-zoom-alt", cardName);
+        image.setAttribute("aria-label", "Zoom " + cardName);
+
+        imageWrap.appendChild(image);
+
+        const infoWrap = document.createElement("div");
+        infoWrap.className = "chaos-pack-view-info";
+
+        const nameRow = document.createElement("div");
+        nameRow.className = "custom-draft-grid-card-name-row";
+
+        const sourceCheckbox = row.querySelector(".custom-draft-current-card-checkbox");
+
+        const selectLabel = document.createElement("label");
+        selectLabel.className = "custom-draft-current-card-select-wrap custom-draft-grid-card-select-wrap";
+
+        const gridCheckbox = document.createElement("input");
+        gridCheckbox.type = "checkbox";
+        gridCheckbox.className = "custom-draft-current-card-checkbox custom-draft-grid-card-checkbox";
+        gridCheckbox.value = row.dataset.customSetCardId || "";
+        gridCheckbox.checked = Boolean(sourceCheckbox && sourceCheckbox.checked);
+        gridCheckbox.setAttribute("aria-label", "Select " + cardName);
+
+        gridCheckbox.addEventListener("change", function () {
+            if (sourceCheckbox) {
+                sourceCheckbox.checked = gridCheckbox.checked;
+            }
+
+            updateCurrentSelectionState();
+        });
+
+        selectLabel.appendChild(gridCheckbox);
+
+        const nameDiv = document.createElement("div");
+        nameDiv.className = "chaos-pack-view-name custom-draft-grid-card-name";
+        nameDiv.textContent = cardName;
+
+        nameRow.appendChild(selectLabel);
+        nameRow.appendChild(nameDiv);
+
+        const metaRow = document.createElement("div");
+        metaRow.className = "alternate-image-price-row custom-draft-grid-card-meta-row";
+
+        const changePrintingButton = document.createElement("button");
+        changePrintingButton.type = "button";
+        changePrintingButton.className = "alternate-image-gear custom-draft-grid-change-printing-button";
+        changePrintingButton.title = "Change printing";
+        changePrintingButton.setAttribute("aria-label", "Change printing for " + cardName);
+        changePrintingButton.innerHTML = [
+            '<svg class="custom-draft-change-printing-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">',
+            '<rect x="7" y="5" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>',
+            '<rect x="5" y="3" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>',
+            '<line x1="8" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+            '<line x1="8" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+            '<line x1="8" y1="14" x2="11" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+            '</svg>'
+        ].join("");
+
+        changePrintingButton.addEventListener("click", function () {
+            if (sourceChangePrintingButton) {
+                sourceChangePrintingButton.click();
+            }
+        });
+
+        const gearButton = document.createElement("button");
+        gearButton.type = "button";
+        gearButton.className = "alternate-image-gear";
+        gearButton.title = "Alternate image settings";
+        gearButton.setAttribute("aria-label", "Alternate image settings for " + cardName);
+        gearButton.textContent = "⚙";
+
+        if (hasAlternateSource) {
+            gearButton.classList.add("custom-draft-alternate-image-active");
+        }
+
+        gearButton.addEventListener("click", function () {
+            if (sourceGearButton) {
+                sourceGearButton.click();
+            }
+        });
+
+        metaRow.appendChild(changePrintingButton);
+        metaRow.appendChild(gearButton);
+
+        if (priceText) {
+            const priceDiv = document.createElement("div");
+            priceDiv.className = "chaos-pack-view-price custom-draft-grid-card-meta-text";
+            priceDiv.textContent = priceText.replace(/^Price\s+/i, "");
+            metaRow.appendChild(priceDiv);
+        }
+
+        infoWrap.appendChild(nameRow);
+        infoWrap.appendChild(metaRow);
+
+        if (isFoil) {
+            const badges = document.createElement("div");
+            badges.className = "chaos-pack-view-badges custom-draft-grid-card-badges";
+
+            const foilBadge = document.createElement("span");
+            foilBadge.className = "chaos-pack-view-badge";
+            foilBadge.textContent = "Foil";
+
+            badges.appendChild(foilBadge);
+            infoWrap.appendChild(badges);
+        }
+
+        cardElement.appendChild(imageWrap);
+        cardElement.appendChild(infoWrap);
+
+        return cardElement;
+    }
+
+    function renderCurrentCardGridView() {
+        if (!currentCardGrid) {
+            return;
+        }
+
+        currentCardGrid.innerHTML = "";
+
+        getVisibleCurrentCardRows().forEach(function (row) {
+            currentCardGrid.appendChild(createCurrentCardGridCard(row));
+        });
+
+        bindZoomableImages();
+    }
+
+    function updateCurrentCardViewContainers() {
+        const useGridView = currentCardViewMode === "grid";
+
+        if (currentCardList) {
+            currentCardList.classList.toggle("custom-draft-current-card-list-grid-hidden", useGridView);
+        }
+
+        if (currentCardGrid) {
+            currentCardGrid.classList.toggle("hidden", !useGridView);
+        }
+
+        if (listViewButton) {
+            listViewButton.classList.toggle("custom-draft-view-toggle-button-active", !useGridView);
+            listViewButton.setAttribute("aria-pressed", !useGridView ? "true" : "false");
+        }
+
+        if (gridViewButton) {
+            gridViewButton.classList.toggle("custom-draft-view-toggle-button-active", useGridView);
+            gridViewButton.setAttribute("aria-pressed", useGridView ? "true" : "false");
+        }
+
+        if (useGridView) {
+            renderCurrentCardGridView();
+        }
+    }
+
+    function setCurrentCardViewMode(viewMode) {
+        const cleanViewMode = String(viewMode || "").trim().toLowerCase();
+
+        currentCardViewMode = cleanViewMode === "grid" ? "grid" : "list";
+        setClientSetting(currentCardsViewModeStorageKey, currentCardViewMode);
+        updateCurrentCardViewContainers();
     }
 
     function getCurrentFilteredCardRows() {
@@ -4221,6 +4552,8 @@
 
             row.classList.toggle("hidden", !(isFilterVisible && isPageVisible));
         });
+
+        updateCurrentCardViewContainers();
     }
 
     function goToCurrentCardPage(pageNumber) {
@@ -4269,7 +4602,25 @@
 
         getCurrentCardRows().forEach(function (row) {
             const checkbox = row.querySelector(".custom-draft-current-card-checkbox");
-            row.classList.toggle("custom-draft-current-card-row-selected", Boolean(checkbox && checkbox.checked));
+            const isSelected = Boolean(checkbox && checkbox.checked);
+            const cardId = row.dataset.customSetCardId || "";
+
+            row.classList.toggle("custom-draft-current-card-row-selected", isSelected);
+
+            if (currentCardGrid && cardId) {
+                const gridCard = currentCardGrid.querySelector(
+                    '.custom-draft-current-grid-card[data-custom-set-card-id="' + CSS.escape(cardId) + '"]'
+                );
+
+                if (gridCard) {
+                    gridCard.classList.toggle("custom-draft-current-card-row-selected", isSelected);
+
+                    const gridCheckbox = gridCard.querySelector(".custom-draft-grid-card-checkbox");
+                    if (gridCheckbox) {
+                        gridCheckbox.checked = isSelected;
+                    }
+                }
+            }
         });
     }
 
@@ -4619,6 +4970,24 @@
         });
     }
 
+    if (currentFilterToggleButton) {
+        currentFilterToggleButton.addEventListener("click", function () {
+            setCurrentFiltersCollapsed(!getCurrentFiltersCollapsed());
+        });
+    }
+
+    if (listViewButton) {
+        listViewButton.addEventListener("click", function () {
+            setCurrentCardViewMode("list");
+        });
+    }
+
+    if (gridViewButton) {
+        gridViewButton.addEventListener("click", function () {
+            setCurrentCardViewMode("grid");
+        });
+    }
+
     if (currentCardPrevButton) {
         currentCardPrevButton.addEventListener("click", function () {
             goToCurrentCardPage(currentCardPage - 1);
@@ -4705,7 +5074,10 @@
 
             const shouldShow = statsPanel.classList.contains("hidden");
             statsPanel.classList.toggle("hidden", !shouldShow);
-            statsToggleButton.textContent = shouldShow ? "Hide Stats" : "Stats";
+            statsToggleButton.classList.toggle("custom-draft-header-icon-button-active", shouldShow);
+            statsToggleButton.setAttribute("aria-pressed", shouldShow ? "true" : "false");
+            statsToggleButton.setAttribute("aria-label", shouldShow ? "Hide Stats" : "Show Stats");
+            statsToggleButton.setAttribute("title", shouldShow ? "Hide Stats" : "Show Stats");
             updateSetStatsRollout();
         });
     }
@@ -4820,6 +5192,22 @@
             clearSearchResults();
             hidePagination();
             setSearchStatus("", false);
+        });
+    }
+
+    if (currentCardList) {
+        currentCardList.addEventListener("scroll", function () {
+            if (currentCardList.scrollTop > 16) {
+                collapseCurrentFiltersAfterScroll();
+            }
+        });
+    }
+
+    if (currentCardGrid) {
+        currentCardGrid.addEventListener("scroll", function () {
+            if (currentCardGrid.scrollTop > 16) {
+                collapseCurrentFiltersAfterScroll();
+            }
         });
     }
 
@@ -4962,6 +5350,7 @@
 
     applySavedSelectValue(searchPageSizeSelect, addCardsPageSizeStorageKey, "500");
     applySavedSelectValue(currentCardPageSizeSelect, currentCardsPageSizeStorageKey, "100");
+    currentCardViewMode = getClientSetting(currentCardsViewModeStorageKey, "list") === "grid" ? "grid" : "list";
 
     renderExistingColorIdentityLabels();
     bindCurrentCardControls();

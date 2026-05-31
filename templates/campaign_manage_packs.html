@@ -832,6 +832,8 @@
     const customTitleSetCodeInput = document.getElementById("campaignCustomTitleSetCodeInput");
     const customTitlePackNameInput = document.getElementById("campaignCustomTitlePackNameInput");
 
+    const bulkCreateOnePackUrl = {{ url_for('campaign_chaos_manage_pack_bulk_create_one')|tojson }};
+
     let customTitlePackNameWasEdited = false;
 
     let addPackModalHasSavedChanges = false;
@@ -1225,6 +1227,28 @@
         addPackStatus.classList.remove("hidden");
     }
 
+    function mergeBatchCardNameCounts(batchCounts, deltaCounts) {
+        Object.keys(deltaCounts || {}).forEach(function (cardNameKey) {
+            const cleanKey = String(cardNameKey || "").trim().toLowerCase();
+
+            if (!cleanKey) {
+                return;
+            }
+
+            batchCounts[cleanKey] = Number(batchCounts[cleanKey] || 0) + Number(deltaCounts[cardNameKey] || 0);
+        });
+
+        return batchCounts;
+    }
+
+    function setBulkCreateStatus(currentIndex, totalCount, messageText) {
+        const cleanMessage = messageText || "Creating packs...";
+        setAddPackStatus(
+            "Creating pack " + currentIndex + " of " + totalCount + ". " + cleanMessage,
+            false
+        );
+    }
+
     async function readJsonResponseOrThrow(response, fallbackMessage) {
         const contentType = response.headers.get("content-type") || "";
         const responseText = await response.text();
@@ -1569,6 +1593,124 @@
         addPackPreview.classList.remove("hidden");
     }
 
+    async function bulkCreateSpecificPacks(pack, countInput, button) {
+        const setCode = pack && pack.set_code ? String(pack.set_code).trim().toUpperCase() : "";
+        const boosterName = pack && pack.booster_name ? String(pack.booster_name).trim().toLowerCase() : "";
+        let packCount = parseInt(countInput ? countInput.value : "1", 10);
+
+        if (!Number.isFinite(packCount)) {
+            packCount = 1;
+        }
+
+        packCount = Math.max(1, Math.min(99, packCount));
+
+        if (countInput) {
+            countInput.value = String(packCount);
+        }
+
+        if (!setCode || !boosterName) {
+            setAddPackStatus("Set code and booster name are required.", true);
+            return;
+        }
+
+        const confirmed = await confirmUiAction({
+            title: "Create Multiple Packs",
+            message: "Create " + packCount + " saved pack(s) for " + (pack.display_name || setCode) + "?",
+            confirmText: "Create Packs",
+            cancelText: "Cancel"
+        });
+
+        if (!confirmed) {
+            return;
+        }
+
+        const allBulkButtons = Array.from(document.querySelectorAll(".campaign-add-pack-bulk-create-button"));
+        const allRandomButtons = Array.from(document.querySelectorAll(".campaign-add-pack-search-random-button"));
+
+        allBulkButtons.forEach(function (bulkButton) {
+            bulkButton.disabled = true;
+        });
+
+        allRandomButtons.forEach(function (randomButton) {
+            randomButton.disabled = true;
+        });
+
+        if (button) {
+            button.classList.add("action-button-loading");
+            button.textContent = "Creating...";
+        }
+
+        addPackModalHasSavedChanges = true;
+
+        const batchCardNameCounts = {};
+        const createdPacks = [];
+
+        try {
+            for (let packIndex = 1; packIndex <= packCount; packIndex += 1) {
+                setBulkCreateStatus(packIndex, packCount, "Generating cards and checking repeats...");
+
+                const response = await fetch(bulkCreateOnePackUrl, {
+                    method: "POST",
+                    headers: {
+                        "Accept": "application/json",
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        set_code: setCode,
+                        booster_name: boosterName,
+                        batch_card_name_counts: batchCardNameCounts
+                    })
+                });
+
+                const payload = await readJsonResponseOrThrow(
+                    response,
+                    "Bulk pack creation failed because the server returned an unexpected response."
+                );
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to create pack " + packIndex + ".");
+                }
+
+                createdPacks.push(payload);
+                mergeBatchCardNameCounts(batchCardNameCounts, payload.card_name_counts_delta || {});
+
+                setBulkCreateStatus(
+                    packIndex,
+                    packCount,
+                    "Created " + (payload.pack_tracking_code || "pack") + "."
+                );
+            }
+
+            setAddPackStatus(
+                "Created " + createdPacks.length + " pack(s). Close this window to refresh the pack list.",
+                false
+            );
+
+            if (button) {
+                button.textContent = "Created";
+            }
+        } catch (error) {
+            console.error(error);
+            setAddPackStatus(error.message || "Failed to create packs.", true);
+
+            if (button) {
+                button.textContent = "Create";
+            }
+        } finally {
+            allBulkButtons.forEach(function (bulkButton) {
+                bulkButton.disabled = false;
+            });
+
+            allRandomButtons.forEach(function (randomButton) {
+                randomButton.disabled = false;
+            });
+
+            if (button) {
+                button.classList.remove("action-button-loading");
+            }
+        }
+    }
+
     function renderAddPackSearchResults(results) {
         if (!addPackSearchResults) {
             return;
@@ -1622,7 +1764,7 @@
 
             const randomButton = document.createElement("button");
             randomButton.type = "button";
-            randomButton.className = "action-button secondary-button campaign-add-pack-search-action-button";
+            randomButton.className = "action-button secondary-button campaign-add-pack-search-action-button campaign-add-pack-search-random-button";
             randomButton.textContent = "Random Pack";
             randomButton.dataset.setCode = pack.set_code || "";
             randomButton.dataset.boosterName = pack.booster_name || "";
@@ -1634,8 +1776,50 @@
             importButton.disabled = true;
             importButton.title = "Import Pack will be added next.";
 
+            const bulkCreateWrap = document.createElement("div");
+            bulkCreateWrap.className = "campaign-add-pack-bulk-create-wrap";
+
+            const bulkCreateLabelLeft = document.createElement("span");
+            bulkCreateLabelLeft.className = "campaign-add-pack-bulk-create-label";
+            bulkCreateLabelLeft.textContent = "Create";
+
+            const bulkCreateInput = document.createElement("input");
+            bulkCreateInput.type = "number";
+            bulkCreateInput.className = "campaign-add-pack-bulk-create-input";
+            bulkCreateInput.min = "1";
+            bulkCreateInput.max = "99";
+            bulkCreateInput.step = "1";
+            bulkCreateInput.value = "1";
+            bulkCreateInput.setAttribute("aria-label", "Number of packs to create");
+
+            const bulkCreateButton = document.createElement("button");
+            bulkCreateButton.type = "button";
+            bulkCreateButton.className = "action-button secondary-button campaign-add-pack-search-action-button campaign-add-pack-bulk-create-button";
+            bulkCreateButton.textContent = "Packs";
+            bulkCreateButton.title = "Create multiple saved packs";
+
+            bulkCreateInput.addEventListener("input", function () {
+                let value = parseInt(bulkCreateInput.value || "1", 10);
+
+                if (!Number.isFinite(value)) {
+                    value = 1;
+                }
+
+                value = Math.max(1, Math.min(99, value));
+                bulkCreateInput.value = String(value);
+            });
+
+            bulkCreateButton.addEventListener("click", function () {
+                bulkCreateSpecificPacks(pack, bulkCreateInput, bulkCreateButton);
+            });
+
+            bulkCreateWrap.appendChild(bulkCreateLabelLeft);
+            bulkCreateWrap.appendChild(bulkCreateInput);
+            bulkCreateWrap.appendChild(bulkCreateButton);
+
             actions.appendChild(randomButton);
             actions.appendChild(importButton);
+            actions.appendChild(bulkCreateWrap);
 
             row.appendChild(imageWrap);
             row.appendChild(info);

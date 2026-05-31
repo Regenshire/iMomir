@@ -2,8 +2,10 @@ import os
 import sqlite3
 
 from paths import DATABASE_PATH
-from settings import DEFAULT_CONFIG
-
+from settings import (
+    CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES,
+    DEFAULT_CONFIG,
+)
 
 def get_db_connection():
     db_parent = os.path.dirname(DATABASE_PATH)
@@ -1813,6 +1815,74 @@ def apply_custom_draft_weighted_rarity_choice(candidate_cards, rarity_rule):
 
     return preferred_cards or candidate_cards
 
+def normalize_custom_draft_batch_repeat_card_name(card_name):
+    return str(card_name or "").strip().lower()
+
+def normalize_custom_draft_batch_repeat_rarity(rarity):
+    clean_rarity = str(rarity or "").strip().lower()
+
+    if clean_rarity in {"common", "uncommon", "rare", "mythic"}:
+        return clean_rarity
+
+    if clean_rarity == "mythic rare":
+        return "mythic"
+
+    return ""
+
+def get_custom_draft_batch_repeat_replacement_chance(existing_count, rarity):
+    try:
+        parsed_count = int(existing_count or 0)
+    except (TypeError, ValueError):
+        parsed_count = 0
+
+    if parsed_count <= 0:
+        return 0.0
+
+    clean_rarity = normalize_custom_draft_batch_repeat_rarity(rarity)
+    rarity_chances = CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES.get(clean_rarity)
+
+    if not rarity_chances:
+        return 0.0
+
+    capped_count = min(parsed_count, 4)
+
+    try:
+        return float(rarity_chances.get(capped_count, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+def choose_custom_draft_batch_repeat_replacement_card(chosen_card, available_cards, batch_card_name_counts=None):
+    if not chosen_card or not batch_card_name_counts:
+        return chosen_card
+
+    random_module = __import__("random")
+    chosen_name_key = normalize_custom_draft_batch_repeat_card_name(chosen_card["card_name"])
+    existing_count = int(batch_card_name_counts.get(chosen_name_key, 0) or 0)
+    chosen_rarity = normalize_custom_draft_batch_repeat_rarity(chosen_card["rarity"] if "rarity" in chosen_card.keys() else "")
+    replacement_chance = get_custom_draft_batch_repeat_replacement_chance(existing_count, chosen_rarity)
+
+    if replacement_chance <= 0:
+        return chosen_card
+
+    if random_module.random() >= replacement_chance:
+        return chosen_card
+
+    different_candidates = [
+        card_row
+        for card_row in (available_cards or [])
+        if normalize_custom_draft_batch_repeat_card_name(card_row["card_name"]) != chosen_name_key
+    ]
+
+    if not different_candidates:
+        return chosen_card
+
+    unused_different_candidates = [
+        card_row
+        for card_row in different_candidates
+        if int(batch_card_name_counts.get(normalize_custom_draft_batch_repeat_card_name(card_row["card_name"]), 0) or 0) <= 0
+    ]
+
+    return random_module.choice(unused_different_candidates or different_candidates)
 
 def resolve_custom_draft_foil_flag(foil_rule):
     clean_foil_rule = str(foil_rule or "no").strip().lower()
@@ -1855,7 +1925,7 @@ def serialize_custom_draft_pack_card(card_row, slot_rule, card_order, pack_set_c
     }
 
 
-def generate_custom_draft_set_pack_cards(set_code, booster_name):
+def generate_custom_draft_set_pack_cards(set_code, booster_name, batch_card_name_counts=None):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_booster_name = str(booster_name or "").strip().lower()
 
@@ -1927,6 +1997,12 @@ def generate_custom_draft_set_pack_cards(set_code, booster_name):
 
         final_candidates = unused_candidates if unused_candidates else candidates
         chosen_card = random_module.choice(final_candidates)
+
+        chosen_card = choose_custom_draft_batch_repeat_replacement_card(
+            chosen_card,
+            final_candidates,
+            batch_card_name_counts=batch_card_name_counts,
+        )
 
         used_card_uuids.add(chosen_card["card_uuid"])
 

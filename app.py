@@ -205,6 +205,7 @@ from modes.chaos import (
     clear_chaos_session_state,
     create_random_pack_preview_for_manage_packs,
     create_specific_pack_preview_for_manage_packs,
+    create_specific_pack_and_save_for_manage_packs,
     create_campaign_player,
     create_chaos_campaign,
     create_chaos_draft_game,
@@ -10821,6 +10822,49 @@ def campaign_chaos_pack_preview_print():
             "Cache-Control": "no-store",
         },
     )
+
+@app.route("/campaign-chaos/packs/search/bulk-create-one", methods=["POST"])
+def campaign_chaos_manage_pack_bulk_create_one():
+    payload = request.get_json(silent=True) or {}
+
+    set_code = (payload.get("set_code") or "").strip().upper()
+    booster_name = (payload.get("booster_name") or "").strip().lower()
+    batch_card_name_counts = payload.get("batch_card_name_counts") or {}
+
+    if not isinstance(batch_card_name_counts, dict):
+        batch_card_name_counts = {}
+
+    if not set_code or not booster_name:
+        return jsonify({
+            "ok": False,
+            "message": "Set code and booster name are required.",
+        }), 400
+
+    try:
+        result = create_specific_pack_and_save_for_manage_packs(
+            set_code,
+            booster_name,
+            app.static_folder,
+            campaign_id=get_selected_chaos_campaign_id(),
+            batch_card_name_counts=batch_card_name_counts,
+            write_debug_log_fn=write_debug_log,
+        )
+    except Exception as exc:
+        return jsonify_pack_generation_error(
+            "CAMPAIGN_BULK_CREATE_PACK_FAILED",
+            "Could not create the requested pack.",
+            exc,
+            extra={
+                "set_code": set_code,
+                "booster_name": booster_name,
+            },
+            status_code=500,
+        )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
 
 @app.route("/campaign-chaos/packs/preview/save", methods=["POST"])
 def campaign_chaos_pack_preview_save():

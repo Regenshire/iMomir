@@ -3449,8 +3449,40 @@ input {
 
 .campaign-add-pack-search-panel .campaign-add-pack-search-actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr 1fr minmax(220px, 280px);
     gap: 8px;
+    align-items: stretch;
+}
+
+.campaign-add-pack-bulk-create-wrap {
+    display: grid;
+    grid-template-columns: auto 58px minmax(70px, 1fr);
+    gap: 6px;
+    align-items: center;
+    min-height: 42px;
+}
+
+.campaign-add-pack-bulk-create-label {
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.campaign-add-pack-bulk-create-input {
+    width: 58px;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    color: var(--text);
+    padding: 7px 8px;
+    text-align: center;
+    font-weight: 800;
+}
+
+.campaign-add-pack-bulk-create-button {
+    min-width: 74px;
 }
 
 .campaign-add-pack-search-panel .campaign-add-pack-search-action-button {
@@ -3479,6 +3511,11 @@ input {
 
     .campaign-add-pack-search-panel .campaign-add-pack-search-actions {
         grid-column: 1 / -1;
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-add-pack-bulk-create-wrap {
+        grid-template-columns: auto 64px minmax(90px, 1fr);
     }
 }
 
@@ -5505,7 +5542,21 @@ input {
 .custom-draft-current-card-title-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    min-width: 0;
+}
+
+.custom-draft-current-card-title-row .custom-draft-current-card-select-wrap {
+    flex: 0 0 auto;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.custom-draft-current-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .custom-draft-current-card-title {
@@ -5640,15 +5691,15 @@ input {
 
 .custom-draft-filter-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: 10px;
-    margin-top: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
 }
 
 .custom-draft-filter-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .custom-draft-filter-field span {
@@ -5659,30 +5710,25 @@ input {
 
 .custom-draft-filter-input {
     width: 100%;
-    min-height: 42px;
+    min-height: 38px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--button);
     color: var(--text);
-    padding: 7px 10px;
+    padding: 6px 10px;
 }
 
 .custom-draft-clear-filters-button {
-    align-self: end;
-    min-height: 42px;
+    align-self: start;
+    margin-top: calc(0.82rem + 4px);
+    min-height: 38px;
     border-radius: 10px;
-    font-size: 0.92rem;
-    padding: 8px 10px;
+    font-size: 0.9rem;
+    padding: 6px 10px;
 }
 
 .custom-draft-color-identity {
     color: #dbe7ff;
-}
-
-@media (max-width: 1100px) {
-    .custom-draft-filter-grid {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
 }
 
 @media (max-width: 700px) {
@@ -6690,6 +6736,15 @@ input {
     display: block;
 }
 
+.custom-draft-grid-change-printing-button {
+    color: #b9c0cf;
+    padding: 0;
+}
+
+.custom-draft-grid-change-printing-button:hover {
+    color: #ffffff;
+}
+
 /* ==========================================
    Custom Draft Current Card Bulk Selection
    ========================================== */
@@ -6759,7 +6814,7 @@ input {
 
 @media (min-width: 701px) {
     .custom-draft-current-card-row {
-        grid-template-columns: 34px 80px minmax(0, 1fr) 240px 110px;
+        grid-template-columns: 80px minmax(0, 1fr) 240px 110px;
     }
 }
 
@@ -6780,12 +6835,263 @@ input {
 
 @media (max-width: 700px) {
     .custom-draft-current-card-row {
-        grid-template-columns: 34px 70px minmax(0, 1fr);
+        grid-template-columns: 70px minmax(0, 1fr);
     }
 
-    .custom-draft-current-card-select-wrap {
-        align-self: start;
-        padding-top: 6px;
+    .custom-draft-current-card-title-row .custom-draft-current-card-select-wrap {
+        align-self: center;
+        padding-top: 0;
+    }
+}
+
+/* ==========================================
+   Custom Draft Set Card List Filter Collapse
+   ========================================== */
+
+.custom-draft-current-card-tools {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(18, 20, 26, 0.24);
+    padding: 12px;
+}
+
+.custom-draft-current-filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 34px;
+    margin-bottom: 10px;
+}
+
+.custom-draft-current-filter-title {
+    color: var(--text);
+    font-size: 0.96rem;
+    font-weight: 800;
+}
+
+.custom-draft-current-filter-toggle {
+    width: 34px;
+    min-width: 34px;
+    height: 32px;
+    min-height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--button);
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+}
+
+.custom-draft-current-filter-toggle:hover {
+    background: var(--button-hover);
+    color: var(--text);
+}
+
+.custom-draft-current-filter-toggle-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+    transition: transform 0.15s ease;
+}
+
+.custom-draft-current-filter-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.custom-draft-current-card-tools-collapsed {
+    padding: 8px 12px;
+}
+
+.custom-draft-current-card-tools-collapsed .custom-draft-current-filter-header {
+    margin-bottom: 0;
+}
+
+.custom-draft-current-card-tools-collapsed .custom-draft-current-filter-body {
+    display: none;
+}
+
+.custom-draft-current-card-tools-collapsed .custom-draft-current-filter-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* ==========================================
+   Custom Draft Set Card List View Toggle / Grid View
+   ========================================== */
+
+.custom-draft-header-icon-button {
+    width: 44px;
+    min-width: 44px;
+    height: 40px;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--button);
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.custom-draft-header-icon-button:hover {
+    background: var(--button-hover);
+    color: var(--text);
+}
+
+.custom-draft-header-icon-button-active {
+    border-color: var(--accent);
+    background: rgba(58, 122, 254, 0.22);
+    color: #ffffff;
+}
+
+.custom-draft-header-icon {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+.custom-draft-view-toggle {
+    display: inline-grid;
+    grid-template-columns: 44px 44px;
+    gap: 0;
+    min-width: 88px;
+    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--button);
+    overflow: hidden;
+}
+
+.custom-draft-view-toggle-button {
+    width: 44px;
+    min-width: 44px;
+    height: 40px;
+    min-height: 40px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.custom-draft-view-toggle-button + .custom-draft-view-toggle-button {
+    border-left: 1px solid var(--border);
+}
+
+.custom-draft-view-toggle-button:hover {
+    background: var(--button-hover);
+    color: var(--text);
+}
+
+.custom-draft-view-toggle-button-active {
+    background: var(--accent);
+    color: #ffffff;
+}
+
+.custom-draft-current-card-list-grid-hidden {
+    display: none !important;
+}
+
+.custom-draft-current-card-grid {
+    margin-top: 0.85rem;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.custom-draft-current-card-grid.hidden {
+    display: none !important;
+}
+
+.custom-draft-current-card-grid .chaos-pack-view-card {
+    min-width: 0;
+}
+
+.custom-draft-current-card-grid .chaos-pack-view-image {
+    cursor: zoom-in;
+}
+
+.custom-draft-grid-card-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.custom-draft-grid-card-select-wrap {
+    flex: 0 0 auto;
+    padding: 0;
+}
+
+.custom-draft-grid-card-checkbox {
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+}
+
+.custom-draft-grid-card-name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.custom-draft-grid-card-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-top: 0.35rem;
+}
+
+.custom-draft-grid-card-meta-text {
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.custom-draft-grid-card-badges {
+    margin-top: 0.45rem;
+}
+
+.custom-draft-restore-icon {
+    display: none;
+}
+
+.custom-draft-header-icon-button-active .custom-draft-maximize-icon {
+    display: none;
+}
+
+.custom-draft-header-icon-button-active .custom-draft-restore-icon {
+    display: block;
+}
+
+.custom-draft-set-card-list-panel-maximized #customDraftCurrentCardGrid {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px;
+    padding-bottom: 10px;
+}
+
+@media (max-width: 700px) {
+    .custom-draft-view-toggle {
+        width: 90px;
+        min-width: 90px;
+    }
+
+    .custom-draft-current-card-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 

@@ -332,6 +332,33 @@ CHAOS_DUPLICATE_REROLL_CHANCE = 0.7
 CHAOS_DUPLICATE_MAX_REROLLS = 3
 CHAOS_DUPLICATE_LOG_ALL_DETECTIONS = True
 
+CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES = {
+    "common": {
+        1: 0.10,
+        2: 0.20,
+        3: 0.40,
+        4: 0.50,
+    },
+    "uncommon": {
+        1: 0.15,
+        2: 0.30,
+        3: 0.45,
+        4: 0.60,
+    },
+    "rare": {
+        1: 0.70,
+        2: 0.80,
+        3: 0.90,
+        4: 1.00,
+    },
+    "mythic": {
+        1: 0.75,
+        2: 0.90,
+        3: 1.00,
+        4: 1.00,
+    },
+}
+
 TYPE_FLAG_MAP = {
     "Creature": "is_creature",
     "Artifact": "is_artifact",

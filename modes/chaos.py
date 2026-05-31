@@ -12,6 +12,7 @@ from paths import RUNTIME_PACK_ART_DIR
 
 from settings import (
     ALLOWED_CHAOS_BOOSTER_TYPES,
+    CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES,
     CHAOS_DUPLICATE_CONTROL_ENABLED,
     CHAOS_DUPLICATE_CONTROL_TYPES,
     CHAOS_DUPLICATE_MAX_REROLLS,
@@ -896,6 +897,127 @@ def get_random_common_replacement_card_for_set(set_code, excluded_card_uuid=None
         "collector_number": row["collector_number"],
     }
 
+def normalize_batch_repeat_card_name(card_name):
+    return str(card_name or "").strip().lower()
+
+
+def normalize_batch_repeat_rarity(rarity):
+    clean_rarity = str(rarity or "").strip().lower()
+
+    if clean_rarity in {"common", "uncommon", "rare", "mythic"}:
+        return clean_rarity
+
+    if clean_rarity == "mythic rare":
+        return "mythic"
+
+    return ""
+
+
+def get_batch_repeat_replacement_chance(existing_count, rarity):
+    try:
+        parsed_count = int(existing_count or 0)
+    except (TypeError, ValueError):
+        parsed_count = 0
+
+    if parsed_count <= 0:
+        return 0.0
+
+    clean_rarity = normalize_batch_repeat_rarity(rarity)
+    rarity_chances = CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES.get(clean_rarity)
+
+    if not rarity_chances:
+        return 0.0
+
+    capped_count = min(parsed_count, 4)
+
+    try:
+        return float(rarity_chances.get(capped_count, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def choose_batch_repeat_replacement_card(
+    chosen_card,
+    available_cards,
+    batch_card_name_counts=None,
+    write_debug_log_fn=None,
+    context_label="",
+):
+    if not chosen_card:
+        return chosen_card
+
+    if not batch_card_name_counts:
+        return chosen_card
+
+    chosen_name_key = normalize_batch_repeat_card_name(chosen_card.get("card_name"))
+
+    if not chosen_name_key:
+        return chosen_card
+
+    existing_count = int(batch_card_name_counts.get(chosen_name_key, 0) or 0)
+    chosen_rarity = normalize_batch_repeat_rarity(chosen_card.get("rarity"))
+    replacement_chance = get_batch_repeat_replacement_chance(existing_count, chosen_rarity)
+
+    if replacement_chance <= 0:
+        return chosen_card
+
+    if random.random() >= replacement_chance:
+        if write_debug_log_fn:
+            write_debug_log_fn(
+                f"BATCH REPEAT KEPT | card={chosen_card.get('card_name')} | "
+                f"rarity={chosen_rarity} | existing_count={existing_count} | "
+                f"chance={replacement_chance:.2f} | context={context_label}"
+            )
+        return chosen_card
+
+    different_candidates = [
+        card_row
+        for card_row in (available_cards or [])
+        if normalize_batch_repeat_card_name(card_row.get("card_name")) != chosen_name_key
+    ]
+
+    if not different_candidates:
+        if write_debug_log_fn:
+            write_debug_log_fn(
+                f"BATCH REPEAT REPLACE SKIPPED | card={chosen_card.get('card_name')} | "
+                f"rarity={chosen_rarity} | existing_count={existing_count} | "
+                f"reason=no_different_candidate | context={context_label}"
+            )
+        return chosen_card
+
+    unused_different_candidates = [
+        card_row
+        for card_row in different_candidates
+        if int(batch_card_name_counts.get(normalize_batch_repeat_card_name(card_row.get("card_name")), 0) or 0) <= 0
+    ]
+
+    replacement_candidates = unused_different_candidates or different_candidates
+    replacement_card = random.choice(replacement_candidates)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"BATCH REPEAT REPLACED | old_card={chosen_card.get('card_name')} | "
+            f"new_card={replacement_card.get('card_name')} | rarity={chosen_rarity} | "
+            f"existing_count={existing_count} | chance={replacement_chance:.2f} | context={context_label}"
+        )
+
+    return replacement_card
+
+
+def update_batch_repeat_counts_from_cards(batch_card_name_counts, cards):
+    if batch_card_name_counts is None:
+        batch_card_name_counts = {}
+
+    for card in cards or []:
+        card_name_key = normalize_batch_repeat_card_name(card.get("card_name"))
+
+        if not card_name_key:
+            continue
+
+        batch_card_name_counts[card_name_key] = int(batch_card_name_counts.get(card_name_key, 0) or 0) + 1
+
+    return batch_card_name_counts
+
 
 def replace_basic_land_if_enabled(chosen_card, set_code, booster_name, sheet_name, write_debug_log_fn):
     if not chosen_card:
@@ -926,7 +1048,13 @@ def replace_basic_land_if_enabled(chosen_card, set_code, booster_name, sheet_nam
 
     return replacement_card
 
-def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_fn):
+def open_chaos_pack_once(
+    set_code,
+    booster_name,
+    booster_index,
+    write_debug_log_fn,
+    batch_card_name_counts=None,
+):
     clean_set_code = (set_code or "").strip().upper()
     clean_booster_name = (booster_name or "").strip().lower()
 
@@ -934,6 +1062,7 @@ def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_
         generated_cards = generate_custom_draft_set_pack_cards(
             clean_set_code,
             clean_booster_name,
+            batch_card_name_counts=batch_card_name_counts,
         )
 
         write_debug_log_fn(
@@ -968,6 +1097,14 @@ def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_
                 booster_name,
                 sheet_name,
                 write_debug_log_fn,
+            )
+
+            chosen_card = choose_batch_repeat_replacement_card(
+                chosen_card,
+                available_cards,
+                batch_card_name_counts=batch_card_name_counts,
+                write_debug_log_fn=write_debug_log_fn,
+                context_label=f"{set_code}:{booster_name}:{sheet_name}",
             )
 
             booster_type = normalize_booster_type_for_filter(booster_name)
@@ -1044,15 +1181,33 @@ def open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_
     return opened_cards
 
 
-def open_chaos_pack_with_bonus_rule(set_code, booster_name, booster_index, write_debug_log_fn):
-    first_pack_cards = open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_fn)
+def open_chaos_pack_with_bonus_rule(
+    set_code,
+    booster_name,
+    booster_index,
+    write_debug_log_fn,
+    batch_card_name_counts=None,
+):
+    first_pack_cards = open_chaos_pack_once(
+        set_code,
+        booster_name,
+        booster_index,
+        write_debug_log_fn,
+        batch_card_name_counts=batch_card_name_counts,
+    )
     all_cards = list(first_pack_cards)
 
     bonus_pack_opened = False
 
     if len(first_pack_cards) < 11:
         bonus_pack_opened = True
-        second_pack_cards = open_chaos_pack_once(set_code, booster_name, booster_index, write_debug_log_fn)
+        second_pack_cards = open_chaos_pack_once(
+            set_code,
+            booster_name,
+            booster_index,
+            write_debug_log_fn,
+            batch_card_name_counts=batch_card_name_counts,
+        )
         all_cards.extend(second_pack_cards)
 
     return {
@@ -2399,6 +2554,128 @@ def create_specific_pack_preview_for_manage_packs(set_code, booster_name, static
         "pack_display_name": chosen_pack["display_name"],
         "total_cards": len(cards),
         "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+    }
+
+def create_specific_pack_and_save_for_manage_packs(
+    set_code,
+    booster_name,
+    static_folder,
+    campaign_id=None,
+    batch_card_name_counts=None,
+    write_debug_log_fn=None,
+):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_booster_name = (booster_name or "").strip().lower()
+
+    if not clean_set_code or not clean_booster_name:
+        return {
+            "ok": False,
+            "message": "Set code and booster name are required.",
+        }
+
+    eligible_packs = get_eligible_chaos_packs(static_folder)
+
+    chosen_pack = None
+    for pack in eligible_packs:
+        if (
+            (pack.get("set_code") or "").strip().upper() == clean_set_code
+            and (pack.get("booster_name") or "").strip().lower() == clean_booster_name
+        ):
+            chosen_pack = pack
+            break
+
+    if not chosen_pack:
+        return {
+            "ok": False,
+            "message": "The selected pack is not currently eligible.",
+        }
+
+    variants = get_chaos_pack_variants(clean_set_code, clean_booster_name)
+    chosen_variant = choose_weighted_row(variants, "booster_weight")
+
+    if not chosen_variant:
+        return {
+            "ok": False,
+            "message": "No eligible variants were found for the selected pack.",
+        }
+
+    open_result = open_chaos_pack_with_bonus_rule(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+        write_debug_log_fn or (lambda message: None),
+        batch_card_name_counts=batch_card_name_counts,
+    )
+
+    cards = open_result["cards"]
+
+    if not cards:
+        return {
+            "ok": False,
+            "message": "The selected pack generated no cards.",
+        }
+
+    cards = sort_opened_chaos_pack_cards(
+        cards,
+        chosen_variant["booster_name"],
+        write_debug_log_fn or (lambda message: None),
+    )
+
+    pack_tracking_code = build_pack_tracking_code(
+        chosen_variant["set_code"],
+        chosen_variant["booster_name"],
+        chosen_variant["booster_index"],
+    )
+
+    pack_state = {
+        "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+        "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+        "booster_index": int(chosen_variant["booster_index"] or 0),
+        "display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_display_name": (chosen_pack["display_name"] or "").strip(),
+        "pack_tracking_code": pack_tracking_code,
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+        "total_cards": len(cards),
+        "cards": cards,
+        "manage_pack_bulk_create": True,
+        "source_json": {
+            "source": "custom_draft_set" if is_custom_draft_set_code(chosen_variant["set_code"]) else "mtgjson_booster",
+            "set_code": (chosen_variant["set_code"] or "").strip().upper(),
+            "booster_name": (chosen_variant["booster_name"] or "").strip().lower(),
+            "booster_index": int(chosen_variant["booster_index"] or 0),
+        },
+    }
+
+    save_result = save_opened_chaos_pack_to_tracking_db(
+        pack_state,
+        campaign_id=campaign_id,
+    )
+
+    if not save_result.get("ok"):
+        return save_result
+
+    card_name_counts_delta = {}
+    update_batch_repeat_counts_from_cards(card_name_counts_delta, cards)
+
+    if write_debug_log_fn:
+        write_debug_log_fn(
+            f"MANAGE PACKS BULK CREATE ONE | tracking_code={pack_tracking_code} | "
+            f"set={chosen_variant['set_code']} | booster={chosen_variant['booster_name']} | "
+            f"booster_index={chosen_variant['booster_index']} | cards={len(cards)}"
+        )
+
+    return {
+        "ok": True,
+        "message": "Pack created.",
+        "tracked_pack_id": save_result.get("tracked_pack_id"),
+        "pack_tracking_code": pack_tracking_code,
+        "set_code": chosen_variant["set_code"],
+        "booster_name": chosen_variant["booster_name"],
+        "booster_index": chosen_variant["booster_index"],
+        "pack_display_name": chosen_pack["display_name"],
+        "total_cards": len(cards),
+        "bonus_pack_opened": bool(open_result.get("bonus_pack_opened")),
+        "card_name_counts_delta": card_name_counts_delta,
     }
 
 def build_chaos_pack_pdf_from_variant(
