@@ -570,6 +570,49 @@
                         >
                     </label>
 
+                    <div class="metadata-row">
+                        <span>Print / Export Labels</span>
+                        <strong class="metadata-value-wrap">
+                            Controls card corner labels and separate pack label cards/images for PDF printing and image export.
+                        </strong>
+                    </div>
+
+                    <label class="toggle-row settings-field">
+                        <span>Enable Print/Export Labels</span>
+                        <input
+                            type="checkbox"
+                            name="print_labels_enabled"
+                            {% if config.get("print_labels_enabled", "1") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Show Pack Tracking Code on Labels</span>
+                        <input
+                            type="checkbox"
+                            name="print_label_tracking_code"
+                            {% if config.get("print_label_tracking_code", config.get("print_pack_tracking_code", "0")) == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Show FRONT/BACK on Dual-Faced Cards</span>
+                        <input
+                            type="checkbox"
+                            name="print_label_front_back"
+                            {% if config.get("print_label_front_back", config.get("print_front_back_label", "1")) == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Include Pack Label Cards</span>
+                        <input
+                            type="checkbox"
+                            name="print_pack_label_cards"
+                            {% if config.get("print_pack_label_cards", config.get("print_pack_labels", "0")) == "1" %}checked{% endif %}
+                        >
+                    </label>
+
                     <label class="toggle-row settings-field">
                         <span>Open Print in New Tab</span>
                         <input
@@ -597,16 +640,15 @@
                         >
                     </label>
 
-                    <label class="toggle-row settings-field">
-                        <span>Print Front/Back Label</span>
-                        <input
-                            type="checkbox"
-                            name="print_front_back_label"
-                            {% if config.print_front_back_label == "1" %}checked{% endif %}>
-                    </label>
+                    <div class="metadata-row">
+                        <span>Pack Tracking Database</span>
+                        <strong class="metadata-value-wrap">
+                            Controls whether generated Chaos Draft packs can be saved and managed in the pack database.
+                        </strong>
+                    </div>
 
                     <label class="toggle-row settings-field">
-                        <span>Enable Pack Tracking</span>
+                        <span>Enable Pack Tracking Database</span>
                         <input
                             type="checkbox"
                             name="enable_track_packs"
@@ -650,23 +692,6 @@
                         >
                     </label>
 
-                    <label class="toggle-row settings-field">
-                        <span>Print Pack Tracking Code</span>
-                        <input
-                            type="checkbox"
-                            name="print_pack_tracking_code"
-                            {% if config.print_pack_tracking_code == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Print Pack Labels</span>
-                        <input
-                            type="checkbox"
-                            name="print_pack_labels"
-                            {% if config.get("print_pack_labels", "0") == "1" %}checked{% endif %}
-                        >
-                    </label>
 
                     <label class="toggle-row settings-field">
                         <span>Use Pack Image for Title</span>

@@ -295,11 +295,57 @@ def get_auto_clear_exports_config_value():
 
     return value
 
+def get_config_bool(config, key, fallback="0"):
+    return (config.get(key) or fallback).strip() == "1"
+
+
+def get_effective_print_label_settings(config):
+    labels_enabled = get_config_bool(config, "print_labels_enabled", "1")
+
+    tracking_code_enabled = get_config_bool(
+        config,
+        "print_label_tracking_code",
+        config.get("print_pack_tracking_code", "0"),
+    )
+
+    front_back_enabled = get_config_bool(
+        config,
+        "print_label_front_back",
+        config.get("print_front_back_label", "1"),
+    )
+
+    pack_label_cards_enabled = get_config_bool(
+        config,
+        "print_pack_label_cards",
+        config.get("print_pack_labels", "0"),
+    )
+
+    return {
+        "print_labels_enabled": labels_enabled,
+        "print_label_tracking_code": labels_enabled and tracking_code_enabled,
+        "print_label_front_back": labels_enabled and front_back_enabled,
+        "print_pack_label_cards": labels_enabled and pack_label_cards_enabled,
+    }
+
+
+def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
+    label_settings = label_settings or get_effective_print_label_settings(
+        get_request_config() if has_request_context() else get_config()
+    )
+
+    if not label_settings.get("print_labels_enabled"):
+        return ""
+
+    if not label_settings.get("print_label_tracking_code"):
+        return ""
+
+    return (pack_tracking_code or "").strip().upper()
+
+
 def _build_pdf_print_settings(config):
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
     crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
-    print_front_back_label = (config.get("print_front_back_label") or "1").strip() == "1"
-    print_pack_tracking_code = (config.get("print_pack_tracking_code") or "0").strip() == "1"
+    label_settings = get_effective_print_label_settings(config)
 
     try:
         pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
@@ -320,8 +366,16 @@ def _build_pdf_print_settings(config):
         "pdf_width_mm": pdf_width_mm,
         "pdf_height_mm": pdf_height_mm,
         "pdf_crop_border": crop_border,
-        "print_front_back_label": print_front_back_label,
-        "print_pack_tracking_code": print_pack_tracking_code,
+
+        # New clear label settings.
+        "print_labels_enabled": label_settings["print_labels_enabled"],
+        "print_label_tracking_code": label_settings["print_label_tracking_code"],
+        "print_label_front_back": label_settings["print_label_front_back"],
+        "print_pack_label_cards": label_settings["print_pack_label_cards"],
+
+        # Legacy aliases for any older code path that still reads these names.
+        "print_front_back_label": label_settings["print_label_front_back"],
+        "print_pack_tracking_code": label_settings["print_label_tracking_code"],
     }
 
 def get_request_pdf_print_settings():
@@ -938,9 +992,10 @@ def update_config_from_form(form_data):
         "use_pdf_print",
         "pdf_crop_border",
         "pdf_cutting_guides",
-        "print_front_back_label",
-        "print_pack_tracking_code",
-        "print_pack_labels",
+        "print_labels_enabled",
+        "print_label_tracking_code",
+        "print_label_front_back",
+        "print_pack_label_cards",
         "enable_track_packs",
         "enable_chaos_card_image_export",
         "export_add_bleed",
@@ -4597,7 +4652,12 @@ def get_configured_print_pack_labels():
     except Exception:
         config = {}
 
-    return (config.get("print_pack_labels") or "0").strip() == "1"
+    label_settings = get_effective_print_label_settings(config)
+
+    return (
+        label_settings.get("print_labels_enabled")
+        and label_settings.get("print_pack_label_cards")
+    )
 
 
 def draw_chaos_pack_label_pdf_page(
@@ -6094,7 +6154,10 @@ def build_chaos_pack_pdf(
                         label_state.get("pack_display_name") or "Pack Label",
                         set_code=label_state.get("set_code"),
                         booster_name=label_state.get("booster_name"),
-                        pack_tracking_code=label_state.get("pack_tracking_code"),
+                        pack_tracking_code=get_effective_pack_tracking_code(
+                            label_state.get("pack_tracking_code"),
+                            label_settings=pdf_settings,
+                        ),
                         label_suffix=f"label_{label_index}",
                     )
                 )
@@ -6257,8 +6320,11 @@ def build_chaos_pack_pdf(
             template_rendered_entries.append(
                 build_pdf_rendered_entry_with_template(
                     rendered_entry,
-                    pack_tracking_code=pack_tracking_code if pdf_settings.get("print_pack_tracking_code") else "",
-                    print_front_back_label=pdf_settings.get("print_front_back_label"),
+                    pack_tracking_code=get_effective_pack_tracking_code(
+                        pack_tracking_code,
+                        label_settings=pdf_settings,
+                    ),
+                    print_front_back_label=pdf_settings.get("print_label_front_back"),
                 )
             )
 
@@ -6274,7 +6340,10 @@ def build_chaos_pack_pdf(
                         pack_display_name,
                         set_code=set_code,
                         booster_name=booster_name,
-                        pack_tracking_code=pack_tracking_code,
+                        pack_tracking_code=get_effective_pack_tracking_code(
+                            pack_tracking_code,
+                            label_settings=pdf_settings,
+                        ),
                         label_suffix="label",
                     )
                 )
@@ -6498,7 +6567,10 @@ def build_chaos_pack_pdf(
                 pack_display_name,
                 set_code=set_code,
                 booster_name=booster_name,
-                pack_tracking_code=pack_tracking_code,
+                pack_tracking_code=get_effective_pack_tracking_code(
+                    pack_tracking_code,
+                    label_settings=pdf_settings,
+                ),
             )
 
             pack_label_temp_filename = (
@@ -7883,12 +7955,19 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
             pack_label_filename = f"{safe_pack_code}_label.jpg"
             pack_label_output_path = os.path.join(pack_labels_dir, pack_label_filename)
 
+            label_settings = get_effective_print_label_settings(
+                get_request_config() if has_request_context() else get_config()
+            )
+
             save_chaos_pack_label_image_file(
                 pack_label_output_path,
                 pack_label["pack_display_name"],
                 set_code=pack_label["set_code"],
                 booster_name=pack_label["booster_name"],
-                pack_tracking_code=pack_label["pack_tracking_code"],
+                pack_tracking_code=get_effective_pack_tracking_code(
+                    pack_label["pack_tracking_code"],
+                    label_settings=label_settings,
+                ),
                 card_width_mm=CARD_PRINT_WIDTH_MM,
                 card_height_mm=CARD_PRINT_HEIGHT_MM,
             )

@@ -842,6 +842,10 @@
         alternateFoilInput.addEventListener("change", saveAlternateFoilState);
     }
 
+    if (alternateSaveFrameButton) {
+        alternateSaveFrameButton.addEventListener("click", saveAlternateFrameTemplate);
+    }
+
     alternateButtons.forEach(function (button) {
         button.addEventListener("click", function () {
             openAlternateModal(

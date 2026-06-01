@@ -90,8 +90,18 @@ DEFAULT_CONFIG = {
     "print_bleed_size_mm": "3.0",
     "pdf_crop_border": "1",
     "pdf_cutting_guides": "1",
+
+    # Print / Export Labels
+    "print_labels_enabled": "1",
+    "print_label_tracking_code": "0",
+    "print_label_front_back": "1",
+    "print_pack_label_cards": "0",
+
+    # Legacy label keys retained for compatibility with older saved configs.
     "print_front_back_label": "1",
     "print_pack_tracking_code": "0",
+    "print_pack_labels": "0",
+
     "enable_track_packs": "0",
     "enable_chaos_card_image_export": "0",
     "export_separate_special_slots": "0",
