@@ -562,6 +562,15 @@
                     </label>
 
                     <label class="toggle-row settings-field">
+                        <span>PDF Cutting Guides</span>
+                        <input
+                            type="checkbox"
+                            name="pdf_cutting_guides"
+                            {% if config.get("pdf_cutting_guides", "1") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
                         <span>Open Print in New Tab</span>
                         <input
                             type="checkbox"

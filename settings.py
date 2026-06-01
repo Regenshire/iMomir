@@ -33,6 +33,12 @@ SILHOUETTE_RENDER_TARGET_HEIGHT_PX = 1067
 SILHOUETTE_CORNER_RADIUS_MM = 3.25
 SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE = True
 
+PDF_CUTTING_GUIDE_CARD_WIDTH_MM = 63.0
+PDF_CUTTING_GUIDE_CARD_HEIGHT_MM = 88.0
+PDF_CUTTING_GUIDE_SIZE_MM = 2.0
+PDF_CUTTING_GUIDE_THICKNESS_MM = 0.20
+PDF_CUTTING_GUIDE_COLOR_RGB = (0, 255, 0)
+
 CARD_SEARCH_DEFAULT_TITLE = "Avatar - Momir Vig, Simic Visionary"
 CARD_SEARCH_DEFAULT_VARIANTS = {
     "dark": {
@@ -83,6 +89,7 @@ DEFAULT_CONFIG = {
     "pdf_height_mm": "85.25",
     "print_bleed_size_mm": "3.0",
     "pdf_crop_border": "1",
+    "pdf_cutting_guides": "1",
     "print_front_back_label": "1",
     "print_pack_tracking_code": "0",
     "enable_track_packs": "0",

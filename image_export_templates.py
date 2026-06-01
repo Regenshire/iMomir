@@ -254,8 +254,8 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         ],
 
         "overlay_fill_sample_regions": [
-            {"x1": 0.49, "y1": 0.955, "x2": 0.51, "y2": 0.965},
-            {"x1": 0.52, "y1": 0.965, "x2": 0.54, "y2": 0.985},
+            {"x1": 0.49, "y1": 0.991, "x2": 0.51, "y2": 0.993},
+            {"x1": 0.55, "y1": 0.994, "x2": 0.54, "y2": 0.996},
         ],
 
         "card_matte_sample_regions": [
@@ -272,6 +272,29 @@ CARD_EXPORT_FRAME_TEMPLATES = {
 
         "card_corner_radius_pct": 0.060,
         "fallback_rgb": (15, 12, 12),
+    },
+
+    "2015_short": {
+        "template_name": "M15 Frame - Short",
+        "inherits": "2015",
+
+        #"overlay_fill_rgb_override": (255, 0, 255),
+
+        # This is basically the old behavior. Small lower-left black footer label.
+        "overlay_box": {
+            "x1": 0.000,
+            "y1": 0.929,
+            "x2": 0.450,
+            "y2": 1.000,
+        },
+        "text_box": {
+            "x1": 0.066,
+            "y1": 0.940,
+            "x2": 0.471,
+            "y2": 0.973,
+        },
+        "text_align": "left",
+
     },
 
     "future": {

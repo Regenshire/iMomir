@@ -82,6 +82,11 @@ from settings import (
     MTGJSON_SET_LIST_URL,
     OTHER_FILTER_KEYS,
     PRIMARY_TYPE_KEYS,
+    PDF_CUTTING_GUIDE_CARD_HEIGHT_MM,
+    PDF_CUTTING_GUIDE_CARD_WIDTH_MM,
+    PDF_CUTTING_GUIDE_COLOR_RGB,
+    PDF_CUTTING_GUIDE_SIZE_MM,
+    PDF_CUTTING_GUIDE_THICKNESS_MM,
     PRINT_COLOR_MODE_OPTIONS,
     PRINT_TEMPLATE_METADATA,
     PRINT_TEMPLATE_OPTIONS,
@@ -932,6 +937,7 @@ def update_config_from_form(form_data):
         "allow_arena",
         "use_pdf_print",
         "pdf_crop_border",
+        "pdf_cutting_guides",
         "print_front_back_label",
         "print_pack_tracking_code",
         "print_pack_labels",
@@ -3288,6 +3294,138 @@ def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height
         mask="auto",
     )
 
+def is_pdf_cutting_guides_enabled():
+    try:
+        config = get_request_config() if has_request_context() else get_config()
+    except Exception:
+        config = {}
+
+    return (config.get("pdf_cutting_guides") or "1").strip() == "1"
+
+
+def get_pdf_cutting_guide_rgb_normalized():
+    try:
+        red, green, blue = PDF_CUTTING_GUIDE_COLOR_RGB
+    except Exception:
+        red, green, blue = (0, 255, 0)
+
+    def normalize_channel(value):
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError):
+            parsed_value = 0
+
+        return max(0, min(255, parsed_value)) / 255.0
+
+    return (
+        normalize_channel(red),
+        normalize_channel(green),
+        normalize_channel(blue),
+    )
+
+
+def get_pdf_cut_rect_for_slot(slot_def):
+    slot_x_mm = float(slot_def["x_mm"])
+    slot_y_mm = float(slot_def["y_mm"])
+    slot_width_mm = float(slot_def["width_mm"])
+    slot_height_mm = float(slot_def["height_mm"])
+    rotation_degrees = int(slot_def.get("rotation_degrees", 0) or 0) % 360
+
+    if rotation_degrees in {90, 270}:
+        target_cut_width_mm = float(PDF_CUTTING_GUIDE_CARD_HEIGHT_MM)
+        target_cut_height_mm = float(PDF_CUTTING_GUIDE_CARD_WIDTH_MM)
+    else:
+        target_cut_width_mm = float(PDF_CUTTING_GUIDE_CARD_WIDTH_MM)
+        target_cut_height_mm = float(PDF_CUTTING_GUIDE_CARD_HEIGHT_MM)
+
+    cut_width_mm = min(target_cut_width_mm, slot_width_mm)
+    cut_height_mm = min(target_cut_height_mm, slot_height_mm)
+
+    cut_left_mm = slot_x_mm + ((slot_width_mm - cut_width_mm) / 2.0)
+    cut_bottom_mm = slot_y_mm + ((slot_height_mm - cut_height_mm) / 2.0)
+    cut_right_mm = cut_left_mm + cut_width_mm
+    cut_top_mm = cut_bottom_mm + cut_height_mm
+
+    return {
+        "left_mm": cut_left_mm,
+        "right_mm": cut_right_mm,
+        "bottom_mm": cut_bottom_mm,
+        "top_mm": cut_top_mm,
+    }
+
+
+def should_draw_pdf_cutting_guides_for_entry(rendered_entry):
+    if not rendered_entry:
+        return False
+
+    page_kind = (rendered_entry.get("page_kind") or "").strip().lower()
+
+    if page_kind == "title":
+        return False
+
+    temp_path = (rendered_entry.get("temp_path") or "").strip()
+
+    return bool(temp_path)
+
+def draw_pdf_cutting_guide_corner_marks(pdf_canvas, cut_rect):
+    try:
+        mark_size_mm = float(PDF_CUTTING_GUIDE_SIZE_MM)
+    except (TypeError, ValueError):
+        mark_size_mm = 2.0
+
+    try:
+        line_thickness_mm = float(PDF_CUTTING_GUIDE_THICKNESS_MM)
+    except (TypeError, ValueError):
+        line_thickness_mm = 0.20
+
+    if mark_size_mm <= 0 or line_thickness_mm <= 0:
+        return
+
+    left_mm = float(cut_rect["left_mm"])
+    right_mm = float(cut_rect["right_mm"])
+    bottom_mm = float(cut_rect["bottom_mm"])
+    top_mm = float(cut_rect["top_mm"])
+
+    red, green, blue = get_pdf_cutting_guide_rgb_normalized()
+
+    pdf_canvas.saveState()
+    pdf_canvas.setStrokeColorRGB(red, green, blue)
+    pdf_canvas.setLineWidth(line_thickness_mm * mm)
+
+    # Draw inward-facing L guides anchored at the final cut corners.
+
+    # Top-left: right + down
+    pdf_canvas.line(left_mm * mm, top_mm * mm, (left_mm + mark_size_mm) * mm, top_mm * mm)
+    pdf_canvas.line(left_mm * mm, top_mm * mm, left_mm * mm, (top_mm - mark_size_mm) * mm)
+
+    # Top-right: left + down
+    pdf_canvas.line((right_mm - mark_size_mm) * mm, top_mm * mm, right_mm * mm, top_mm * mm)
+    pdf_canvas.line(right_mm * mm, top_mm * mm, right_mm * mm, (top_mm - mark_size_mm) * mm)
+
+    # Bottom-left: right + up
+    pdf_canvas.line(left_mm * mm, bottom_mm * mm, (left_mm + mark_size_mm) * mm, bottom_mm * mm)
+    pdf_canvas.line(left_mm * mm, bottom_mm * mm, left_mm * mm, (bottom_mm + mark_size_mm) * mm)
+
+    # Bottom-right: left + up
+    pdf_canvas.line((right_mm - mark_size_mm) * mm, bottom_mm * mm, right_mm * mm, bottom_mm * mm)
+    pdf_canvas.line(right_mm * mm, bottom_mm * mm, right_mm * mm, (bottom_mm + mark_size_mm) * mm)
+
+    pdf_canvas.restoreState()
+
+def draw_pdf_cutting_guides_for_page(pdf_canvas, page_entries, slot_defs):
+    if not is_pdf_cutting_guides_enabled():
+        return
+
+    for slot_index, rendered_entry in enumerate(page_entries or []):
+        if slot_index >= len(slot_defs):
+            continue
+
+        if not should_draw_pdf_cutting_guides_for_entry(rendered_entry):
+            continue
+
+        cut_rect = get_pdf_cut_rect_for_slot(slot_defs[slot_index])
+        draw_pdf_cutting_guide_corner_marks(pdf_canvas, cut_rect)
+
 def draw_processed_image_into_slot(
     pdf_canvas,
     image_path,
@@ -4618,6 +4756,12 @@ def draw_chaos_rendered_entries_into_pdf_layout(
                         blank_white_card=True,
                     )
 
+            draw_pdf_cutting_guides_for_page(
+                pdf_canvas,
+                page_entries,
+                slot_defs,
+            )
+
             pdf_canvas.showPage()
             pages_rendered += 1
 
@@ -4641,6 +4785,12 @@ def draw_chaos_rendered_entries_into_pdf_layout(
                     print_settings["print_mode"],
                     slot_def,
                 )
+
+            draw_pdf_cutting_guides_for_page(
+                pdf_canvas,
+                page_entries,
+                slot_defs,
+            )
 
             pdf_canvas.showPage()
             pages_rendered += 1
