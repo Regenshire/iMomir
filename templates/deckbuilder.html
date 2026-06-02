@@ -16,7 +16,6 @@
     data-default-card-size="100"
     data-move-zone-url="{{ deckbuilder.routes.move_zone_url }}"
     data-basic-land-url="{{ deckbuilder.routes.basic_land_url }}"
-    data-debug-url="{{ url_for('deckbuilder_client_debug') }}"
 >
     <header class="deckbuilder-header">
         <div class="deckbuilder-title-wrap">
@@ -253,7 +252,7 @@
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
                             <div class="campaign-test-draft-picked-meta">
-                                Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                                Pack {{ picked_card.pack_number }} • Pick {{ picked_card.pick_number }}
                             </div>
                         </div>
                     </div>
@@ -363,33 +362,11 @@
 
     const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
     const basicLandUrl = workspace.dataset.basicLandUrl || "";
-    const debugUrl = workspace.dataset.debugUrl || "";
     const deckbuilderDragMimeType = "application/x-imomir-deckbuilder";
 
     function writeDeckbuilderClientDebug(label, data) {
-        if (!debugUrl) {
-            return;
-        }
-
-        try {
-            fetch(debugUrl, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "X-Requested-With": "XMLHttpRequest"
-                },
-                body: JSON.stringify({
-                    label: label,
-                    deckId: workspace.dataset.deckId || "",
-                    sourceType: workspace.dataset.sourceType || "",
-                    sourceId: workspace.dataset.sourceId || "",
-                    data: data || {}
-                })
-            }).catch(function () {});
-        } catch (error) {
-            // Debug logging must never break deckbuilder behavior.
-        }
+        // Temporary client debug disabled after Basic Land drag/drop was stabilized.
+        // Leave this function in place so existing diagnostic calls remain harmless.
     }
 
     function setDeckbuilderDragTransfer(event, dragPayload, fallbackText) {
@@ -434,14 +411,6 @@
             return null;
         }
     }
-
-    writeDeckbuilderClientDebug("INIT", {
-        moveZoneUrl: moveZoneUrl,
-        basicLandUrl: basicLandUrl,
-        deckCards: document.querySelectorAll("#deckbuilderDeckList .deckbuilder-card:not([data-is-land-palette='1'])").length,
-        sideboardCards: document.querySelectorAll("#deckbuilderSideboardList .deckbuilder-card:not([data-is-land-palette='1'])").length,
-        basicLandPaletteCards: document.querySelectorAll(".deckbuilder-basic-land-card[data-is-land-palette='1']").length
-    });
 
     function escapeHtml(value) {
         return String(value || "")
@@ -833,7 +802,7 @@
     function renderDeckbuilderCard(card, targetZone) {
         const pickedMeta = card.is_basic_land
             ? "Basic Land"
-            : "Pick " + escapeHtml(card.pick_number) + " • Pack " + escapeHtml(card.pack_number);
+            : "Pack " + escapeHtml(card.pack_number) + " • Pick " + escapeHtml(card.pick_number);
 
         return (
             '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(card.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(card.card_name || "") + '" data-card-rarity="' + escapeHtml(card.rarity || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" data-is-basic-land="' + escapeHtml(card.is_basic_land ? "1" : "0") + '">' +

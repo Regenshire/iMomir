@@ -2,6 +2,7 @@ import random
 from datetime import datetime, timezone
 
 from db.database import get_db_connection
+from modes.bot_selection import choose_bot_draft_pick
 
 
 DRAFT_TEST_COLOR_PAIRS = [
@@ -1079,6 +1080,109 @@ def get_draft_test_detail(draft_test_id):
         "basic_land_names": DRAFT_TEST_BASIC_LANDS,
     }
 
+def get_draft_test_virtual_player_detail(draft_test_id, draft_test_player_id=None):
+    ensure_draft_testing_schema()
+
+    try:
+        parsed_draft_test_id = int(draft_test_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid Test Draft ID.",
+        }
+
+    parsed_player_id = draft_test_normalize_optional_int(draft_test_player_id)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_sessions
+        WHERE draft_test_id = ?
+        """,
+        (parsed_draft_test_id,),
+    )
+    session_row = cursor.fetchone()
+
+    if not session_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Test Draft was not found.",
+        }
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_players
+        WHERE draft_test_id = ?
+          AND is_human = 0
+        ORDER BY seat_index ASC
+        """,
+        (parsed_draft_test_id,),
+    )
+    virtual_player_rows = cursor.fetchall()
+
+    selected_player_row = None
+
+    if parsed_player_id is not None:
+        for player_row in virtual_player_rows:
+            if int(player_row["draft_test_player_id"]) == parsed_player_id:
+                selected_player_row = player_row
+                break
+
+    if selected_player_row is None and virtual_player_rows:
+        selected_player_row = virtual_player_rows[0]
+
+    selected_player_id = int(selected_player_row["draft_test_player_id"]) if selected_player_row else 0
+
+    picked_cards = []
+
+    if selected_player_id > 0:
+        cursor.execute(
+            """
+            SELECT
+                dtpick.*,
+                COALESCE(dtpc.set_code, cc.set_code, '') AS set_code,
+                COALESCE(dtpc.collector_number, cc.collector_number, '') AS collector_number,
+                COALESCE(dtpc.rarity, cc.rarity, '') AS rarity,
+                COALESCE(dtpc.type_line, cc.type_line, '') AS type_line,
+                COALESCE(dtpc.mana_value, cc.mana_value, 0) AS mana_value,
+                COALESCE(dtpc.mana_cost, cc.mana_cost, '') AS mana_cost,
+                COALESCE(dtpc.colors_json, cc.colors_json, '[]') AS colors_json,
+                COALESCE(dtpc.color_identity_json, cc.color_identity_json, '[]') AS color_identity_json,
+                COALESCE(dtpc.image_url, cc.image_url, '') AS image_url
+            FROM draft_test_picks dtpick
+            LEFT JOIN draft_test_pack_cards dtpc
+                ON dtpc.draft_test_pack_card_id = dtpick.draft_test_pack_card_id
+            LEFT JOIN chaos_cards cc
+                ON cc.card_uuid = dtpick.card_uuid
+            WHERE dtpick.draft_test_id = ?
+              AND dtpick.draft_test_player_id = ?
+            ORDER BY
+                dtpick.pack_number ASC,
+                dtpick.pick_number ASC,
+                dtpick.draft_test_pick_id ASC
+            """,
+            (
+                parsed_draft_test_id,
+                selected_player_id,
+            ),
+        )
+        picked_cards = cursor.fetchall()
+
+    conn.close()
+
+    return {
+        "ok": True,
+        "session": session_row,
+        "virtual_players": virtual_player_rows,
+        "selected_player": selected_player_row,
+        "picked_cards": picked_cards,
+    }
+
 def get_draft_test_pass_direction(pack_number):
     try:
         parsed_pack_number = int(pack_number)
@@ -1090,59 +1194,43 @@ def get_draft_test_pass_direction(pack_number):
 
     return -1
 
+def get_draft_test_player_picked_cards_for_bot_selection(cursor, draft_test_id, draft_test_player_id):
+    cursor.execute(
+        """
+        SELECT
+            dtpick.*,
+            COALESCE(dtpc.set_code, cc.set_code, '') AS set_code,
+            COALESCE(dtpc.collector_number, cc.collector_number, '') AS collector_number,
+            COALESCE(dtpc.rarity, cc.rarity, '') AS rarity,
+            COALESCE(dtpc.type_line, cc.type_line, '') AS type_line,
+            COALESCE(dtpc.mana_value, cc.mana_value, 0) AS mana_value,
+            COALESCE(dtpc.mana_cost, cc.mana_cost, '') AS mana_cost,
+            COALESCE(dtpc.colors_json, cc.colors_json, '[]') AS colors_json,
+            COALESCE(dtpc.color_identity_json, cc.color_identity_json, '[]') AS color_identity_json,
+            COALESCE(dtpc.edhrec_rank, cc.edhrec_rank) AS edhrec_rank,
+            COALESCE(dtpc.edhrec_saltiness, cc.edhrec_saltiness) AS edhrec_saltiness,
+            COALESCE(dtpc.image_url, cc.image_url, '') AS image_url
+        FROM draft_test_picks dtpick
+        LEFT JOIN draft_test_pack_cards dtpc
+            ON dtpc.draft_test_pack_card_id = dtpick.draft_test_pack_card_id
+        LEFT JOIN chaos_cards cc
+            ON cc.card_uuid = dtpick.card_uuid
+        WHERE dtpick.draft_test_id = ?
+          AND dtpick.draft_test_player_id = ?
+        ORDER BY
+            dtpick.pack_number ASC,
+            dtpick.pick_number ASC,
+            dtpick.draft_test_pick_id ASC
+        """,
+        (
+            int(draft_test_id),
+            int(draft_test_player_id),
+        ),
+    )
 
-def get_draft_test_card_ai_score(card_row, player_row):
-    score = 0.0
+    return cursor.fetchall()
 
-    rarity = (card_row["rarity"] or "").strip().lower()
-
-    if rarity == "mythic":
-        score += 7.0
-    elif rarity == "rare":
-        score += 5.0
-    elif rarity == "uncommon":
-        score += 3.0
-
-    edhrec_rank = card_row["edhrec_rank"]
-
-    if edhrec_rank is not None:
-        try:
-            parsed_rank = int(edhrec_rank)
-
-            if parsed_rank > 0:
-                score += max(0.0, 6.0 - min(parsed_rank, 6000) / 1000.0)
-        except (TypeError, ValueError):
-            pass
-
-    color_identity_json = (card_row["color_identity_json"] or "[]").upper()
-    color_preference_1 = (player_row["color_preference_1"] or "").upper()
-    color_preference_2 = (player_row["color_preference_2"] or "").upper()
-
-    if color_preference_1 and color_preference_1 in color_identity_json:
-        score += 2.0
-
-    if color_preference_2 and color_preference_2 in color_identity_json:
-        score += 2.0
-
-    mana_value = card_row["mana_value"]
-
-    if mana_value is not None:
-        try:
-            parsed_mana_value = float(mana_value)
-
-            if 2 <= parsed_mana_value <= 4:
-                score += 1.0
-            elif parsed_mana_value >= 7:
-                score -= 0.75
-        except (TypeError, ValueError):
-            pass
-
-    score += random.random()
-
-    return score
-
-
-def choose_ai_draft_test_card(cursor, draft_test_pack_id, player_row):
+def choose_ai_draft_test_card(cursor, session_row, draft_test_pack_id, player_row):
     cursor.execute(
         """
         SELECT *
@@ -1159,25 +1247,32 @@ def choose_ai_draft_test_card(cursor, draft_test_pack_id, player_row):
     if not available_cards:
         return None
 
-    best_card = None
-    best_score = None
+    drafted_cards = get_draft_test_player_picked_cards_for_bot_selection(
+        cursor=cursor,
+        draft_test_id=int(session_row["draft_test_id"]),
+        draft_test_player_id=int(player_row["draft_test_player_id"]),
+    )
 
-    for card_row in available_cards:
-        score = get_draft_test_card_ai_score(card_row, player_row)
-
-        if best_card is None or score > best_score:
-            best_card = card_row
-            best_score = score
-
-    return {
-        "card": best_card,
-        "score": best_score,
+    draft_context = {
+        "draft_test_id": int(session_row["draft_test_id"]),
+        "pack_number": int(session_row["current_pack_number"] or 1),
+        "pick_number": int(session_row["current_pick_number"] or 1),
+        "packs_per_player": int(session_row["packs_per_player"] or 3),
+        "pod_size": int(session_row["pod_size"] or 8),
     }
+
+    return choose_bot_draft_pick(
+        available_cards=available_cards,
+        drafted_cards=drafted_cards,
+        player_row=player_row,
+        draft_context=draft_context,
+    )
 
 
 def record_ai_draft_test_pick(cursor, session_row, player_row, pack_row, current_pick_number, now_utc):
     ai_choice = choose_ai_draft_test_card(
         cursor=cursor,
+        session_row=session_row,
         draft_test_pack_id=int(pack_row["draft_test_pack_id"]),
         player_row=player_row,
     )
@@ -1187,6 +1282,7 @@ def record_ai_draft_test_pick(cursor, session_row, player_row, pack_row, current
 
     selected_card_row = ai_choice["card"]
     selected_score = ai_choice.get("score")
+    selected_reason = ai_choice.get("reason") or "AI pick"
 
     cursor.execute(
         """
@@ -1243,7 +1339,7 @@ def record_ai_draft_test_pick(cursor, session_row, player_row, pack_row, current
             "deck",
             now_utc,
             selected_score,
-            "AI pick",
+            selected_reason,
         ),
     )
 

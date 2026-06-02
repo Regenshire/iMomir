@@ -5664,6 +5664,242 @@ input {
 }
 
 /* ==========================================
+   Test Draft Virtual Users
+   ========================================== */
+
+.campaign-test-draft-virtual-dialog {
+    width: 90vw;
+    height: 90vh;
+    max-width: 1600px;
+    max-height: 980px;
+    display: flex;
+    flex-direction: column;
+}
+
+.campaign-test-draft-virtual-controls {
+    display: grid;
+    grid-template-columns: auto minmax(220px, 360px) auto minmax(220px, 320px) auto minmax(120px, 160px) minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    margin: 14px 0 12px 0;
+}
+
+.campaign-test-draft-virtual-controls label {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.campaign-test-draft-virtual-view-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.campaign-test-draft-virtual-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(130px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.campaign-test-draft-virtual-summary div {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.045);
+    padding: 9px 10px;
+}
+
+.campaign-test-draft-virtual-summary span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.campaign-test-draft-virtual-summary strong {
+    color: var(--text);
+    font-size: 0.98rem;
+    font-weight: 900;
+}
+
+.campaign-test-draft-virtual-stats-panel {
+    border: 1px solid rgba(110, 156, 255, 0.18);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.028);
+    padding: 10px;
+    margin-bottom: 12px;
+}
+
+.campaign-test-draft-virtual-section-title-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 8px 0;
+}
+
+.campaign-test-draft-virtual-section-title-row h3 {
+    margin: 0;
+    color: var(--text);
+    font-size: 0.95rem;
+    line-height: 1.1;
+    font-weight: 900;
+}
+
+.campaign-test-draft-virtual-section-title-row span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 800;
+}
+
+.campaign-test-draft-virtual-selected-title-row {
+    margin-top: 2px;
+}
+
+.campaign-test-draft-virtual-selected-title-row h3 {
+    color: #d8f5df;
+}
+
+.campaign-test-draft-virtual-cards {
+    flex: 1 1 auto;
+    min-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.025);
+    padding: 10px;
+}
+
+.campaign-test-draft-virtual-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.campaign-test-draft-virtual-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--campaign-test-draft-card-width));
+    align-content: start;
+    justify-content: start;
+    gap: 14px;
+}
+
+.campaign-test-draft-virtual-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.045);
+    min-width: 0;
+}
+
+.campaign-test-draft-virtual-cards-list .campaign-test-draft-virtual-card {
+    display: grid;
+    grid-template-columns: 54px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px;
+}
+
+.campaign-test-draft-virtual-cards-grid .campaign-test-draft-virtual-card {
+    display: flex;
+    flex-direction: column;
+    width: var(--campaign-test-draft-card-width);
+    min-width: var(--campaign-test-draft-card-width);
+    max-width: var(--campaign-test-draft-card-width);
+    padding: 10px;
+}
+
+.campaign-test-draft-virtual-card-image {
+    display: block;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.24);
+}
+
+.campaign-test-draft-virtual-cards-list .campaign-test-draft-virtual-card-image {
+    width: 54px;
+    height: 74px;
+    object-fit: cover;
+}
+
+.campaign-test-draft-virtual-cards-grid .campaign-test-draft-virtual-card-image {
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    object-fit: contain;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.34);
+}
+
+.campaign-test-draft-virtual-card-main {
+    min-width: 0;
+}
+
+.campaign-test-draft-virtual-card-name {
+    color: var(--text);
+    font-size: 0.9rem;
+    line-height: 1.2;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.campaign-test-draft-virtual-card-pick {
+    color: #d8e4ff;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1.25;
+    margin-top: 3px;
+    white-space: normal;
+}
+
+.campaign-test-draft-virtual-card-reason {
+    color: #b8c8e8;
+    font-size: 0.74rem;
+    font-weight: 700;
+    line-height: 1.25;
+    margin-top: 3px;
+    white-space: normal;
+}
+
+.campaign-test-draft-virtual-cards-grid .campaign-test-draft-virtual-card-reason {
+    display: none;
+}
+
+.campaign-test-draft-virtual-cards-grid .campaign-test-draft-virtual-card-score {
+    display: none;
+}
+
+.campaign-test-draft-virtual-card-meta {
+    color: var(--muted);
+    font-size: 0.74rem;
+    line-height: 1.25;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+    .campaign-test-draft-virtual-dialog {
+        width: calc(100vw - 18px);
+        height: calc(100vh - 18px);
+        max-height: none;
+    }
+
+    .campaign-test-draft-virtual-controls {
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-test-draft-virtual-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+/* ==========================================
    Test Draft Workspace
    ========================================== */
 
@@ -5671,6 +5907,7 @@ input {
     --campaign-test-draft-side-width: 340px;
     --campaign-test-draft-deck-flex: 0.55;
     --campaign-test-draft-sideboard-flex: 0.45;
+    --campaign-test-draft-card-width: 184px;
     position: fixed;
     inset: 0;
     z-index: 1400;
@@ -5723,6 +5960,29 @@ input {
     align-items: center;
     gap: 7px;
     flex-shrink: 0;
+}
+
+.campaign-test-draft-card-size-control {
+    display: inline-grid;
+    grid-template-columns: auto 92px;
+    gap: 7px;
+    align-items: center;
+    min-height: 32px;
+    margin-right: 3px;
+}
+
+.campaign-test-draft-card-size-control span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.campaign-test-draft-card-size-control select {
+    min-height: 32px;
 }
 
 .campaign-test-draft-icon-button,
@@ -5920,10 +6180,11 @@ input {
 
 .campaign-test-draft-card-list-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    grid-template-columns: repeat(auto-fill, var(--campaign-test-draft-card-width));
     gap: 14px;
     align-items: stretch;
-    grid-auto-rows: 1fr;
+    justify-content: start;
+    grid-auto-rows: auto;
 }
 
 .campaign-test-draft-card {
@@ -6419,10 +6680,11 @@ input {
 
 .campaign-test-draft-picked-grid-active .campaign-test-draft-zone-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(184px, 1fr));
+    grid-template-columns: repeat(auto-fill, var(--campaign-test-draft-card-width));
     align-content: start;
     align-items: stretch;
-    grid-auto-rows: 1fr;
+    justify-content: start;
+    grid-auto-rows: auto;
     gap: 14px;
 }
 
@@ -6721,7 +6983,8 @@ input {
     }
 
     .campaign-test-draft-card-list-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fill, var(--campaign-test-draft-card-width));
+        justify-content: start;
         gap: 10px;
     }
 

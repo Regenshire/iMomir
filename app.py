@@ -188,6 +188,7 @@ from db.deckdb import (
 from modes.draft import (
     create_draft_test_from_pack_pool,
     get_draft_test_detail_state,
+    get_draft_test_virtual_player_detail_state,
     move_human_draft_test_pick_zone_state,
     normalize_draft_test_start_payload,
     record_human_draft_test_pick_state,
@@ -11537,6 +11538,7 @@ def serialize_draft_test_pick(row):
         "card_uuid": row["card_uuid"] or "",
         "card_name": row["card_name"] or "",
         "deck_zone": row["deck_zone"] or "deck",
+        "pick_score": row["pick_score"] if "pick_score" in row.keys() else None,
         "pick_reason": row["pick_reason"] or "",
         "is_basic_land": 1 if (row["pick_reason"] or "").strip().lower() == "basic land" else 0,
         "set_code": row["set_code"] or "",
@@ -11622,6 +11624,44 @@ def serialize_deckbuilder_context_for_ajax(deckbuilder_context):
         "basic_land_names": deckbuilder_context.get("basic_land_names") or [],
     }
 
+def serialize_draft_test_virtual_player(row):
+    if not row:
+        return None
+
+    return {
+        "draft_test_player_id": row["draft_test_player_id"],
+        "draft_test_id": row["draft_test_id"],
+        "seat_index": row["seat_index"],
+        "display_name": row["display_name"] or "",
+        "is_human": row["is_human"],
+        "campaign_player_id": row["campaign_player_id"] if "campaign_player_id" in row.keys() else None,
+        "portrait_image_path": row["portrait_image_path"] if "portrait_image_path" in row.keys() else "",
+        "color_preference_1": row["color_preference_1"] or "",
+        "color_preference_2": row["color_preference_2"] or "",
+    }
+
+
+def serialize_draft_test_virtual_player_state(virtual_state):
+    if not virtual_state or not virtual_state.get("ok"):
+        return {
+            "ok": False,
+            "message": (virtual_state or {}).get("message") or "Virtual player state could not be loaded.",
+        }
+
+    return {
+        "ok": True,
+        "session": serialize_draft_test_row(virtual_state.get("session")),
+        "virtual_players": [
+            serialize_draft_test_virtual_player(player)
+            for player in virtual_state.get("virtual_players", [])
+        ],
+        "selected_player": serialize_draft_test_virtual_player(virtual_state.get("selected_player")),
+        "picked_cards": [
+            serialize_draft_test_pick(card)
+            for card in virtual_state.get("picked_cards", [])
+        ],
+    }
+
 def serialize_draft_test_state_for_ajax(draft_state):
     if not draft_state or not draft_state.get("ok"):
         return {
@@ -11691,6 +11731,19 @@ def campaign_chaos_test_draft(draft_test_id):
         "campaign_test_draft.html",
         draft_state=draft_state,
     )
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/virtual-player", methods=["GET"])
+def campaign_chaos_test_draft_virtual_player(draft_test_id):
+    draft_test_player_id = request.args.get("draft_test_player_id")
+
+    virtual_state = get_draft_test_virtual_player_detail_state(
+        draft_test_id=draft_test_id,
+        draft_test_player_id=draft_test_player_id,
+    )
+
+    payload = serialize_draft_test_virtual_player_state(virtual_state)
+
+    return jsonify(payload), 200 if payload.get("ok") else 400
 
 @app.route("/campaign-chaos/test-draft/<int:draft_test_id>/pick", methods=["POST"])
 def campaign_chaos_test_draft_pick(draft_test_id):

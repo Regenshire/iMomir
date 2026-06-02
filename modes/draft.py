@@ -2,6 +2,7 @@ from db.draftdb import (
     create_draft_test_session_from_pack_pool,
     ensure_draft_testing_schema,
     get_draft_test_detail,
+    get_draft_test_virtual_player_detail,
     move_human_draft_test_pick_zone,
     normalize_draft_test_packs_per_player,
     normalize_draft_test_pod_size,
@@ -34,6 +35,13 @@ def create_draft_test_from_pack_pool(
 def get_draft_test_detail_state(draft_test_id):
     ensure_draft_testing_schema()
     return get_draft_test_detail(draft_test_id)
+
+def get_draft_test_virtual_player_detail_state(draft_test_id, draft_test_player_id=None):
+    ensure_draft_testing_schema()
+    return get_draft_test_virtual_player_detail(
+        draft_test_id=draft_test_id,
+        draft_test_player_id=draft_test_player_id,
+    )
 
 def record_human_draft_test_basic_land_state(draft_test_id, land_name):
     ensure_draft_testing_schema()
