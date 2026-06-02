@@ -2961,6 +2961,16 @@ def ensure_tracked_pack_campaign_schema():
     cursor.execute("PRAGMA table_info(tracked_chaos_packs)")
     tracked_pack_columns = {row[1] for row in cursor.fetchall()}
 
+    if "print_labels_enabled_override" not in tracked_pack_columns:
+        cursor.execute(
+            """
+            ALTER TABLE tracked_chaos_packs
+            ADD COLUMN print_labels_enabled_override INTEGER NULL
+            """
+        )
+
+        tracked_pack_columns.add("print_labels_enabled_override")
+
     cursor.execute(
         """
         SELECT config_value
@@ -3319,6 +3329,7 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, e
             tcp.added_at_utc,
             tcp.last_opened_at_utc,
             tcp.opened_count,
+            tcp.print_labels_enabled_override,
             tpc.campaign_id,
             COALESCE(tpc.campaign_enabled, 1) AS campaign_enabled
         FROM tracked_chaos_pack_campaigns tpc
@@ -3360,6 +3371,12 @@ def get_tracked_chaos_packs_for_campaign_spin(static_folder, campaign_id=None, e
             "added_at_utc": row["added_at_utc"] or "",
             "last_opened_at_utc": row["last_opened_at_utc"] or "",
             "opened_count": int(row["opened_count"] or 0),
+            "print_labels_enabled_override": (
+                None
+                if row["print_labels_enabled_override"] is None
+                else int(row["print_labels_enabled_override"])
+            ),
+            "labels_disabled_for_pack": row["print_labels_enabled_override"] is not None and int(row["print_labels_enabled_override"]) == 0,
             "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
         })
 
@@ -5490,6 +5507,7 @@ def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=
             tcp.added_at_utc,
             tcp.last_opened_at_utc,
             tcp.opened_count,
+            tcp.print_labels_enabled_override,
             tpc.campaign_id,
             COALESCE(tpc.campaign_enabled, 1) AS campaign_enabled
         FROM tracked_chaos_pack_campaigns tpc
@@ -5523,12 +5541,84 @@ def get_tracked_pack_management_rows(static_folder, search_text="", campaign_id=
             "added_at_utc": row["added_at_utc"] or "",
             "last_opened_at_utc": row["last_opened_at_utc"] or "",
             "opened_count": int(row["opened_count"] or 0),
+            "print_labels_enabled_override": (
+                None
+                if row["print_labels_enabled_override"] is None
+                else int(row["print_labels_enabled_override"])
+            ),
+            "labels_disabled_for_pack": row["print_labels_enabled_override"] is not None and int(row["print_labels_enabled_override"]) == 0,
             "campaign_id": int(row["campaign_id"]) if row["campaign_id"] is not None else None,
             "campaign_enabled": int(row["campaign_enabled"] or 0) == 1,
             "image_src": get_chaos_pack_art_image_src(art_info["image_path"]),
         })
 
     return packs
+
+def update_tracked_pack_print_labels_override(tracked_pack_id, print_labels_enabled_override):
+    ensure_tracked_pack_campaign_schema()
+
+    try:
+        parsed_pack_id = int(tracked_pack_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid pack ID.",
+        }
+
+    if print_labels_enabled_override in {None, "", "global"}:
+        parsed_override = None
+    else:
+        try:
+            parsed_override = int(print_labels_enabled_override)
+        except (TypeError, ValueError):
+            parsed_override = None
+
+        if parsed_override not in {0, 1}:
+            parsed_override = None
+
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT tracked_pack_id
+        FROM tracked_chaos_packs
+        WHERE tracked_pack_id = ?
+        """,
+        (parsed_pack_id,),
+    )
+
+    if not cursor.fetchone():
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Tracked pack was not found.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_packs
+        SET print_labels_enabled_override = ?
+        WHERE tracked_pack_id = ?
+        """,
+        (
+            parsed_override,
+            parsed_pack_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Pack label override updated.",
+        "tracked_pack_id": parsed_pack_id,
+        "print_labels_enabled_override": parsed_override,
+        "labels_disabled_for_pack": parsed_override == 0,
+    }
 
 def set_tracked_packs_campaign_enabled(tracked_pack_ids, campaign_enabled, campaign_id=None):
     ensure_tracked_pack_campaign_schema()
@@ -5616,7 +5706,8 @@ def get_tracked_pack_state_by_id(tracked_pack_id):
             added_at_utc,
             last_opened_at_utc,
             opened_count,
-            COALESCE(campaign_enabled, 1) AS campaign_enabled
+            COALESCE(campaign_enabled, 1) AS campaign_enabled,
+            print_labels_enabled_override
         FROM tracked_chaos_packs
         WHERE tracked_pack_id = ?
         """,
@@ -5692,6 +5783,12 @@ def get_tracked_pack_state_by_id(tracked_pack_id):
         "added_at_utc": pack_row["added_at_utc"] or "",
         "last_opened_at_utc": pack_row["last_opened_at_utc"] or "",
         "opened_count": int(pack_row["opened_count"] or 0),
+        "print_labels_enabled_override": (
+            None
+            if pack_row["print_labels_enabled_override"] is None
+            else int(pack_row["print_labels_enabled_override"])
+        ),
+        "labels_disabled_for_pack": pack_row["print_labels_enabled_override"] is not None and int(pack_row["print_labels_enabled_override"]) == 0,
         "campaign_enabled": int(pack_row["campaign_enabled"] or 0) == 1,
         "cards": cards,
     }
@@ -5728,12 +5825,13 @@ def build_tracked_packs_combined_pdf(
             booster_name=pack_state["booster_name"],
             pack_tracking_code=pack_state["pack_tracking_code"],
             include_pack_labels=False,
+            print_labels_enabled_override=pack_state.get("print_labels_enabled_override"),
         )
 
         merger.append(pack_pdf_buffer)
         appended_count += 1
 
-        if print_pack_labels:
+        if print_pack_labels and not pack_state.get("labels_disabled_for_pack"):
             pack_label_states.append(pack_state)
 
         if write_debug_log_fn:
@@ -5805,6 +5903,8 @@ def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None, cam
         "booster_index": int(winning_pack["booster_index"] or 0),
         "display_name": winning_pack["display_name"],
         "pack_tracking_code": winning_pack["pack_tracking_code"],
+        "print_labels_enabled_override": winning_pack.get("print_labels_enabled_override"),
+        "labels_disabled_for_pack": bool(winning_pack.get("labels_disabled_for_pack")),
         "bonus_pack_opened": bool(winning_pack.get("bonus_pack_opened")),
         "total_cards": len(cards),
         "cards": cards,
@@ -5859,35 +5959,87 @@ def build_campaign_chaos_spin_result(static_folder, write_debug_log_fn=None, cam
 
     return spin_result
 
+def normalize_chaos_pack_export_format(export_format):
+    normalized_export_format = (export_format or "").strip().lower()
+
+    valid_export_formats = {
+        "archidekt",
+        "moxfield",
+        "archidekt_full",
+        "moxfield_full",
+    }
+
+    if normalized_export_format not in valid_export_formats:
+        raise ValueError("Invalid Chaos Draft export format.")
+
+    return normalized_export_format
+
+
+def get_chaos_export_card_identity(card, include_printing=False):
+    card_name = (card.get("card_name") or "").strip()
+
+    if not card_name:
+        return ""
+
+    if not include_printing:
+        return card_name
+
+    set_code = (
+        card.get("set_code")
+        or card.get("card_set_code")
+        or card.get("pack_set_code")
+        or ""
+    )
+    collector_number = (
+        card.get("collector_number")
+        or card.get("card_number")
+        or ""
+    )
+
+    set_code = str(set_code or "").strip().upper()
+    collector_number = str(collector_number or "").strip()
+
+    if set_code and collector_number:
+        return f"{card_name} ({set_code}) {collector_number}"
+
+    if set_code:
+        return f"{card_name} ({set_code})"
+
+    return card_name
+
+
 def build_chaos_pack_export_text(opened_pack, export_format):
     if not opened_pack:
         raise ValueError("No opened Chaos Draft pack is available.")
 
-    normalized_export_format = (export_format or "").strip().lower()
-    if normalized_export_format not in {"archidekt", "moxfield"}:
-        raise ValueError("Invalid Chaos Draft export format.")
+    normalized_export_format = normalize_chaos_pack_export_format(export_format)
+    include_printing = normalized_export_format.endswith("_full")
 
     cards = opened_pack.get("cards") or []
     if not cards:
         raise ValueError("Opened Chaos Draft pack did not contain any cards.")
 
-    quantity_by_name = {}
-    ordered_names = []
+    quantity_by_identity = {}
+    ordered_identities = []
 
     for card in cards:
-        card_name = (card.get("card_name") or "").strip()
-        if not card_name:
+        card_identity = get_chaos_export_card_identity(
+            card,
+            include_printing=include_printing,
+        )
+
+        if not card_identity:
             continue
 
-        if card_name not in quantity_by_name:
-            quantity_by_name[card_name] = 0
-            ordered_names.append(card_name)
+        if card_identity not in quantity_by_identity:
+            quantity_by_identity[card_identity] = 0
+            ordered_identities.append(card_identity)
 
-        quantity_by_name[card_name] += 1
+        quantity_by_identity[card_identity] += 1
 
     lines = []
-    for card_name in ordered_names:
-        lines.append(f"{quantity_by_name[card_name]} {card_name}")
+    for card_identity in ordered_identities:
+        lines.append(f"{quantity_by_identity[card_identity]} {card_identity}")
 
     export_text = "\n".join(lines).strip()
 

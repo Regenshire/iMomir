@@ -173,6 +173,16 @@ from db.database import (
     upsert_custom_draft_set,
 )
 
+from db.draftdb import ensure_draft_testing_schema
+
+from modes.draft import (
+    create_draft_test_from_pack_pool,
+    get_draft_test_detail_state,
+    move_human_draft_test_pick_zone_state,
+    normalize_draft_test_start_payload,
+    record_human_draft_test_pick_state,
+)
+
 from modes.momir import (
     build_card_filter_query,
     build_enabled_type_conditions,
@@ -262,6 +272,7 @@ from modes.chaos import (
     save_opened_chaos_pack_to_tracking_db,
     update_campaign_player,
     update_chaos_campaign,
+    update_tracked_pack_print_labels_override,
     delete_campaign_player,
     delete_chaos_campaign,
     set_chaos_session_state,
@@ -327,6 +338,27 @@ def get_effective_print_label_settings(config):
         "print_pack_label_cards": labels_enabled and pack_label_cards_enabled,
     }
 
+def apply_pack_print_label_override(label_settings, print_labels_enabled_override=None):
+    effective_settings = dict(label_settings or {})
+
+    if print_labels_enabled_override is None:
+        return effective_settings
+
+    try:
+        parsed_override = int(print_labels_enabled_override)
+    except (TypeError, ValueError):
+        return effective_settings
+
+    if parsed_override == 0:
+        effective_settings["print_labels_enabled"] = False
+        effective_settings["print_label_tracking_code"] = False
+        effective_settings["print_label_front_back"] = False
+        effective_settings["print_pack_label_cards"] = False
+
+    elif parsed_override == 1:
+        effective_settings["print_labels_enabled"] = True
+
+    return effective_settings
 
 def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
     label_settings = label_settings or get_effective_print_label_settings(
@@ -342,10 +374,13 @@ def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
     return (pack_tracking_code or "").strip().upper()
 
 
-def _build_pdf_print_settings(config):
+def _build_pdf_print_settings(config, print_labels_enabled_override=None):
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
     crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
-    label_settings = get_effective_print_label_settings(config)
+    label_settings = apply_pack_print_label_override(
+        get_effective_print_label_settings(config),
+        print_labels_enabled_override=print_labels_enabled_override,
+    )
 
     try:
         pdf_width_mm = float((config.get("pdf_width_mm") or "57.5").strip())
@@ -1719,7 +1754,14 @@ def resolve_print_template_layout(print_template):
         "uses_fixed_inner_margin": False,
     }
 
-def resolve_pdf_print_settings():
+def resolve_pdf_print_settings(print_labels_enabled_override=None):
+    if print_labels_enabled_override is not None:
+        config = get_request_config() if has_request_context() else get_config()
+        return _build_pdf_print_settings(
+            config,
+            print_labels_enabled_override=print_labels_enabled_override,
+        )
+
     return get_request_pdf_print_settings()
 
 def resolve_tower_pdf_draw_count():
@@ -6103,8 +6145,11 @@ def build_chaos_pack_pdf(
     include_pack_labels=True,
     title_card_only=False,
     pack_label_states=None,
+    print_labels_enabled_override=None,
 ):
-    pdf_settings = resolve_pdf_print_settings()
+    pdf_settings = resolve_pdf_print_settings(
+        print_labels_enabled_override=print_labels_enabled_override,
+    )
     pdf_template_layout = resolve_pdf_template_layout()
     crop_border = pdf_settings["pdf_crop_border"]
 
@@ -6189,7 +6234,10 @@ def build_chaos_pack_pdf(
                 pack_display_name,
                 set_code=set_code,
                 booster_name=booster_name,
-                pack_tracking_code=pack_tracking_code,
+                pack_tracking_code=get_effective_pack_tracking_code(
+                    pack_tracking_code,
+                    label_settings=pdf_settings,
+                ),
                 card_width_mm=width_mm,
                 card_height_mm=height_mm,
             )
@@ -6224,7 +6272,10 @@ def build_chaos_pack_pdf(
                         pack_display_name,
                         set_code=set_code,
                         booster_name=booster_name,
-                        pack_tracking_code=pack_tracking_code,
+                        pack_tracking_code=get_effective_pack_tracking_code(
+                            pack_tracking_code,
+                            label_settings=pdf_settings,
+                        ),
                     )
 
                 title_temp_filename = f"chaos_title_{safe_filename(pack_display_name)}.png"
@@ -7153,15 +7204,146 @@ def get_readable_overlay_text_rgb(background_rgb, template_config=None):
 
     return (255, 255, 255)
 
-def draw_image_export_corner_label(image, label_text, template_config, matte_rgb, overlay_fill_rgb=None):
-    label_text = (label_text or "").strip().upper()
-    source_image = image.convert("RGB")
+def draw_image_export_template_text(
+    draw,
+    image_width,
+    image_height,
+    text_value,
+    text_box,
+    template_config,
+    align="left",
+    fill_rgb=(255, 255, 255),
+    font_family_key="text_font_family",
+    font_size_key="text_font_size_pt",
+    font_bold_key="text_font_bold",
+    shadow_enabled_key="text_shadow_enabled",
+    shadow_rgb_key="text_shadow_rgb",
+    allow_dynamic_size=True,
+):
+    text_value = str(text_value or "").strip()
 
-    if not label_text:
-        return source_image
+    if not text_value:
+        return
+
+    if not isinstance(text_box, dict):
+        return
+
+    text_left = int(image_width * float(text_box.get("x1", 0.025)))
+    text_top = int(image_height * float(text_box.get("y1", 0.962)))
+    text_right = int(image_width * float(text_box.get("x2", 0.430)))
+    text_bottom = int(image_height * float(text_box.get("y2", 0.995)))
+
+    max_text_width = max(20, text_right - text_left)
+    max_text_height = max(14, text_bottom - text_top)
+
+    font_template_config = dict(template_config or {})
+
+    if font_family_key != "text_font_family":
+        font_template_config["text_font_family"] = template_config.get(font_family_key) or template_config.get("text_font_family") or ""
+
+    if font_size_key != "text_font_size_pt":
+        font_template_config["text_font_size_pt"] = template_config.get(font_size_key)
+
+    if font_bold_key != "text_font_bold":
+        font_template_config["text_font_bold"] = bool(template_config.get(font_bold_key, template_config.get("text_font_bold", True)))
+
+    requested_point_size = font_template_config.get("text_font_size_pt")
+    has_fixed_template_font_size = requested_point_size not in {None, ""}
+
+    font_size = max(12, int(max_text_height * 0.82))
+    font = None
+    text_width = 0
+    text_height = 0
+
+    if has_fixed_template_font_size:
+        font = load_image_export_label_font(
+            font_template_config,
+            fallback_font_size=font_size,
+            allow_template_point_size=True,
+        )
+
+        try:
+            text_bbox = draw.textbbox((0, 0), text_value, font=font)
+            text_width = text_bbox[2] - text_bbox[0]
+            text_height = text_bbox[3] - text_bbox[1]
+        except Exception:
+            text_width = len(text_value) * 8
+            text_height = 14
+
+    else:
+        while font_size >= 10:
+            font = load_image_export_label_font(
+                font_template_config,
+                fallback_font_size=font_size,
+                allow_template_point_size=False,
+            )
+
+            try:
+                text_bbox = draw.textbbox((0, 0), text_value, font=font)
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+            except Exception:
+                text_width = len(text_value) * 8
+                text_height = 14
+
+            if text_width <= max_text_width and text_height <= max_text_height:
+                break
+
+            if not allow_dynamic_size:
+                break
+
+            font_size -= 1
+
+    text_align = str(align or "left").strip().lower()
+
+    if text_align == "center":
+        text_x = text_left + max(0, (max_text_width - text_width) // 2)
+    elif text_align == "right":
+        text_x = text_right - text_width
+    else:
+        text_x = text_left
+
+    text_y = text_top + max(0, (max_text_height - text_height) // 2)
+
+    shadow_enabled = bool(template_config.get(shadow_enabled_key, False))
+
+    if shadow_enabled:
+        shadow_offset_px = max(1, int(round(min(image_width, image_height) * 0.0015)))
+
+        draw.text(
+            (text_x + shadow_offset_px, text_y + shadow_offset_px),
+            text_value,
+            fill=tuple(template_config.get(shadow_rgb_key) or template_config.get("text_shadow_rgb") or (0, 0, 0)),
+            font=font,
+        )
+
+    draw.text(
+        (text_x, text_y),
+        text_value,
+        fill=tuple(fill_rgb or (255, 255, 255)),
+        font=font,
+    )
+
+
+def draw_image_export_corner_label(image, label_text, template_config, matte_rgb, overlay_fill_rgb=None):
+    source_image = image.convert("RGB")
+    template_config = template_config or {}
 
     draw = ImageDraw.Draw(source_image)
     image_width, image_height = source_image.size
+
+    pack_code_enabled = bool(template_config.get("pack_code_enabled", True))
+    text_box_enabled = bool(template_config.get("text_box_enabled", True))
+
+    normal_label_text = (label_text or "").strip().upper()
+    if not pack_code_enabled or not text_box_enabled:
+        normal_label_text = ""
+
+    custom_text = str(template_config.get("custom_text") or "").strip()
+    custom_text_box = template_config.get("custom_text_box")
+
+    if not normal_label_text and not custom_text:
+        return source_image
 
     overlay_box = template_config.get("overlay_box") or {}
     text_box = template_config.get("text_box") or {}
@@ -7182,14 +7364,20 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
         or (18, 12, 12)
     )
 
-    text_fill_rgb = get_readable_overlay_text_rgb(
-        overlay_fill_rgb,
-        template_config=template_config,
-    )
-
     overlay_box_enabled = bool(template_config.get("overlay_box_enabled", True))
 
-    if overlay_box_enabled:
+    should_draw_overlay_box = (
+        overlay_box_enabled
+        and (
+            normal_label_text
+            or (
+                custom_text
+                and bool(template_config.get("custom_text_uses_overlay_box", True))
+            )
+        )
+    )
+
+    if should_draw_overlay_box:
         source_image = apply_overlay_with_cutouts(
             image=source_image,
             box=(overlay_left, overlay_top, overlay_right, overlay_bottom),
@@ -7203,87 +7391,53 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
 
     draw = ImageDraw.Draw(source_image)
 
-    text_left = int(image_width * float(text_box.get("x1", 0.025)))
-    text_top = int(image_height * float(text_box.get("y1", 0.962)))
-    text_right = int(image_width * float(text_box.get("x2", 0.430)))
-    text_bottom = int(image_height * float(text_box.get("y2", 0.995)))
-
-    max_text_width = max(20, text_right - text_left)
-    max_text_height = max(14, text_bottom - text_top)
-
-    requested_point_size = template_config.get("text_font_size_pt")
-    has_fixed_template_font_size = requested_point_size not in {None, ""}
-
-    font_size = max(12, int(max_text_height * 0.82))
-    font = None
-    text_width = 0
-    text_height = 0
-
-    if has_fixed_template_font_size:
-        font = load_image_export_label_font(
-            template_config,
-            fallback_font_size=font_size,
-            allow_template_point_size=True,
+    if normal_label_text:
+        normal_text_fill_rgb = get_readable_overlay_text_rgb(
+            overlay_fill_rgb,
+            template_config=template_config,
         )
 
-        try:
-            text_bbox = draw.textbbox((0, 0), label_text, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
-        except Exception:
-            text_width = len(label_text) * 8
-            text_height = 14
-
-    else:
-        while font_size >= 10:
-            font = load_image_export_label_font(
-                template_config,
-                fallback_font_size=font_size,
-                allow_template_point_size=False,
-            )
-
-            try:
-                text_bbox = draw.textbbox((0, 0), label_text, font=font)
-                text_width = text_bbox[2] - text_bbox[0]
-                text_height = text_bbox[3] - text_bbox[1]
-            except Exception:
-                text_width = len(label_text) * 8
-                text_height = 14
-
-            if text_width <= max_text_width and text_height <= max_text_height:
-                break
-
-            font_size -= 1
-
-    text_align = (template_config.get("text_align") or "left").strip().lower()
-
-    if text_align == "center":
-        text_x = text_left + max(0, (max_text_width - text_width) // 2)
-    elif text_align == "right":
-        text_x = text_right - text_width
-    else:
-        text_x = text_left
-
-    text_y = text_top + max(0, (max_text_height - text_height) // 2)
-
-    text_shadow_enabled = bool(template_config.get("text_shadow_enabled", not overlay_box_enabled))
-
-    if text_shadow_enabled:
-        shadow_offset_px = max(1, int(round(min(image_width, image_height) * 0.0015)))
-
-        draw.text(
-            (text_x + shadow_offset_px, text_y + shadow_offset_px),
-            label_text,
-            fill=tuple(template_config.get("text_shadow_rgb") or (0, 0, 0)),
-            font=font,
+        draw_image_export_template_text(
+            draw=draw,
+            image_width=image_width,
+            image_height=image_height,
+            text_value=normal_label_text,
+            text_box=text_box,
+            template_config=template_config,
+            align=template_config.get("text_align") or "left",
+            fill_rgb=normal_text_fill_rgb,
+            font_family_key="text_font_family",
+            font_size_key="text_font_size_pt",
+            font_bold_key="text_font_bold",
+            shadow_enabled_key="text_shadow_enabled",
+            shadow_rgb_key="text_shadow_rgb",
         )
 
-    draw.text(
-        (text_x, text_y),
-        label_text,
-        fill=text_fill_rgb,
-        font=font,
-    )
+    if custom_text and isinstance(custom_text_box, dict):
+        custom_fill_rgb = tuple(
+            template_config.get("custom_text_fill_rgb_override")
+            or template_config.get("custom_text_fill_rgb")
+            or template_config.get("text_fill_rgb_override")
+            or template_config.get("text_fill_rgb")
+            or (255, 255, 255)
+        )
+
+        draw_image_export_template_text(
+            draw=draw,
+            image_width=image_width,
+            image_height=image_height,
+            text_value=custom_text,
+            text_box=custom_text_box,
+            template_config=template_config,
+            align=template_config.get("custom_text_align") or template_config.get("text_align") or "left",
+            fill_rgb=custom_fill_rgb,
+            font_family_key="custom_text_font_family",
+            font_size_key="custom_text_font_size_pt",
+            font_bold_key="custom_text_font_bold",
+            shadow_enabled_key="custom_text_shadow_enabled",
+            shadow_rgb_key="custom_text_shadow_rgb",
+            allow_dynamic_size=True,
+        )
 
     return source_image
 
@@ -7454,6 +7608,7 @@ def get_tracked_pack_card_export_rows(tracked_pack_ids):
             tcp.booster_name AS pack_booster_name,
             tcp.booster_index,
             tcp.pack_display_name,
+            tcp.print_labels_enabled_override,
 
             tcpc.tracked_pack_card_id,
             tcpc.card_order,
@@ -7490,6 +7645,12 @@ def get_tracked_pack_card_export_rows(tracked_pack_ids):
             "pack_booster_name": (row["pack_booster_name"] or "").strip().lower(),
             "booster_index": int(row["booster_index"] or 0),
             "pack_display_name": row["pack_display_name"] or "",
+            "print_labels_enabled_override": (
+                None
+                if row["print_labels_enabled_override"] is None
+                else int(row["print_labels_enabled_override"])
+            ),
+            "labels_disabled_for_pack": row["print_labels_enabled_override"] is not None and int(row["print_labels_enabled_override"]) == 0,
             "tracked_pack_card_id": int(row["tracked_pack_card_id"]),
             "card_order": int(row["card_order"] or 0),
             "card_uuid": (row["card_uuid"] or "").strip(),
@@ -7824,10 +7985,20 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
         )
 
         try:
+            label_settings = apply_pack_print_label_override(
+                get_effective_print_label_settings(
+                    get_request_config() if has_request_context() else get_config()
+                ),
+                print_labels_enabled_override=export_row.get("print_labels_enabled_override"),
+            )
+
             build_export_card_image(
                 front_bleed_source["source_path"],
                 front_output_path,
-                export_row["pack_tracking_code"],
+                get_effective_pack_tracking_code(
+                    export_row["pack_tracking_code"],
+                    label_settings=label_settings,
+                ),
                 card_row,
                 template_key_override=front_image_source.get("export_frame_template") or "auto",
                 add_export_bleed=front_bleed_source["add_export_bleed"],
@@ -7877,7 +8048,11 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
                     build_export_card_image(
                         back_bleed_source["source_path"],
                         back_output_path,
-                        f"{export_row['pack_tracking_code']} - BACK",
+                        (
+                            f"{get_effective_pack_tracking_code(export_row['pack_tracking_code'], label_settings=label_settings)} - BACK"
+                            if get_effective_pack_tracking_code(export_row["pack_tracking_code"], label_settings=label_settings)
+                            else ""
+                        ),
                         card_row,
                         template_key_override=back_image_source.get("export_frame_template") or "auto",
                         add_export_bleed=back_bleed_source["add_export_bleed"],
@@ -7935,6 +8110,9 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
 
         for export_row in export_rows:
             tracked_pack_id = int(export_row["tracked_pack_id"])
+
+            if export_row.get("labels_disabled_for_pack"):
+                continue
 
             if tracked_pack_id in pack_label_lookup:
                 continue
@@ -10435,6 +10613,15 @@ def campaign_chaos_packs():
         current_campaign_id=selected_chaos_campaign_id,
     )
 
+    campaign_players = get_campaign_players(
+        include_disabled=False,
+        campaign_id=selected_chaos_campaign_id,
+    )
+
+    selected_campaign_player_id = get_selected_campaign_player_id(
+        campaign_id=selected_chaos_campaign_id,
+    )
+
     packs = get_tracked_pack_management_rows(
         app.static_folder,
         search_text=search_text,
@@ -10450,6 +10637,8 @@ def campaign_chaos_packs():
         selected_chaos_campaign=selected_chaos_campaign,
         selected_chaos_campaign_id=selected_chaos_campaign_id,
         pack_import_campaign_options=pack_import_campaign_options,
+        campaign_players=campaign_players,
+        selected_campaign_player_id=selected_campaign_player_id,
         pack_summary=pack_summary,
         enable_chaos_card_image_export=(get_request_config().get("enable_chaos_card_image_export") or "0").strip() == "1",
         custom_title_pack_type_options=get_custom_title_sheet_pack_type_options(),
@@ -10728,6 +10917,27 @@ def campaign_chaos_pack_print(tracked_pack_id):
         },
     )
 
+@app.route("/campaign-chaos/packs/<int:tracked_pack_id>/label-settings", methods=["POST"])
+def campaign_chaos_pack_label_settings_update(tracked_pack_id):
+    payload = request.get_json(silent=True) or {}
+    raw_override = payload.get("print_labels_enabled_override", None)
+
+    try:
+        result = update_tracked_pack_print_labels_override(
+            tracked_pack_id,
+            raw_override,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    return jsonify(result)
+
 @app.route("/campaign-chaos/packs/<int:tracked_pack_id>/export", methods=["POST"])
 def campaign_chaos_pack_export(tracked_pack_id):
     pack = get_tracked_pack_state_by_id(tracked_pack_id)
@@ -10741,7 +10951,7 @@ def campaign_chaos_pack_export(tracked_pack_id):
     payload = request.get_json(silent=True) or {}
     export_format = (payload.get("export_format") or request.form.get("export_format") or "").strip().lower()
 
-    if export_format not in {"archidekt", "moxfield"}:
+    if not is_valid_chaos_copy_export_format(export_format):
         return jsonify({
             "ok": False,
             "message": "Invalid export format.",
@@ -11202,6 +11412,216 @@ def campaign_chaos_packs_action():
     flash("Unknown pack action.")
     return redirect(url_for("campaign_chaos_packs"))
 
+@app.route("/campaign-chaos/test-draft/start", methods=["POST"])
+def campaign_chaos_test_draft_start():
+    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+    start_payload = normalize_draft_test_start_payload(request.form)
+
+    human_player_id = request.form.get("human_player_id")
+    human_player_name = start_payload["human_player_name"]
+    human_portrait_image_path = ""
+
+    if human_player_id:
+        try:
+            human_player = get_campaign_player_by_id(human_player_id)
+
+            if human_player:
+                human_player_name = human_player["player_name"] or human_player_name
+                human_portrait_image_path = human_player["portrait_image_path"] or ""
+        except Exception:
+            human_player_name = start_payload["human_player_name"]
+            human_portrait_image_path = ""
+
+    try:
+        result = create_draft_test_from_pack_pool(
+            campaign_id=selected_chaos_campaign_id,
+            tracked_pack_ids=selected_pack_ids,
+            pod_size=start_payload["pod_size"],
+            packs_per_player=start_payload["packs_per_player"],
+            human_player_name=human_player_name,
+            human_player_id=human_player_id,
+            human_portrait_image_path=human_portrait_image_path,
+        )
+    except Exception as exc:
+        flash(str(exc))
+        return redirect(url_for("campaign_chaos_packs"))
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not start Test Draft.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    return redirect(url_for(
+        "campaign_chaos_test_draft",
+        draft_test_id=result["draft_test_id"],
+    ))
+
+def wants_json_response():
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in (request.headers.get("Accept") or "")
+    )
+
+
+def serialize_draft_test_row(row):
+    if not row:
+        return None
+
+    return dict(row)
+
+
+def serialize_draft_test_card(row):
+    if not row:
+        return None
+
+    return {
+        "draft_test_pack_card_id": row["draft_test_pack_card_id"],
+        "draft_test_pack_id": row["draft_test_pack_id"],
+        "draft_test_id": row["draft_test_id"],
+        "card_order": row["card_order"],
+        "card_uuid": row["card_uuid"] or "",
+        "card_name": row["card_name"] or "",
+        "set_code": row["set_code"] or "",
+        "collector_number": row["collector_number"] or "",
+        "rarity": row["rarity"] or "",
+        "type_line": row["type_line"] or "",
+        "mana_value": row["mana_value"],
+        "mana_cost": row["mana_cost"] or "",
+        "colors_json": row["colors_json"] or "[]",
+        "color_identity_json": row["color_identity_json"] or "[]",
+        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+    }
+
+
+def serialize_draft_test_pick(row):
+    if not row:
+        return None
+
+    return {
+        "draft_test_pick_id": row["draft_test_pick_id"],
+        "draft_test_id": row["draft_test_id"],
+        "draft_test_player_id": row["draft_test_player_id"],
+        "draft_test_pack_id": row["draft_test_pack_id"],
+        "draft_test_pack_card_id": row["draft_test_pack_card_id"],
+        "seat_index": row["seat_index"],
+        "pack_number": row["pack_number"],
+        "pick_number": row["pick_number"],
+        "card_uuid": row["card_uuid"] or "",
+        "card_name": row["card_name"] or "",
+        "deck_zone": row["deck_zone"] or "deck",
+        "set_code": row["set_code"] or "",
+        "collector_number": row["collector_number"] or "",
+        "rarity": row["rarity"] or "",
+        "type_line": row["type_line"] or "",
+        "mana_value": row["mana_value"],
+        "mana_cost": row["mana_cost"] or "",
+        "colors_json": row["colors_json"] or "[]",
+        "color_identity_json": row["color_identity_json"] or "[]",
+        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+    }
+
+
+def serialize_draft_test_state_for_ajax(draft_state):
+    if not draft_state or not draft_state.get("ok"):
+        return {
+            "ok": False,
+            "message": (draft_state or {}).get("message") or "Draft state could not be loaded.",
+        }
+
+    session = draft_state.get("session")
+    current_human_pack = draft_state.get("current_human_pack")
+
+    return {
+        "ok": True,
+        "session": serialize_draft_test_row(session),
+        "current_human_pack": serialize_draft_test_row(current_human_pack),
+        "current_pack_cards": [
+            serialize_draft_test_card(card)
+            for card in draft_state.get("current_pack_cards", [])
+        ],
+        "human_deck_cards": [
+            serialize_draft_test_pick(card)
+            for card in draft_state.get("human_deck_cards", [])
+        ],
+        "human_sideboard_cards": [
+            serialize_draft_test_pick(card)
+            for card in draft_state.get("human_sideboard_cards", [])
+        ],
+    }
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>", methods=["GET"])
+def campaign_chaos_test_draft(draft_test_id):
+    draft_state = get_draft_test_detail_state(draft_test_id)
+
+    if not draft_state.get("ok"):
+        flash(draft_state.get("message") or "Test Draft was not found.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    return render_template(
+        "campaign_test_draft.html",
+        draft_state=draft_state,
+    )
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/pick", methods=["POST"])
+def campaign_chaos_test_draft_pick(draft_test_id):
+    selected_pack_card_id = request.form.get("draft_test_pack_card_id")
+    deck_zone = request.form.get("deck_zone") or "deck"
+
+    result = record_human_draft_test_pick_state(
+        draft_test_id=draft_test_id,
+        draft_test_pack_card_id=selected_pack_card_id,
+        deck_zone=deck_zone,
+    )
+
+    if wants_json_response():
+        draft_state = get_draft_test_detail_state(draft_test_id)
+        payload = serialize_draft_test_state_for_ajax(draft_state)
+        payload["pick_result"] = result
+        payload["ok"] = bool(result.get("ok")) and bool(payload.get("ok"))
+
+        if not result.get("ok"):
+            payload["message"] = result.get("message") or "Could not record pick."
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not record pick.")
+
+    return redirect(url_for(
+        "campaign_chaos_test_draft",
+        draft_test_id=draft_test_id,
+    ))
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/pick-zone", methods=["POST"])
+def campaign_chaos_test_draft_pick_zone(draft_test_id):
+    draft_test_pick_id = request.form.get("draft_test_pick_id")
+    deck_zone = request.form.get("deck_zone") or "deck"
+
+    result = move_human_draft_test_pick_zone_state(
+        draft_test_id=draft_test_id,
+        draft_test_pick_id=draft_test_pick_id,
+        deck_zone=deck_zone,
+    )
+
+    if wants_json_response():
+        draft_state = get_draft_test_detail_state(draft_test_id)
+        payload = serialize_draft_test_state_for_ajax(draft_state)
+        payload["move_result"] = result
+        payload["ok"] = bool(result.get("ok")) and bool(payload.get("ok"))
+
+        if not result.get("ok"):
+            payload["message"] = result.get("message") or "Could not move picked card."
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not move picked card.")
+
+    return redirect(url_for(
+        "campaign_chaos_test_draft",
+        draft_test_id=draft_test_id,
+    ))
+
 @app.route("/campaign-chaos/draft/new", methods=["POST"])
 def campaign_chaos_new_draft():
     selected_chaos_campaign_id = get_selected_chaos_campaign_id()
@@ -11359,6 +11779,237 @@ def chaos_draft_save_pack():
 
     if not result.get("ok"):
         return jsonify(result), 400
+
+    return jsonify(result)
+
+def search_campaign_pack_card_printing_options(tracked_pack_card_id):
+    try:
+        parsed_tracked_pack_card_id = int(tracked_pack_card_id)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid tracked pack card ID.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tracked_pack_card_id,
+            card_uuid,
+            card_name
+        FROM tracked_chaos_pack_cards
+        WHERE tracked_pack_card_id = ?
+        """,
+        (parsed_tracked_pack_card_id,),
+    )
+
+    tracked_card_row = cursor.fetchone()
+
+    if not tracked_card_row:
+        conn.close()
+        raise ValueError("Tracked pack card was not found.")
+
+    card_name = (tracked_card_row["card_name"] or "").strip()
+    current_card_uuid = (tracked_card_row["card_uuid"] or "").strip()
+
+    if not card_name:
+        conn.close()
+        raise ValueError("Tracked pack card does not have a card name.")
+
+    cursor.execute(
+        """
+        SELECT
+            cc.card_uuid,
+            cc.card_name,
+            cc.set_code,
+            s.release_date,
+            cc.collector_number,
+            cc.rarity,
+            cc.type_line,
+            cc.mana_cost,
+            cc.mana_value,
+            cc.colors_json,
+            cc.color_identity_json,
+            cc.edhrec_rank,
+            cc.edhrec_saltiness,
+            NULL AS sort_price,
+            CASE
+                WHEN cc.card_uuid = ? THEN 1
+                ELSE 0
+            END AS already_in_set
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        WHERE LOWER(cc.card_name) = LOWER(?)
+        ORDER BY
+            CASE
+                WHEN cc.card_uuid = ? THEN 0
+                ELSE 1
+            END,
+            COALESCE(s.release_date, '') DESC,
+            cc.set_code COLLATE NOCASE ASC,
+            cc.collector_number COLLATE NOCASE ASC
+        """,
+        (
+            current_card_uuid,
+            card_name,
+            current_card_uuid,
+        ),
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        "tracked_pack_card_id": parsed_tracked_pack_card_id,
+        "card_name": card_name,
+        "current_card_uuid": current_card_uuid,
+        "results": [
+            serialize_custom_draft_card_search_result(row)
+            for row in rows
+        ],
+    }
+
+def update_tracked_pack_card_printing(tracked_pack_card_id, new_card_uuid):
+    try:
+        parsed_tracked_pack_card_id = int(tracked_pack_card_id)
+    except (TypeError, ValueError):
+        raise ValueError("Invalid tracked pack card ID.")
+
+    clean_new_card_uuid = (new_card_uuid or "").strip()
+
+    if not clean_new_card_uuid:
+        raise ValueError("New card UUID is required.")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            tracked_pack_card_id,
+            tracked_pack_id,
+            card_uuid,
+            card_name
+        FROM tracked_chaos_pack_cards
+        WHERE tracked_pack_card_id = ?
+        """,
+        (parsed_tracked_pack_card_id,),
+    )
+
+    tracked_card_row = cursor.fetchone()
+
+    if not tracked_card_row:
+        conn.close()
+        raise ValueError("Tracked pack card was not found.")
+
+    original_card_name = (tracked_card_row["card_name"] or "").strip()
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            card_name,
+            set_code,
+            collector_number,
+            rarity,
+            type_line,
+            scryfall_id
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (clean_new_card_uuid,),
+    )
+
+    new_card_row = cursor.fetchone()
+
+    if not new_card_row:
+        conn.close()
+        raise ValueError("Selected printing was not found.")
+
+    if (new_card_row["card_name"] or "").strip().lower() != original_card_name.lower():
+        conn.close()
+        raise ValueError("Selected printing does not match the current card name.")
+
+    cursor.execute(
+        """
+        UPDATE tracked_chaos_pack_cards
+        SET card_uuid = ?,
+            card_name = ?,
+            set_code = ?,
+            collector_number = ?,
+            rarity = ?,
+            type_line = ?,
+            scryfall_id = ?
+        WHERE tracked_pack_card_id = ?
+        """,
+        (
+            new_card_row["card_uuid"],
+            new_card_row["card_name"] or "",
+            new_card_row["set_code"] or "",
+            new_card_row["collector_number"] or "",
+            new_card_row["rarity"] or "",
+            new_card_row["type_line"] or "",
+            new_card_row["scryfall_id"] or "",
+            parsed_tracked_pack_card_id,
+        ),
+    )
+
+    updated_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "updated": updated_count,
+        "message": "Card printing updated.",
+        "tracked_pack_card_id": parsed_tracked_pack_card_id,
+        "card": {
+            "tracked_pack_card_id": parsed_tracked_pack_card_id,
+            "card_uuid": new_card_row["card_uuid"],
+            "card_name": new_card_row["card_name"] or "",
+            "set_code": new_card_row["set_code"] or "",
+            "collector_number": new_card_row["collector_number"] or "",
+            "rarity": new_card_row["rarity"] or "",
+            "type_line": new_card_row["type_line"] or "",
+            "image_src": url_for("chaos_card_image", card_uuid=new_card_row["card_uuid"]),
+        },
+    }
+
+@app.route("/campaign-chaos/pack-cards/<int:tracked_pack_card_id>/printing-options", methods=["GET"])
+def campaign_chaos_pack_card_printing_options(tracked_pack_card_id):
+    try:
+        result = search_campaign_pack_card_printing_options(
+            tracked_pack_card_id,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+            "results": [],
+        }), 400
+
+    return jsonify({
+        "ok": True,
+        **result,
+    })
+
+@app.route("/campaign-chaos/pack-cards/<int:tracked_pack_card_id>/printing", methods=["POST"])
+def campaign_chaos_pack_card_update_printing(tracked_pack_card_id):
+    payload = request.get_json(silent=True) or {}
+    new_card_uuid = (payload.get("card_uuid") or "").strip()
+
+    try:
+        result = update_tracked_pack_card_printing(
+            tracked_pack_card_id,
+            new_card_uuid,
+        )
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
 
     return jsonify(result)
 
@@ -11871,12 +12522,20 @@ def chaos_draft_view():
         pack_price_source=pack_price_source,
     )
 
+def is_valid_chaos_copy_export_format(export_format):
+    return (export_format or "").strip().lower() in {
+        "archidekt",
+        "moxfield",
+        "archidekt_full",
+        "moxfield_full",
+    }
+
 @app.route("/chaos-draft/export", methods=["POST"])
 def chaos_draft_export():
     config = get_request_config()
     export_format = (config.get("chaos_draft_export_format") or "none").strip().lower()
 
-    if export_format not in {"archidekt", "moxfield"}:
+    if not is_valid_chaos_copy_export_format(export_format):
         return jsonify({
             "ok": False,
             "message": "Chaos Draft export is disabled."
@@ -13237,5 +13896,6 @@ def sets():
 
 if __name__ == "__main__":
     initialize_database()
+    ensure_draft_testing_schema()
     set_runtime_debug_log_enabled_from_config()
     app.run(host="0.0.0.0", port=5000, debug=True)

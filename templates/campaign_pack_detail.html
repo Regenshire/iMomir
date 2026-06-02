@@ -85,6 +85,22 @@
                         >
                             Copy Moxfield
                         </button>
+
+                        <button
+                            type="button"
+                            class="chaos-export-menu-item pack-view-copy-format-button"
+                            data-export-format="archidekt_full"
+                        >
+                            Copy Archidekt - Full
+                        </button>
+
+                        <button
+                            type="button"
+                            class="chaos-export-menu-item pack-view-copy-format-button"
+                            data-export-format="moxfield_full"
+                        >
+                            Copy Moxfield - Full
+                        </button>
                     </div>
                 </div>
 
@@ -126,6 +142,32 @@
                 <div class="chaos-pack-view-name">{{ card.card_name }}</div>
 
                 <div class="alternate-image-price-row">
+                    {% if not pack.is_preview and card.tracked_pack_card_id %}
+                    <button
+                        type="button"
+                        class="alternate-image-gear campaign-pack-change-printing-button"
+                        data-card-name="{{ card.card_name }}"
+                        data-current-card-uuid="{{ card.card_uuid }}"
+                        data-printing-options-url="{{ url_for('campaign_chaos_pack_card_printing_options', tracked_pack_card_id=card.tracked_pack_card_id) }}"
+                        data-update-url="{{ url_for('campaign_chaos_pack_card_update_printing', tracked_pack_card_id=card.tracked_pack_card_id) }}"
+                        title="Change printing"
+                        aria-label="Change printing for {{ card.card_name }}"
+                    >
+                        <svg
+                            class="custom-draft-change-printing-icon"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <rect x="7" y="5" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+                            <rect x="5" y="3" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+                            <line x1="8" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                            <line x1="8" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                            <line x1="8" y1="14" x2="11" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>
+                        </svg>
+                    </button>
+                    {% endif %}
+
                     <button
                         type="button"
                         class="alternate-image-gear alternate-image-button"
@@ -167,6 +209,37 @@
         </div>
         {% endfor %}
     </div>
+    <div
+        id="campaignPackChangePrintingOverlay"
+        class="custom-draft-card-search-overlay hidden"
+        aria-hidden="true"
+    >
+        <div class="custom-draft-card-search-window">
+            <div class="custom-draft-card-search-window-header">
+                <div>
+                    <h2>Change Printing</h2>
+                    <p id="campaignPackChangePrintingSubtitle" class="page-subtitle">
+                        Choose a replacement printing.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    id="campaignPackChangePrintingCloseButton"
+                    class="custom-draft-card-search-close-button"
+                    aria-label="Close Change Printing"
+                    title="Close"
+                >
+                    ×
+                </button>
+            </div>
+
+            <div class="custom-draft-card-search-panel">
+                <div id="campaignPackChangePrintingStatus" class="custom-draft-card-search-status hidden"></div>
+                <div id="campaignPackChangePrintingResults" class="custom-draft-card-search-results hidden"></div>
+            </div>
+        </div>
+    </div>
     {% include "_alternate_image_modal.html" %}
     <div id="campaignPackZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
         <div id="campaignPackZoomBackdrop" class="card-zoom-backdrop"></div>
@@ -187,6 +260,287 @@
     const zoomBackdrop = document.getElementById("campaignPackZoomBackdrop");
     const zoomImage = document.getElementById("campaignPackZoomImage");
     const zoomableImages = Array.from(document.querySelectorAll(".campaign-pack-detail-zoomable"));
+    const changePrintingButtons = Array.from(document.querySelectorAll(".campaign-pack-change-printing-button"));
+    const changePrintingOverlay = document.getElementById("campaignPackChangePrintingOverlay");
+    const changePrintingCloseButton = document.getElementById("campaignPackChangePrintingCloseButton");
+    const changePrintingSubtitle = document.getElementById("campaignPackChangePrintingSubtitle");
+    const changePrintingStatus = document.getElementById("campaignPackChangePrintingStatus");
+    const changePrintingResults = document.getElementById("campaignPackChangePrintingResults");
+
+    let activeChangePrintingState = null;
+
+    function showCampaignPackMessage(messageText, isError) {
+        const cleanMessage = messageText || "";
+
+        if (!cleanMessage) {
+            return;
+        }
+
+        if (window.iMomirToast) {
+            if (isError) {
+                window.iMomirToast.error(cleanMessage);
+            } else {
+                window.iMomirToast.success(cleanMessage);
+            }
+            return;
+        }
+
+        console.log(cleanMessage);
+    }
+
+    function setChangePrintingStatus(messageText, isError) {
+        if (!changePrintingStatus) {
+            return;
+        }
+
+        const cleanMessage = String(messageText || "").trim();
+
+        changePrintingStatus.textContent = cleanMessage;
+        changePrintingStatus.classList.toggle("custom-draft-card-search-status-error", Boolean(isError));
+        changePrintingStatus.classList.toggle("hidden", !cleanMessage);
+    }
+
+    function closeChangePrintingModal() {
+        if (!changePrintingOverlay) {
+            return;
+        }
+
+        changePrintingOverlay.classList.add("hidden");
+        changePrintingOverlay.setAttribute("aria-hidden", "true");
+        activeChangePrintingState = null;
+
+        if (changePrintingResults) {
+            changePrintingResults.innerHTML = "";
+            changePrintingResults.classList.add("hidden");
+        }
+
+        setChangePrintingStatus("", false);
+    }
+
+    function openChangePrintingModal(button) {
+        if (!button || !changePrintingOverlay) {
+            return;
+        }
+
+        activeChangePrintingState = {
+            cardName: button.dataset.cardName || "",
+            currentCardUuid: button.dataset.currentCardUuid || "",
+            printingOptionsUrl: button.dataset.printingOptionsUrl || "",
+            updateUrl: button.dataset.updateUrl || ""
+        };
+
+        if (!activeChangePrintingState.cardName || !activeChangePrintingState.printingOptionsUrl || !activeChangePrintingState.updateUrl) {
+            return;
+        }
+
+        if (changePrintingSubtitle) {
+            changePrintingSubtitle.textContent = "Choose a replacement printing for " + activeChangePrintingState.cardName + ".";
+        }
+
+        if (changePrintingResults) {
+            changePrintingResults.innerHTML = "";
+            changePrintingResults.classList.add("hidden");
+        }
+
+        setChangePrintingStatus("Loading printings...", false);
+
+        changePrintingOverlay.classList.remove("hidden");
+        changePrintingOverlay.setAttribute("aria-hidden", "false");
+
+        loadChangePrintingOptions();
+    }
+
+    function getCampaignPackReleaseDateSortValue(card) {
+        const rawDate = card && card.release_date ? String(card.release_date).trim() : "";
+
+        if (!rawDate) {
+            const rawYear = card && card.release_year ? String(card.release_year).trim() : "";
+            const parsedYear = Number(rawYear);
+
+            if (!Number.isFinite(parsedYear)) {
+                return 0;
+            }
+
+            return parsedYear * 10000;
+        }
+
+        const cleanDate = rawDate.replace(/[^0-9]/g, "");
+        const parsedDate = Number(cleanDate);
+
+        if (!Number.isFinite(parsedDate)) {
+            return 0;
+        }
+
+        return parsedDate;
+    }
+
+    function renderChangePrintingOptions(cards) {
+        if (!changePrintingResults) {
+            return;
+        }
+
+        changePrintingResults.innerHTML = "";
+
+        if (!cards || !cards.length) {
+            const emptyRow = document.createElement("div");
+            emptyRow.className = "custom-draft-card-search-empty";
+            emptyRow.textContent = "No alternate printings found.";
+            changePrintingResults.appendChild(emptyRow);
+            changePrintingResults.classList.remove("hidden");
+            return;
+        }
+
+        const sortedCards = cards.slice().sort(function (cardA, cardB) {
+            const cardACurrent = cardA.card_uuid === activeChangePrintingState.currentCardUuid;
+            const cardBCurrent = cardB.card_uuid === activeChangePrintingState.currentCardUuid;
+
+            if (cardACurrent !== cardBCurrent) {
+                return cardACurrent ? -1 : 1;
+            }
+
+            return getCampaignPackReleaseDateSortValue(cardB) - getCampaignPackReleaseDateSortValue(cardA);
+        });
+
+        sortedCards.forEach(function (card) {
+            const row = document.createElement("div");
+            row.className = "custom-draft-card-search-row custom-draft-card-search-printing-row";
+
+            const isCurrentPrinting = card.card_uuid === activeChangePrintingState.currentCardUuid;
+
+            if (isCurrentPrinting) {
+                row.classList.add("custom-draft-card-search-row-disabled");
+            }
+
+            const imageWrap = document.createElement("div");
+            imageWrap.className = "custom-draft-card-search-image-wrap";
+
+            const image = document.createElement("img");
+            image.className = "custom-draft-card-search-image";
+            image.src = card.image_src || "";
+            image.alt = card.card_name || "Card";
+
+            imageWrap.appendChild(image);
+
+            const main = document.createElement("div");
+            main.className = "custom-draft-card-search-main";
+
+            const title = document.createElement("div");
+            title.className = "custom-draft-card-search-title";
+            title.textContent = card.card_name || "Unknown Card";
+
+            const meta = document.createElement("div");
+            meta.className = "custom-draft-card-search-meta";
+
+            const metaLineOne = document.createElement("div");
+            metaLineOne.className = "custom-draft-card-search-meta-line";
+            metaLineOne.textContent = [
+                card.set_code || "",
+                card.release_year ? card.release_year : "",
+                card.collector_number ? "#" + card.collector_number : "",
+                card.rarity || "",
+                card.type_line || ""
+            ].filter(Boolean).join(" • ");
+
+            meta.appendChild(metaLineOne);
+            main.appendChild(title);
+            main.appendChild(meta);
+
+            const actions = document.createElement("div");
+            actions.className = "custom-draft-card-search-actions";
+
+            const switchButton = document.createElement("button");
+            switchButton.type = "button";
+            switchButton.className = "action-button secondary-button custom-draft-card-add-button";
+            switchButton.textContent = isCurrentPrinting ? "Current" : "Switch";
+            switchButton.disabled = Boolean(isCurrentPrinting);
+
+            switchButton.addEventListener("click", async function () {
+                await changeCampaignPackCardPrinting(card, switchButton);
+            });
+
+            actions.appendChild(switchButton);
+
+            row.appendChild(imageWrap);
+            row.appendChild(main);
+            row.appendChild(actions);
+
+            changePrintingResults.appendChild(row);
+        });
+
+        changePrintingResults.classList.remove("hidden");
+    }
+
+    async function loadChangePrintingOptions() {
+        if (!activeChangePrintingState || !activeChangePrintingState.printingOptionsUrl) {
+            return;
+        }
+
+        try {
+            const response = await fetch(activeChangePrintingState.printingOptionsUrl, {
+                method: "GET",
+                headers: {
+                    "Accept": "application/json"
+                }
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not load printings.");
+            }
+
+            renderChangePrintingOptions(payload.results || []);
+            setChangePrintingStatus("Loaded " + ((payload.results || []).length) + " printing(s).", false);
+        } catch (error) {
+            console.error(error);
+            setChangePrintingStatus(error.message || "Could not load printings.", true);
+        }
+    }
+
+    async function changeCampaignPackCardPrinting(card, button) {
+        if (!activeChangePrintingState || !card || !card.card_uuid || !button) {
+            return;
+        }
+
+        button.disabled = true;
+        button.classList.add("action-button-loading");
+        button.textContent = "Switching...";
+
+        try {
+            const response = await fetch(activeChangePrintingState.updateUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    card_uuid: card.card_uuid
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Failed to change printing.");
+            }
+
+            button.classList.remove("action-button-loading");
+            button.textContent = "Switched";
+
+            closeChangePrintingModal();
+            showCampaignPackMessage(payload.message || "Printing updated.", false);
+
+            window.setTimeout(function () {
+                window.location.reload();
+            }, 250);
+        } catch (error) {
+            console.error(error);
+            button.disabled = false;
+            button.classList.remove("action-button-loading");
+            button.textContent = "Switch";
+            setChangePrintingStatus(error.message || "Failed to change printing.", true);
+        }
+    }
 
     function updateCampaignPackFoilBadge(cardUuid, isFoil) {
         if (!cardUuid) {
@@ -282,7 +636,16 @@
         zoomImage.addEventListener("click", closeZoom);
 
         document.addEventListener("keydown", function (event) {
-            if (event.key === "Escape" && !zoomOverlay.classList.contains("hidden")) {
+            if (event.key !== "Escape") {
+                return;
+            }
+
+            if (changePrintingOverlay && !changePrintingOverlay.classList.contains("hidden")) {
+                closeChangePrintingModal();
+                return;
+            }
+
+            if (!zoomOverlay.classList.contains("hidden")) {
                 closeZoom();
             }
         });
@@ -357,7 +720,12 @@
     function setSelectedPackViewExportFormat(exportFormat) {
         const normalizedFormat = String(exportFormat || "").trim().toLowerCase();
 
-        if (normalizedFormat !== "archidekt" && normalizedFormat !== "moxfield") {
+        if (
+            normalizedFormat !== "archidekt"
+            && normalizedFormat !== "moxfield"
+            && normalizedFormat !== "archidekt_full"
+            && normalizedFormat !== "moxfield_full"
+        ) {
             return;
         }
 
@@ -425,6 +793,16 @@
                 packViewCopyMenuButton.disabled = false;
             }
         }
+    }
+
+    changePrintingButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+            openChangePrintingModal(button);
+        });
+    });
+
+    if (changePrintingCloseButton) {
+        changePrintingCloseButton.addEventListener("click", closeChangePrintingModal);
     }
 
     if (packViewCopyMainButton) {

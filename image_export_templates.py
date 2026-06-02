@@ -63,6 +63,50 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "fallback_rgb": (18, 12, 12),
     },
 
+    "no_label": {
+        "template_name": "No Label",
+        "inherits": "default",
+
+        # Completely suppress the generated pack-code label.
+        "pack_code_enabled": False,
+        "text_box_enabled": False,
+        "overlay_box_enabled": False,
+
+        # No custom replacement text.
+        "custom_text": "",
+        "custom_text_box": None,
+    },
+
+    "auto_proxy_text_no_pack_code": {
+        "template_name": "Auto - Proxy Text (No Pack Code)",
+        "inherits": None,
+
+        # Special resolver behavior:
+        # This template is not a real frame template. It modifies whatever
+        # Automatic - Use Card Printing Frame would have resolved to.
+        "auto_base_modifier": True,
+
+        # Suppress the generated pack tracking code.
+        "pack_code_enabled": False,
+        "text_box_enabled": False,
+
+        # Keep the resolved Auto template's overlay box.
+        "overlay_box_enabled": True,
+
+        # Draw static proxy text using the resolved Auto template's text box.
+        "custom_text": "iMomir PROXY",
+        "custom_text_box": "__text_box__",
+        "custom_text_align": "__text_align__",
+
+        # Do not set custom_text_font_size_pt here.
+        # Leaving it unset allows the text to use the same auto-fit behavior
+        # as the normal pack-code label for the resolved frame template.
+        "custom_text_fill_rgb_override": None,
+        "custom_text_font_family": "",
+        "custom_text_font_bold": True,
+        "custom_text_shadow_enabled": False,
+    },
+
     "1993": {
         "template_name": "Original Frame",
         "inherits": "default",
@@ -223,7 +267,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "overlay_box": {
             "x1": 0.000,
             "y1": 0.929,
-            "x2": 0.500,
+            "x2": 0.490,
             "y2": 1.000,
         },
         "text_box": {
@@ -296,6 +340,104 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         "text_align": "left",
 
     },
+
+    "2015_long": {
+        "template_name": "M15 Frame - Long",
+        "inherits": "2015",
+
+        #"overlay_fill_rgb_override": (255, 0, 255),
+
+        # This is basically the old behavior. Small lower-left black footer label.
+        "overlay_box": {
+            "x1": 0.000,
+            "y1": 0.929,
+            "x2": 0.650,
+            "y2": 1.000,
+        },
+        "text_box": {
+            "x1": 0.066,
+            "y1": 0.940,
+            "x2": 0.571,
+            "y2": 0.973,
+        },
+        "text_align": "left",
+
+    },
+
+    "2015_full": {
+        "template_name": "M15 Frame - Full Length",
+        "inherits": "2015",
+
+        #"overlay_fill_rgb_override": (255, 0, 255),
+
+        # This is basically the old behavior. Small lower-left black footer label.
+        "overlay_box": {
+            "x1": 0.000,
+            "y1": 0.929,
+            "x2": 1.000,
+            "y2": 1.000,
+        },
+        "text_box": {
+            "x1": 0.066,
+            "y1": 0.940,
+            "x2": 0.571,
+            "y2": 0.973,
+        },
+        "text_align": "left",
+
+        # Override the inherited 2015 holo-stamp/emblem carve-out.
+        # Full-length labels should render as a continuous bar.
+        "overlay_cutouts": [],
+
+    },
+
+    "2015_short_slim": {
+        "template_name": "M15 Frame - Short - Slim",
+        "inherits": "2015",
+
+        #"overlay_fill_rgb_override": (255, 0, 255),
+
+        # This is basically the old behavior. Small lower-left black footer label.
+        "overlay_box": {
+            "x1": 0.000,
+            "y1": 0.939,
+            "x2": 0.450,
+            "y2": 1.000,
+        },
+        "text_box": {
+            "x1": 0.066,
+            "y1": 0.942,
+            "x2": 0.471,
+            "y2": 0.975,
+        },
+        "text_align": "left",
+
+    },
+
+    "2015_proxy_label_no_pack_code": {
+        "template_name": "M15 Frame - Proxy Label (No Pack Code)",
+        "inherits": "2015",
+
+        # Keep the M15 overlay box, but do not draw the generated pack code.
+        "pack_code_enabled": False,
+        "text_box_enabled": False,
+
+        # Draw static proxy text in the same general location as the old pack-code text.
+        "custom_text": "iMomir PROXY",
+        "custom_text_box": {
+            "x1": 0.066,
+            "y1": 0.940,
+            "x2": 0.471,
+            "y2": 0.973,
+        },
+        "custom_text_align": "left",
+        "custom_text_fill_rgb_override": (255, 255, 255),
+        "custom_text_font_family": "Gotham",
+        "custom_text_font_size_pt": 5.0,
+        "custom_text_font_bold": True,
+        "custom_text_shadow_enabled": False,
+    },
+
 
     "future": {
         "template_name": "Future Sight Frame",
@@ -544,6 +686,9 @@ def make_bleed_template(template_key, template_config):
     if "text_box" in template_config:
         bleed_template["text_box"] = make_bleed_box(template_config["text_box"])
 
+    if "custom_text_box" in template_config:
+        bleed_template["custom_text_box"] = make_bleed_box(template_config["custom_text_box"])
+
     if "overlay_fill_sample_regions" in template_config:
         bleed_template["overlay_fill_sample_regions"] = make_bleed_regions(
             template_config.get("overlay_fill_sample_regions") or []
@@ -679,32 +824,55 @@ def resolve_card_export_template_config(set_code, frame_version, release_year=No
 
         return get_card_export_template_by_key(clean_key)
 
+    def resolve_automatic_template():
+        clean_set_code = (set_code or "").strip().upper()
+        clean_frame_version = (frame_version or "").strip().lower()
+
+        if clean_set_code in CARD_EXPORT_SET_TEMPLATE_OVERRIDES:
+            override = dict(CARD_EXPORT_SET_TEMPLATE_OVERRIDES[clean_set_code])
+            inherits = (override.get("inherits") or clean_frame_version or "default").strip().lower()
+            base_template = resolve_key_with_bleed(inherits)
+            return deep_merge_template(base_template, override)
+
+        if clean_frame_version in CARD_EXPORT_FRAME_TEMPLATES:
+            return resolve_key_with_bleed(clean_frame_version)
+
+        parsed_release_year = None
+
+        try:
+            parsed_release_year = int(release_year) if release_year is not None else None
+        except (TypeError, ValueError):
+            parsed_release_year = None
+
+        if parsed_release_year is not None:
+            if parsed_release_year < 2003:
+                return resolve_key_with_bleed("1993")
+            if parsed_release_year < 2014:
+                return resolve_key_with_bleed("2003")
+            return resolve_key_with_bleed("2015")
+
+        return resolve_key_with_bleed("default")
+
+    if clean_template_key_override == "auto_proxy_text_no_pack_code":
+        base_template = resolve_automatic_template()
+        modifier_template = dict(CARD_EXPORT_FRAME_TEMPLATES["auto_proxy_text_no_pack_code"])
+
+        # Do not allow the modifier metadata to replace the actual resolved frame name.
+        modifier_template.pop("inherits", None)
+        modifier_template.pop("auto_base_modifier", None)
+
+        merged_template = deep_merge_template(base_template, modifier_template)
+
+        if merged_template.get("custom_text_box") == "__text_box__":
+            merged_template["custom_text_box"] = dict(merged_template.get("text_box") or {})
+
+        if merged_template.get("custom_text_align") == "__text_align__":
+            merged_template["custom_text_align"] = merged_template.get("text_align") or "left"
+
+        return merged_template
+
     if clean_template_key_override and clean_template_key_override != "auto":
         if clean_template_key_override in CARD_EXPORT_FRAME_TEMPLATES:
             return resolve_key_with_bleed(clean_template_key_override)
-        
-    clean_set_code = (set_code or "").strip().upper()
-    clean_frame_version = (frame_version or "").strip().lower()
 
-    if clean_set_code in CARD_EXPORT_SET_TEMPLATE_OVERRIDES:
-        override = dict(CARD_EXPORT_SET_TEMPLATE_OVERRIDES[clean_set_code])
-        inherits = (override.get("inherits") or clean_frame_version or "default").strip().lower()
-        base_template = get_card_export_template_by_key(inherits)
-        return deep_merge_template(base_template, override)
-
-    if clean_frame_version in CARD_EXPORT_FRAME_TEMPLATES:
-        return resolve_key_with_bleed(clean_frame_version)
-
-    try:
-        release_year = int(release_year) if release_year is not None else None
-    except (TypeError, ValueError):
-        release_year = None
-
-    if release_year is not None:
-        if release_year < 2003:
-            return resolve_key_with_bleed("1993")
-        if release_year < 2014:
-            return resolve_key_with_bleed("2003")
-        return resolve_key_with_bleed("2015")
-
-    return resolve_key_with_bleed("default")
+    return resolve_automatic_template()

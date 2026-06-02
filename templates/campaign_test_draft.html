@@ -1,0 +1,1709 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Test Draft{% endblock %}
+
+{% block content %}
+{% set session = draft_state.session %}
+{% set human_player = namespace(item=None) %}
+{% for player in draft_state.players %}
+    {% if player.is_human %}
+        {% set human_player.item = player %}
+    {% endif %}
+{% endfor %}
+
+<div
+    class="campaign-test-draft-workspace"
+    id="campaignTestDraftWorkspace"
+    data-default-page-size="25"
+    data-pick-url="{{ url_for('campaign_chaos_test_draft_pick', draft_test_id=session.draft_test_id) }}"
+    data-move-zone-url="{{ url_for('campaign_chaos_test_draft_pick_zone', draft_test_id=session.draft_test_id) }}"
+>
+    <div class="campaign-test-draft-main-panel">
+        <div class="campaign-test-draft-topbar">
+            <div class="campaign-test-draft-title-wrap">
+                <h1 class="campaign-test-draft-title">
+                    {{ session.campaign_name or "No Campaign" }} - Draft
+                </h1>
+                <div class="campaign-test-draft-subtitle">
+                    Pack {{ session.current_pack_number }} / Pick {{ session.current_pick_number }}
+                    • {{ session.pod_size }} players
+                    • {{ session.packs_per_player }} pack(s) each
+                    {% if draft_state.current_human_pack and draft_state.current_human_pack.pack_tracking_code %}
+                        • {{ draft_state.current_human_pack.pack_tracking_code }}
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="campaign-test-draft-top-actions">
+                <button
+                    type="button"
+                    id="campaignTestDraftStatsButton"
+                    class="campaign-test-draft-icon-button"
+                    title="Stats"
+                    aria-label="Stats"
+                >
+                    <i class="fa-solid fa-chart-simple"></i>
+                </button>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftListViewButton"
+                    class="campaign-test-draft-icon-button"
+                    title="List View"
+                    aria-label="List View"
+                    data-view-mode="list"
+                >
+                    <i class="fa-solid fa-list"></i>
+                </button>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftGridViewButton"
+                    class="campaign-test-draft-icon-button campaign-test-draft-icon-button-active"
+                    title="Grid View"
+                    aria-label="Grid View"
+                    data-view-mode="grid"
+                >
+                    <i class="fa-solid fa-grip"></i>
+                </button>
+
+                <a
+                    href="{{ url_for('campaign_chaos_packs') }}"
+                    class="campaign-test-draft-close-button"
+                    title="Back to Packs"
+                    aria-label="Back to Packs"
+                >
+                    ×
+                </a>
+            </div>
+        </div>
+
+        <div class="campaign-test-draft-toolbar">
+            <div class="campaign-test-draft-pagination">
+                <button
+                    type="button"
+                    id="campaignTestDraftPrevPageButton"
+                    class="campaign-test-draft-page-button"
+                    aria-label="Previous Page"
+                >
+                    ‹
+                </button>
+
+                <span class="campaign-test-draft-page-label">Page</span>
+
+                <input
+                    type="number"
+                    id="campaignTestDraftPageInput"
+                    class="campaign-test-draft-page-input"
+                    value="1"
+                    min="1"
+                >
+
+                <span id="campaignTestDraftTotalPagesLabel" class="campaign-test-draft-page-label">of 1</span>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftNextPageButton"
+                    class="campaign-test-draft-page-button"
+                    aria-label="Next Page"
+                >
+                    ›
+                </button>
+            </div>
+
+            <div id="campaignTestDraftPaginationStatus" class="campaign-test-draft-pagination-status">
+                Showing 0 card(s).
+            </div>
+        </div>
+
+        <div class="campaign-test-draft-card-area">
+            {% if draft_state.current_pack_cards %}
+            <div
+                id="campaignTestDraftCardList"
+                class="campaign-test-draft-card-list campaign-test-draft-card-list-grid"
+            >
+                {% for card in draft_state.current_pack_cards %}
+                <div
+                    class="campaign-test-draft-card"
+                    draggable="true"
+                    data-drag-type="pack-card"
+                    data-draft-test-pack-card-id="{{ card.draft_test_pack_card_id }}"
+                    data-card-uuid="{{ card.card_uuid }}"
+                    data-card-name="{{ card.card_name }}"
+                    data-card-rarity="{{ card.rarity or '' }}"
+                    data-card-type-line="{{ card.type_line or '' }}"
+                    data-card-color-identity="{{ card.color_identity_json or '[]' }}"
+                    data-card-mana-value="{{ card.mana_value if card.mana_value is not none else '' }}"
+                    data-card-set-code="{{ card.set_code or '' }}"
+                    data-card-collector-number="{{ card.collector_number or '' }}"
+                    data-card-visible="1"
+                >
+                    <div class="campaign-test-draft-card-image-shell">
+                        <img
+                            src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                            alt="{{ card.card_name }}"
+                            class="campaign-test-draft-card-image"
+                        >
+                    </div>
+
+                    <div class="campaign-test-draft-card-footer">
+                        <label class="campaign-test-draft-card-select-row">
+                            <input
+                                type="radio"
+                                name="selected_draft_test_card"
+                                value="{{ card.draft_test_pack_card_id }}"
+                                class="campaign-test-draft-card-radio"
+                            >
+                            <span class="campaign-test-draft-card-name">{{ card.card_name }}</span>
+                        </label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="card-placeholder campaign-test-draft-empty-pack">
+                No cards are available in the current pack.
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="campaign-test-draft-bottom-bar">
+            <div class="campaign-test-draft-human-card campaign-test-draft-human-card-pickbar">
+                <div class="campaign-test-draft-human-portrait-wrap">
+                    {% if human_player.item and human_player.item.effective_portrait_image_path %}
+                    <img
+                        src="{{ url_for('campaign_chaos_player_portrait', filename=human_player.item.effective_portrait_image_path) }}"
+                        alt="{{ human_player.item.display_name }}"
+                        class="campaign-test-draft-human-portrait"
+                    >
+                    {% elif human_player.item and human_player.item.portrait_image_path %}
+                    <img
+                        src="{{ url_for('campaign_chaos_player_portrait', filename=human_player.item.portrait_image_path) }}"
+                        alt="{{ human_player.item.display_name }}"
+                        class="campaign-test-draft-human-portrait"
+                    >
+                    {% else %}
+                    <div class="campaign-current-player-placeholder">
+                        {{ human_player.item.display_name[:1]|upper if human_player.item else "?" }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="campaign-test-draft-human-copy">
+                    <div class="campaign-current-player-eyebrow">Human Drafter</div>
+                    <div class="campaign-test-draft-human-name">
+                        {{ human_player.item.display_name if human_player.item else "You" }}
+                    </div>
+                </div>
+
+                <div id="campaignTestDraftSelectedCardLabel" class="campaign-test-draft-selected-label hidden" data-default-label=""></div>
+            </div>
+
+            {% if session.status != "complete" and draft_state.current_pack_cards %}
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_test_draft_pick', draft_test_id=session.draft_test_id) }}"
+                id="campaignTestDraftPickForm"
+                class="campaign-test-draft-pick-form"
+            >
+                <input
+                    type="hidden"
+                    id="campaignTestDraftSelectedPackCardInput"
+                    name="draft_test_pack_card_id"
+                    value=""
+                >
+
+                <input
+                    type="hidden"
+                    id="campaignTestDraftDeckZoneInput"
+                    name="deck_zone"
+                    value="deck"
+                >
+
+                <div class="campaign-test-draft-pick-actions">
+                    <button
+                        type="submit"
+                        id="campaignTestDraftConfirmPickButton"
+                        class="action-button campaign-test-draft-confirm-button"
+                        data-pick-zone="deck"
+                        disabled
+                    >
+                        Confirm Pick
+                    </button>
+
+                    <button
+                        type="submit"
+                        id="campaignTestDraftSideboardPickButton"
+                        class="action-button secondary-button campaign-test-draft-confirm-button"
+                        data-pick-zone="sideboard"
+                        disabled
+                    >
+                        Pick to Sideboard
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <a
+                href="{{ url_for('campaign_chaos_packs') }}"
+                class="action-button secondary-button campaign-test-draft-confirm-button"
+            >
+                Back to Packs
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div
+        id="campaignTestDraftResizeHandle"
+        class="campaign-test-draft-resize-handle"
+        title="Drag to resize deck panel"
+        aria-hidden="true"
+    ></div>
+
+    <aside class="campaign-test-draft-side-panel">
+        <section class="campaign-test-draft-zone campaign-test-draft-zone-deck">
+            <div class="campaign-test-draft-zone-header">
+                <h2>Deck</h2>
+            </div>
+
+            <div class="campaign-test-draft-picked-controls-row">
+                <div class="campaign-test-draft-picked-sort-wrap">
+                    <label for="campaignTestDraftPickedSortSelect">Sort</label>
+
+                    <select
+                        id="campaignTestDraftPickedSortSelect"
+                        class="campaign-test-draft-picked-sort-select"
+                        title="Sort Deck and Sideboard"
+                        aria-label="Sort Deck and Sideboard"
+                    >
+                        <option value="name-asc">Name A-Z</option>
+                        <option value="name-desc">Name Z-A</option>
+                        <option value="rarity-desc" selected>Rarity Mythic → Common</option>
+                        <option value="rarity-asc">Rarity Common → Mythic</option>
+                        <option value="mv-asc">Mana Value Low → High</option>
+                        <option value="mv-desc">Mana Value High → Low</option>
+                    </select>
+                </div>
+
+                <div class="campaign-test-draft-zone-actions">
+                    <button
+                        type="button"
+                        id="campaignTestDraftPickedListViewButton"
+                        class="campaign-test-draft-zone-view-button campaign-test-draft-zone-view-button-active"
+                        title="Deck List View"
+                        aria-label="Deck List View"
+                    >
+                        <i class="fa-solid fa-list"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="campaignTestDraftPickedGridViewButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Deck Grid View"
+                        aria-label="Deck Grid View"
+                    >
+                        <i class="fa-solid fa-grip"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="campaignTestDraftDeckList" class="campaign-test-draft-zone-list campaign-test-draft-drop-zone" data-drop-zone="deck">
+                {% if draft_state.human_deck_cards %}
+                    {% for picked_card in draft_state.human_deck_cards %}
+                    <div
+                        class="campaign-test-draft-picked-row"
+                        draggable="true"
+                        data-drag-type="picked-card"
+                        data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
+                        data-current-zone="deck"
+                        data-card-name="{{ picked_card.card_name }}"
+                        data-card-rarity="{{ picked_card.rarity or '' }}"
+                        data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                    >
+                        <img
+                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                            alt="{{ picked_card.card_name }}"
+                            class="campaign-test-draft-picked-thumb"
+                        >
+
+                        <div class="campaign-test-draft-picked-main">
+                            <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+                            <div class="campaign-test-draft-picked-meta">
+                                Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                            </div>
+                        </div>
+
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="campaign-test-draft-zone-empty">
+                    Drafted cards will appear here after you confirm a pick.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <div
+            id="campaignTestDraftZoneResizeHandle"
+            class="campaign-test-draft-zone-resize-handle"
+            title="Drag to resize Deck and Sideboard"
+            aria-hidden="true"
+        ></div>
+
+        <section class="campaign-test-draft-zone campaign-test-draft-zone-sideboard">
+            <div class="campaign-test-draft-zone-header">
+                <h2>Sideboard</h2>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftSideboardToggleButton"
+                    class="campaign-test-draft-sideboard-toggle-button"
+                    title="Collapse Sideboard"
+                    aria-label="Collapse Sideboard"
+                    aria-expanded="true"
+                >
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+            </div>
+
+            <div id="campaignTestDraftSideboardList" class="campaign-test-draft-zone-list campaign-test-draft-drop-zone" data-drop-zone="sideboard">
+                {% if draft_state.human_sideboard_cards %}
+                    {% for picked_card in draft_state.human_sideboard_cards %}
+                    <div
+                        class="campaign-test-draft-picked-row"
+                        draggable="true"
+                        data-drag-type="picked-card"
+                        data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
+                        data-current-zone="sideboard"
+                        data-card-name="{{ picked_card.card_name }}"
+                        data-card-rarity="{{ picked_card.rarity or '' }}"
+                        data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                    >
+                        <img
+                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                            alt="{{ picked_card.card_name }}"
+                            class="campaign-test-draft-picked-thumb"
+                        >
+
+                        <div class="campaign-test-draft-picked-main">
+                            <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+                            <div class="campaign-test-draft-picked-meta">
+                                Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                            </div>
+                        </div>
+
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="campaign-test-draft-zone-empty">
+                    Sideboard cards will appear here after deck-building controls are enabled.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+    </aside>
+    <div id="campaignTestDraftHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
+        <img
+            id="campaignTestDraftHoverPreviewImage"
+            src=""
+            alt=""
+            class="campaign-test-draft-hover-preview-image"
+        >
+    </div>
+    <div id="campaignTestDraftZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
+        <div id="campaignTestDraftZoomBackdrop" class="card-zoom-backdrop"></div>
+        <div class="card-zoom-content">
+            <img
+                id="campaignTestDraftZoomImage"
+                src=""
+                alt=""
+                class="card-zoom-image"
+            >
+        </div>
+    </div>
+
+    <div id="campaignTestDraftStatsModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignTestDraftStatsBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog campaign-test-draft-stats-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignTestDraftStatsTitle">
+            <div class="campaign-add-pack-header">
+                <div>
+                    <h2 id="campaignTestDraftStatsTitle" class="campaign-add-pack-title">Draft Stats</h2>
+                    <p class="campaign-add-pack-subtitle">
+                        Stats are currently calculated from the visible current pack cards. Deck stats will be added after pick persistence is enabled.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftStatsCloseButton"
+                    class="campaign-add-pack-close-button"
+                    aria-label="Close Draft Stats"
+                >
+                    ×
+                </button>
+            </div>
+
+            <div id="campaignTestDraftStatsBody" class="campaign-test-draft-stats-body"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const workspace = document.getElementById("campaignTestDraftWorkspace");
+    const cardList = document.getElementById("campaignTestDraftCardList");
+    const prevPageButton = document.getElementById("campaignTestDraftPrevPageButton");
+    const nextPageButton = document.getElementById("campaignTestDraftNextPageButton");
+    const pageInput = document.getElementById("campaignTestDraftPageInput");
+    const totalPagesLabel = document.getElementById("campaignTestDraftTotalPagesLabel");
+    const paginationStatus = document.getElementById("campaignTestDraftPaginationStatus");
+    const gridViewButton = document.getElementById("campaignTestDraftGridViewButton");
+    const listViewButton = document.getElementById("campaignTestDraftListViewButton");
+    const confirmPickButton = document.getElementById("campaignTestDraftConfirmPickButton");
+    const sideboardPickButton = document.getElementById("campaignTestDraftSideboardPickButton");
+    const selectedCardLabel = document.getElementById("campaignTestDraftSelectedCardLabel");
+    const pickForm = document.getElementById("campaignTestDraftPickForm");
+    const selectedPackCardInput = document.getElementById("campaignTestDraftSelectedPackCardInput");
+    const deckZoneInput = document.getElementById("campaignTestDraftDeckZoneInput");
+
+    const hoverPreview = document.getElementById("campaignTestDraftHoverPreview");
+    const hoverPreviewImage = document.getElementById("campaignTestDraftHoverPreviewImage");
+
+    const zoomOverlay = document.getElementById("campaignTestDraftZoomOverlay");
+    const zoomBackdrop = document.getElementById("campaignTestDraftZoomBackdrop");
+    const zoomImage = document.getElementById("campaignTestDraftZoomImage");
+    const statsButton = document.getElementById("campaignTestDraftStatsButton");
+    const statsModal = document.getElementById("campaignTestDraftStatsModal");
+    const statsBackdrop = document.getElementById("campaignTestDraftStatsBackdrop");
+    const statsCloseButton = document.getElementById("campaignTestDraftStatsCloseButton");
+    const statsBody = document.getElementById("campaignTestDraftStatsBody");
+    const deckList = document.getElementById("campaignTestDraftDeckList");
+    const sideboardList = document.getElementById("campaignTestDraftSideboardList");
+    const resizeHandle = document.getElementById("campaignTestDraftResizeHandle");
+    const zoneResizeHandle = document.getElementById("campaignTestDraftZoneResizeHandle");
+    const sidePanel = document.querySelector(".campaign-test-draft-side-panel");
+    const deckZoneSection = document.querySelector(".campaign-test-draft-zone-deck");
+    const sideboardZoneSection = document.querySelector(".campaign-test-draft-zone-sideboard");
+    const sideboardToggleButton = document.getElementById("campaignTestDraftSideboardToggleButton");
+    const pickedSortSelect = document.getElementById("campaignTestDraftPickedSortSelect");
+    const pickedListViewButton = document.getElementById("campaignTestDraftPickedListViewButton");
+    const pickedGridViewButton = document.getElementById("campaignTestDraftPickedGridViewButton");
+
+    if (!workspace) {
+        return;
+    }
+
+    if (!cardList) {
+        if (statsButton) {
+            statsButton.disabled = true;
+        }
+
+        return;
+    }
+
+    let currentPage = 1;
+    let currentViewMode = "grid";
+    let selectedCardId = "";
+    let draggedDraftItem = null;
+    let pickedViewMode = "list";
+    let pickedSortMode = "rarity-desc";
+    let isResizingDraftPanels = false;
+    let isResizingDraftZones = false;
+    let isSideboardCollapsed = false;
+
+    const pageSize = parseInt(workspace.dataset.defaultPageSize || "25", 10) || 25;
+    const pickUrl = workspace.dataset.pickUrl || "";
+    const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function getCardElements() {
+        return Array.from(cardList.querySelectorAll(".campaign-test-draft-card"));
+    }
+
+    function renderDraftCard(card) {
+        return (
+            '<div class="campaign-test-draft-card" draggable="true" data-drag-type="pack-card" ' +
+                'data-draft-test-pack-card-id="' + escapeHtml(card.draft_test_pack_card_id) + '" ' +
+                'data-card-uuid="' + escapeHtml(card.card_uuid) + '" ' +
+                'data-card-name="' + escapeHtml(card.card_name) + '" ' +
+                'data-card-rarity="' + escapeHtml(card.rarity || "") + '" ' +
+                'data-card-type-line="' + escapeHtml(card.type_line || "") + '" ' +
+                'data-card-color-identity="' + escapeHtml(card.color_identity_json || "[]") + '" ' +
+                'data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" ' +
+                'data-card-set-code="' + escapeHtml(card.set_code || "") + '" ' +
+                'data-card-collector-number="' + escapeHtml(card.collector_number || "") + '" ' +
+                'data-card-visible="1">' +
+                '<div class="campaign-test-draft-card-image-shell">' +
+                    '<img src="' + escapeHtml(card.image_src) + '" alt="' + escapeHtml(card.card_name) + '" class="campaign-test-draft-card-image">' +
+                '</div>' +
+                '<div class="campaign-test-draft-card-footer">' +
+                    '<label class="campaign-test-draft-card-select-row">' +
+                        '<input type="radio" name="selected_draft_test_card" value="' + escapeHtml(card.draft_test_pack_card_id) + '" class="campaign-test-draft-card-radio">' +
+                        '<span class="campaign-test-draft-card-name">' + escapeHtml(card.card_name) + '</span>' +
+                    '</label>' +
+                '</div>' +
+            '</div>'
+        );
+    }
+
+    function renderPickedCard(pickedCard, targetZone) {
+        return (
+            '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '">' +
+                '<img src="' + escapeHtml(pickedCard.image_src) + '" alt="' + escapeHtml(pickedCard.card_name) + '" class="campaign-test-draft-picked-thumb">' +
+                '<div class="campaign-test-draft-picked-main">' +
+                    '<div class="campaign-test-draft-picked-name">' + escapeHtml(pickedCard.card_name) + '</div>' +
+                    '<div class="campaign-test-draft-picked-meta">Pick ' + escapeHtml(pickedCard.pick_number) + ' • Pack ' + escapeHtml(pickedCard.pack_number) + '</div>' +
+                '</div>' +
+            '</div>'
+        );
+    }
+
+    function bindDraftCardEvents() {
+        getCardElements().forEach(function (cardElement) {
+            const imageElement = cardElement.querySelector(".campaign-test-draft-card-image");
+            const radio = cardElement.querySelector(".campaign-test-draft-card-radio");
+
+            if (cardElement.dataset.cardEventsBound === "1") {
+                return;
+            }
+
+            cardElement.dataset.cardEventsBound = "1";
+
+            cardElement.addEventListener("click", function () {
+                selectCard(cardElement);
+            });
+
+            cardElement.addEventListener("mouseenter", function (event) {
+                showPackCardHoverPreview(cardElement, event);
+            });
+
+            cardElement.addEventListener("mousemove", function (event) {
+                positionPickedCardHoverPreview(event);
+            });
+
+            cardElement.addEventListener("mouseleave", function () {
+                hidePickedCardHoverPreview();
+            });
+
+            cardElement.addEventListener("dragstart", function () {
+                hidePickedCardHoverPreview();
+            });
+
+            if (radio) {
+                radio.addEventListener("change", function () {
+                    selectCard(cardElement);
+                });
+            }
+
+            if (imageElement) {
+                imageElement.addEventListener("dblclick", function (event) {
+                    event.stopPropagation();
+                    openZoom(imageElement);
+                });
+            }
+        });
+    }
+
+    function getVisibleCardElements() {
+        return getCardElements().filter(function (cardElement) {
+            return cardElement.dataset.cardVisible !== "0";
+        });
+    }
+
+    function getTotalPages() {
+        return Math.max(1, Math.ceil(getVisibleCardElements().length / pageSize));
+    }
+
+    function applyPagination() {
+        const visibleCards = getVisibleCardElements();
+        const totalPages = getTotalPages();
+
+        currentPage = Math.max(1, Math.min(currentPage, totalPages));
+
+        const startIndex = (currentPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+
+        getCardElements().forEach(function (cardElement) {
+            const visibleIndex = visibleCards.indexOf(cardElement);
+            const isVisible = visibleIndex >= startIndex && visibleIndex < endIndex;
+
+            cardElement.classList.toggle("hidden", !isVisible);
+        });
+
+        if (pageInput) {
+            pageInput.value = String(currentPage);
+            pageInput.max = String(totalPages);
+        }
+
+        if (totalPagesLabel) {
+            totalPagesLabel.textContent = "of " + totalPages;
+        }
+
+        if (prevPageButton) {
+            prevPageButton.disabled = currentPage <= 1;
+        }
+
+        if (nextPageButton) {
+            nextPageButton.disabled = currentPage >= totalPages;
+        }
+
+        if (paginationStatus) {
+            if (!visibleCards.length) {
+                paginationStatus.textContent = "No visible cards.";
+                return;
+            }
+
+            const displayStart = startIndex + 1;
+            const displayEnd = Math.min(endIndex, visibleCards.length);
+
+            paginationStatus.textContent = "Showing " + displayStart + "–" + displayEnd + " of " + visibleCards.length + " card(s).";
+        }
+    }
+
+    function goToPage(pageNumber) {
+        const parsedPageNumber = parseInt(pageNumber || "1", 10);
+
+        if (!Number.isFinite(parsedPageNumber)) {
+            return;
+        }
+
+        currentPage = parsedPageNumber;
+        applyPagination();
+    }
+
+    function setViewMode(viewMode) {
+        currentViewMode = viewMode === "list" ? "list" : "grid";
+
+        cardList.classList.toggle("campaign-test-draft-card-list-grid", currentViewMode === "grid");
+        cardList.classList.toggle("campaign-test-draft-card-list-list", currentViewMode === "list");
+
+        if (gridViewButton) {
+            gridViewButton.classList.toggle("campaign-test-draft-icon-button-active", currentViewMode === "grid");
+        }
+
+        if (listViewButton) {
+            listViewButton.classList.toggle("campaign-test-draft-icon-button-active", currentViewMode === "list");
+        }
+    }
+
+    function updateSelectedCardState() {
+        const selectedCard = selectedCardId
+            ? cardList.querySelector('.campaign-test-draft-card[data-draft-test-pack-card-id="' + CSS.escape(selectedCardId) + '"]')
+            : null;
+
+        getCardElements().forEach(function (cardElement) {
+            const isSelected = cardElement === selectedCard;
+            const radio = cardElement.querySelector(".campaign-test-draft-card-radio");
+
+            cardElement.classList.toggle("campaign-test-draft-card-selected", isSelected);
+
+            if (radio) {
+                radio.checked = isSelected;
+            }
+        });
+
+        if (confirmPickButton) {
+            confirmPickButton.disabled = !selectedCard;
+        }
+
+        if (sideboardPickButton) {
+            sideboardPickButton.disabled = !selectedCard;
+        }
+
+        if (selectedPackCardInput) {
+            selectedPackCardInput.value = selectedCard ? selectedCardId : "";
+        }
+
+        if (selectedCardLabel) {
+            selectedCardLabel.textContent = selectedCard
+                ? "Selected: " + (selectedCard.dataset.cardName || "Card")
+                : "Select a card from the current pack.";
+        }
+    }
+
+    function selectCard(cardElement) {
+        if (!cardElement) {
+            return;
+        }
+
+        selectedCardId = cardElement.dataset.draftTestPackCardId || "";
+        updateSelectedCardState();
+    }
+
+    function openZoom(imageElement) {
+        if (!zoomOverlay || !zoomImage || !imageElement) {
+            return;
+        }
+
+        hidePickedCardHoverPreview();
+
+        zoomImage.src = imageElement.src || "";
+        zoomImage.alt = imageElement.alt || "";
+
+        zoomOverlay.classList.remove("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function closeZoom() {
+        if (!zoomOverlay || !zoomImage) {
+            return;
+        }
+
+        zoomOverlay.classList.add("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "true");
+        zoomImage.src = "";
+        zoomImage.alt = "";
+    }
+
+    function getPrimaryType(typeLine) {
+        const cleanTypeLine = String(typeLine || "").toLowerCase();
+
+        if (cleanTypeLine.indexOf("creature") !== -1) {
+            return "Creature";
+        }
+
+        if (cleanTypeLine.indexOf("instant") !== -1) {
+            return "Instant";
+        }
+
+        if (cleanTypeLine.indexOf("sorcery") !== -1) {
+            return "Sorcery";
+        }
+
+        if (cleanTypeLine.indexOf("artifact") !== -1) {
+            return "Artifact";
+        }
+
+        if (cleanTypeLine.indexOf("enchantment") !== -1) {
+            return "Enchantment";
+        }
+
+        if (cleanTypeLine.indexOf("planeswalker") !== -1) {
+            return "Planeswalker";
+        }
+
+        if (cleanTypeLine.indexOf("land") !== -1) {
+            return "Land";
+        }
+
+        return "Other";
+    }
+
+    function renderStats() {
+        if (!statsBody) {
+            return;
+        }
+
+        const cards = getVisibleCardElements();
+        const rarityCounts = {};
+        const typeCounts = {};
+        const manaCounts = {};
+
+        cards.forEach(function (cardElement) {
+            const rarity = cardElement.dataset.cardRarity || "unknown";
+            const primaryType = getPrimaryType(cardElement.dataset.cardTypeLine || "");
+            const manaValue = cardElement.dataset.cardManaValue || "—";
+
+            rarityCounts[rarity] = (rarityCounts[rarity] || 0) + 1;
+            typeCounts[primaryType] = (typeCounts[primaryType] || 0) + 1;
+            manaCounts[manaValue] = (manaCounts[manaValue] || 0) + 1;
+        });
+
+        function renderGroup(title, counts) {
+            const keys = Object.keys(counts).sort();
+
+            if (!keys.length) {
+                return "";
+            }
+
+            return (
+                '<div class="campaign-test-draft-stat-group">' +
+                    '<h3>' + title + '</h3>' +
+                    keys.map(function (key) {
+                        return '<div class="campaign-test-draft-stat-row"><span>' + key + '</span><strong>' + counts[key] + '</strong></div>';
+                    }).join("") +
+                '</div>'
+            );
+        }
+
+        statsBody.innerHTML =
+            '<div class="campaign-test-draft-stats-summary">' +
+                '<div class="campaign-test-draft-stat-total"><span>Current Pack Cards</span><strong>' + cards.length + '</strong></div>' +
+            '</div>' +
+            '<div class="campaign-test-draft-stats-grid">' +
+                renderGroup("Rarity", rarityCounts) +
+                renderGroup("Type", typeCounts) +
+                renderGroup("Mana Value", manaCounts) +
+            '</div>';
+    }
+
+    function openStatsModal() {
+        if (!statsModal) {
+            return;
+        }
+
+        renderStats();
+
+        statsModal.classList.remove("hidden");
+        statsModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeStatsModal() {
+        if (!statsModal) {
+            return;
+        }
+
+        statsModal.classList.add("hidden");
+        statsModal.setAttribute("aria-hidden", "true");
+    }
+
+    function updateHeaderFromState(payload) {
+        if (!payload || !payload.session) {
+            return;
+        }
+
+        const title = document.querySelector(".campaign-test-draft-title");
+        const subtitle = document.querySelector(".campaign-test-draft-subtitle");
+
+        if (title && payload.session.campaign_name) {
+            title.textContent = payload.session.campaign_name + " - Draft";
+        }
+
+        if (!subtitle) {
+            return;
+        }
+
+        const packCode = payload.current_human_pack && payload.current_human_pack.pack_tracking_code
+            ? " • " + payload.current_human_pack.pack_tracking_code
+            : "";
+
+        subtitle.textContent =
+            "Pack " + payload.session.current_pack_number +
+            " / Pick " + payload.session.current_pick_number +
+            " • " + payload.session.pod_size + " players" +
+            " • " + payload.session.packs_per_player + " pack(s) each" +
+            packCode;
+    }
+
+    function getPickedCardRarityValue(rarity) {
+        const cleanRarity = String(rarity || "").trim().toLowerCase();
+
+        if (cleanRarity === "common") {
+            return 1;
+        }
+
+        if (cleanRarity === "uncommon") {
+            return 2;
+        }
+
+        if (cleanRarity === "rare") {
+            return 3;
+        }
+
+        if (cleanRarity === "mythic") {
+            return 4;
+        }
+
+        return 0;
+    }
+
+    function getPickedCardManaValue(card) {
+        const rawManaValue = card && card.mana_value !== undefined
+            ? card.mana_value
+            : card?.dataset?.cardManaValue;
+
+        const parsedManaValue = parseFloat(rawManaValue);
+
+        return Number.isFinite(parsedManaValue) ? parsedManaValue : 999;
+    }
+
+    function getPickedCardNameValue(card) {
+        if (!card) {
+            return "";
+        }
+
+        if (card.card_name !== undefined) {
+            return String(card.card_name || "").toLowerCase();
+        }
+
+        return String(card.dataset.cardName || "").toLowerCase();
+    }
+
+    function getPickedCardRaritySortValue(card) {
+        if (!card) {
+            return 0;
+        }
+
+        if (card.rarity !== undefined) {
+            return getPickedCardRarityValue(card.rarity);
+        }
+
+        return getPickedCardRarityValue(card.dataset.cardRarity);
+    }
+
+    function comparePickedCards(a, b) {
+        const sortMode = pickedSortMode || "rarity-desc";
+
+        if (sortMode === "name-asc") {
+            return getPickedCardNameValue(a).localeCompare(getPickedCardNameValue(b));
+        }
+
+        if (sortMode === "name-desc") {
+            return getPickedCardNameValue(b).localeCompare(getPickedCardNameValue(a));
+        }
+
+        if (sortMode === "rarity-desc") {
+            return getPickedCardRaritySortValue(b) - getPickedCardRaritySortValue(a)
+                || getPickedCardNameValue(a).localeCompare(getPickedCardNameValue(b));
+        }
+
+        if (sortMode === "mv-asc") {
+            return getPickedCardManaValue(a) - getPickedCardManaValue(b)
+                || getPickedCardNameValue(a).localeCompare(getPickedCardNameValue(b));
+        }
+
+        if (sortMode === "mv-desc") {
+            return getPickedCardManaValue(b) - getPickedCardManaValue(a)
+                || getPickedCardNameValue(a).localeCompare(getPickedCardNameValue(b));
+        }
+
+        return getPickedCardRaritySortValue(a) - getPickedCardRaritySortValue(b)
+            || getPickedCardNameValue(a).localeCompare(getPickedCardNameValue(b));
+    }
+
+    function sortPickedCardArray(cards) {
+        return (cards || []).slice().sort(comparePickedCards);
+    }
+
+    function sortExistingPickedZone(listElement) {
+        if (!listElement) {
+            return;
+        }
+
+        const rows = Array.from(listElement.querySelectorAll(".campaign-test-draft-picked-row"));
+
+        rows.sort(comparePickedCards).forEach(function (row) {
+            listElement.appendChild(row);
+        });
+    }
+
+    function sortExistingPickedZones() {
+        sortExistingPickedZone(deckList);
+        sortExistingPickedZone(sideboardList);
+    }
+
+    function renderPickedZone(listElement, cards, emptyText, targetZone) {
+        if (!listElement) {
+            return;
+        }
+
+        if (!cards || !cards.length) {
+            listElement.innerHTML =
+                '<div class="campaign-test-draft-zone-empty">' +
+                    escapeHtml(emptyText) +
+                '</div>';
+            return;
+        }
+
+        listElement.innerHTML = sortPickedCardArray(cards).map(function (pickedCard) {
+            return renderPickedCard(pickedCard, targetZone);
+        }).join("");
+    }
+
+    function setPickedViewMode(viewMode) {
+        pickedViewMode = viewMode === "grid" ? "grid" : "list";
+
+        workspace.classList.toggle("campaign-test-draft-picked-grid-active", pickedViewMode === "grid");
+        workspace.classList.toggle("campaign-test-draft-picked-list-active", pickedViewMode === "list");
+
+        if (pickedListViewButton) {
+            pickedListViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", pickedViewMode === "list");
+        }
+
+        if (pickedGridViewButton) {
+            pickedGridViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", pickedViewMode === "grid");
+        }
+
+        if (pickedViewMode === "grid") {
+            const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+            const targetWidth = Math.max(620, Math.round(viewportWidth * 0.50));
+            const maxWidth = Math.max(460, viewportWidth - 520);
+
+            workspace.style.setProperty(
+                "--campaign-test-draft-side-width",
+                Math.min(targetWidth, maxWidth) + "px"
+            );
+        } else if (!workspace.dataset.userResizedSidePanel) {
+            workspace.style.setProperty("--campaign-test-draft-side-width", "340px");
+        }
+    }
+
+    function clampDraftSidePanelWidth(rawWidth) {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const minWidth = pickedViewMode === "grid" ? 520 : 300;
+        const maxWidth = Math.max(minWidth, viewportWidth - 430);
+
+        return Math.max(minWidth, Math.min(rawWidth, maxWidth));
+    }
+
+    function setDraftSidePanelWidthFromPointer(clientX) {
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const width = clampDraftSidePanelWidth(viewportWidth - clientX);
+
+        workspace.style.setProperty("--campaign-test-draft-side-width", width + "px");
+        workspace.dataset.userResizedSidePanel = "1";
+    }
+
+
+    function setDraftZoneSplitFromPointer(clientY) {
+        if (!workspace || !deckZoneSection || !sideboardZoneSection) {
+            return;
+        }
+
+        const deckRect = deckZoneSection.getBoundingClientRect();
+        const sideboardRect = sideboardZoneSection.getBoundingClientRect();
+        const top = deckRect.top;
+        const bottom = sideboardRect.bottom;
+        const availableHeight = Math.max(1, bottom - top);
+
+        let deckRatio = (clientY - top) / availableHeight;
+
+        deckRatio = Math.max(0.22, Math.min(0.78, deckRatio));
+
+        const sideboardRatio = 1 - deckRatio;
+
+        workspace.style.setProperty("--campaign-test-draft-deck-flex", String(deckRatio));
+        workspace.style.setProperty("--campaign-test-draft-sideboard-flex", String(sideboardRatio));
+        workspace.dataset.userResizedZoneSplit = "1";
+    }
+
+    function setSideboardCollapsed(isCollapsed) {
+        isSideboardCollapsed = Boolean(isCollapsed);
+
+        workspace.classList.toggle("campaign-test-draft-sideboard-collapsed", isSideboardCollapsed);
+
+        if (sideboardToggleButton) {
+            sideboardToggleButton.setAttribute("aria-expanded", isSideboardCollapsed ? "false" : "true");
+            sideboardToggleButton.title = isSideboardCollapsed ? "Expand Sideboard" : "Collapse Sideboard";
+            sideboardToggleButton.setAttribute(
+                "aria-label",
+                isSideboardCollapsed ? "Expand Sideboard" : "Collapse Sideboard"
+            );
+        }
+    }
+
+    function applyDraftStatePayload(payload) {
+        if (!payload || !payload.ok) {
+            throw new Error((payload && payload.message) || "Draft update failed.");
+        }
+
+        selectedCardId = "";
+
+        if (cardList) {
+            cardList.innerHTML = (payload.current_pack_cards || []).map(renderDraftCard).join("");
+        }
+
+        renderPickedZone(
+            deckList,
+            payload.human_deck_cards || [],
+            "Drafted cards will appear here after you confirm a pick.",
+            "deck"
+        );
+
+        renderPickedZone(
+            sideboardList,
+            payload.human_sideboard_cards || [],
+            "Sideboard cards will appear here after deck-building controls are enabled.",
+            "sideboard"
+        );
+
+        updateHeaderFromState(payload);
+        bindDraftCardEvents();
+        bindDraftDragAndDrop();
+        bindPickedCardHoverPreviews();
+
+        currentPage = 1;
+        applyPagination();
+        updateSelectedCardState();
+
+        if (confirmPickButton) {
+            confirmPickButton.disabled = true;
+            confirmPickButton.textContent = "Confirm Pick";
+        }
+
+        if (sideboardPickButton) {
+            sideboardPickButton.disabled = true;
+            sideboardPickButton.textContent = "Pick to Sideboard";
+        }
+    }
+
+    async function submitAjaxData(actionUrl, formData) {
+        const response = await fetch(actionUrl, {
+            method: "POST",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: formData
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Draft update failed.");
+        }
+
+        return payload;
+    }
+
+    async function submitAjaxForm(formElement) {
+        return submitAjaxData(formElement.action, new FormData(formElement));
+    }
+
+    async function pickDraftCardToZone(packCardId, deckZone) {
+        const formData = new FormData();
+        formData.append("draft_test_pack_card_id", packCardId || "");
+        formData.append("deck_zone", deckZone || "deck");
+
+        return submitAjaxData(pickUrl || pickForm.action, formData);
+    }
+
+    async function movePickedDraftCardToZone(pickId, deckZone) {
+        const formData = new FormData();
+        formData.append("draft_test_pick_id", pickId || "");
+        formData.append("deck_zone", deckZone || "deck");
+
+        return submitAjaxData(moveZoneUrl, formData);
+    }
+
+    function showDraftAjaxError(error) {
+        console.error(error);
+
+        if (window.iMomirToast) {
+            window.iMomirToast.error(error.message || "Draft update failed.");
+        } else {
+            window.alert(error.message || "Draft update failed.");
+        }
+    }
+
+    function bindMoveZoneForms() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-picked-zone-form")).forEach(function (zoneForm) {
+            zoneForm.addEventListener("submit", async function (event) {
+                event.preventDefault();
+
+                const submitButton = zoneForm.querySelector("button[type='submit']");
+
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = "...";
+                }
+
+                try {
+                    const payload = await submitAjaxForm(zoneForm);
+                    applyDraftStatePayload(payload);
+                } catch (error) {
+                    showDraftAjaxError(error);
+
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                    }
+                }
+            });
+        });
+    }
+
+    function positionPickedCardHoverPreview(event) {
+        if (!hoverPreview) {
+            return;
+        }
+
+        const previewWidth = hoverPreview.offsetWidth || 340;
+        const previewHeight = hoverPreview.offsetHeight || 420;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const offset = 18;
+
+        let left = event.clientX + offset;
+        let top = event.clientY + offset;
+
+        if (left + previewWidth > viewportWidth - 10) {
+            left = event.clientX - previewWidth - offset;
+        }
+
+        if (top + previewHeight > viewportHeight - 10) {
+            top = viewportHeight - previewHeight - 10;
+        }
+
+        if (left < 10) {
+            left = 10;
+        }
+
+        if (top < 10) {
+            top = 10;
+        }
+
+        hoverPreview.style.left = left + "px";
+        hoverPreview.style.top = top + "px";
+    }
+
+    function showCardHoverPreview(sourceElement, imageSelector, fallbackAlt, event) {
+        if (!hoverPreview || !hoverPreviewImage || !sourceElement) {
+            return;
+        }
+
+        const imageElement = sourceElement.querySelector(imageSelector);
+
+        if (!imageElement || !imageElement.src) {
+            return;
+        }
+
+        hoverPreviewImage.src = imageElement.src;
+        hoverPreviewImage.alt = imageElement.alt || sourceElement.dataset.cardName || fallbackAlt || "Card";
+
+        hoverPreview.classList.remove("hidden");
+        hoverPreview.setAttribute("aria-hidden", "false");
+
+        positionPickedCardHoverPreview(event);
+    }
+
+    function showPickedCardHoverPreview(rowElement, event) {
+        showCardHoverPreview(
+            rowElement,
+            ".campaign-test-draft-picked-thumb",
+            "Picked card",
+            event
+        );
+    }
+
+    function showPackCardHoverPreview(cardElement, event) {
+        showCardHoverPreview(
+            cardElement,
+            ".campaign-test-draft-card-image",
+            "Draft card",
+            event
+        );
+    }
+
+    function hidePickedCardHoverPreview() {
+        if (!hoverPreview || !hoverPreviewImage) {
+            return;
+        }
+
+        hoverPreview.classList.add("hidden");
+        hoverPreview.setAttribute("aria-hidden", "true");
+        hoverPreviewImage.src = "";
+        hoverPreviewImage.alt = "";
+    }
+
+    function bindPickedCardHoverPreviews() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-picked-row")).forEach(function (pickedRow) {
+            if (pickedRow.dataset.hoverPreviewBound === "1") {
+                return;
+            }
+
+            pickedRow.dataset.hoverPreviewBound = "1";
+
+            pickedRow.addEventListener("mouseenter", function (event) {
+                showPickedCardHoverPreview(pickedRow, event);
+            });
+
+            pickedRow.addEventListener("mousemove", function (event) {
+                positionPickedCardHoverPreview(event);
+            });
+
+            pickedRow.addEventListener("mouseleave", function () {
+                hidePickedCardHoverPreview();
+            });
+
+            pickedRow.addEventListener("dragstart", function () {
+                hidePickedCardHoverPreview();
+            });
+        });
+    }
+
+    function clearDraftDropZoneState() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            dropZone.classList.remove("campaign-test-draft-drop-zone-active");
+            dropZone.classList.remove("campaign-test-draft-drop-zone-over");
+        });
+
+        Array.from(document.querySelectorAll(".campaign-test-draft-card-dragging, .campaign-test-draft-picked-row-dragging")).forEach(function (draggedElement) {
+            draggedElement.classList.remove("campaign-test-draft-card-dragging");
+            draggedElement.classList.remove("campaign-test-draft-picked-row-dragging");
+        });
+    }
+
+    function setDraftDropZonesActive(isActive) {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            dropZone.classList.toggle("campaign-test-draft-drop-zone-active", Boolean(isActive));
+        });
+    }
+
+    function bindDraftDragSources() {
+        getCardElements().forEach(function (cardElement) {
+            if (cardElement.dataset.dragBound === "1") {
+                return;
+            }
+
+            cardElement.dataset.dragBound = "1";
+
+            cardElement.addEventListener("dragstart", function (event) {
+                draggedDraftItem = {
+                    type: "pack-card",
+                    packCardId: cardElement.dataset.draftTestPackCardId || "",
+                    cardName: cardElement.dataset.cardName || ""
+                };
+
+                cardElement.classList.add("campaign-test-draft-card-dragging");
+                setDraftDropZonesActive(true);
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", draggedDraftItem.cardName || "Draft card");
+                }
+            });
+
+            cardElement.addEventListener("dragend", function () {
+                draggedDraftItem = null;
+                clearDraftDropZoneState();
+            });
+        });
+
+        Array.from(document.querySelectorAll(".campaign-test-draft-picked-row[draggable='true']")).forEach(function (pickedRow) {
+            if (pickedRow.dataset.dragBound === "1") {
+                return;
+            }
+
+            pickedRow.dataset.dragBound = "1";
+
+            pickedRow.addEventListener("dragstart", function (event) {
+                draggedDraftItem = {
+                    type: "picked-card",
+                    pickId: pickedRow.dataset.draftTestPickId || "",
+                    currentZone: pickedRow.dataset.currentZone || ""
+                };
+
+                pickedRow.classList.add("campaign-test-draft-picked-row-dragging");
+                setDraftDropZonesActive(true);
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", "Picked draft card");
+                }
+            });
+
+            pickedRow.addEventListener("dragend", function () {
+                draggedDraftItem = null;
+                clearDraftDropZoneState();
+            });
+        });
+    }
+
+    function bindDraftDropZones() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            if (dropZone.dataset.dropBound === "1") {
+                return;
+            }
+
+            dropZone.dataset.dropBound = "1";
+
+            dropZone.addEventListener("dragover", function (event) {
+                if (!draggedDraftItem) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = "move";
+                }
+
+                dropZone.classList.add("campaign-test-draft-drop-zone-over");
+            });
+
+            dropZone.addEventListener("dragleave", function (event) {
+                if (!dropZone.contains(event.relatedTarget)) {
+                    dropZone.classList.remove("campaign-test-draft-drop-zone-over");
+                }
+            });
+
+            dropZone.addEventListener("drop", async function (event) {
+                event.preventDefault();
+
+                if (!draggedDraftItem) {
+                    return;
+                }
+
+                const targetZone = dropZone.dataset.dropZone || "deck";
+                const droppedItem = draggedDraftItem;
+
+                draggedDraftItem = null;
+                clearDraftDropZoneState();
+
+                try {
+                    dropZone.classList.add("campaign-test-draft-drop-zone-working");
+
+                    let payload = null;
+
+                    if (droppedItem.type === "pack-card") {
+                        payload = await pickDraftCardToZone(droppedItem.packCardId, targetZone);
+                    } else if (droppedItem.type === "picked-card") {
+                        if (droppedItem.currentZone === targetZone) {
+                            dropZone.classList.remove("campaign-test-draft-drop-zone-working");
+                            return;
+                        }
+
+                        payload = await movePickedDraftCardToZone(droppedItem.pickId, targetZone);
+                    }
+
+                    if (payload) {
+                        applyDraftStatePayload(payload);
+                    }
+                } catch (error) {
+                    showDraftAjaxError(error);
+                } finally {
+                    dropZone.classList.remove("campaign-test-draft-drop-zone-working");
+                }
+            });
+        });
+    }
+
+    function bindDraftDragAndDrop() {
+        bindDraftDragSources();
+        bindDraftDropZones();
+    }
+
+    bindDraftCardEvents();
+    bindDraftDragAndDrop();
+    bindPickedCardHoverPreviews();
+
+    if (prevPageButton) {
+        prevPageButton.addEventListener("click", function () {
+            goToPage(currentPage - 1);
+        });
+    }
+
+    if (nextPageButton) {
+        nextPageButton.addEventListener("click", function () {
+            goToPage(currentPage + 1);
+        });
+    }
+
+    if (pageInput) {
+        pageInput.addEventListener("change", function () {
+            goToPage(pageInput.value);
+        });
+    }
+
+    if (gridViewButton) {
+        gridViewButton.addEventListener("click", function () {
+            setViewMode("grid");
+        });
+    }
+
+    if (listViewButton) {
+        listViewButton.addEventListener("click", function () {
+            setViewMode("list");
+        });
+    }
+
+    if (pickedSortSelect) {
+        pickedSortSelect.addEventListener("change", function () {
+            pickedSortMode = pickedSortSelect.value || "rarity-asc";
+            sortExistingPickedZones();
+        });
+    }
+
+    if (pickedListViewButton) {
+        pickedListViewButton.addEventListener("click", function () {
+            setPickedViewMode("list");
+        });
+    }
+
+    if (pickedGridViewButton) {
+        pickedGridViewButton.addEventListener("click", function () {
+            setPickedViewMode("grid");
+        });
+    }
+
+    if (resizeHandle) {
+        resizeHandle.addEventListener("pointerdown", function (event) {
+            isResizingDraftPanels = true;
+            resizeHandle.setPointerCapture(event.pointerId);
+            document.body.classList.add("campaign-test-draft-resizing");
+            event.preventDefault();
+        });
+
+        resizeHandle.addEventListener("pointermove", function (event) {
+            if (!isResizingDraftPanels) {
+                return;
+            }
+
+            setDraftSidePanelWidthFromPointer(event.clientX);
+        });
+
+        resizeHandle.addEventListener("pointerup", function (event) {
+            isResizingDraftPanels = false;
+            resizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-resizing");
+        });
+
+        resizeHandle.addEventListener("pointercancel", function (event) {
+            isResizingDraftPanels = false;
+            resizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-resizing");
+        });
+    }
+
+    if (zoneResizeHandle) {
+        zoneResizeHandle.addEventListener("pointerdown", function (event) {
+            if (isSideboardCollapsed) {
+                return;
+            }
+
+            isResizingDraftZones = true;
+            zoneResizeHandle.setPointerCapture(event.pointerId);
+            document.body.classList.add("campaign-test-draft-zone-resizing");
+            event.preventDefault();
+        });
+
+        zoneResizeHandle.addEventListener("pointermove", function (event) {
+            if (!isResizingDraftZones || isSideboardCollapsed) {
+                return;
+            }
+
+            setDraftZoneSplitFromPointer(event.clientY);
+        });
+
+        zoneResizeHandle.addEventListener("pointerup", function (event) {
+            isResizingDraftZones = false;
+            zoneResizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-zone-resizing");
+        });
+
+        zoneResizeHandle.addEventListener("pointercancel", function (event) {
+            isResizingDraftZones = false;
+            zoneResizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-zone-resizing");
+        });
+    }
+
+    if (sideboardToggleButton) {
+        sideboardToggleButton.addEventListener("click", function () {
+            setSideboardCollapsed(!isSideboardCollapsed);
+        });
+    }
+
+    if (zoomBackdrop) {
+        zoomBackdrop.addEventListener("click", closeZoom);
+    }
+
+    if (statsButton) {
+        statsButton.addEventListener("click", openStatsModal);
+    }
+
+    if (statsBackdrop) {
+        statsBackdrop.addEventListener("click", closeStatsModal);
+    }
+
+    if (statsCloseButton) {
+        statsCloseButton.addEventListener("click", closeStatsModal);
+    }
+
+    if (confirmPickButton && deckZoneInput) {
+        confirmPickButton.addEventListener("click", function () {
+            deckZoneInput.value = confirmPickButton.dataset.pickZone || "deck";
+        });
+    }
+
+    if (sideboardPickButton && deckZoneInput) {
+        sideboardPickButton.addEventListener("click", function () {
+            deckZoneInput.value = sideboardPickButton.dataset.pickZone || "sideboard";
+        });
+    }
+
+    if (pickForm) {
+        pickForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            if (!selectedCardId) {
+                return;
+            }
+
+            if (selectedPackCardInput) {
+                selectedPackCardInput.value = selectedCardId;
+            }
+
+            if (confirmPickButton) {
+                confirmPickButton.disabled = true;
+            }
+
+            if (sideboardPickButton) {
+                sideboardPickButton.disabled = true;
+            }
+
+            const submitter = event.submitter;
+
+            if (submitter) {
+                submitter.textContent = "Picking...";
+            }
+
+            try {
+                const payload = await submitAjaxForm(pickForm);
+                applyDraftStatePayload(payload);
+            } catch (error) {
+                showDraftAjaxError(error);
+
+                if (confirmPickButton) {
+                    confirmPickButton.disabled = !selectedCardId;
+                    confirmPickButton.textContent = "Confirm Pick";
+                }
+
+                if (sideboardPickButton) {
+                    sideboardPickButton.disabled = !selectedCardId;
+                    sideboardPickButton.textContent = "Pick to Sideboard";
+                }
+            }
+        });
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+
+        hidePickedCardHoverPreview();
+
+        if (zoomOverlay && !zoomOverlay.classList.contains("hidden")) {
+            closeZoom();
+            return;
+        }
+
+        if (statsModal && !statsModal.classList.contains("hidden")) {
+            closeStatsModal();
+        }
+    });
+
+    if (pickedSortSelect) {
+        pickedSortMode = pickedSortSelect.value || "rarity-desc";
+    }
+
+    setViewMode("grid");
+    setPickedViewMode("list");
+    setSideboardCollapsed(false);
+    sortExistingPickedZones();
+    applyPagination();
+    updateSelectedCardState();
+})();
+</script>
+{% endblock %}

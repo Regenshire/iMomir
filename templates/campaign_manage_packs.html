@@ -203,6 +203,42 @@
         </div>
     </div>
 
+    <div id="campaignPackLabelSettingsModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignPackLabelSettingsBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignPackLabelSettingsTitle">
+            <div class="campaign-add-pack-header">
+                <div>
+                    <h2 id="campaignPackLabelSettingsTitle" class="campaign-add-pack-title">Pack Label Settings</h2>
+                    <p class="campaign-add-pack-subtitle" id="campaignPackLabelSettingsSubtitle">
+                        Override print/export label behavior for this saved pack.
+                    </p>
+                </div>
+
+                <button type="button" id="campaignPackLabelSettingsCloseButton" class="campaign-add-pack-close-button" aria-label="Close Pack Label Settings">
+                    ×
+                </button>
+            </div>
+
+            <div id="campaignPackLabelSettingsStatus" class="campaign-add-pack-status hidden"></div>
+
+            <label class="toggle-row settings-field">
+                <span>Disable Print/Export Labels for this pack</span>
+                <input type="checkbox" id="campaignPackDisableLabelsCheckbox">
+            </label>
+
+            <p class="campaign-add-pack-option-text">
+                When enabled, this pack will not print card corner labels, FRONT/BACK text, pack tracking codes on labels, or pack label cards/images. XML metadata still keeps the pack tracking code.
+            </p>
+
+            <div class="campaign-add-pack-custom-actions">
+                <button type="button" id="campaignPackLabelSettingsSaveButton" class="action-button">
+                    Save
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div id="campaignAddPackModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
         <div id="campaignAddPackBackdrop" class="campaign-add-pack-backdrop"></div>
 
@@ -607,65 +643,77 @@
         <input type="hidden" name="delete_confirmation" id="campaignDeleteConfirmation" value="">
 
         <div class="page-panel campaign-bulk-actions-panel">
-            <div class="campaign-bulk-actions">
-                <button
-                    type="submit"
-                    name="bulk_action"
-                    value="print"
-                    class="action-button"
-                    formtarget="_blank"
-                >
-                    Print Selected
-                </button>
+            <div class="campaign-bulk-action-groups">
+                <div class="campaign-bulk-action-group campaign-bulk-feature-actions" aria-label="Pack features">
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="print"
+                        class="action-button"
+                        formtarget="_blank"
+                    >
+                        Print Selected
+                    </button>
 
-                {% if enable_chaos_card_image_export %}
-                <button
-                    type="submit"
-                    name="bulk_action"
-                    value="export_zip"
-                    class="action-button secondary-button"
-                    formtarget="_blank"
-                >
-                    Export to Zip
-                </button>
-                {% endif %}
+                    {% if enable_chaos_card_image_export %}
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="export_zip"
+                        class="action-button secondary-button"
+                        formtarget="_blank"
+                    >
+                        Export to Zip
+                    </button>
+                    {% endif %}
 
-                <button
-                    type="submit"
-                    formaction="{{ url_for('campaign_chaos_packs_backup') }}"
-                    class="action-button secondary-button"
-                    formtarget="_blank"
-                >
-                    Backup
-                </button>
+                    <button
+                        type="submit"
+                        formaction="{{ url_for('campaign_chaos_packs_backup') }}"
+                        class="action-button secondary-button"
+                        formtarget="_blank"
+                    >
+                        Backup
+                    </button>
 
-                <button
-                    type="submit"
-                    name="bulk_action"
-                    value="disable"
-                    class="action-button secondary-button"
-                >
-                    Disable Selected
-                </button>
+                    <button
+                        type="button"
+                        id="campaignTestDraftButton"
+                        class="action-button secondary-button"
+                    >
+                        Test Draft
+                    </button>
+                </div>
 
-                <button
-                    type="submit"
-                    name="bulk_action"
-                    value="enable"
-                    class="action-button secondary-button"
-                >
-                    Enable Selected
-                </button>
+                <div class="campaign-bulk-action-group campaign-bulk-edit-actions" aria-label="Row editing">
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="disable"
+                        class="action-button secondary-button"
+                    >
+                        Disable Selected
+                    </button>
 
-                <button
-                    type="submit"
-                    name="bulk_action"
-                    value="delete"
-                    id="campaignDeleteSelectedButton"
-                    class="action-button secondary-button campaign-danger-button"
-                >
-                    Delete Selected
-                </button>
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="enable"
+                        class="action-button secondary-button"
+                    >
+                        Enable Selected
+                    </button>
+
+                    <button
+                        type="submit"
+                        name="bulk_action"
+                        value="delete"
+                        id="campaignDeleteSelectedButton"
+                        class="action-button secondary-button campaign-danger-button"
+                    >
+                        Delete Selected
+                    </button>
+                </div>
             </div>
 
             <div class="campaign-selection-tools">
@@ -682,7 +730,12 @@
             {% if packs %}
                 <div class="campaign-pack-list">
                     {% for pack in packs %}
-                    <div class="campaign-pack-row {% if not pack.campaign_enabled %}campaign-pack-row-disabled{% endif %}">
+                    <div
+                        class="campaign-pack-row {% if not pack.campaign_enabled %}campaign-pack-row-disabled{% endif %}"
+                        data-tracked-pack-id="{{ pack.tracked_pack_id }}"
+                        data-pack-display-name="{{ pack.pack_display_name }}"
+                        data-print-labels-enabled-override="{% if pack.print_labels_enabled_override is none %}global{% else %}{{ pack.print_labels_enabled_override }}{% endif %}"
+                    >
                         <label class="campaign-pack-select-wrap">
                             <input
                                 type="checkbox"
@@ -711,6 +764,10 @@
                                 {% else %}
                                     <span class="campaign-status-badge campaign-status-disabled">Disabled</span>
                                 {% endif %}
+
+                                {% if pack.labels_disabled_for_pack %}
+                                    <span class="campaign-status-badge campaign-status-disabled campaign-pack-labels-disabled-badge">Labels Off</span>
+                                {% endif %}
                             </div>
 
                             <div class="campaign-pack-meta">
@@ -728,6 +785,18 @@
                         </div>
 
                         <div class="campaign-pack-row-actions">
+                            <button
+                                type="button"
+                                class="campaign-pack-label-settings-button"
+                                data-label-settings-url="{{ url_for('campaign_chaos_pack_label_settings_update', tracked_pack_id=pack.tracked_pack_id) }}"
+                                data-tracked-pack-id="{{ pack.tracked_pack_id }}"
+                                data-pack-display-name="{{ pack.pack_display_name }}"
+                                data-print-labels-enabled-override="{% if pack.print_labels_enabled_override is none %}global{% else %}{{ pack.print_labels_enabled_override }}{% endif %}"
+                                title="Pack label settings"
+                                aria-label="Pack label settings for {{ pack.pack_display_name }}"
+                            >
+                                ⚙
+                            </button>
                             <a
                                 href="{{ url_for('campaign_chaos_pack_detail', tracked_pack_id=pack.tracked_pack_id) }}"
                                 class="action-button secondary-button campaign-row-action-button"
@@ -770,6 +839,145 @@
             Print Custom Title Sheet
         </button>
     </div>
+
+    <div id="campaignTestDraftModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
+        <div id="campaignTestDraftBackdrop" class="campaign-add-pack-backdrop"></div>
+
+        <div class="campaign-add-pack-dialog campaign-draft-testing-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignTestDraftTitle">
+            <div class="campaign-add-pack-header">
+                <div>
+                    <h2 id="campaignTestDraftTitle" class="campaign-add-pack-title">Start Test Draft</h2>
+                    <p class="campaign-add-pack-subtitle">
+                        Use the selected saved packs as the draft pool.
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    id="campaignTestDraftCloseButton"
+                    class="campaign-add-pack-close-button"
+                    aria-label="Close Test Draft"
+                >
+                    ×
+                </button>
+            </div>
+
+            <form
+                method="post"
+                action="{{ url_for('campaign_chaos_test_draft_start') }}"
+                id="campaignTestDraftStartForm"
+                class="campaign-draft-testing-start-form"
+            >
+                <div id="campaignTestDraftSelectedPackInputs"></div>
+
+                <div class="settings-grid campaign-draft-testing-grid">
+                    <label class="toggle-row" for="campaignTestDraftHumanPlayerSelect">
+                        <span>Draft Player</span>
+                        <select id="campaignTestDraftHumanPlayerSelect" name="human_player_id">
+                            {% if campaign_players %}
+                                {% for player in campaign_players %}
+                                <option
+                                    value="{{ player.player_id }}"
+                                    data-player-name="{{ player.player_name }}"
+                                    data-portrait="{{ url_for('campaign_chaos_player_portrait', filename=player.portrait_image_path) if player.portrait_image_path else '' }}"
+                                    {% if selected_campaign_player_id and selected_campaign_player_id == player.player_id %}selected{% endif %}
+                                >
+                                    {{ player.player_name }}
+                                </option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="" data-player-name="You" data-portrait="">You</option>
+                            {% endif %}
+                        </select>
+                    </label>
+
+                    <input
+                        type="hidden"
+                        id="campaignTestDraftHumanName"
+                        name="human_player_name"
+                        value="{% if campaign_players %}{% set selected_draft_player = namespace(item=campaign_players[0]) %}{% for player in campaign_players %}{% if selected_campaign_player_id and selected_campaign_player_id == player.player_id %}{% set selected_draft_player.item = player %}{% endif %}{% endfor %}{{ selected_draft_player.item.player_name }}{% else %}You{% endif %}"
+                    >
+
+                    <div class="campaign-test-draft-selected-player-card">
+                        <div id="campaignTestDraftPlayerPortraitWrap" class="campaign-current-player-portrait-wrap">
+                            {% if campaign_players %}
+                                {% set selected_draft_player = namespace(item=campaign_players[0]) %}
+                                {% for player in campaign_players %}
+                                    {% if selected_campaign_player_id and selected_campaign_player_id == player.player_id %}
+                                        {% set selected_draft_player.item = player %}
+                                    {% endif %}
+                                {% endfor %}
+
+                                {% if selected_draft_player.item.portrait_image_path %}
+                                <img
+                                    id="campaignTestDraftPlayerPortrait"
+                                    src="{{ url_for('campaign_chaos_player_portrait', filename=selected_draft_player.item.portrait_image_path) }}"
+                                    alt="{{ selected_draft_player.item.player_name }}"
+                                    class="campaign-current-player-portrait"
+                                >
+                                {% else %}
+                                <div id="campaignTestDraftPlayerPlaceholder" class="campaign-current-player-placeholder">
+                                    {{ selected_draft_player.item.player_name[:1]|upper }}
+                                </div>
+                                {% endif %}
+                            {% else %}
+                            <div id="campaignTestDraftPlayerPlaceholder" class="campaign-current-player-placeholder">
+                                ?
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="campaign-current-player-copy">
+                            <div class="campaign-current-player-eyebrow">Human Drafter</div>
+                            <div id="campaignTestDraftPlayerName" class="campaign-current-player-name">
+                                {% if campaign_players %}
+                                    {% set selected_draft_player = namespace(item=campaign_players[0]) %}
+                                    {% for player in campaign_players %}
+                                        {% if selected_campaign_player_id and selected_campaign_player_id == player.player_id %}
+                                            {% set selected_draft_player.item = player %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {{ selected_draft_player.item.player_name }}
+                                {% else %}
+                                    You
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <label class="toggle-row" for="campaignTestDraftPodSize">
+                        <span>Players</span>
+                        <select id="campaignTestDraftPodSize" name="pod_size">
+                            {% for pod_size in range(2, 13) %}
+                                <option value="{{ pod_size }}" {% if pod_size == 8 %}selected{% endif %}>
+                                    {{ pod_size }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label class="toggle-row" for="campaignTestDraftPacksPerPlayer">
+                        <span>Packs Per Player</span>
+                        <select id="campaignTestDraftPacksPerPlayer" name="packs_per_player">
+                            {% for pack_count in range(1, 10) %}
+                                <option value="{{ pack_count }}" {% if pack_count == 3 %}selected{% endif %}>
+                                    {{ pack_count }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+
+                <div id="campaignTestDraftValidationMessage" class="card-placeholder campaign-test-draft-validation-message"></div>
+
+                <div class="campaign-add-pack-custom-actions">
+                    <button type="submit" id="campaignTestDraftStartButton" class="action-button">
+                        Start Draft
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -790,6 +998,13 @@
     const clearSelectedButton = document.getElementById("campaignClearSelectedPacksButton");
     const deleteSelectedButton = document.getElementById("campaignDeleteSelectedButton");
     const deleteConfirmationInput = document.getElementById("campaignDeleteConfirmation");
+    const packLabelSettingsModal = document.getElementById("campaignPackLabelSettingsModal");
+    const packLabelSettingsBackdrop = document.getElementById("campaignPackLabelSettingsBackdrop");
+    const packLabelSettingsCloseButton = document.getElementById("campaignPackLabelSettingsCloseButton");
+    const packLabelSettingsSubtitle = document.getElementById("campaignPackLabelSettingsSubtitle");
+    const packLabelSettingsStatus = document.getElementById("campaignPackLabelSettingsStatus");
+    const packDisableLabelsCheckbox = document.getElementById("campaignPackDisableLabelsCheckbox");
+    const packLabelSettingsSaveButton = document.getElementById("campaignPackLabelSettingsSaveButton");
     const addPackButton = document.getElementById("campaignAddPackButton");
     const addPackModal = document.getElementById("campaignAddPackModal");
     const addPackBackdrop = document.getElementById("campaignAddPackBackdrop");
@@ -831,9 +1046,25 @@
     const customTitleSheetCloseButton = document.getElementById("campaignCustomTitleSheetCloseButton");
     const customTitleSetCodeInput = document.getElementById("campaignCustomTitleSetCodeInput");
     const customTitlePackNameInput = document.getElementById("campaignCustomTitlePackNameInput");
+    const testDraftButton = document.getElementById("campaignTestDraftButton");
+    const testDraftModal = document.getElementById("campaignTestDraftModal");
+    const testDraftBackdrop = document.getElementById("campaignTestDraftBackdrop");
+    const testDraftCloseButton = document.getElementById("campaignTestDraftCloseButton");
+    const testDraftStartForm = document.getElementById("campaignTestDraftStartForm");
+    const testDraftHiddenInputsWrap = document.getElementById("campaignTestDraftSelectedPackInputs");
+    const testDraftPodSizeSelect = document.getElementById("campaignTestDraftPodSize");
+    const testDraftPacksPerPlayerSelect = document.getElementById("campaignTestDraftPacksPerPlayer");
+    const testDraftValidationMessage = document.getElementById("campaignTestDraftValidationMessage");
+    const testDraftStartButton = document.getElementById("campaignTestDraftStartButton");
+    const testDraftHumanPlayerSelect = document.getElementById("campaignTestDraftHumanPlayerSelect");
+    const testDraftHumanNameInput = document.getElementById("campaignTestDraftHumanName");
+    const testDraftPlayerPortraitWrap = document.getElementById("campaignTestDraftPlayerPortraitWrap");
+    const testDraftPlayerName = document.getElementById("campaignTestDraftPlayerName");
 
     const bulkCreateOnePackUrl = {{ url_for('campaign_chaos_manage_pack_bulk_create_one')|tojson }};
 
+    let activePackLabelSettingsUrl = "";
+    let activePackLabelSettingsButton = null;
     let customTitlePackNameWasEdited = false;
 
     let addPackModalHasSavedChanges = false;
@@ -891,6 +1122,111 @@
 
     function getSelectedCheckboxes() {
         return Array.from(form.querySelectorAll(".campaign-pack-checkbox:checked"));
+    }
+
+    function getSelectedPackIdsForTestDraft() {
+        return getSelectedCheckboxes()
+            .map(function (checkbox) {
+                return checkbox.value || "";
+            })
+            .filter(function (value) {
+                return value !== "";
+            });
+    }
+
+    function getRequiredTestDraftPackCount() {
+        const players = parseInt(testDraftPodSizeSelect ? testDraftPodSizeSelect.value || "8" : "8", 10);
+        const packsPerPlayer = parseInt(testDraftPacksPerPlayerSelect ? testDraftPacksPerPlayerSelect.value || "3" : "3", 10);
+
+        return players * packsPerPlayer;
+    }
+
+    function syncTestDraftHiddenPackInputs(selectedPackIds) {
+        if (!testDraftHiddenInputsWrap) {
+            return;
+        }
+
+        testDraftHiddenInputsWrap.innerHTML = "";
+
+        selectedPackIds.forEach(function (packId) {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = "pack_ids";
+            input.value = packId;
+            testDraftHiddenInputsWrap.appendChild(input);
+        });
+    }
+
+    function renderTestDraftSelectedPlayer() {
+        if (!testDraftHumanPlayerSelect || !testDraftHumanNameInput || !testDraftPlayerPortraitWrap || !testDraftPlayerName) {
+            return;
+        }
+
+        const selectedOption = testDraftHumanPlayerSelect.options[testDraftHumanPlayerSelect.selectedIndex];
+        const playerName = (selectedOption?.dataset.playerName || "You").trim() || "You";
+        const portraitUrl = (selectedOption?.dataset.portrait || "").trim();
+
+        testDraftHumanNameInput.value = playerName;
+        testDraftPlayerName.textContent = playerName;
+
+        if (portraitUrl) {
+            testDraftPlayerPortraitWrap.innerHTML =
+                '<img id="campaignTestDraftPlayerPortrait" src="' +
+                portraitUrl +
+                '" alt="' +
+                playerName.replace(/"/g, '&quot;') +
+                '" class="campaign-current-player-portrait">';
+        } else {
+            testDraftPlayerPortraitWrap.innerHTML =
+                '<div id="campaignTestDraftPlayerPlaceholder" class="campaign-current-player-placeholder">' +
+                playerName.charAt(0).toUpperCase() +
+                "</div>";
+        }
+    }
+
+    function updateTestDraftValidationState() {
+        if (!testDraftValidationMessage || !testDraftStartButton) {
+            return;
+        }
+
+        renderTestDraftSelectedPlayer();
+
+        const selectedPackIds = getSelectedPackIdsForTestDraft();
+        const requiredPackCount = getRequiredTestDraftPackCount();
+        const selectedCount = selectedPackIds.length;
+
+        syncTestDraftHiddenPackInputs(selectedPackIds);
+
+        testDraftValidationMessage.classList.remove("hidden");
+
+        if (selectedCount < requiredPackCount) {
+            testDraftValidationMessage.textContent = "Not enough packs selected. This draft requires " + requiredPackCount + " pack(s), but only " + selectedCount + " are selected.";
+            testDraftStartButton.disabled = true;
+            return;
+        }
+
+        testDraftValidationMessage.textContent = "Ready: " + selectedCount + " selected pack(s). This draft requires " + requiredPackCount + ".";
+        testDraftStartButton.disabled = false;
+    }
+
+    function openTestDraftModal() {
+        if (!testDraftModal) {
+            return;
+        }
+
+        updateTestDraftValidationState();
+
+        testDraftModal.classList.remove("hidden");
+        testDraftModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closeTestDraftModal() {
+        if (!testDraftModal) {
+            return;
+        }
+
+        testDraftModal.classList.add("hidden");
+        testDraftModal.setAttribute("aria-hidden", "true");
     }
 
     if (selectAllButton) {
@@ -1036,6 +1372,131 @@
         rows.forEach(function (row) {
             summaryList.appendChild(row);
         });
+    }
+
+    function setPackLabelSettingsStatus(messageText, isError) {
+        if (!packLabelSettingsStatus) {
+            return;
+        }
+
+        packLabelSettingsStatus.textContent = messageText || "";
+        packLabelSettingsStatus.classList.toggle("campaign-add-pack-status-error", Boolean(isError));
+        packLabelSettingsStatus.classList.toggle("hidden", !messageText);
+    }
+
+    function openPackLabelSettingsModal(button) {
+        if (!packLabelSettingsModal || !button) {
+            return;
+        }
+
+        activePackLabelSettingsUrl = button.dataset.labelSettingsUrl || "";
+        activePackLabelSettingsButton = button;
+
+        const packName = button.dataset.packDisplayName || "this pack";
+        const currentOverride = button.dataset.printLabelsEnabledOverride || "global";
+
+        if (packLabelSettingsSubtitle) {
+            packLabelSettingsSubtitle.textContent = "Override print/export label behavior for " + packName + ".";
+        }
+
+        if (packDisableLabelsCheckbox) {
+            packDisableLabelsCheckbox.checked = currentOverride === "0";
+        }
+
+        setPackLabelSettingsStatus("", false);
+
+        packLabelSettingsModal.classList.remove("hidden");
+        packLabelSettingsModal.setAttribute("aria-hidden", "false");
+    }
+
+    function closePackLabelSettingsModal() {
+        if (!packLabelSettingsModal) {
+            return;
+        }
+
+        packLabelSettingsModal.classList.add("hidden");
+        packLabelSettingsModal.setAttribute("aria-hidden", "true");
+
+        activePackLabelSettingsUrl = "";
+        activePackLabelSettingsButton = null;
+    }
+
+    function updatePackRowLabelOverrideState(button, overrideValue) {
+        if (!button) {
+            return;
+        }
+
+        const row = button.closest(".campaign-pack-row");
+        const normalizedValue = overrideValue === null || overrideValue === undefined ? "global" : String(overrideValue);
+
+        button.dataset.printLabelsEnabledOverride = normalizedValue;
+
+        if (row) {
+            row.dataset.printLabelsEnabledOverride = normalizedValue;
+
+            let badge = row.querySelector(".campaign-pack-labels-disabled-badge");
+            const titleRow = row.querySelector(".campaign-pack-title-row");
+
+            if (normalizedValue === "0") {
+                if (!badge && titleRow) {
+                    badge = document.createElement("span");
+                    badge.className = "campaign-status-badge campaign-status-disabled campaign-pack-labels-disabled-badge";
+                    badge.textContent = "Labels Off";
+                    titleRow.appendChild(badge);
+                }
+            } else if (badge) {
+                badge.remove();
+            }
+        }
+    }
+
+    async function savePackLabelSettings() {
+        if (!activePackLabelSettingsUrl || !packDisableLabelsCheckbox || !packLabelSettingsSaveButton) {
+            return;
+        }
+
+        const requestedOverride = packDisableLabelsCheckbox.checked ? 0 : null;
+
+        packLabelSettingsSaveButton.disabled = true;
+        packLabelSettingsSaveButton.classList.add("action-button-loading");
+        packLabelSettingsSaveButton.textContent = "Saving...";
+
+        try {
+            const response = await fetch(activePackLabelSettingsUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    print_labels_enabled_override: requestedOverride
+                })
+            });
+
+            const payload = await readJsonResponseOrThrow(
+                response,
+                "Pack label settings failed because the server returned an unexpected response."
+            );
+
+            if (!response.ok || !payload.ok) {
+                throw new Error(payload.message || "Could not save pack label settings.");
+            }
+
+            updatePackRowLabelOverrideState(
+                activePackLabelSettingsButton,
+                payload.print_labels_enabled_override
+            );
+
+            closePackLabelSettingsModal();
+            showUiMessage(payload.message || "Pack label settings saved.", false);
+        } catch (error) {
+            console.error(error);
+            setPackLabelSettingsStatus(error.message || "Could not save pack label settings.", true);
+        } finally {
+            packLabelSettingsSaveButton.disabled = false;
+            packLabelSettingsSaveButton.classList.remove("action-button-loading");
+            packLabelSettingsSaveButton.textContent = "Save";
+        }
     }
 
     function openAddPackModal() {
@@ -2239,6 +2700,50 @@
         printCustomTitleSheetButton.addEventListener("click", openCustomTitleSheetModal);
     }
 
+    if (testDraftButton) {
+        testDraftButton.addEventListener("click", function () {
+            const selectedCount = getSelectedCheckboxes().length;
+
+            if (selectedCount <= 0) {
+                showUiMessage("Select at least one saved pack first.", true);
+                return;
+            }
+
+            openTestDraftModal();
+        });
+    }
+
+    if (testDraftBackdrop) {
+        testDraftBackdrop.addEventListener("click", closeTestDraftModal);
+    }
+
+    if (testDraftCloseButton) {
+        testDraftCloseButton.addEventListener("click", closeTestDraftModal);
+    }
+
+    if (testDraftPodSizeSelect) {
+        testDraftPodSizeSelect.addEventListener("change", updateTestDraftValidationState);
+    }
+
+    if (testDraftPacksPerPlayerSelect) {
+        testDraftPacksPerPlayerSelect.addEventListener("change", updateTestDraftValidationState);
+    }
+
+    if (testDraftHumanPlayerSelect) {
+        testDraftHumanPlayerSelect.addEventListener("change", renderTestDraftSelectedPlayer);
+        renderTestDraftSelectedPlayer();
+    }
+
+    if (testDraftStartForm) {
+        testDraftStartForm.addEventListener("submit", function (event) {
+            updateTestDraftValidationState();
+
+            if (testDraftStartButton && testDraftStartButton.disabled) {
+                event.preventDefault();
+            }
+        });
+    }
+
     if (customTitleSheetBackdrop) {
         customTitleSheetBackdrop.addEventListener("click", closeCustomTitleSheetModal);
     }
@@ -2260,6 +2765,24 @@
 
         customTitleSetCodeInput.addEventListener("change", refreshCustomTitlePackNameFromSetCode);
         customTitleSetCodeInput.addEventListener("blur", refreshCustomTitlePackNameFromSetCode);
+    }
+
+    Array.from(document.querySelectorAll(".campaign-pack-label-settings-button")).forEach(function (button) {
+        button.addEventListener("click", function () {
+            openPackLabelSettingsModal(button);
+        });
+    });
+
+    if (packLabelSettingsBackdrop) {
+        packLabelSettingsBackdrop.addEventListener("click", closePackLabelSettingsModal);
+    }
+
+    if (packLabelSettingsCloseButton) {
+        packLabelSettingsCloseButton.addEventListener("click", closePackLabelSettingsModal);
+    }
+
+    if (packLabelSettingsSaveButton) {
+        packLabelSettingsSaveButton.addEventListener("click", savePackLabelSettings);
     }
 
     if (addPackButton) {
@@ -2553,6 +3076,11 @@
             return;
         }
 
+        if (packLabelSettingsModal && !packLabelSettingsModal.classList.contains("hidden")) {
+            closePackLabelSettingsModal();
+            return;
+        }
+
         if (summaryModal && !summaryModal.classList.contains("hidden")) {
             closeSummaryModal();
             return;
@@ -2560,10 +3088,17 @@
 
         if (addPackModal && !addPackModal.classList.contains("hidden")) {
             closeAddPackModal();
+            return;
         }
 
         if (customTitleSheetModal && !customTitleSheetModal.classList.contains("hidden")) {
             closeCustomTitleSheetModal();
+            return;
+        }
+
+        if (testDraftModal && !testDraftModal.classList.contains("hidden")) {
+            closeTestDraftModal();
+            return;
         }
     });
 })();
