@@ -15,8 +15,10 @@
     class="campaign-test-draft-workspace"
     id="campaignTestDraftWorkspace"
     data-default-page-size="25"
+    data-draft-status="{{ session.status }}"
     data-pick-url="{{ url_for('campaign_chaos_test_draft_pick', draft_test_id=session.draft_test_id) }}"
     data-move-zone-url="{{ url_for('campaign_chaos_test_draft_pick_zone', draft_test_id=session.draft_test_id) }}"
+    data-basic-land-url="{{ url_for('campaign_chaos_test_draft_basic_land', draft_test_id=session.draft_test_id) }}"
 >
     <div class="campaign-test-draft-main-panel">
         <div class="campaign-test-draft-topbar">
@@ -116,8 +118,36 @@
             </div>
         </div>
 
-        <div class="campaign-test-draft-card-area">
-            {% if draft_state.current_pack_cards %}
+        <div id="campaignTestDraftCardArea" class="campaign-test-draft-card-area">
+            {% if session.status == "complete" %}
+            <div id="campaignTestDraftCompletePanel" class="campaign-test-draft-complete-panel">
+                <div class="campaign-test-draft-complete-eyebrow">Draft Complete</div>
+
+                <h2>Finalize Your Deck</h2>
+
+                <p>
+                    The draft is complete. Move cards between Deck and Sideboard, add Basic Lands,
+                    then copy or export your final decklist.
+                </p>
+
+                <div class="campaign-test-draft-complete-summary">
+                    <div>
+                        <span>Deck</span>
+                        <strong>{{ draft_state.human_deck_cards|length }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Sideboard</span>
+                        <strong>{{ draft_state.human_sideboard_cards|length }}</strong>
+                    </div>
+
+                    <div>
+                        <span>Status</span>
+                        <strong>Deckbuilding</strong>
+                    </div>
+                </div>
+            </div>
+            {% elif draft_state.current_pack_cards %}
             <div
                 id="campaignTestDraftCardList"
                 class="campaign-test-draft-card-list campaign-test-draft-card-list-grid"
@@ -242,14 +272,27 @@
                     </button>
                 </div>
             </form>
-            {% else %}
-            <a
-                href="{{ url_for('campaign_chaos_packs') }}"
-                class="action-button secondary-button campaign-test-draft-confirm-button"
-            >
-                Back to Packs
-            </a>
             {% endif %}
+
+            <div
+                id="campaignTestDraftCompleteActions"
+                class="campaign-test-draft-complete-actions{% if session.status != 'complete' %} hidden{% endif %}"
+            >
+                <button
+                    type="button"
+                    id="campaignTestDraftCopyDecklistButton"
+                    class="action-button campaign-test-draft-confirm-button"
+                >
+                    Copy Decklist
+                </button>
+
+                <a
+                    href="{{ url_for('campaign_chaos_packs') }}"
+                    class="action-button secondary-button campaign-test-draft-confirm-button"
+                >
+                    Back to Packs
+                </a>
+            </div>
         </div>
     </div>
 
@@ -308,6 +351,43 @@
                 </div>
             </div>
 
+            <div id="campaignTestDraftBasicLandControls" class="campaign-test-draft-basic-land-controls{% if session.status != 'complete' %} hidden{% endif %}">
+                <div class="campaign-test-draft-basic-land-title">Basic Lands</div>
+
+                <div class="campaign-test-draft-basic-land-grid">
+                    {% for land_name in draft_state.basic_land_names %}
+                    <div class="campaign-test-draft-basic-land-row" data-land-name="{{ land_name }}">
+                        <button
+                            type="button"
+                            class="campaign-test-draft-basic-land-button"
+                            data-basic-land-action="remove"
+                            data-land-name="{{ land_name }}"
+                            aria-label="Remove {{ land_name }}"
+                        >
+                            −
+                        </button>
+
+                        <div class="campaign-test-draft-basic-land-label">
+                            <span>{{ land_name }}</span>
+                            <strong data-basic-land-count="{{ land_name }}">
+                                {{ draft_state.basic_land_counts.get(land_name, 0) }}
+                            </strong>
+                        </div>
+
+                        <button
+                            type="button"
+                            class="campaign-test-draft-basic-land-button"
+                            data-basic-land-action="add"
+                            data-land-name="{{ land_name }}"
+                            aria-label="Add {{ land_name }}"
+                        >
+                            +
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
             <div id="campaignTestDraftDeckList" class="campaign-test-draft-zone-list campaign-test-draft-drop-zone" data-drop-zone="deck">
                 {% if draft_state.human_deck_cards %}
                     {% for picked_card in draft_state.human_deck_cards %}
@@ -330,7 +410,11 @@
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
                             <div class="campaign-test-draft-picked-meta">
-                                Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                                {% if picked_card.pick_reason == "Basic land" %}
+                                    Basic Land
+                                {% else %}
+                                    Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                                {% endif %}
                             </div>
                         </div>
 
@@ -453,7 +537,10 @@
 <script>
 (function () {
     const workspace = document.getElementById("campaignTestDraftWorkspace");
+    const cardArea = document.getElementById("campaignTestDraftCardArea");
     const cardList = document.getElementById("campaignTestDraftCardList");
+    const completeActions = document.getElementById("campaignTestDraftCompleteActions");
+    const copyDecklistButton = document.getElementById("campaignTestDraftCopyDecklistButton");
     const prevPageButton = document.getElementById("campaignTestDraftPrevPageButton");
     const nextPageButton = document.getElementById("campaignTestDraftNextPageButton");
     const pageInput = document.getElementById("campaignTestDraftPageInput");
@@ -481,6 +568,7 @@
     const statsBody = document.getElementById("campaignTestDraftStatsBody");
     const deckList = document.getElementById("campaignTestDraftDeckList");
     const sideboardList = document.getElementById("campaignTestDraftSideboardList");
+    const basicLandControls = document.getElementById("campaignTestDraftBasicLandControls");
     const resizeHandle = document.getElementById("campaignTestDraftResizeHandle");
     const zoneResizeHandle = document.getElementById("campaignTestDraftZoneResizeHandle");
     const sidePanel = document.querySelector(".campaign-test-draft-side-panel");
@@ -495,12 +583,8 @@
         return;
     }
 
-    if (!cardList) {
-        if (statsButton) {
-            statsButton.disabled = true;
-        }
-
-        return;
+    if (!cardList && statsButton) {
+        statsButton.disabled = true;
     }
 
     let currentPage = 1;
@@ -516,6 +600,7 @@
     const pageSize = parseInt(workspace.dataset.defaultPageSize || "25", 10) || 25;
     const pickUrl = workspace.dataset.pickUrl || "";
     const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
+    const basicLandUrl = workspace.dataset.basicLandUrl || "";
 
     function escapeHtml(value) {
         return String(value || "")
@@ -527,6 +612,10 @@
     }
 
     function getCardElements() {
+        if (!cardList) {
+            return [];
+        }
+
         return Array.from(cardList.querySelectorAll(".campaign-test-draft-card"));
     }
 
@@ -557,12 +646,16 @@
     }
 
     function renderPickedCard(pickedCard, targetZone) {
+        const pickedMeta = pickedCard.is_basic_land
+            ? "Basic Land"
+            : "Pick " + escapeHtml(pickedCard.pick_number) + " • Pack " + escapeHtml(pickedCard.pack_number);
+
         return (
             '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '">' +
                 '<img src="' + escapeHtml(pickedCard.image_src) + '" alt="' + escapeHtml(pickedCard.card_name) + '" class="campaign-test-draft-picked-thumb">' +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(pickedCard.card_name) + '</div>' +
-                    '<div class="campaign-test-draft-picked-meta">Pick ' + escapeHtml(pickedCard.pick_number) + ' • Pack ' + escapeHtml(pickedCard.pack_number) + '</div>' +
+                    '<div class="campaign-test-draft-picked-meta">' + pickedMeta + '</div>' +
                 '</div>' +
             '</div>'
         );
@@ -684,8 +777,10 @@
     function setViewMode(viewMode) {
         currentViewMode = viewMode === "list" ? "list" : "grid";
 
-        cardList.classList.toggle("campaign-test-draft-card-list-grid", currentViewMode === "grid");
-        cardList.classList.toggle("campaign-test-draft-card-list-list", currentViewMode === "list");
+        if (cardList) {
+            cardList.classList.toggle("campaign-test-draft-card-list-grid", currentViewMode === "grid");
+            cardList.classList.toggle("campaign-test-draft-card-list-list", currentViewMode === "list");
+        }
 
         if (gridViewButton) {
             gridViewButton.classList.toggle("campaign-test-draft-icon-button-active", currentViewMode === "grid");
@@ -697,7 +792,7 @@
     }
 
     function updateSelectedCardState() {
-        const selectedCard = selectedCardId
+        const selectedCard = selectedCardId && cardList
             ? cardList.querySelector('.campaign-test-draft-card[data-draft-test-pack-card-id="' + CSS.escape(selectedCardId) + '"]')
             : null;
 
@@ -1128,9 +1223,12 @@
         );
 
         updateHeaderFromState(payload);
+        updateDraftCompletionState(payload);
+        updateBasicLandCountsFromPayload(payload);
         bindDraftCardEvents();
         bindDraftDragAndDrop();
         bindPickedCardHoverPreviews();
+        bindBasicLandButtons();
 
         currentPage = 1;
         applyPagination();
@@ -1184,6 +1282,108 @@
         formData.append("deck_zone", deckZone || "deck");
 
         return submitAjaxData(moveZoneUrl, formData);
+    }
+
+    async function updateBasicLand(landName, action) {
+        const formData = new FormData();
+        formData.append("land_name", landName || "");
+        formData.append("action", action || "add");
+
+        return submitAjaxData(basicLandUrl, formData);
+    }
+
+    function updateBasicLandCountsFromPayload(payload) {
+        const counts = payload && payload.basic_land_counts
+            ? payload.basic_land_counts
+            : {};
+
+        Array.from(document.querySelectorAll("[data-basic-land-count]")).forEach(function (countElement) {
+            const landName = countElement.dataset.basicLandCount || "";
+            countElement.textContent = String(counts[landName] || 0);
+        });
+    }
+
+    function isDraftComplete() {
+        return (workspace.dataset.draftStatus || "").toLowerCase() === "complete";
+    }
+
+    function renderDraftCompletePanel(payload) {
+        if (!cardArea || !payload || !payload.session || payload.session.status !== "complete") {
+            return;
+        }
+
+        const deckCount = (payload.human_deck_cards || []).length;
+        const sideboardCount = (payload.human_sideboard_cards || []).length;
+
+        cardArea.innerHTML =
+            '<div id="campaignTestDraftCompletePanel" class="campaign-test-draft-complete-panel">' +
+                '<div class="campaign-test-draft-complete-eyebrow">Draft Complete</div>' +
+                '<h2>Finalize Your Deck</h2>' +
+                '<p>The draft is complete. Move cards between Deck and Sideboard, add Basic Lands, then copy or export your final decklist.</p>' +
+                '<div class="campaign-test-draft-complete-summary">' +
+                    '<div><span>Deck</span><strong>' + escapeHtml(deckCount) + '</strong></div>' +
+                    '<div><span>Sideboard</span><strong>' + escapeHtml(sideboardCount) + '</strong></div>' +
+                    '<div><span>Status</span><strong>Deckbuilding</strong></div>' +
+                '</div>' +
+            '</div>';
+    }
+
+    function updateDraftCompletionState(payload) {
+        const sessionPayload = payload && payload.session ? payload.session : null;
+        const status = sessionPayload && sessionPayload.status ? sessionPayload.status : workspace.dataset.draftStatus;
+
+        workspace.dataset.draftStatus = status || "";
+
+        if (basicLandControls) {
+            basicLandControls.classList.toggle("hidden", !isDraftComplete());
+        }
+
+        if (pickForm) {
+            pickForm.classList.toggle("hidden", isDraftComplete());
+        }
+
+        if (completeActions) {
+            completeActions.classList.toggle("hidden", !isDraftComplete());
+        }
+
+        if (isDraftComplete()) {
+            renderDraftCompletePanel(payload);
+        }
+    }
+
+    function bindBasicLandButtons() {
+        if (!isDraftComplete()) {
+            return;
+        }
+
+        Array.from(document.querySelectorAll(".campaign-test-draft-basic-land-button")).forEach(function (button) {
+            if (button.dataset.basicLandBound === "1") {
+                return;
+            }
+
+            button.dataset.basicLandBound = "1";
+
+            button.addEventListener("click", async function () {
+                const landName = button.dataset.landName || "";
+                const action = button.dataset.basicLandAction || "add";
+
+                if (!landName) {
+                    return;
+                }
+
+                button.disabled = true;
+
+                try {
+                    const payload = await updateBasicLand(landName, action);
+                    applyDraftStatePayload(payload);
+                    updateBasicLandCountsFromPayload(payload);
+                } catch (error) {
+                    showDraftAjaxError(error);
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        });
     }
 
     function showDraftAjaxError(error) {
@@ -1483,9 +1683,75 @@
         bindDraftDropZones();
     }
 
+
+    function buildDecklistTextFromZone(listElement) {
+        if (!listElement) {
+            return "";
+        }
+
+        const counts = {};
+
+        Array.from(listElement.querySelectorAll(".campaign-test-draft-picked-row")).forEach(function (row) {
+            const cardName = (row.dataset.cardName || "").trim();
+
+            if (!cardName) {
+                return;
+            }
+
+            counts[cardName] = (counts[cardName] || 0) + 1;
+        });
+
+        return Object.keys(counts)
+            .sort(function (a, b) {
+                return a.localeCompare(b);
+            })
+            .map(function (cardName) {
+                return counts[cardName] + " " + cardName;
+            })
+            .join("\n");
+    }
+
+    function buildFullDecklistText() {
+        const deckText = buildDecklistTextFromZone(deckList);
+        const sideboardText = buildDecklistTextFromZone(sideboardList);
+
+        if (sideboardText) {
+            return deckText + "\n\nSideboard\n" + sideboardText;
+        }
+
+        return deckText;
+    }
+
+    async function copyDraftDecklistToClipboard() {
+        const decklistText = buildFullDecklistText();
+
+        if (!decklistText) {
+            showDraftAjaxError(new Error("No decklist cards were found."));
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(decklistText);
+
+            if (window.iMomirToast) {
+                window.iMomirToast.success("Decklist copied.");
+            } else {
+                window.alert("Decklist copied.");
+            }
+        } catch (error) {
+            window.prompt("Copy decklist:", decklistText);
+        }
+    }
+
     bindDraftCardEvents();
     bindDraftDragAndDrop();
     bindPickedCardHoverPreviews();
+    bindBasicLandButtons();
+
+
+    if (copyDecklistButton) {
+        copyDecklistButton.addEventListener("click", copyDraftDecklistToClipboard);
+    }
 
     if (prevPageButton) {
         prevPageButton.addEventListener("click", function () {
@@ -1519,7 +1785,7 @@
 
     if (pickedSortSelect) {
         pickedSortSelect.addEventListener("change", function () {
-            pickedSortMode = pickedSortSelect.value || "rarity-asc";
+            pickedSortMode = pickedSortSelect.value || "rarity-desc";
             sortExistingPickedZones();
         });
     }
@@ -1697,6 +1963,14 @@
     if (pickedSortSelect) {
         pickedSortMode = pickedSortSelect.value || "rarity-desc";
     }
+
+    updateDraftCompletionState({
+        session: {
+            status: workspace.dataset.draftStatus || ""
+        },
+        human_deck_cards: Array.from(document.querySelectorAll("#campaignTestDraftDeckList .campaign-test-draft-picked-row")),
+        human_sideboard_cards: Array.from(document.querySelectorAll("#campaignTestDraftSideboardList .campaign-test-draft-picked-row"))
+    });
 
     setViewMode("grid");
     setPickedViewMode("list");

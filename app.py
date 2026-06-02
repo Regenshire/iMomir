@@ -175,12 +175,24 @@ from db.database import (
 
 from db.draftdb import ensure_draft_testing_schema
 
+from db.deckdb import (
+    add_basic_land_to_deck,
+    build_deckbuilder_context_for_draft_test,
+    get_basic_land_counts_for_deck,
+    get_deck_by_id,
+    get_or_create_deck_for_draft_test,
+    remove_basic_land_from_deck,
+    ensure_deck_schema,
+)
+
 from modes.draft import (
     create_draft_test_from_pack_pool,
     get_draft_test_detail_state,
     move_human_draft_test_pick_zone_state,
     normalize_draft_test_start_payload,
     record_human_draft_test_pick_state,
+    record_human_draft_test_basic_land_state,
+    remove_human_draft_test_basic_land_state,
 )
 
 from modes.momir import (
@@ -11462,6 +11474,22 @@ def wants_json_response():
         or "application/json" in (request.headers.get("Accept") or "")
     )
 
+@app.route("/deckbuilder/client-debug", methods=["POST"])
+def deckbuilder_client_debug():
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        write_debug_log(
+            "DECKBUILDER CLIENT | "
+            + json.dumps(payload, default=str)[:4000]
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+    })
+
 
 def serialize_draft_test_row(row):
     if not row:
@@ -11509,6 +11537,8 @@ def serialize_draft_test_pick(row):
         "card_uuid": row["card_uuid"] or "",
         "card_name": row["card_name"] or "",
         "deck_zone": row["deck_zone"] or "deck",
+        "pick_reason": row["pick_reason"] or "",
+        "is_basic_land": 1 if (row["pick_reason"] or "").strip().lower() == "basic land" else 0,
         "set_code": row["set_code"] or "",
         "collector_number": row["collector_number"] or "",
         "rarity": row["rarity"] or "",
@@ -11520,6 +11550,77 @@ def serialize_draft_test_pick(row):
         "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
     }
 
+def deckbuilder_row_get(row, key, default=None):
+    if row is None:
+        return default
+
+    try:
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+
+    try:
+        if isinstance(row, dict):
+            return row.get(key, default)
+    except Exception:
+        pass
+
+    return default
+
+
+def serialize_deckbuilder_card(card):
+    card_uuid = deckbuilder_row_get(card, "card_uuid", "") or ""
+    pick_reason = deckbuilder_row_get(card, "pick_reason", "") or ""
+    is_basic_land = deckbuilder_row_get(card, "is_basic_land", None)
+
+    if is_basic_land is None:
+        is_basic_land = 1 if str(pick_reason).strip().lower() == "basic land" else 0
+
+    return {
+        "draft_test_pick_id": deckbuilder_row_get(card, "draft_test_pick_id", "") or "",
+        "pick_number": deckbuilder_row_get(card, "pick_number", 0) or 0,
+        "pack_number": deckbuilder_row_get(card, "pack_number", 0) or 0,
+        "card_uuid": card_uuid,
+        "card_name": deckbuilder_row_get(card, "card_name", "") or "",
+        "deck_zone": deckbuilder_row_get(card, "deck_zone", "deck") or "deck",
+        "pick_reason": pick_reason,
+        "is_basic_land": 1 if int(is_basic_land or 0) == 1 else 0,
+        "set_code": deckbuilder_row_get(card, "set_code", "") or "",
+        "collector_number": deckbuilder_row_get(card, "collector_number", "") or "",
+        "rarity": deckbuilder_row_get(card, "rarity", "") or "",
+        "type_line": deckbuilder_row_get(card, "type_line", "") or "",
+        "mana_value": deckbuilder_row_get(card, "mana_value", 0),
+        "mana_cost": deckbuilder_row_get(card, "mana_cost", "") or "",
+        "colors_json": deckbuilder_row_get(card, "colors_json", "[]") or "[]",
+        "color_identity_json": deckbuilder_row_get(card, "color_identity_json", "[]") or "[]",
+        "image_src": url_for("chaos_card_image", card_uuid=card_uuid) if card_uuid else "",
+    }
+
+
+def serialize_deckbuilder_context_for_ajax(deckbuilder_context):
+    if not deckbuilder_context or not deckbuilder_context.get("ok"):
+        return {
+            "ok": False,
+            "message": (deckbuilder_context or {}).get("message") or "Deck Builder state could not be loaded.",
+        }
+
+    return {
+        "ok": True,
+        "deck_id": deckbuilder_context.get("deck_id"),
+        "source_type": deckbuilder_context.get("source_type") or "",
+        "source_id": deckbuilder_context.get("source_id"),
+        "human_deck_cards": [
+            serialize_deckbuilder_card(card)
+            for card in deckbuilder_context.get("deck_cards", [])
+        ],
+        "human_sideboard_cards": [
+            serialize_deckbuilder_card(card)
+            for card in deckbuilder_context.get("sideboard_cards", [])
+        ],
+        "basic_land_counts": deckbuilder_context.get("basic_land_counts") or {},
+        "basic_land_names": deckbuilder_context.get("basic_land_names") or [],
+    }
 
 def serialize_draft_test_state_for_ajax(draft_state):
     if not draft_state or not draft_state.get("ok"):
@@ -11547,6 +11648,8 @@ def serialize_draft_test_state_for_ajax(draft_state):
             serialize_draft_test_pick(card)
             for card in draft_state.get("human_sideboard_cards", [])
         ],
+        "basic_land_counts": draft_state.get("basic_land_counts") or {},
+        "basic_land_names": draft_state.get("basic_land_names") or [],
     }
 
 @app.route("/campaign-chaos/test-draft/<int:draft_test_id>", methods=["GET"])
@@ -11556,6 +11659,33 @@ def campaign_chaos_test_draft(draft_test_id):
     if not draft_state.get("ok"):
         flash(draft_state.get("message") or "Test Draft was not found.")
         return redirect(url_for("campaign_chaos_packs"))
+
+    session_row = draft_state.get("session")
+    session_status = (session_row["status"] if session_row else "") or ""
+
+    if session_status == "complete":
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(draft_state)
+
+        if not deckbuilder_context.get("ok"):
+            flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
+            return redirect(url_for("campaign_chaos_packs"))
+
+        deckbuilder_context["routes"] = {
+            "move_zone_url": url_for(
+                "campaign_chaos_test_draft_pick_zone",
+                draft_test_id=session_row["draft_test_id"],
+            ),
+            "basic_land_url": url_for(
+                "deckbuilder_basic_land",
+                deck_id=deckbuilder_context["deck_id"],
+            ),
+            "back_url": url_for("campaign_chaos_packs"),
+        }
+
+        return render_template(
+            "deckbuilder.html",
+            deckbuilder=deckbuilder_context,
+        )
 
     return render_template(
         "campaign_test_draft.html",
@@ -11586,6 +11716,188 @@ def campaign_chaos_test_draft_pick(draft_test_id):
 
     if not result.get("ok"):
         flash(result.get("message") or "Could not record pick.")
+
+    return redirect(url_for(
+        "campaign_chaos_test_draft",
+        draft_test_id=draft_test_id,
+    ))
+
+@app.route("/deckbuilder/<int:deck_id>/basic-land", methods=["POST"])
+def deckbuilder_basic_land(deck_id):
+    action = (request.form.get("action") or "add").strip().lower()
+    land_name = request.form.get("land_name") or ""
+
+    write_debug_log(
+        "DECKBUILDER BASIC LAND START | "
+        f"deck_id={deck_id} | action={action} | land_name={land_name} | "
+        f"wants_json={wants_json_response()} | form={dict(request.form)}"
+    )
+
+    try:
+        counts_before = get_basic_land_counts_for_deck(deck_id)
+
+        write_debug_log(
+            "DECKBUILDER BASIC LAND COUNTS BEFORE | "
+            f"deck_id={deck_id} | counts={json.dumps(counts_before, default=str)}"
+        )
+
+        if action == "remove":
+            result = remove_basic_land_from_deck(
+                deck_id=deck_id,
+                land_name=land_name,
+            )
+        else:
+            result = add_basic_land_to_deck(
+                deck_id=deck_id,
+                land_name=land_name,
+            )
+
+        counts_after_db = get_basic_land_counts_for_deck(deck_id)
+
+        write_debug_log(
+            "DECKBUILDER BASIC LAND DB RESULT | "
+            f"deck_id={deck_id} | action={action} | land_name={land_name} | "
+            f"result={json.dumps(result, default=str)} | "
+            f"counts_after_db={json.dumps(counts_after_db, default=str)}"
+        )
+
+        if wants_json_response():
+            deck_row = get_deck_by_id(deck_id)
+
+            write_debug_log(
+                "DECKBUILDER BASIC LAND DECK ROW | "
+                f"deck_id={deck_id} | found={bool(deck_row)} | "
+                f"deck_row={json.dumps(dict(deck_row), default=str) if deck_row else ''}"
+            )
+
+            if not deck_row:
+                return jsonify({
+                    "ok": False,
+                    "message": "Deck was not found.",
+                    "debug": {
+                        "deck_id": deck_id,
+                        "action": action,
+                        "land_name": land_name,
+                        "stage": "deck_not_found",
+                    },
+                }), 404
+
+            source_type = deck_row["source_type"] or ""
+            source_id = deck_row["source_id"]
+
+            if source_type == "draft_test" and source_id:
+                draft_state = get_draft_test_detail_state(source_id)
+
+                write_debug_log(
+                    "DECKBUILDER BASIC LAND DRAFT STATE | "
+                    f"deck_id={deck_id} | source_type={source_type} | source_id={source_id} | "
+                    f"draft_ok={draft_state.get('ok')} | draft_message={draft_state.get('message')}"
+                )
+
+                deckbuilder_context = build_deckbuilder_context_for_draft_test(
+                    draft_state,
+                    preferred_deck_id=deck_id,
+                )
+
+                write_debug_log(
+                    "DECKBUILDER BASIC LAND CONTEXT | "
+                    f"deck_id={deck_id} | context_ok={deckbuilder_context.get('ok')} | "
+                    f"context_deck_id={deckbuilder_context.get('deck_id')} | "
+                    f"deck_cards={len(deckbuilder_context.get('deck_cards') or [])} | "
+                    f"sideboard_cards={len(deckbuilder_context.get('sideboard_cards') or [])} | "
+                    f"context_counts={json.dumps(deckbuilder_context.get('basic_land_counts') or {}, default=str)}"
+                )
+
+                payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+            else:
+                payload = {
+                    "ok": False,
+                    "message": "This Deck Builder source is not supported yet.",
+                }
+
+            payload["basic_land_result"] = result
+            payload["ok"] = bool(result.get("ok")) and bool(payload.get("ok"))
+
+            if not result.get("ok"):
+                payload["message"] = result.get("message") or "Could not update basic land."
+
+            payload["debug"] = {
+                "deck_id": deck_id,
+                "action": action,
+                "land_name": land_name,
+                "result": result,
+                "counts_before": counts_before,
+                "counts_after_db": counts_after_db,
+                "payload_counts": payload.get("basic_land_counts") or {},
+                "human_deck_card_count": len(payload.get("human_deck_cards") or []),
+                "human_sideboard_card_count": len(payload.get("human_sideboard_cards") or []),
+            }
+
+            write_debug_log(
+                "DECKBUILDER BASIC LAND RESPONSE | "
+                f"deck_id={deck_id} | status={200 if payload.get('ok') else 400} | "
+                f"payload_debug={json.dumps(payload.get('debug') or {}, default=str)}"
+            )
+
+            return jsonify(payload), 200 if payload.get("ok") else 400
+
+        if not result.get("ok"):
+            flash(result.get("message") or "Could not update basic land.")
+
+        return redirect(request.referrer or url_for("campaign_chaos_packs"))
+
+    except Exception as exc:
+        write_error_log(
+            "DECKBUILDER BASIC LAND EXCEPTION | "
+            f"deck_id={deck_id} | action={action} | land_name={land_name}",
+            exc=exc,
+        )
+
+        if wants_json_response():
+            return jsonify({
+                "ok": False,
+                "message": f"Deck Builder Basic Land error: {str(exc)}",
+                "debug": {
+                    "deck_id": deck_id,
+                    "action": action,
+                    "land_name": land_name,
+                    "stage": "exception",
+                    "error": str(exc),
+                },
+            }), 500
+
+        flash(f"Deck Builder Basic Land error: {str(exc)}")
+        return redirect(request.referrer or url_for("campaign_chaos_packs"))
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/basic-land", methods=["POST"])
+def campaign_chaos_test_draft_basic_land(draft_test_id):
+    action = (request.form.get("action") or "add").strip().lower()
+    land_name = request.form.get("land_name") or ""
+
+    if action == "remove":
+        result = remove_human_draft_test_basic_land_state(
+            draft_test_id=draft_test_id,
+            land_name=land_name,
+        )
+    else:
+        result = record_human_draft_test_basic_land_state(
+            draft_test_id=draft_test_id,
+            land_name=land_name,
+        )
+
+    if wants_json_response():
+        draft_state = get_draft_test_detail_state(draft_test_id)
+        payload = serialize_draft_test_state_for_ajax(draft_state)
+        payload["basic_land_result"] = result
+        payload["ok"] = bool(result.get("ok")) and bool(payload.get("ok"))
+
+        if not result.get("ok"):
+            payload["message"] = result.get("message") or "Could not update basic land."
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not update basic land.")
 
     return redirect(url_for(
         "campaign_chaos_test_draft",
@@ -13897,5 +14209,6 @@ def sets():
 if __name__ == "__main__":
     initialize_database()
     ensure_draft_testing_schema()
+    ensure_deck_schema()
     set_runtime_debug_log_enabled_from_config()
     app.run(host="0.0.0.0", port=5000, debug=True)

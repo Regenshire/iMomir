@@ -1,0 +1,1537 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Deck Builder{% endblock %}
+
+{% block content %}
+{% set player = deckbuilder.human_player %}
+
+<div
+    class="deckbuilder-workspace"
+    id="deckbuilderWorkspace"
+    data-deck-id="{{ deckbuilder.deck_id }}"
+    data-source-type="{{ deckbuilder.source_type }}"
+    data-source-id="{{ deckbuilder.source_id }}"
+    data-default-view-mode="{{ deckbuilder.default_view_mode or 'grid' }}"
+    data-default-sort-mode="{{ deckbuilder.default_sort_mode or 'rarity-desc' }}"
+    data-default-card-size="100"
+    data-move-zone-url="{{ deckbuilder.routes.move_zone_url }}"
+    data-basic-land-url="{{ deckbuilder.routes.basic_land_url }}"
+    data-debug-url="{{ url_for('deckbuilder_client_debug') }}"
+>
+    <header class="deckbuilder-header">
+        <div class="deckbuilder-title-wrap">
+            <h1>{{ deckbuilder.title }}</h1>
+            <div class="deckbuilder-subtitle">{{ deckbuilder.subtitle }}</div>
+        </div>
+
+        <div class="deckbuilder-actions">
+            <button
+                type="button"
+                id="deckbuilderCopyDecklistButton"
+                class="action-button deckbuilder-action-button"
+            >
+                Copy Decklist
+            </button>
+
+            <a
+                href="{{ deckbuilder.routes.back_url }}"
+                class="action-button secondary-button deckbuilder-action-button"
+            >
+                Back
+            </a>
+        </div>
+    </header>
+
+    <section class="deckbuilder-player-bar">
+        <div class="campaign-test-draft-human-card campaign-test-draft-human-card-pickbar">
+            <div class="campaign-test-draft-human-portrait-wrap">
+                {% if player and player.effective_portrait_image_path %}
+                <img
+                    src="{{ url_for('campaign_chaos_player_portrait', filename=player.effective_portrait_image_path) }}"
+                    alt="{{ player.display_name }}"
+                    class="campaign-test-draft-human-portrait"
+                >
+                {% elif player and player.portrait_image_path %}
+                <img
+                    src="{{ url_for('campaign_chaos_player_portrait', filename=player.portrait_image_path) }}"
+                    alt="{{ player.display_name }}"
+                    class="campaign-test-draft-human-portrait"
+                >
+                {% else %}
+                <div class="campaign-current-player-placeholder">
+                    {{ player.display_name[:1]|upper if player else "?" }}
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="campaign-test-draft-human-copy">
+                <div class="campaign-current-player-eyebrow">{{ deckbuilder.mode_label }}</div>
+                <div class="campaign-test-draft-human-name">
+                    {{ player.display_name if player else deckbuilder.deck_name }}
+                </div>
+            </div>
+        </div>
+
+        <div class="deckbuilder-summary">
+            <div>
+                <span>Deck</span>
+                <strong id="deckbuilderDeckCount">{{ deckbuilder.deck_cards|length }}</strong>
+            </div>
+
+            <div>
+                <span>Sideboard</span>
+                <strong id="deckbuilderSideboardCount">{{ deckbuilder.sideboard_cards|length }}</strong>
+            </div>
+
+            <div>
+                <span>Minimum</span>
+                <strong>40</strong>
+            </div>
+        </div>
+    </section>
+
+    <section class="deckbuilder-controls">
+        <div class="deckbuilder-control-fields">
+            <div class="deckbuilder-sort-wrap">
+                <label for="deckbuilderSortSelect">Sort</label>
+
+                <select
+                    id="deckbuilderSortSelect"
+                    class="campaign-test-draft-picked-sort-select"
+                >
+                    <option value="name-asc"{% if deckbuilder.default_sort_mode == "name-asc" %} selected{% endif %}>Name A-Z</option>
+                    <option value="name-desc"{% if deckbuilder.default_sort_mode == "name-desc" %} selected{% endif %}>Name Z-A</option>
+                    <option value="rarity-desc"{% if deckbuilder.default_sort_mode == "rarity-desc" %} selected{% endif %}>Rarity Mythic → Common</option>
+                    <option value="rarity-asc"{% if deckbuilder.default_sort_mode == "rarity-asc" %} selected{% endif %}>Rarity Common → Mythic</option>
+                    <option value="mv-asc"{% if deckbuilder.default_sort_mode == "mv-asc" %} selected{% endif %}>Mana Value Low → High</option>
+                    <option value="mv-desc"{% if deckbuilder.default_sort_mode == "mv-desc" %} selected{% endif %}>Mana Value High → Low</option>
+                </select>
+            </div>
+
+            <div class="deckbuilder-card-size-wrap">
+                <label for="deckbuilderCardSizeSelect">Card Size</label>
+
+                <select
+                    id="deckbuilderCardSizeSelect"
+                    class="campaign-test-draft-picked-sort-select"
+                >
+                    <option value="70">70%</option>
+                    <option value="85">85%</option>
+                    <option value="100" selected>100%</option>
+                    <option value="115">115%</option>
+                    <option value="130">130%</option>
+                    <option value="150">150%</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="deckbuilder-view-buttons">
+            <button
+                type="button"
+                id="deckbuilderListViewButton"
+                class="campaign-test-draft-zone-view-button{% if deckbuilder.default_view_mode == 'list' %} campaign-test-draft-zone-view-button-active{% endif %}"
+                title="List View"
+                aria-label="List View"
+            >
+                <i class="fa-solid fa-list"></i>
+            </button>
+
+            <button
+                type="button"
+                id="deckbuilderGridViewButton"
+                class="campaign-test-draft-zone-view-button{% if deckbuilder.default_view_mode == 'grid' or not deckbuilder.default_view_mode %} campaign-test-draft-zone-view-button-active{% endif %}"
+                title="Grid View"
+                aria-label="Grid View"
+            >
+                <i class="fa-solid fa-grip"></i>
+            </button>
+
+            <button
+                type="button"
+                id="deckbuilderStackViewButton"
+                class="campaign-test-draft-zone-view-button{% if deckbuilder.default_view_mode == 'stack' %} campaign-test-draft-zone-view-button-active{% endif %}"
+                title="Stack View"
+                aria-label="Stack View"
+            >
+                <i class="fa-solid fa-layer-group"></i>
+            </button>
+        </div>
+    </section>
+
+    <main class="deckbuilder-main">
+        <section class="deckbuilder-zone deckbuilder-zone-sideboard">
+            <div class="deckbuilder-zone-header">
+                <h2>Sideboard</h2>
+                <span>Available cards</span>
+            </div>
+
+            <template id="deckbuilderBasicLandPaletteTemplate">
+                {% for land_card in deckbuilder.basic_land_cards %}
+                <div
+                    class="deckbuilder-card deckbuilder-basic-land-card"
+                    draggable="true"
+                    data-drag-type="basic-land"
+                    data-is-land-palette="1"
+                    data-basic-land-name="{{ land_card.card_name }}"
+                    data-current-zone="sideboard"
+                    data-card-name="{{ land_card.card_name }}"
+                    data-card-uuid="{{ land_card.card_uuid or '' }}"
+                    data-card-image-src="{% if land_card.card_uuid %}{{ url_for('chaos_card_image', card_uuid=land_card.card_uuid) }}{% endif %}"
+                    data-card-rarity="{{ land_card.rarity or 'common' }}"
+                    data-card-mana-value="{{ land_card.mana_value if land_card.mana_value is not none else 0 }}"
+                >
+                    {% if land_card.card_uuid %}
+                    <img
+                        src="{{ url_for('chaos_card_image', card_uuid=land_card.card_uuid) }}"
+                        alt="{{ land_card.card_name }}"
+                        class="campaign-test-draft-picked-thumb"
+                    >
+                    {% else %}
+                    <div class="deckbuilder-basic-land-missing-image">
+                        {{ land_card.card_name }}
+                    </div>
+                    {% endif %}
+
+                    <div class="deckbuilder-basic-land-infinite">∞</div>
+                </div>
+                {% endfor %}
+            </template>
+
+            <div
+                id="deckbuilderSideboardList"
+                class="deckbuilder-card-list campaign-test-draft-drop-zone deckbuilder-sideboard-list"
+                data-drop-zone="sideboard"
+            >
+                {% for land_card in deckbuilder.basic_land_cards %}
+                <div
+                    class="deckbuilder-card deckbuilder-basic-land-card"
+                    draggable="true"
+                    data-drag-type="basic-land"
+                    data-is-land-palette="1"
+                    data-basic-land-name="{{ land_card.card_name }}"
+                    data-current-zone="sideboard"
+                    data-card-name="{{ land_card.card_name }}"
+                    data-card-uuid="{{ land_card.card_uuid or '' }}"
+                    data-card-image-src="{% if land_card.card_uuid %}{{ url_for('chaos_card_image', card_uuid=land_card.card_uuid) }}{% endif %}"
+                    data-card-rarity="{{ land_card.rarity or 'common' }}"
+                    data-card-mana-value="{{ land_card.mana_value if land_card.mana_value is not none else 0 }}"
+                >
+                    {% if land_card.card_uuid %}
+                    <img
+                        src="{{ url_for('chaos_card_image', card_uuid=land_card.card_uuid) }}"
+                        alt="{{ land_card.card_name }}"
+                        class="campaign-test-draft-picked-thumb"
+                    >
+                    {% else %}
+                    <div class="deckbuilder-basic-land-missing-image">
+                        {{ land_card.card_name }}
+                    </div>
+                    {% endif %}
+
+                    <div class="deckbuilder-basic-land-infinite">∞</div>
+                </div>
+                {% endfor %}
+                {% if deckbuilder.sideboard_cards %}
+                    {% for picked_card in deckbuilder.sideboard_cards %}
+                    <div
+                        class="deckbuilder-card campaign-test-draft-picked-row"
+                        draggable="true"
+                        data-drag-type="picked-card"
+                        data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
+                        data-current-zone="sideboard"
+                        data-card-name="{{ picked_card.card_name }}"
+                        data-card-rarity="{{ picked_card.rarity or '' }}"
+                        data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                        data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                    >
+                        <img
+                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                            alt="{{ picked_card.card_name }}"
+                            class="campaign-test-draft-picked-thumb"
+                        >
+
+                        <div class="campaign-test-draft-picked-main">
+                            <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+                            <div class="campaign-test-draft-picked-meta">
+                                Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="campaign-test-draft-zone-empty">
+                    Sideboard cards will appear here.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <div
+            id="deckbuilderZoneResizeHandle"
+            class="deckbuilder-zone-resize-handle"
+            title="Drag to resize Sideboard and Deck"
+            aria-hidden="true"
+        ></div>
+
+        <section class="deckbuilder-zone deckbuilder-zone-deck">
+            <div class="deckbuilder-zone-header">
+                <h2>Deck</h2>
+                <span>Main deck</span>
+            </div>
+
+            <div
+                id="deckbuilderDeckList"
+                class="deckbuilder-card-list campaign-test-draft-drop-zone"
+                data-drop-zone="deck"
+            >
+                {% if deckbuilder.deck_cards %}
+                    {% for picked_card in deckbuilder.deck_cards %}
+                    <div
+                        class="deckbuilder-card campaign-test-draft-picked-row"
+                        draggable="true"
+                        data-drag-type="picked-card"
+                        data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
+                        data-current-zone="deck"
+                        data-card-name="{{ picked_card.card_name }}"
+                        data-card-rarity="{{ picked_card.rarity or '' }}"
+                        data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                        data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                    >
+                        <img
+                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                            alt="{{ picked_card.card_name }}"
+                            class="campaign-test-draft-picked-thumb"
+                        >
+
+                        <div class="campaign-test-draft-picked-main">
+                            <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+                            <div class="campaign-test-draft-picked-meta">
+                                {% if picked_card.pick_reason == "Basic land" %}
+                                    Basic Land
+                                {% else %}
+                                    Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <div class="campaign-test-draft-zone-empty">
+                    Drag cards here to build your deck.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+    </main>
+    <div id="deckbuilderHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
+        <img
+            id="deckbuilderHoverPreviewImage"
+            src=""
+            alt=""
+            class="campaign-test-draft-hover-preview-image"
+        >
+    </div>
+</div>
+
+<script>
+(function () {
+    const workspace = document.getElementById("deckbuilderWorkspace");
+    const deckList = document.getElementById("deckbuilderDeckList");
+    const sideboardList = document.getElementById("deckbuilderSideboardList");
+    const zoneResizeHandle = document.getElementById("deckbuilderZoneResizeHandle");
+    const sortSelect = document.getElementById("deckbuilderSortSelect");
+    const cardSizeSelect = document.getElementById("deckbuilderCardSizeSelect");
+    const basicLandPaletteTemplate = document.getElementById("deckbuilderBasicLandPaletteTemplate");
+    const listViewButton = document.getElementById("deckbuilderListViewButton");
+    const gridViewButton = document.getElementById("deckbuilderGridViewButton");
+    const stackViewButton = document.getElementById("deckbuilderStackViewButton");
+    const copyDecklistButton = document.getElementById("deckbuilderCopyDecklistButton");
+    const deckCount = document.getElementById("deckbuilderDeckCount");
+    const sideboardCount = document.getElementById("deckbuilderSideboardCount");
+    const hoverPreview = document.getElementById("deckbuilderHoverPreview");
+    const hoverPreviewImage = document.getElementById("deckbuilderHoverPreviewImage");
+
+    if (!workspace) {
+        return;
+    }
+
+    let draggedDeckbuilderItem = null;
+    let pickedSortMode = workspace.dataset.defaultSortMode || "rarity-desc";
+    let deckbuilderViewMode = workspace.dataset.defaultViewMode || "grid";
+    let deckbuilderCardSize = parseInt(workspace.dataset.defaultCardSize || "100", 10);
+    let isResizingZones = false;
+
+    const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
+    const basicLandUrl = workspace.dataset.basicLandUrl || "";
+    const debugUrl = workspace.dataset.debugUrl || "";
+    const deckbuilderDragMimeType = "application/x-imomir-deckbuilder";
+
+    function writeDeckbuilderClientDebug(label, data) {
+        if (!debugUrl) {
+            return;
+        }
+
+        try {
+            fetch(debugUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "X-Requested-With": "XMLHttpRequest"
+                },
+                body: JSON.stringify({
+                    label: label,
+                    deckId: workspace.dataset.deckId || "",
+                    sourceType: workspace.dataset.sourceType || "",
+                    sourceId: workspace.dataset.sourceId || "",
+                    data: data || {}
+                })
+            }).catch(function () {});
+        } catch (error) {
+            // Debug logging must never break deckbuilder behavior.
+        }
+    }
+
+    function setDeckbuilderDragTransfer(event, dragPayload, fallbackText) {
+        if (!event || !event.dataTransfer) {
+            return;
+        }
+
+        try {
+            event.dataTransfer.effectAllowed = dragPayload.type === "basic-land" ? "copy" : "move";
+            event.dataTransfer.setData(deckbuilderDragMimeType, JSON.stringify(dragPayload));
+            event.dataTransfer.setData("text/plain", fallbackText || dragPayload.cardName || dragPayload.landName || "Deck Builder Card");
+        } catch (error) {
+            writeDeckbuilderClientDebug("DRAG TRANSFER SET FAILED", {
+                error: String(error),
+                dragPayload: dragPayload
+            });
+        }
+    }
+
+    function getDeckbuilderDragTransfer(event) {
+        if (draggedDeckbuilderItem) {
+            return draggedDeckbuilderItem;
+        }
+
+        if (!event || !event.dataTransfer) {
+            return null;
+        }
+
+        try {
+            const rawPayload = event.dataTransfer.getData(deckbuilderDragMimeType);
+
+            if (!rawPayload) {
+                return null;
+            }
+
+            return JSON.parse(rawPayload);
+        } catch (error) {
+            writeDeckbuilderClientDebug("DRAG TRANSFER READ FAILED", {
+                error: String(error)
+            });
+
+            return null;
+        }
+    }
+
+    writeDeckbuilderClientDebug("INIT", {
+        moveZoneUrl: moveZoneUrl,
+        basicLandUrl: basicLandUrl,
+        deckCards: document.querySelectorAll("#deckbuilderDeckList .deckbuilder-card:not([data-is-land-palette='1'])").length,
+        sideboardCards: document.querySelectorAll("#deckbuilderSideboardList .deckbuilder-card:not([data-is-land-palette='1'])").length,
+        basicLandPaletteCards: document.querySelectorAll(".deckbuilder-basic-land-card[data-is-land-palette='1']").length
+    });
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function showDeckbuilderError(error) {
+        console.error(error);
+
+        if (window.iMomirToast) {
+            window.iMomirToast.error(error.message || "Deck update failed.");
+        } else {
+            window.alert(error.message || "Deck update failed.");
+        }
+    }
+
+    function getDeckbuilderCards(listElement) {
+        if (!listElement) {
+            return [];
+        }
+
+        return Array.from(listElement.querySelectorAll(".deckbuilder-card:not([data-is-land-palette='1'])"));
+    }
+
+    function getAllVisibleDeckbuilderCards(listElement) {
+        if (!listElement) {
+            return [];
+        }
+
+        return Array.from(listElement.querySelectorAll(".deckbuilder-card"));
+    }
+
+    function getRarityValue(rarity) {
+        const cleanRarity = String(rarity || "").trim().toLowerCase();
+
+        if (cleanRarity === "common") {
+            return 1;
+        }
+
+        if (cleanRarity === "uncommon") {
+            return 2;
+        }
+
+        if (cleanRarity === "rare") {
+            return 3;
+        }
+
+        if (cleanRarity === "mythic") {
+            return 4;
+        }
+
+        return 0;
+    }
+
+    function getCardNameValue(cardElement) {
+        return String(cardElement?.dataset?.cardName || "").toLowerCase();
+    }
+
+    function getCardManaValue(cardElement) {
+        const parsedManaValue = parseFloat(cardElement?.dataset?.cardManaValue);
+
+        return Number.isFinite(parsedManaValue) ? parsedManaValue : 999;
+    }
+
+    function getCardRarityValue(cardElement) {
+        return getRarityValue(cardElement?.dataset?.cardRarity || "");
+    }
+
+    function getDeckbuilderCardSizePixels(sizePercent) {
+        const cleanSizePercent = parseInt(sizePercent || 100, 10);
+        const safeSizePercent = Number.isFinite(cleanSizePercent)
+            ? Math.max(70, Math.min(150, cleanSizePercent))
+            : 100;
+
+        return Math.round(176 * (safeSizePercent / 100));
+    }
+
+    function updateDeckbuilderCardSize(sizePercent) {
+        const cardWidth = getDeckbuilderCardSizePixels(sizePercent);
+        const stackColumnWidth = Math.max(96, cardWidth);
+        const stackCardWidth = Math.max(80, stackColumnWidth - 16);
+        const visibleStackStrip = Math.max(30, Math.round(stackCardWidth * 0.22));
+        const cardHeight = Math.round(stackCardWidth * 1.40);
+        const overlap = Math.max(0, cardHeight - visibleStackStrip);
+
+        deckbuilderCardSize = parseInt(sizePercent || "100", 10);
+
+        workspace.style.setProperty("--deckbuilder-card-width", cardWidth + "px");
+        workspace.style.setProperty("--deckbuilder-stack-column-width", stackColumnWidth + "px");
+        workspace.style.setProperty("--deckbuilder-stack-overlap", "-" + overlap + "px");
+
+        if (cardSizeSelect) {
+            cardSizeSelect.value = String(deckbuilderCardSize);
+        }
+
+        if (deckbuilderViewMode === "stack") {
+            buildStackColumnsForZone(deckList);
+        }
+    }
+
+    function compareDeckbuilderCards(a, b) {
+        if (pickedSortMode === "name-asc") {
+            return getCardNameValue(a).localeCompare(getCardNameValue(b));
+        }
+
+        if (pickedSortMode === "name-desc") {
+            return getCardNameValue(b).localeCompare(getCardNameValue(a));
+        }
+
+        if (pickedSortMode === "rarity-asc") {
+            return getCardRarityValue(a) - getCardRarityValue(b)
+                || getCardNameValue(a).localeCompare(getCardNameValue(b));
+        }
+
+        if (pickedSortMode === "mv-asc") {
+            return getCardManaValue(a) - getCardManaValue(b)
+                || getCardNameValue(a).localeCompare(getCardNameValue(b));
+        }
+
+        if (pickedSortMode === "mv-desc") {
+            return getCardManaValue(b) - getCardManaValue(a)
+                || getCardNameValue(a).localeCompare(getCardNameValue(b));
+        }
+
+        return getCardRarityValue(b) - getCardRarityValue(a)
+            || getCardNameValue(a).localeCompare(getCardNameValue(b));
+    }
+
+    function sortDeckbuilderZone(listElement) {
+        if (!listElement || deckbuilderViewMode === "stack") {
+            return;
+        }
+
+        const paletteCards = Array.from(listElement.querySelectorAll(".deckbuilder-card[data-is-land-palette='1']"));
+        const normalCards = getDeckbuilderCards(listElement).sort(compareDeckbuilderCards);
+
+        listElement.innerHTML = "";
+
+        normalCards.forEach(function (cardElement) {
+            listElement.appendChild(cardElement);
+        });
+
+        paletteCards.forEach(function (cardElement) {
+            listElement.appendChild(cardElement);
+        });
+    }
+
+    function sortDeckbuilderZones() {
+        sortDeckbuilderZone(deckList);
+        sortDeckbuilderZone(sideboardList);
+    }
+
+    function updateCounts() {
+        if (deckCount) {
+            deckCount.textContent = String(getDeckbuilderCards(deckList).length);
+        }
+
+        if (sideboardCount) {
+            sideboardCount.textContent = String(getDeckbuilderCards(sideboardList).length);
+        }
+    }
+
+    async function submitDeckbuilderAjax(actionUrl, formData) {
+        const formEntries = {};
+
+        try {
+            formData.forEach(function (value, key) {
+                formEntries[key] = value;
+            });
+        } catch (error) {
+            formEntries._error = String(error);
+        }
+
+        writeDeckbuilderClientDebug("AJAX START", {
+            actionUrl: actionUrl,
+            formEntries: formEntries
+        });
+
+        console.log("DECKBUILDER AJAX START", {
+            actionUrl: actionUrl,
+            formEntries: formEntries
+        });
+
+        const response = await fetch(actionUrl, {
+            method: "POST",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            body: formData
+        });
+
+        const rawText = await response.text();
+        let payload = null;
+
+        try {
+            payload = JSON.parse(rawText);
+        } catch (error) {
+            writeDeckbuilderClientDebug("AJAX NON JSON RESPONSE", {
+                actionUrl: actionUrl,
+                status: response.status,
+                ok: response.ok,
+                rawText: rawText.slice(0, 1200)
+            });
+
+            console.error("DECKBUILDER AJAX NON-JSON RESPONSE", {
+                actionUrl: actionUrl,
+                status: response.status,
+                ok: response.ok,
+                rawText: rawText.slice(0, 1200)
+            });
+
+            throw new Error("Deck update failed because the server did not return JSON.");
+        }
+
+        writeDeckbuilderClientDebug("AJAX RESPONSE", {
+            actionUrl: actionUrl,
+            status: response.status,
+            ok: response.ok,
+            payloadOk: payload ? payload.ok : null,
+            debug: payload ? payload.debug : null,
+            basicLandCounts: payload ? payload.basic_land_counts : null,
+            humanDeckCardCount: payload && payload.human_deck_cards ? payload.human_deck_cards.length : null
+        });
+
+        console.log("DECKBUILDER AJAX RESPONSE", {
+            actionUrl: actionUrl,
+            status: response.status,
+            ok: response.ok,
+            payloadOk: payload ? payload.ok : null,
+            debug: payload ? payload.debug : null,
+            basicLandCounts: payload ? payload.basic_land_counts : null,
+            humanDeckCardCount: payload && payload.human_deck_cards ? payload.human_deck_cards.length : null,
+            payload: payload
+        });
+
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Deck update failed.");
+        }
+
+        return payload;
+    }
+
+    async function movePickedCardToZone(pickId, targetZone) {
+        const formData = new FormData();
+        formData.append("draft_test_pick_id", pickId || "");
+        formData.append("deck_zone", targetZone || "deck");
+
+        return submitDeckbuilderAjax(moveZoneUrl, formData);
+    }
+
+    async function updateBasicLand(landName, action) {
+        const formData = new FormData();
+        formData.append("land_name", landName || "");
+        formData.append("action", action || "add");
+
+        return submitDeckbuilderAjax(basicLandUrl, formData);
+    }
+
+    function updateBasicLandCountsFromPayload(payload) {
+        const counts = payload && payload.basic_land_counts
+            ? payload.basic_land_counts
+            : {};
+
+        Array.from(document.querySelectorAll("[data-basic-land-count]")).forEach(function (countElement) {
+            const landName = countElement.dataset.basicLandCount || "";
+            countElement.textContent = String(counts[landName] || 0);
+        });
+    }
+
+
+    function getBasicLandPaletteElement(landName) {
+        const cleanLandName = String(landName || "").toLowerCase();
+
+        return Array.from(document.querySelectorAll(".deckbuilder-basic-land-card[data-is-land-palette='1']")).find(function (landElement) {
+            return String(landElement.dataset.basicLandName || landElement.dataset.cardName || "").toLowerCase() === cleanLandName;
+        }) || null;
+    }
+
+    function buildDeckBasicLandCardHtml(landName, landIndex) {
+        const paletteElement = getBasicLandPaletteElement(landName);
+        const cardName = paletteElement
+            ? (paletteElement.dataset.cardName || landName)
+            : landName;
+        const cardUuid = paletteElement
+            ? (paletteElement.dataset.cardUuid || "")
+            : "";
+        const imageSrc = paletteElement
+            ? (paletteElement.dataset.cardImageSrc || "")
+            : "";
+        const rarity = paletteElement
+            ? (paletteElement.dataset.cardRarity || "common")
+            : "common";
+        const manaValue = paletteElement
+            ? (paletteElement.dataset.cardManaValue || "0")
+            : "0";
+
+        const safeSyntheticId = "basic-land-" + String(cardName || "").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + String(landIndex || 0);
+
+        return (
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(safeSyntheticId) + '" data-current-zone="deck" data-card-name="' + escapeHtml(cardName) + '" data-card-uuid="' + escapeHtml(cardUuid) + '" data-card-rarity="' + escapeHtml(rarity) + '" data-card-mana-value="' + escapeHtml(manaValue) + '" data-is-basic-land="1">' +
+                (
+                    imageSrc
+                        ? '<img src="' + escapeHtml(imageSrc) + '" alt="' + escapeHtml(cardName) + '" class="campaign-test-draft-picked-thumb">'
+                        : '<div class="deckbuilder-basic-land-missing-image">' + escapeHtml(cardName) + '</div>'
+                ) +
+                '<div class="campaign-test-draft-picked-main">' +
+                    '<div class="campaign-test-draft-picked-name">' + escapeHtml(cardName) + '</div>' +
+                    '<div class="campaign-test-draft-picked-meta">Basic Land</div>' +
+                '</div>' +
+            '</div>'
+        );
+    }
+
+    function reconcileDeckBasicLandsFromPayload(payload) {
+        writeDeckbuilderClientDebug("RECONCILE BASIC LANDS ENTER", {
+            hasDeckList: Boolean(deckList),
+            hasPayload: Boolean(payload),
+            basicLandCounts: payload ? payload.basic_land_counts : null,
+            deckCardCountBefore: getDeckbuilderCards(deckList).length
+        });
+
+        console.log("DECKBUILDER RECONCILE BASIC LANDS ENTER", {
+            hasDeckList: Boolean(deckList),
+            hasPayload: Boolean(payload),
+            basicLandCounts: payload ? payload.basic_land_counts : null,
+            deckCardCountBefore: getDeckbuilderCards(deckList).length
+        });
+
+        if (!deckList || !payload || !payload.basic_land_counts) {
+            writeDeckbuilderClientDebug("RECONCILE BASIC LANDS EXIT EARLY", {
+                hasDeckList: Boolean(deckList),
+                hasPayload: Boolean(payload),
+                hasBasicLandCounts: Boolean(payload && payload.basic_land_counts)
+            });
+
+            console.log("DECKBUILDER RECONCILE BASIC LANDS EXIT EARLY", {
+                hasDeckList: Boolean(deckList),
+                hasPayload: Boolean(payload),
+                hasBasicLandCounts: Boolean(payload && payload.basic_land_counts)
+            });
+            return;
+        }
+
+        Array.from(deckList.querySelectorAll(".deckbuilder-card[data-is-basic-land='1']")).forEach(function (landElement) {
+            landElement.remove();
+        });
+
+        Array.from(deckList.querySelectorAll(".campaign-test-draft-zone-empty")).forEach(function (emptyElement) {
+            emptyElement.remove();
+        });
+
+        const landNames = Object.keys(payload.basic_land_counts || {});
+
+        landNames.forEach(function (landName) {
+            const landCount = parseInt(payload.basic_land_counts[landName] || 0, 10);
+
+            if (!Number.isFinite(landCount) || landCount <= 0) {
+                return;
+            }
+
+            for (let landIndex = 0; landIndex < landCount; landIndex += 1) {
+                deckList.insertAdjacentHTML("beforeend", buildDeckBasicLandCardHtml(landName, landIndex));
+            }
+        });
+
+        bindDragSources();
+        bindHoverPreviews();
+
+        if (deckbuilderViewMode === "stack") {
+            buildStackColumnsForZone(deckList);
+        }
+
+        writeDeckbuilderClientDebug("RECONCILE BASIC LANDS EXIT", {
+            deckCardCountAfter: getDeckbuilderCards(deckList).length,
+            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
+        });
+
+        console.log("DECKBUILDER RECONCILE BASIC LANDS EXIT", {
+            deckCardCountAfter: getDeckbuilderCards(deckList).length,
+            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
+        });
+    }
+
+    function renderDeckbuilderCard(card, targetZone) {
+        const pickedMeta = card.is_basic_land
+            ? "Basic Land"
+            : "Pick " + escapeHtml(card.pick_number) + " • Pack " + escapeHtml(card.pack_number);
+
+        return (
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(card.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(card.card_name || "") + '" data-card-rarity="' + escapeHtml(card.rarity || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" data-is-basic-land="' + escapeHtml(card.is_basic_land ? "1" : "0") + '">' +
+                '<img src="' + escapeHtml(card.image_src) + '" alt="' + escapeHtml(card.card_name) + '" class="campaign-test-draft-picked-thumb">' +
+                '<div class="campaign-test-draft-picked-main">' +
+                    '<div class="campaign-test-draft-picked-name">' + escapeHtml(card.card_name) + '</div>' +
+                    '<div class="campaign-test-draft-picked-meta">' + pickedMeta + '</div>' +
+                '</div>' +
+            '</div>'
+        );
+    }
+
+    function getBasicLandPaletteHtml() {
+        if (!basicLandPaletteTemplate) {
+            return "";
+        }
+
+        return basicLandPaletteTemplate.innerHTML || "";
+    }
+
+    function renderDeckbuilderZone(listElement, cards, emptyText, targetZone) {
+        if (!listElement) {
+            return;
+        }
+
+        const hasCards = cards && cards.length;
+
+        const cardHtml = hasCards
+            ? cards.map(function (card) {
+                return renderDeckbuilderCard(card, targetZone);
+            }).join("")
+            : "";
+
+        if (targetZone === "sideboard") {
+            listElement.innerHTML = cardHtml + getBasicLandPaletteHtml();
+            return;
+        }
+
+        listElement.innerHTML = hasCards
+            ? cardHtml
+            : '<div class="campaign-test-draft-zone-empty">' + escapeHtml(emptyText) + '</div>';
+    }
+
+    function applyDeckbuilderPayload(payload) {
+        if (!payload || !payload.ok) {
+            throw new Error((payload && payload.message) || "Deck update failed.");
+        }
+
+        renderDeckbuilderZone(
+            deckList,
+            payload.human_deck_cards || [],
+            "Drag cards here to build your deck.",
+            "deck"
+        );
+
+        renderDeckbuilderZone(
+            sideboardList,
+            payload.human_sideboard_cards || [],
+            "Sideboard cards will appear here.",
+            "sideboard"
+        );
+
+        updateBasicLandCountsFromPayload(payload);
+        reconcileDeckBasicLandsFromPayload(payload);
+        updateCounts();
+        bindDragSources();
+        bindHoverPreviews();
+        updateDeckbuilderCardSize(deckbuilderCardSize);
+        setViewMode(deckbuilderViewMode);
+    }
+
+    function clearDropZoneState() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            dropZone.classList.remove("deckbuilder-drop-zone-active");
+            dropZone.classList.remove("deckbuilder-drop-zone-over");
+            dropZone.classList.remove("deckbuilder-drop-zone-working");
+        });
+
+        Array.from(document.querySelectorAll(".deckbuilder-card-dragging")).forEach(function (draggedElement) {
+            draggedElement.classList.remove("deckbuilder-card-dragging");
+        });
+    }
+
+    function setDropZonesActive(isActive) {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            dropZone.classList.toggle("deckbuilder-drop-zone-active", Boolean(isActive));
+        });
+    }
+
+    function bindDragSources() {
+        Array.from(document.querySelectorAll(".deckbuilder-card[draggable='true']:not([data-is-land-palette='1'])")).forEach(function (cardElement) {
+            if (cardElement.dataset.dragBound === "1") {
+                return;
+            }
+
+            cardElement.dataset.dragBound = "1";
+
+            cardElement.addEventListener("dragstart", function (event) {
+                draggedDeckbuilderItem = {
+                    type: "picked-card",
+                    pickId: cardElement.dataset.draftTestPickId || "",
+                    currentZone: cardElement.dataset.currentZone || "",
+                    cardName: cardElement.dataset.cardName || "",
+                    isBasicLand: cardElement.dataset.isBasicLand || "0"
+                };
+
+                writeDeckbuilderClientDebug("PICKED CARD DRAGSTART", {
+                    draggedDeckbuilderItem: draggedDeckbuilderItem
+                });
+
+                cardElement.classList.add("deckbuilder-card-dragging");
+                setDropZonesActive(true);
+                hideHoverPreview();
+
+                setDeckbuilderDragTransfer(
+                    event,
+                    draggedDeckbuilderItem,
+                    cardElement.dataset.cardName || "Deck card"
+                );
+            });
+
+            cardElement.addEventListener("dragend", function () {
+                draggedDeckbuilderItem = null;
+                clearDropZoneState();
+            });
+        });
+
+        Array.from(document.querySelectorAll(".deckbuilder-basic-land-card[draggable='true']")).forEach(function (landElement) {
+            if (landElement.dataset.dragBound === "1") {
+                return;
+            }
+
+            landElement.dataset.dragBound = "1";
+
+            landElement.addEventListener("dragstart", function (event) {
+                draggedDeckbuilderItem = {
+                    type: "basic-land",
+                    landName: landElement.dataset.basicLandName || landElement.dataset.cardName || ""
+                };
+
+                writeDeckbuilderClientDebug("BASIC LAND DRAGSTART", {
+                    draggedDeckbuilderItem: draggedDeckbuilderItem,
+                    cardName: landElement.dataset.cardName || "",
+                    basicLandName: landElement.dataset.basicLandName || "",
+                    isLandPalette: landElement.dataset.isLandPalette || "",
+                    currentZone: landElement.dataset.currentZone || ""
+                });
+
+                console.log("DECKBUILDER BASIC LAND DRAGSTART", {
+                    draggedDeckbuilderItem: draggedDeckbuilderItem,
+                    cardName: landElement.dataset.cardName || "",
+                    basicLandName: landElement.dataset.basicLandName || "",
+                    isLandPalette: landElement.dataset.isLandPalette || "",
+                    currentZone: landElement.dataset.currentZone || ""
+                });
+
+                landElement.classList.add("deckbuilder-card-dragging");
+                setDropZonesActive(true);
+                hideHoverPreview();
+
+                setDeckbuilderDragTransfer(
+                    event,
+                    draggedDeckbuilderItem,
+                    draggedDeckbuilderItem.landName || "Basic Land"
+                );
+            });
+
+            landElement.addEventListener("dragend", function () {
+                draggedDeckbuilderItem = null;
+                clearDropZoneState();
+            });
+        });
+    }
+
+    function bindDropZones() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-drop-zone")).forEach(function (dropZone) {
+            if (dropZone.dataset.dropBound === "1") {
+                return;
+            }
+
+            dropZone.dataset.dropBound = "1";
+
+            dropZone.addEventListener("dragover", function (event) {
+                event.preventDefault();
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = draggedDeckbuilderItem && draggedDeckbuilderItem.type === "basic-land"
+                        ? "copy"
+                        : "move";
+                }
+
+                dropZone.classList.add("deckbuilder-drop-zone-over");
+            });
+
+            dropZone.addEventListener("dragleave", function (event) {
+                if (!dropZone.contains(event.relatedTarget)) {
+                    dropZone.classList.remove("deckbuilder-drop-zone-over");
+                }
+            });
+
+            dropZone.addEventListener("drop", async function (event) {
+                event.preventDefault();
+
+                const targetZone = dropZone.dataset.dropZone || "deck";
+                const droppedItem = getDeckbuilderDragTransfer(event);
+
+                writeDeckbuilderClientDebug("DROP RECEIVED", {
+                    targetZone: targetZone,
+                    droppedItem: droppedItem,
+                    globalDraggedItem: draggedDeckbuilderItem,
+                    basicLandUrl: basicLandUrl,
+                    moveZoneUrl: moveZoneUrl,
+                    deckCardCountBefore: getDeckbuilderCards(deckList).length,
+                    sideboardCardCountBefore: getDeckbuilderCards(sideboardList).length
+                });
+
+                if (!droppedItem) {
+                    draggedDeckbuilderItem = null;
+                    clearDropZoneState();
+
+                    writeDeckbuilderClientDebug("DROP EXIT NO ITEM", {
+                        targetZone: targetZone
+                    });
+
+                    return;
+                }
+
+                draggedDeckbuilderItem = null;
+                clearDropZoneState();
+
+                try {
+                    console.log("DECKBUILDER DROP", {
+                        targetZone: targetZone,
+                        droppedItem: droppedItem,
+                        basicLandUrl: basicLandUrl,
+                        moveZoneUrl: moveZoneUrl,
+                        deckCardCountBefore: getDeckbuilderCards(deckList).length,
+                        sideboardCardCountBefore: getDeckbuilderCards(sideboardList).length
+                    });
+
+                    dropZone.classList.add("deckbuilder-drop-zone-working");
+
+                    let payload = null;
+
+                    if (droppedItem.type === "basic-land") {
+                        writeDeckbuilderClientDebug("BASIC LAND DROP BRANCH", {
+                            targetZone: targetZone,
+                            landName: droppedItem.landName || "",
+                            basicLandUrl: basicLandUrl
+                        });
+
+                        if (targetZone !== "deck") {
+                            writeDeckbuilderClientDebug("BASIC LAND DROP IGNORED NON-DECK", {
+                                targetZone: targetZone,
+                                landName: droppedItem.landName || ""
+                            });
+
+                            return;
+                        }
+
+                        payload = await updateBasicLand(droppedItem.landName, "add");
+
+                        if (payload && payload.ok && payload.basic_land_counts) {
+                            const cleanLandName = droppedItem.landName || "";
+                            const currentCount = parseInt(payload.basic_land_counts[cleanLandName] || 0, 10);
+
+                            if (!Number.isFinite(currentCount) || currentCount < 1) {
+                                payload.basic_land_counts[cleanLandName] = 1;
+                            }
+                        }
+                    } else if (droppedItem.type === "picked-card") {
+                        if (droppedItem.currentZone === targetZone) {
+                            return;
+                        }
+
+                        if (
+                            droppedItem.currentZone === "deck"
+                            && targetZone === "sideboard"
+                            && droppedItem.isBasicLand === "1"
+                        ) {
+                            payload = await updateBasicLand(droppedItem.cardName, "remove");
+
+                            if (payload && payload.ok && payload.basic_land_counts) {
+                                const cleanLandName = droppedItem.cardName || "";
+                                const currentCount = parseInt(payload.basic_land_counts[cleanLandName] || 0, 10);
+
+                                payload.basic_land_counts[cleanLandName] = Number.isFinite(currentCount)
+                                    ? Math.max(0, currentCount)
+                                    : 0;
+                            }
+                        } else if (
+                            String(droppedItem.pickId || "").indexOf("basic-land-") === 0
+                            || String(droppedItem.pickId || "").indexOf("deckcard_") === 0
+                        ) {
+                            return;
+                        } else {
+                            payload = await movePickedCardToZone(droppedItem.pickId, targetZone);
+                        }
+                    }
+
+                    if (payload) {
+                        writeDeckbuilderClientDebug("DROP PAYLOAD BEFORE APPLY", {
+                            payloadOk: payload.ok,
+                            debug: payload.debug || null,
+                            basicLandCounts: payload.basic_land_counts || null,
+                            humanDeckCardCount: payload.human_deck_cards ? payload.human_deck_cards.length : null,
+                            humanSideboardCardCount: payload.human_sideboard_cards ? payload.human_sideboard_cards.length : null
+                        });
+
+                        console.log("DECKBUILDER DROP PAYLOAD BEFORE APPLY", {
+                            payloadOk: payload.ok,
+                            debug: payload.debug || null,
+                            basicLandCounts: payload.basic_land_counts || null,
+                            humanDeckCardCount: payload.human_deck_cards ? payload.human_deck_cards.length : null,
+                            humanSideboardCardCount: payload.human_sideboard_cards ? payload.human_sideboard_cards.length : null,
+                            payload: payload
+                        });
+
+                        applyDeckbuilderPayload(payload);
+
+                        writeDeckbuilderClientDebug("DROP AFTER APPLY", {
+                            deckCardCountAfter: getDeckbuilderCards(deckList).length,
+                            sideboardCardCountAfter: getDeckbuilderCards(sideboardList).length,
+                            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
+                        });
+
+                        console.log("DECKBUILDER DROP AFTER APPLY", {
+                            deckCardCountAfter: getDeckbuilderCards(deckList).length,
+                            sideboardCardCountAfter: getDeckbuilderCards(sideboardList).length,
+                            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
+                        });
+                    }
+                } catch (error) {
+                    showDeckbuilderError(error);
+                } finally {
+                    dropZone.classList.remove("deckbuilder-drop-zone-working");
+                }
+            });
+        });
+    }
+
+    function positionHoverPreview(event) {
+        if (!hoverPreview) {
+            return;
+        }
+
+        const previewWidth = hoverPreview.offsetWidth || 340;
+        const previewHeight = hoverPreview.offsetHeight || 420;
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+        const offset = 18;
+
+        let left = event.clientX + offset;
+        let top = event.clientY + offset;
+
+        if (left + previewWidth > viewportWidth - 10) {
+            left = event.clientX - previewWidth - offset;
+        }
+
+        if (top + previewHeight > viewportHeight - 10) {
+            top = viewportHeight - previewHeight - 10;
+        }
+
+        hoverPreview.style.left = Math.max(10, left) + "px";
+        hoverPreview.style.top = Math.max(10, top) + "px";
+    }
+
+    function hideHoverPreview() {
+        if (!hoverPreview || !hoverPreviewImage) {
+            return;
+        }
+
+        hoverPreview.classList.add("hidden");
+        hoverPreview.setAttribute("aria-hidden", "true");
+        hoverPreviewImage.src = "";
+        hoverPreviewImage.alt = "";
+    }
+
+    function bindHoverPreviews() {
+        Array.from(document.querySelectorAll(".deckbuilder-card, .deckbuilder-basic-land-card")).forEach(function (cardElement) {
+            if (cardElement.dataset.hoverPreviewBound === "1") {
+                return;
+            }
+
+            cardElement.dataset.hoverPreviewBound = "1";
+
+            cardElement.addEventListener("mouseenter", function (event) {
+                const imageElement = cardElement.querySelector(".campaign-test-draft-picked-thumb");
+
+                if (!imageElement || !hoverPreview || !hoverPreviewImage) {
+                    return;
+                }
+
+                hoverPreviewImage.src = imageElement.src;
+                hoverPreviewImage.alt = imageElement.alt || cardElement.dataset.cardName || "Card";
+                hoverPreview.classList.remove("hidden");
+                hoverPreview.setAttribute("aria-hidden", "false");
+                positionHoverPreview(event);
+            });
+
+            cardElement.addEventListener("mousemove", positionHoverPreview);
+            cardElement.addEventListener("mouseleave", hideHoverPreview);
+            cardElement.addEventListener("dragstart", hideHoverPreview);
+        });
+    }
+
+    function buildStackColumnsForZone(listElement) {
+        if (!listElement) {
+            return;
+        }
+
+        const existingCards = getDeckbuilderCards(listElement);
+        const columnDefs = [
+            { key: "land", label: "Lands" },
+            { key: "0", label: "0" },
+            { key: "1", label: "1" },
+            { key: "2", label: "2" },
+            { key: "3", label: "3" },
+            { key: "4", label: "4" },
+            { key: "5", label: "5" },
+            { key: "6", label: "6+" }
+        ];
+
+        const columns = {};
+
+        listElement.innerHTML = "";
+
+        columnDefs.forEach(function (columnDef) {
+            const column = document.createElement("div");
+            column.className = "deckbuilder-stack-column";
+            column.dataset.stackColumn = columnDef.key;
+
+            const title = document.createElement("div");
+            title.className = "deckbuilder-stack-column-title";
+            title.textContent = columnDef.label;
+
+            const body = document.createElement("div");
+            body.className = "deckbuilder-stack-column-body";
+
+            column.appendChild(title);
+            column.appendChild(body);
+            listElement.appendChild(column);
+            columns[columnDef.key] = body;
+        });
+
+        existingCards.sort(compareDeckbuilderCards).forEach(function (cardElement) {
+            let columnKey = String(Math.floor(getCardManaValue(cardElement)));
+
+            if ((cardElement.dataset.cardName || "").match(/^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/i)) {
+                columnKey = "land";
+            } else if (columnKey === "999") {
+                columnKey = "0";
+            } else if (parseInt(columnKey, 10) >= 6) {
+                columnKey = "6";
+            }
+
+            const targetColumn = columns[columnKey] || columns["0"];
+            targetColumn.appendChild(cardElement);
+        });
+
+        bindDragSources();
+        bindHoverPreviews();
+    }
+
+    function restoreFlatZoneFromStack(listElement) {
+        if (!listElement) {
+            return;
+        }
+
+        const cards = getDeckbuilderCards(listElement);
+
+        listElement.innerHTML = "";
+
+        cards.forEach(function (cardElement) {
+            listElement.appendChild(cardElement);
+        });
+    }
+
+    function setViewMode(viewMode) {
+        const nextViewMode = viewMode === "stack" ? "stack" : viewMode === "list" ? "list" : "grid";
+
+        if (deckbuilderViewMode === "stack" && nextViewMode !== "stack") {
+            restoreFlatZoneFromStack(deckList);
+        }
+
+        deckbuilderViewMode = nextViewMode;
+
+        workspace.classList.toggle("deckbuilder-list-active", deckbuilderViewMode === "list");
+        workspace.classList.toggle("deckbuilder-grid-active", deckbuilderViewMode === "grid");
+        workspace.classList.toggle("deckbuilder-stack-active", deckbuilderViewMode === "stack");
+
+        if (listViewButton) {
+            listViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", deckbuilderViewMode === "list");
+        }
+
+        if (gridViewButton) {
+            gridViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", deckbuilderViewMode === "grid");
+        }
+
+        if (stackViewButton) {
+            stackViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", deckbuilderViewMode === "stack");
+        }
+
+        if (deckbuilderViewMode === "stack") {
+            sortDeckbuilderZone(sideboardList);
+            buildStackColumnsForZone(deckList);
+            bindDragSources();
+            bindHoverPreviews();
+        } else {
+            sortDeckbuilderZones();
+            bindDragSources();
+            bindHoverPreviews();
+        }
+
+        updateCounts();
+    }
+
+    function setZoneSplitFromPointer(clientY) {
+        const mainElement = document.querySelector(".deckbuilder-main");
+
+        if (!mainElement) {
+            return;
+        }
+
+        const mainRect = mainElement.getBoundingClientRect();
+        let sideboardRatio = (clientY - mainRect.top) / Math.max(1, mainRect.height);
+
+        sideboardRatio = Math.max(0.18, Math.min(0.72, sideboardRatio));
+
+        workspace.style.setProperty("--deckbuilder-sideboard-flex", String(sideboardRatio));
+        workspace.style.setProperty("--deckbuilder-deck-flex", String(1 - sideboardRatio));
+    }
+
+    function bindBasicLandButtons() {
+        Array.from(document.querySelectorAll(".campaign-test-draft-basic-land-button")).forEach(function (button) {
+            if (button.dataset.basicLandBound === "1") {
+                return;
+            }
+
+            button.dataset.basicLandBound = "1";
+
+            button.addEventListener("click", async function () {
+                const landName = button.dataset.landName || "";
+                const action = button.dataset.basicLandAction || "add";
+
+                if (!landName) {
+                    return;
+                }
+
+                button.disabled = true;
+
+                try {
+                    const payload = await updateBasicLand(landName, action);
+                    applyDeckbuilderPayload(payload);
+                } catch (error) {
+                    showDeckbuilderError(error);
+                } finally {
+                    button.disabled = false;
+                }
+            });
+        });
+    }
+
+    function buildDecklistTextFromZone(listElement) {
+        if (!listElement) {
+            return "";
+        }
+
+        const counts = {};
+
+        getDeckbuilderCards(listElement).forEach(function (cardElement) {
+            const cardName = (cardElement.dataset.cardName || "").trim();
+
+            if (!cardName) {
+                return;
+            }
+
+            counts[cardName] = (counts[cardName] || 0) + 1;
+        });
+
+        return Object.keys(counts)
+            .sort(function (a, b) {
+                return a.localeCompare(b);
+            })
+            .map(function (cardName) {
+                return counts[cardName] + " " + cardName;
+            })
+            .join("\n");
+    }
+
+    async function copyDecklist() {
+        const deckText = buildDecklistTextFromZone(deckList);
+        const sideboardText = buildDecklistTextFromZone(sideboardList);
+        const decklistText = sideboardText
+            ? deckText + "\n\nSideboard\n" + sideboardText
+            : deckText;
+
+        if (!decklistText) {
+            showDeckbuilderError(new Error("No decklist cards were found."));
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(decklistText);
+
+            if (window.iMomirToast) {
+                window.iMomirToast.success("Decklist copied.");
+            } else {
+                window.alert("Decklist copied.");
+            }
+        } catch (error) {
+            window.prompt("Copy decklist:", decklistText);
+        }
+    }
+
+    if (sortSelect) {
+        sortSelect.addEventListener("change", function () {
+            pickedSortMode = sortSelect.value || "rarity-desc";
+
+            if (deckbuilderViewMode === "stack") {
+                sortDeckbuilderZone(sideboardList);
+                buildStackColumnsForZone(deckList);
+            } else {
+                sortDeckbuilderZones();
+            }
+        });
+    }
+
+    if (cardSizeSelect) {
+        cardSizeSelect.addEventListener("change", function () {
+            updateDeckbuilderCardSize(cardSizeSelect.value || "100");
+        });
+    }
+
+    if (listViewButton) {
+        listViewButton.addEventListener("click", function () {
+            setViewMode("list");
+        });
+    }
+
+    if (gridViewButton) {
+        gridViewButton.addEventListener("click", function () {
+            setViewMode("grid");
+        });
+    }
+
+    if (stackViewButton) {
+        stackViewButton.addEventListener("click", function () {
+            setViewMode("stack");
+        });
+    }
+
+    if (copyDecklistButton) {
+        copyDecklistButton.addEventListener("click", copyDecklist);
+    }
+
+    if (zoneResizeHandle) {
+        zoneResizeHandle.addEventListener("pointerdown", function (event) {
+            isResizingZones = true;
+            zoneResizeHandle.setPointerCapture(event.pointerId);
+            document.body.classList.add("campaign-test-draft-zone-resizing");
+            event.preventDefault();
+        });
+
+        zoneResizeHandle.addEventListener("pointermove", function (event) {
+            if (!isResizingZones) {
+                return;
+            }
+
+            setZoneSplitFromPointer(event.clientY);
+        });
+
+        zoneResizeHandle.addEventListener("pointerup", function (event) {
+            isResizingZones = false;
+            zoneResizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-zone-resizing");
+        });
+
+        zoneResizeHandle.addEventListener("pointercancel", function (event) {
+            isResizingZones = false;
+            zoneResizeHandle.releasePointerCapture(event.pointerId);
+            document.body.classList.remove("campaign-test-draft-zone-resizing");
+        });
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            hideHoverPreview();
+        }
+    });
+
+    bindDragSources();
+    bindDropZones();
+    bindHoverPreviews();
+    updateDeckbuilderCardSize(deckbuilderCardSize);
+    setViewMode(deckbuilderViewMode);
+    sortDeckbuilderZones();
+    updateCounts();
+})();
+</script>
+{% endblock %}

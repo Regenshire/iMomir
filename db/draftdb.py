@@ -17,6 +17,25 @@ DRAFT_TEST_COLOR_PAIRS = [
     ("G", "U"),
 ]
 
+DRAFT_TEST_BASIC_LANDS = [
+    "Plains",
+    "Island",
+    "Swamp",
+    "Mountain",
+    "Forest",
+    "Wastes",
+]
+
+
+def normalize_draft_test_basic_land_name(value):
+    clean_value = str(value or "").strip()
+
+    for land_name in DRAFT_TEST_BASIC_LANDS:
+        if clean_value.lower() == land_name.lower():
+            return land_name
+
+    return ""
+
 
 def draft_test_utc_now():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -982,20 +1001,22 @@ def get_draft_test_detail(draft_test_id):
         """
         SELECT
             dtpick.*,
-            dtpc.set_code,
-            dtpc.collector_number,
-            dtpc.rarity,
-            dtpc.type_line,
-            dtpc.mana_value,
-            dtpc.mana_cost,
-            dtpc.colors_json,
-            dtpc.color_identity_json,
-            dtpc.image_url
+            COALESCE(dtpc.set_code, cc.set_code, '') AS set_code,
+            COALESCE(dtpc.collector_number, cc.collector_number, '') AS collector_number,
+            COALESCE(dtpc.rarity, cc.rarity, 'common') AS rarity,
+            COALESCE(dtpc.type_line, cc.type_line, 'Basic Land') AS type_line,
+            COALESCE(dtpc.mana_value, cc.mana_value, 0) AS mana_value,
+            COALESCE(dtpc.mana_cost, cc.mana_cost, '') AS mana_cost,
+            COALESCE(dtpc.colors_json, cc.colors_json, '[]') AS colors_json,
+            COALESCE(dtpc.color_identity_json, cc.color_identity_json, '[]') AS color_identity_json,
+            COALESCE(dtpc.image_url, cc.image_url, '') AS image_url
         FROM draft_test_picks dtpick
         INNER JOIN draft_test_players dtplayer
             ON dtplayer.draft_test_player_id = dtpick.draft_test_player_id
         LEFT JOIN draft_test_pack_cards dtpc
             ON dtpc.draft_test_pack_card_id = dtpick.draft_test_pack_card_id
+        LEFT JOIN chaos_cards cc
+            ON cc.card_uuid = dtpick.card_uuid
         WHERE dtpick.draft_test_id = ?
           AND dtplayer.is_human = 1
           AND dtpick.deck_zone = 'deck'
@@ -1011,20 +1032,22 @@ def get_draft_test_detail(draft_test_id):
         """
         SELECT
             dtpick.*,
-            dtpc.set_code,
-            dtpc.collector_number,
-            dtpc.rarity,
-            dtpc.type_line,
-            dtpc.mana_value,
-            dtpc.mana_cost,
-            dtpc.colors_json,
-            dtpc.color_identity_json,
-            dtpc.image_url
+            COALESCE(dtpc.set_code, cc.set_code, '') AS set_code,
+            COALESCE(dtpc.collector_number, cc.collector_number, '') AS collector_number,
+            COALESCE(dtpc.rarity, cc.rarity, 'common') AS rarity,
+            COALESCE(dtpc.type_line, cc.type_line, '') AS type_line,
+            COALESCE(dtpc.mana_value, cc.mana_value, 0) AS mana_value,
+            COALESCE(dtpc.mana_cost, cc.mana_cost, '') AS mana_cost,
+            COALESCE(dtpc.colors_json, cc.colors_json, '[]') AS colors_json,
+            COALESCE(dtpc.color_identity_json, cc.color_identity_json, '[]') AS color_identity_json,
+            COALESCE(dtpc.image_url, cc.image_url, '') AS image_url
         FROM draft_test_picks dtpick
         INNER JOIN draft_test_players dtplayer
             ON dtplayer.draft_test_player_id = dtpick.draft_test_player_id
         LEFT JOIN draft_test_pack_cards dtpc
             ON dtpc.draft_test_pack_card_id = dtpick.draft_test_pack_card_id
+        LEFT JOIN chaos_cards cc
+            ON cc.card_uuid = dtpick.card_uuid
         WHERE dtpick.draft_test_id = ?
           AND dtplayer.is_human = 1
           AND dtpick.deck_zone = 'sideboard'
@@ -1035,6 +1058,11 @@ def get_draft_test_detail(draft_test_id):
         (parsed_draft_test_id,),
     )
     human_sideboard_cards = cursor.fetchall()
+
+    basic_land_counts = get_basic_land_counts_for_draft_test(
+        cursor=cursor,
+        draft_test_id=parsed_draft_test_id,
+    )
 
     conn.close()
 
@@ -1047,6 +1075,8 @@ def get_draft_test_detail(draft_test_id):
         "current_pack_cards": current_pack_cards,
         "human_deck_cards": human_deck_cards,
         "human_sideboard_cards": human_sideboard_cards,
+        "basic_land_counts": basic_land_counts,
+        "basic_land_names": DRAFT_TEST_BASIC_LANDS,
     }
 
 def get_draft_test_pass_direction(pack_number):
@@ -1444,6 +1474,312 @@ def advance_draft_test_after_round(cursor, session_row, now_utc):
             draft_test_id,
         ),
     )
+
+
+def get_basic_land_card_for_draft_test(cursor, land_name):
+    clean_land_name = normalize_draft_test_basic_land_name(land_name)
+
+    if not clean_land_name:
+        return None
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            set_code,
+            card_name,
+            collector_number,
+            rarity,
+            type_line,
+            mana_value,
+            mana_cost,
+            colors_json,
+            color_identity_json,
+            image_url
+        FROM chaos_cards
+        WHERE LOWER(card_name) = LOWER(?)
+          AND (
+                LOWER(type_line) LIKE '%basic land%'
+                OR LOWER(type_line) LIKE '%land%'
+              )
+        ORDER BY
+            CASE
+                WHEN LOWER(set_code) IN ('fdn', 'dmu', 'neo', 'znr') THEN 0
+                ELSE 1
+            END,
+            set_code DESC,
+            collector_number ASC
+        LIMIT 1
+        """,
+        (clean_land_name,),
+    )
+
+    return cursor.fetchone()
+
+
+def get_basic_land_counts_for_draft_test(cursor, draft_test_id):
+    cursor.execute(
+        """
+        SELECT
+            card_name,
+            COUNT(*) AS land_count
+        FROM draft_test_picks
+        WHERE draft_test_id = ?
+          AND deck_zone = 'deck'
+          AND pick_reason = 'Basic land'
+        GROUP BY card_name
+        """,
+        (int(draft_test_id),),
+    )
+
+    rows = cursor.fetchall()
+
+    counts = {
+        land_name: 0
+        for land_name in DRAFT_TEST_BASIC_LANDS
+    }
+
+    for row in rows:
+        land_name = normalize_draft_test_basic_land_name(row["card_name"])
+
+        if land_name:
+            counts[land_name] = int(row["land_count"] or 0)
+
+    return counts
+
+
+def record_human_draft_test_basic_land(draft_test_id, land_name):
+    ensure_draft_testing_schema()
+
+    try:
+        parsed_draft_test_id = int(draft_test_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid Test Draft ID.",
+        }
+
+    clean_land_name = normalize_draft_test_basic_land_name(land_name)
+
+    if not clean_land_name:
+        return {
+            "ok": False,
+            "message": "Invalid basic land.",
+        }
+
+    now_utc = draft_test_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_sessions
+        WHERE draft_test_id = ?
+          AND status = 'complete'
+        """,
+        (parsed_draft_test_id,),
+    )
+    session_row = cursor.fetchone()
+
+    if not session_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Basic lands can only be changed after the draft is complete.",
+        }
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_players
+        WHERE draft_test_id = ?
+          AND is_human = 1
+        ORDER BY seat_index ASC
+        LIMIT 1
+        """,
+        (parsed_draft_test_id,),
+    )
+    human_player_row = cursor.fetchone()
+
+    if not human_player_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Human drafter was not found.",
+        }
+
+    land_card_row = get_basic_land_card_for_draft_test(
+        cursor=cursor,
+        land_name=clean_land_name,
+    )
+
+    if not land_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": f"{clean_land_name} was not found in the card database.",
+        }
+
+    cursor.execute(
+        """
+        INSERT INTO draft_test_picks (
+            draft_test_id,
+            draft_test_player_id,
+            draft_test_pack_id,
+            draft_test_pack_card_id,
+            seat_index,
+            pack_number,
+            pick_number,
+            card_uuid,
+            card_name,
+            deck_zone,
+            picked_at_utc,
+            pick_score,
+            pick_reason
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            parsed_draft_test_id,
+            int(human_player_row["draft_test_player_id"]),
+            0,
+            0,
+            int(human_player_row["seat_index"]),
+            0,
+            0,
+            land_card_row["card_uuid"] or "",
+            clean_land_name,
+            "deck",
+            now_utc,
+            None,
+            "Basic land",
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE draft_test_sessions
+        SET updated_at_utc = ?
+        WHERE draft_test_id = ?
+        """,
+        (
+            now_utc,
+            parsed_draft_test_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": f"Added {clean_land_name}.",
+        "land_name": clean_land_name,
+    }
+
+
+def remove_human_draft_test_basic_land(draft_test_id, land_name):
+    ensure_draft_testing_schema()
+
+    try:
+        parsed_draft_test_id = int(draft_test_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid Test Draft ID.",
+        }
+
+    clean_land_name = normalize_draft_test_basic_land_name(land_name)
+
+    if not clean_land_name:
+        return {
+            "ok": False,
+            "message": "Invalid basic land.",
+        }
+
+    now_utc = draft_test_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_sessions
+        WHERE draft_test_id = ?
+          AND status = 'complete'
+        """,
+        (parsed_draft_test_id,),
+    )
+    session_row = cursor.fetchone()
+
+    if not session_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Basic lands can only be changed after the draft is complete.",
+        }
+
+    cursor.execute(
+        """
+        SELECT draft_test_pick_id
+        FROM draft_test_picks
+        WHERE draft_test_id = ?
+          AND deck_zone = 'deck'
+          AND pick_reason = 'Basic land'
+          AND LOWER(card_name) = LOWER(?)
+        ORDER BY draft_test_pick_id DESC
+        LIMIT 1
+        """,
+        (
+            parsed_draft_test_id,
+            clean_land_name,
+        ),
+    )
+    land_pick_row = cursor.fetchone()
+
+    if not land_pick_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": f"No {clean_land_name} is currently in the deck.",
+        }
+
+    cursor.execute(
+        """
+        DELETE FROM draft_test_picks
+        WHERE draft_test_pick_id = ?
+          AND draft_test_id = ?
+          AND pick_reason = 'Basic land'
+        """,
+        (
+            int(land_pick_row["draft_test_pick_id"]),
+            parsed_draft_test_id,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE draft_test_sessions
+        SET updated_at_utc = ?
+        WHERE draft_test_id = ?
+        """,
+        (
+            now_utc,
+            parsed_draft_test_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": f"Removed {clean_land_name}.",
+        "land_name": clean_land_name,
+    }
 
 def move_human_draft_test_pick_zone(draft_test_id, draft_test_pick_id, deck_zone):
     ensure_draft_testing_schema()

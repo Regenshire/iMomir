@@ -6,6 +6,8 @@ from db.draftdb import (
     normalize_draft_test_packs_per_player,
     normalize_draft_test_pod_size,
     record_human_draft_test_pick,
+    record_human_draft_test_basic_land,
+    remove_human_draft_test_basic_land,
 )
 
 
@@ -33,6 +35,20 @@ def get_draft_test_detail_state(draft_test_id):
     ensure_draft_testing_schema()
     return get_draft_test_detail(draft_test_id)
 
+def record_human_draft_test_basic_land_state(draft_test_id, land_name):
+    ensure_draft_testing_schema()
+    return record_human_draft_test_basic_land(
+        draft_test_id=draft_test_id,
+        land_name=land_name,
+    )
+
+
+def remove_human_draft_test_basic_land_state(draft_test_id, land_name):
+    ensure_draft_testing_schema()
+    return remove_human_draft_test_basic_land(
+        draft_test_id=draft_test_id,
+        land_name=land_name,
+    )
 
 def record_human_draft_test_pick_state(draft_test_id, draft_test_pack_card_id, deck_zone="deck"):
     ensure_draft_testing_schema()
