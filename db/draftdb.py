@@ -891,6 +891,174 @@ def create_draft_test_session_from_pack_pool(
     }
 
 
+def get_draft_test_full_card_stats(draft_test_id):
+    ensure_draft_testing_schema()
+
+    try:
+        parsed_draft_test_id = int(draft_test_id)
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": "Invalid Test Draft ID.",
+        }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM draft_test_sessions
+        WHERE draft_test_id = ?
+        """,
+        (parsed_draft_test_id,),
+    )
+    session_row = cursor.fetchone()
+
+    if not session_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Test Draft was not found.",
+        }
+
+    cursor.execute(
+        """
+        SELECT
+            rarity,
+            type_line,
+            mana_value,
+            color_identity_json,
+            COUNT(*) AS card_count
+        FROM draft_test_pack_cards
+        WHERE draft_test_id = ?
+        GROUP BY
+            rarity,
+            type_line,
+            mana_value,
+            color_identity_json
+        """,
+        (parsed_draft_test_id,),
+    )
+    grouped_rows = cursor.fetchall()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total_cards
+        FROM draft_test_pack_cards
+        WHERE draft_test_id = ?
+        """,
+        (parsed_draft_test_id,),
+    )
+    total_row = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS total_packs
+        FROM draft_test_packs
+        WHERE draft_test_id = ?
+        """,
+        (parsed_draft_test_id,),
+    )
+    pack_row = cursor.fetchone()
+
+    conn.close()
+
+    rarity_counts = {}
+    type_counts = {}
+    mana_counts = {}
+    color_counts = {}
+
+    def get_primary_type(type_line):
+        clean_type_line = str(type_line or "").lower()
+
+        if "creature" in clean_type_line:
+            return "Creature"
+        if "instant" in clean_type_line:
+            return "Instant"
+        if "sorcery" in clean_type_line:
+            return "Sorcery"
+        if "artifact" in clean_type_line:
+            return "Artifact"
+        if "enchantment" in clean_type_line:
+            return "Enchantment"
+        if "planeswalker" in clean_type_line:
+            return "Planeswalker"
+        if "land" in clean_type_line:
+            return "Land"
+
+        return "Other"
+
+    def get_color_bucket(color_identity_json):
+        import json
+
+        try:
+            colors = json.loads(color_identity_json or "[]")
+            if not isinstance(colors, list):
+                colors = []
+        except Exception:
+            colors = []
+
+        clean_colors = [
+            str(color_value or "").strip().upper()
+            for color_value in colors
+            if str(color_value or "").strip()
+        ]
+
+        if not clean_colors:
+            return "Colorless"
+
+        if len(clean_colors) >= 2:
+            return "Multicolor"
+
+        color_map = {
+            "W": "White",
+            "U": "Blue",
+            "B": "Black",
+            "R": "Red",
+            "G": "Green",
+        }
+
+        return color_map.get(clean_colors[0], clean_colors[0])
+
+    def get_mana_key(mana_value):
+        if mana_value is None:
+            return "—"
+
+        try:
+            parsed_value = float(mana_value)
+        except (TypeError, ValueError):
+            return str(mana_value)
+
+        if parsed_value.is_integer():
+            return str(int(parsed_value))
+
+        return str(parsed_value)
+
+    for row in grouped_rows:
+        count = int(row["card_count"] or 0)
+
+        rarity = (row["rarity"] or "unknown").strip().lower() or "unknown"
+        primary_type = get_primary_type(row["type_line"])
+        mana_key = get_mana_key(row["mana_value"])
+        color_key = get_color_bucket(row["color_identity_json"])
+
+        rarity_counts[rarity] = rarity_counts.get(rarity, 0) + count
+        type_counts[primary_type] = type_counts.get(primary_type, 0) + count
+        mana_counts[mana_key] = mana_counts.get(mana_key, 0) + count
+        color_counts[color_key] = color_counts.get(color_key, 0) + count
+
+    return {
+        "ok": True,
+        "session": session_row,
+        "total_cards": int(total_row["total_cards"] or 0) if total_row else 0,
+        "total_packs": int(pack_row["total_packs"] or 0) if pack_row else 0,
+        "rarity_counts": rarity_counts,
+        "type_counts": type_counts,
+        "mana_counts": mana_counts,
+        "color_counts": color_counts,
+    }
+
 
 def get_draft_test_detail(draft_test_id):
     ensure_draft_testing_schema()

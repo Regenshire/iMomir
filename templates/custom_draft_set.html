@@ -3934,8 +3934,8 @@
             ["B", "Black"],
             ["R", "Red"],
             ["G", "Green"],
-            ["C", "Colorless"],
-            ["L", "Land"]
+            ["M", "Multicolor"],
+            ["C", "Colorless"]
         ].forEach(function (colorInfo) {
             const colorKey = colorInfo[0];
             const colorLabel = colorInfo[1];
@@ -3980,8 +3980,8 @@
             "B": 0,
             "R": 0,
             "G": 0,
-            "C": 0,
-            "L": 0
+            "M": 0,
+            "C": 0
         };
 
         const typeCounts = {
@@ -4021,20 +4021,17 @@
             }
 
             const colors = normalizeColorArray(row.dataset.colorIdentity || "[]");
-            const isLand = cleanTypeLine.indexOf("land") !== -1;
-
-            if (isLand) {
-                colorCounts["L"] += 1;
-            }
 
             if (!colors.length) {
                 colorCounts["C"] += 1;
+            } else if (colors.length >= 2) {
+                colorCounts["M"] += 1;
             } else {
-                colors.forEach(function (colorSymbol) {
-                    if (colorCounts[colorSymbol] !== undefined) {
-                        colorCounts[colorSymbol] += 1;
-                    }
-                });
+                const colorSymbol = colors[0];
+
+                if (colorCounts[colorSymbol] !== undefined) {
+                    colorCounts[colorSymbol] += 1;
+                }
             }
         });
 

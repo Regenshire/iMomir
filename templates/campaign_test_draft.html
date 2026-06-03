@@ -19,6 +19,8 @@
     data-pick-url="{{ url_for('campaign_chaos_test_draft_pick', draft_test_id=session.draft_test_id) }}"
     data-move-zone-url="{{ url_for('campaign_chaos_test_draft_pick_zone', draft_test_id=session.draft_test_id) }}"
     data-basic-land-url="{{ url_for('campaign_chaos_test_draft_basic_land', draft_test_id=session.draft_test_id) }}"
+    data-deckbuilder-url="{{ url_for('campaign_chaos_test_draft_deck_builder', draft_test_id=session.draft_test_id) }}"
+    data-full-stats-url="{{ url_for('campaign_chaos_test_draft_full_stats', draft_test_id=session.draft_test_id) }}"
 >
     <div class="campaign-test-draft-main-panel">
         <div class="campaign-test-draft-topbar">
@@ -172,6 +174,13 @@
                         <span>Status</span>
                         <strong>Deckbuilding</strong>
                     </div>
+
+                    <a
+                        href="{{ url_for('campaign_chaos_test_draft_deck_builder', draft_test_id=session.draft_test_id) }}"
+                        class="action-button campaign-test-draft-build-deck-button"
+                    >
+                        Build your Deck
+                    </a>
                 </div>
             </div>
             {% elif draft_state.current_pack_cards %}
@@ -375,6 +384,16 @@
                     >
                         <i class="fa-solid fa-grip"></i>
                     </button>
+
+                    <button
+                        type="button"
+                        id="campaignTestDraftPickedStackViewButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Deck Stack View"
+                        aria-label="Deck Stack View"
+                    >
+                        <i class="fa-solid fa-layer-group"></i>
+                    </button>
                 </div>
             </div>
 
@@ -427,6 +446,7 @@
                         data-card-name="{{ picked_card.card_name }}"
                         data-card-rarity="{{ picked_card.rarity or '' }}"
                         data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                        data-card-type-line="{{ picked_card.type_line or '' }}"
                     >
                         <img
                             src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
@@ -490,6 +510,7 @@
                         data-card-name="{{ picked_card.card_name }}"
                         data-card-rarity="{{ picked_card.rarity or '' }}"
                         data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
+                        data-card-type-line="{{ picked_card.type_line or '' }}"
                     >
                         <img
                             src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
@@ -542,7 +563,7 @@
                 <div>
                     <h2 id="campaignTestDraftStatsTitle" class="campaign-add-pack-title">Draft Stats</h2>
                     <p class="campaign-add-pack-subtitle">
-                        Stats are currently calculated from the visible current pack cards. Deck stats will be added after pick persistence is enabled.
+                        View stats for the current pack during drafting, or the full draft pool after the draft is complete.
                     </p>
                 </div>
 
@@ -566,20 +587,33 @@
         <div class="campaign-add-pack-dialog campaign-test-draft-virtual-dialog" role="dialog" aria-modal="true" aria-labelledby="campaignTestDraftVirtualUsersTitle">
             <div class="campaign-add-pack-header">
                 <div>
-                    <h2 id="campaignTestDraftVirtualUsersTitle" class="campaign-add-pack-title">Virtual Users</h2>
+                    <h2 id="campaignTestDraftVirtualUsersTitle" class="campaign-add-pack-title campaign-test-draft-virtual-title">Virtual Users</h2>
                     <p class="campaign-add-pack-subtitle">
                         Review virtual drafter picks by player, including pack/pick order and draft stats.
                     </p>
                 </div>
 
-                <button
-                    type="button"
-                    id="campaignTestDraftVirtualUsersCloseButton"
-                    class="campaign-add-pack-close-button"
-                    aria-label="Close Virtual Users"
-                >
-                    ×
-                </button>
+                <div class="campaign-test-draft-virtual-header-actions">
+                    <button
+                        type="button"
+                        id="campaignTestDraftVirtualUsersMaximizeButton"
+                        class="campaign-test-draft-virtual-header-button"
+                        title="Maximize Virtual Users"
+                        aria-label="Maximize Virtual Users"
+                        aria-pressed="false"
+                    >
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="campaignTestDraftVirtualUsersCloseButton"
+                        class="campaign-add-pack-close-button"
+                        aria-label="Close Virtual Users"
+                    >
+                        ×
+                    </button>
+                </div>
             </div>
 
             <div class="campaign-test-draft-virtual-controls">
@@ -635,6 +669,16 @@
                         aria-label="Virtual User Grid View"
                     >
                         <i class="fa-solid fa-grip"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="campaignTestDraftVirtualStackViewButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Stack View"
+                        aria-label="Virtual User Stack View"
+                    >
+                        <i class="fa-solid fa-layer-group"></i>
                     </button>
                 </div>
             </div>
@@ -700,13 +744,16 @@
 
     const virtualUsersButton = document.getElementById("campaignTestDraftVirtualUsersButton");
     const virtualUsersModal = document.getElementById("campaignTestDraftVirtualUsersModal");
+    const virtualUsersTitle = document.getElementById("campaignTestDraftVirtualUsersTitle");
     const virtualUsersBackdrop = document.getElementById("campaignTestDraftVirtualUsersBackdrop");
+    const virtualUsersMaximizeButton = document.getElementById("campaignTestDraftVirtualUsersMaximizeButton");
     const virtualUsersCloseButton = document.getElementById("campaignTestDraftVirtualUsersCloseButton");
     const virtualPlayerSelect = document.getElementById("campaignTestDraftVirtualPlayerSelect");
     const virtualSortSelect = document.getElementById("campaignTestDraftVirtualSortSelect");
     const virtualStatsToggleButton = document.getElementById("campaignTestDraftVirtualStatsToggleButton");
     const virtualListViewButton = document.getElementById("campaignTestDraftVirtualListViewButton");
     const virtualGridViewButton = document.getElementById("campaignTestDraftVirtualGridViewButton");
+    const virtualStackViewButton = document.getElementById("campaignTestDraftVirtualStackViewButton");
     const virtualSummary = document.getElementById("campaignTestDraftVirtualSummary");
     const virtualStatsPanel = document.getElementById("campaignTestDraftVirtualStatsPanel");
     const virtualStatsBody = document.getElementById("campaignTestDraftVirtualStatsBody");
@@ -724,13 +771,10 @@
     const pickedSortSelect = document.getElementById("campaignTestDraftPickedSortSelect");
     const pickedListViewButton = document.getElementById("campaignTestDraftPickedListViewButton");
     const pickedGridViewButton = document.getElementById("campaignTestDraftPickedGridViewButton");
+    const pickedStackViewButton = document.getElementById("campaignTestDraftPickedStackViewButton");
 
     if (!workspace) {
         return;
-    }
-
-    if (!cardList && statsButton) {
-        statsButton.disabled = true;
     }
 
     let currentPage = 1;
@@ -747,6 +791,8 @@
     const pickUrl = workspace.dataset.pickUrl || "";
     const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
     const basicLandUrl = workspace.dataset.basicLandUrl || "";
+    const deckbuilderUrl = workspace.dataset.deckbuilderUrl || "";
+    const fullStatsUrl = workspace.dataset.fullStatsUrl || "";
 
     function escapeHtml(value) {
         return String(value || "")
@@ -797,7 +843,7 @@
             : "Pack " + escapeHtml(pickedCard.pack_number) + " • Pick " + escapeHtml(pickedCard.pick_number);
 
         return (
-            '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '">' +
+            '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(pickedCard.type_line || "") + '">' +
                 '<img src="' + escapeHtml(pickedCard.image_src) + '" alt="' + escapeHtml(pickedCard.card_name) + '" class="campaign-test-draft-picked-thumb">' +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(pickedCard.card_name) + '</div>' +
@@ -1040,6 +1086,148 @@
         return "Other";
     }
 
+        function getStatsDisplayLabel(groupTitle, rawKey) {
+        const cleanTitle = String(groupTitle || "").trim().toLowerCase();
+        const cleanKey = String(rawKey || "").trim();
+        const normalizedKey = cleanKey.toLowerCase();
+
+        if (cleanTitle === "rarity") {
+            const rarityLabels = {
+                "common": "Common",
+                "uncommon": "Uncommon",
+                "rare": "Rare",
+                "mythic": "Mythic"
+            };
+
+            return rarityLabels[normalizedKey] || cleanKey;
+        }
+
+        if (cleanTitle === "color") {
+            const colorLabels = {
+                "white": "White",
+                "blue": "Blue",
+                "black": "Black",
+                "red": "Red",
+                "green": "Green",
+                "multicolor": "Multicolor",
+                "colorless": "Colorless",
+                "w": "White",
+                "u": "Blue",
+                "b": "Black",
+                "r": "Red",
+                "g": "Green",
+                "m": "Multicolor",
+                "c": "Colorless"
+            };
+
+            return colorLabels[normalizedKey] || cleanKey;
+        }
+
+        return cleanKey;
+    }
+
+    function getStatsSortRank(groupTitle, rawKey) {
+        const cleanTitle = String(groupTitle || "").trim().toLowerCase();
+        const normalizedKey = String(rawKey || "").trim().toLowerCase();
+
+        if (cleanTitle === "rarity") {
+            const rarityOrder = {
+                "common": 1,
+                "uncommon": 2,
+                "rare": 3,
+                "mythic": 4
+            };
+
+            return rarityOrder[normalizedKey] || 999;
+        }
+
+        if (cleanTitle === "color") {
+            const colorOrder = {
+                "white": 1,
+                "w": 1,
+                "blue": 2,
+                "u": 2,
+                "black": 3,
+                "b": 3,
+                "red": 4,
+                "r": 4,
+                "green": 5,
+                "g": 5,
+                "multicolor": 6,
+                "m": 6,
+                "colorless": 7,
+                "c": 7
+            };
+
+            return colorOrder[normalizedKey] || 999;
+        }
+
+        return 999;
+    }
+
+    function getStatsSortedKeys(groupTitle, counts) {
+        return Object.keys(counts || {}).sort(function (a, b) {
+            const aRank = getStatsSortRank(groupTitle, a);
+            const bRank = getStatsSortRank(groupTitle, b);
+
+            if (aRank !== bRank) {
+                return aRank - bRank;
+            }
+
+            const aNumber = parseFloat(a);
+            const bNumber = parseFloat(b);
+
+            if (Number.isFinite(aNumber) && Number.isFinite(bNumber)) {
+                return aNumber - bNumber;
+            }
+
+            return String(a).localeCompare(String(b));
+        });
+    }
+
+    function renderGroupedStatsPanel(options) {
+        if (!statsBody) {
+            return;
+        }
+
+        const totalLabel = options.totalLabel || "Cards";
+        const totalCount = options.totalCount || 0;
+        const rarityCounts = options.rarityCounts || {};
+        const typeCounts = options.typeCounts || {};
+        const manaCounts = options.manaCounts || {};
+        const colorCounts = options.colorCounts || {};
+        const extraSummary = options.extraSummary || "";
+
+        function renderGroup(title, counts) {
+            const keys = getStatsSortedKeys(title, counts);
+
+            if (!keys.length) {
+                return "";
+            }
+
+            return (
+                '<div class="campaign-test-draft-stat-group">' +
+                    '<h3>' + escapeHtml(title) + '</h3>' +
+                    keys.map(function (key) {
+                        return '<div class="campaign-test-draft-stat-row"><span>' + escapeHtml(getStatsDisplayLabel(title, key)) + '</span><strong>' + escapeHtml(counts[key]) + '</strong></div>';
+                    }).join("") +
+                '</div>'
+            );
+        }
+
+        statsBody.innerHTML =
+            '<div class="campaign-test-draft-stats-summary">' +
+                '<div class="campaign-test-draft-stat-total"><span>' + escapeHtml(totalLabel) + '</span><strong>' + escapeHtml(totalCount) + '</strong></div>' +
+                extraSummary +
+            '</div>' +
+            '<div class="campaign-test-draft-stats-grid">' +
+                renderGroup("Rarity", rarityCounts) +
+                renderGroup("Type", typeCounts) +
+                renderGroup("Mana Value", manaCounts) +
+                renderGroup("Color", colorCounts) +
+            '</div>';
+    }
+
     function renderStats() {
         if (!statsBody) {
             return;
@@ -1060,32 +1248,48 @@
             manaCounts[manaValue] = (manaCounts[manaValue] || 0) + 1;
         });
 
-        function renderGroup(title, counts) {
-            const keys = Object.keys(counts).sort();
+        renderGroupedStatsPanel({
+            totalLabel: "Current Pack Cards",
+            totalCount: cards.length,
+            rarityCounts: rarityCounts,
+            typeCounts: typeCounts,
+            manaCounts: manaCounts,
+            colorCounts: {}
+        });
+    }
 
-            if (!keys.length) {
-                return "";
-            }
-
-            return (
-                '<div class="campaign-test-draft-stat-group">' +
-                    '<h3>' + title + '</h3>' +
-                    keys.map(function (key) {
-                        return '<div class="campaign-test-draft-stat-row"><span>' + key + '</span><strong>' + counts[key] + '</strong></div>';
-                    }).join("") +
-                '</div>'
-            );
+    async function renderFullDraftStats() {
+        if (!fullStatsUrl) {
+            renderStats();
+            return;
         }
 
-        statsBody.innerHTML =
-            '<div class="campaign-test-draft-stats-summary">' +
-                '<div class="campaign-test-draft-stat-total"><span>Current Pack Cards</span><strong>' + cards.length + '</strong></div>' +
-            '</div>' +
-            '<div class="campaign-test-draft-stats-grid">' +
-                renderGroup("Rarity", rarityCounts) +
-                renderGroup("Type", typeCounts) +
-                renderGroup("Mana Value", manaCounts) +
-            '</div>';
+        const response = await fetch(fullStatsUrl, {
+            method: "GET",
+            headers: {
+                "Accept": "application/json",
+                "X-Requested-With": "XMLHttpRequest"
+            }
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+            throw new Error(payload.message || "Could not load full draft stats.");
+        }
+
+        renderGroupedStatsPanel({
+            totalLabel: "Full Draft Cards",
+            totalCount: payload.total_cards || 0,
+            rarityCounts: payload.rarity_counts || {},
+            typeCounts: payload.type_counts || {},
+            manaCounts: payload.mana_counts || {},
+            colorCounts: payload.color_counts || {},
+            extraSummary:
+                '<div class="campaign-test-draft-stat-total">' +
+                    '<span>Total Packs</span><strong>' + escapeHtml(payload.total_packs || 0) + '</strong>' +
+                '</div>'
+        });
     }
 
     function openStatsModal() {
@@ -1093,10 +1297,14 @@
             return;
         }
 
-        renderStats();
-
         statsModal.classList.remove("hidden");
         statsModal.setAttribute("aria-hidden", "false");
+
+        if (isDraftComplete()) {
+            renderFullDraftStats().catch(showDraftAjaxError);
+        } else {
+            renderStats();
+        }
     }
 
     function closeStatsModal() {
@@ -1111,6 +1319,7 @@
     let virtualUsersViewMode = "list";
     let virtualUsersSortMode = "pick-asc";
     let draftCardSize = 100;
+    let virtualUsersMaximized = false;
     let virtualStatsVisible = true;
     let lastVirtualUsersPayload = null;
 
@@ -1168,7 +1377,7 @@
         const stats = buildVirtualCardStats(cards || []);
 
         function renderGroup(title, counts) {
-            const keys = Object.keys(counts || {}).sort();
+            const keys = getStatsSortedKeys(title, counts);
 
             if (!keys.length) {
                 return "";
@@ -1178,7 +1387,7 @@
                 '<div class="campaign-test-draft-stat-group">' +
                     '<h3>' + escapeHtml(title) + '</h3>' +
                     keys.map(function (key) {
-                        return '<div class="campaign-test-draft-stat-row"><span>' + escapeHtml(key) + '</span><strong>' + escapeHtml(counts[key]) + '</strong></div>';
+                        return '<div class="campaign-test-draft-stat-row"><span>' + escapeHtml(getStatsDisplayLabel(title, key)) + '</span><strong>' + escapeHtml(counts[key]) + '</strong></div>';
                     }).join("") +
                 '</div>'
             );
@@ -1372,7 +1581,7 @@
         ].filter(Boolean).join(" • ");
 
         return (
-            '<div class="campaign-test-draft-virtual-card" data-card-name="' + escapeHtml(cardName) + '">' +
+            '<div class="campaign-test-draft-virtual-card" data-card-name="' + escapeHtml(cardName) + '" data-card-type-line="' + escapeHtml(card.type_line || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '">' +
                 '<img src="' + escapeHtml(card.image_src || "") + '" alt="' + escapeHtml(cardName) + '" class="campaign-test-draft-virtual-card-image">' +
                 '<div class="campaign-test-draft-virtual-card-main">' +
                     '<div class="campaign-test-draft-virtual-card-name">' + escapeHtml(cardName) + '</div>' +
@@ -1461,6 +1670,7 @@
         virtualUsersModal.classList.remove("hidden");
         virtualUsersModal.setAttribute("aria-hidden", "false");
 
+        setVirtualUsersMaximized(false);
         setDraftCardSize(draftCardSize);
         loadVirtualUsers("").catch(showDraftAjaxError);
     }
@@ -1474,6 +1684,29 @@
         virtualUsersModal.setAttribute("aria-hidden", "true");
     }
 
+    function setVirtualUsersMaximized(isMaximized) {
+        virtualUsersMaximized = Boolean(isMaximized);
+
+        const virtualDialog = virtualUsersModal
+            ? virtualUsersModal.querySelector(".campaign-test-draft-virtual-dialog")
+            : null;
+
+        if (virtualDialog) {
+            virtualDialog.classList.toggle("campaign-test-draft-virtual-dialog-maximized", virtualUsersMaximized);
+        }
+
+        if (virtualUsersMaximizeButton) {
+            virtualUsersMaximizeButton.classList.toggle("campaign-test-draft-virtual-header-button-active", virtualUsersMaximized);
+            virtualUsersMaximizeButton.setAttribute("aria-pressed", virtualUsersMaximized ? "true" : "false");
+            virtualUsersMaximizeButton.title = virtualUsersMaximized ? "Restore Virtual Users" : "Maximize Virtual Users";
+            virtualUsersMaximizeButton.setAttribute("aria-label", virtualUsersMaximized ? "Restore Virtual Users" : "Maximize Virtual Users");
+
+            virtualUsersMaximizeButton.innerHTML = virtualUsersMaximized
+                ? '<i class="fa-solid fa-compress"></i>'
+                : '<i class="fa-solid fa-expand"></i>';
+        }
+    }
+
     function setDraftCardSize(sizePercent) {
         const parsedSize = parseInt(sizePercent || "100", 10);
         const safeSize = Number.isFinite(parsedSize)
@@ -1484,20 +1717,87 @@
 
         const baseCardWidth = 184;
         const cardWidth = Math.round(baseCardWidth * (safeSize / 100));
+        const stackColumnWidth = Math.max(112, cardWidth);
+        const stackCardWidth = Math.max(96, stackColumnWidth - 16);
+        const visibleStackStrip = Math.max(30, Math.round(stackCardWidth * 0.22));
+        const cardHeight = Math.round(stackCardWidth * 1.40);
+        const overlap = Math.max(0, cardHeight - visibleStackStrip);
 
         workspace.style.setProperty("--campaign-test-draft-card-width", cardWidth + "px");
+        workspace.style.setProperty("--campaign-test-draft-stack-column-width", stackColumnWidth + "px");
+        workspace.style.setProperty("--campaign-test-draft-stack-overlap", "-" + overlap + "px");
 
         if (cardSizeSelect) {
             cardSizeSelect.value = String(safeSize);
         }
+
+        if (pickedViewMode === "stack") {
+            buildPickedStackColumnsForDeck();
+        }
+
+        if (virtualUsersViewMode === "stack") {
+            buildVirtualStackColumns();
+        }
+    }
+
+    function getVirtualCardElementsForStack() {
+        if (!virtualCards) {
+            return [];
+        }
+
+        return Array.from(virtualCards.querySelectorAll(".campaign-test-draft-virtual-card"));
+    }
+
+    function restoreVirtualCardsFromStack() {
+        if (!virtualCards) {
+            return;
+        }
+
+        const cards = getVirtualCardElementsForStack();
+
+        virtualCards.innerHTML = "";
+
+        cards.forEach(function (cardElement) {
+            virtualCards.appendChild(cardElement);
+        });
+    }
+
+    function buildVirtualStackColumns() {
+        if (!virtualCards) {
+            return;
+        }
+
+        const cards = getVirtualCardElementsForStack();
+        const columns = buildStackColumnShells(virtualCards, "campaign-test-draft-virtual-stack-column");
+
+        cards.forEach(function (cardElement) {
+            const columnKey = getStackColumnKeyFromValues(
+                cardElement.dataset.cardName || "",
+                cardElement.dataset.cardTypeLine || "",
+                cardElement.dataset.cardManaValue || ""
+            );
+
+            const targetColumn = columns[columnKey] || columns["0"];
+            targetColumn.appendChild(cardElement);
+        });
+
+        hideEmptyStackColumns(virtualCards);
+        bindVirtualCardHoverPreviews();
     }
 
     function setVirtualUsersViewMode(viewMode) {
-        virtualUsersViewMode = viewMode === "grid" ? "grid" : "list";
+        const nextViewMode = viewMode === "stack" ? "stack" : viewMode === "grid" ? "grid" : "list";
+
+        if (virtualUsersViewMode === "stack" && nextViewMode !== "stack") {
+            restoreVirtualCardsFromStack();
+        }
+
+        virtualUsersViewMode = nextViewMode;
 
         if (virtualCards) {
             virtualCards.classList.toggle("campaign-test-draft-virtual-cards-grid", virtualUsersViewMode === "grid");
             virtualCards.classList.toggle("campaign-test-draft-virtual-cards-list", virtualUsersViewMode === "list");
+            virtualCards.classList.toggle("campaign-test-draft-virtual-cards-stack", virtualUsersViewMode === "stack");
         }
 
         if (virtualListViewButton) {
@@ -1506,6 +1806,14 @@
 
         if (virtualGridViewButton) {
             virtualGridViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", virtualUsersViewMode === "grid");
+        }
+
+        if (virtualStackViewButton) {
+            virtualStackViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", virtualUsersViewMode === "stack");
+        }
+
+        if (virtualUsersViewMode === "stack") {
+            buildVirtualStackColumns();
         }
     }
 
@@ -1668,6 +1976,85 @@
         return (cards || []).slice().sort(comparePickedCards);
     }
 
+    function getStackColumnDefinitions() {
+        return [
+            { key: "0", label: "0" },
+            { key: "1", label: "1" },
+            { key: "2", label: "2" },
+            { key: "3", label: "3" },
+            { key: "4", label: "4" },
+            { key: "5", label: "5" },
+            { key: "6", label: "6+" },
+            { key: "land", label: "Lands" }
+        ];
+    }
+
+    function getStackColumnKeyFromValues(cardName, typeLine, manaValue) {
+        const cleanCardName = String(cardName || "").trim();
+        const cleanTypeLine = String(typeLine || "").toLowerCase();
+
+        if (
+            cleanTypeLine.indexOf("land") !== -1
+            || cleanCardName.match(/^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/i)
+        ) {
+            return "land";
+        }
+
+        const parsedManaValue = parseFloat(manaValue);
+
+        if (!Number.isFinite(parsedManaValue)) {
+            return "0";
+        }
+
+        if (parsedManaValue >= 6) {
+            return "6";
+        }
+
+        return String(Math.max(0, Math.floor(parsedManaValue)));
+    }
+
+    function buildStackColumnShells(containerElement, stackClassName) {
+        const columns = {};
+
+        if (!containerElement) {
+            return columns;
+        }
+
+        containerElement.innerHTML = "";
+
+        getStackColumnDefinitions().forEach(function (columnDef) {
+            const column = document.createElement("div");
+            column.className = stackClassName;
+            column.dataset.stackColumn = columnDef.key;
+
+            const title = document.createElement("div");
+            title.className = "campaign-test-draft-stack-column-title";
+            title.textContent = columnDef.label;
+
+            const body = document.createElement("div");
+            body.className = "campaign-test-draft-stack-column-body";
+
+            column.appendChild(title);
+            column.appendChild(body);
+            containerElement.appendChild(column);
+
+            columns[columnDef.key] = body;
+        });
+
+        return columns;
+    }
+
+    function hideEmptyStackColumns(containerElement) {
+        if (!containerElement) {
+            return;
+        }
+
+        Array.from(containerElement.querySelectorAll("[data-stack-column]")).forEach(function (columnElement) {
+            const hasCards = Boolean(columnElement.querySelector(".campaign-test-draft-picked-row, .campaign-test-draft-virtual-card"));
+            columnElement.classList.toggle("hidden", !hasCards);
+        });
+    }
+
     function sortExistingPickedZone(listElement) {
         if (!listElement) {
             return;
@@ -1683,6 +2070,52 @@
     function sortExistingPickedZones() {
         sortExistingPickedZone(deckList);
         sortExistingPickedZone(sideboardList);
+    }
+
+    function getPickedDeckCardsForStack() {
+        if (!deckList) {
+            return [];
+        }
+
+        return Array.from(deckList.querySelectorAll(".campaign-test-draft-picked-row"));
+    }
+
+    function restorePickedDeckFromStack() {
+        if (!deckList) {
+            return;
+        }
+
+        const cards = getPickedDeckCardsForStack();
+
+        deckList.innerHTML = "";
+
+        cards.forEach(function (cardElement) {
+            deckList.appendChild(cardElement);
+        });
+    }
+
+    function buildPickedStackColumnsForDeck() {
+        if (!deckList) {
+            return;
+        }
+
+        const cards = getPickedDeckCardsForStack().sort(comparePickedCards);
+        const columns = buildStackColumnShells(deckList, "campaign-test-draft-stack-column");
+
+        cards.forEach(function (cardElement) {
+            const columnKey = getStackColumnKeyFromValues(
+                cardElement.dataset.cardName || "",
+                cardElement.dataset.cardTypeLine || "",
+                cardElement.dataset.cardManaValue || ""
+            );
+
+            const targetColumn = columns[columnKey] || columns["0"];
+            targetColumn.appendChild(cardElement);
+        });
+
+        hideEmptyStackColumns(deckList);
+        bindDraftDragAndDrop();
+        bindPickedCardHoverPreviews();
     }
 
     function renderPickedZone(listElement, cards, emptyText, targetZone) {
@@ -1704,10 +2137,17 @@
     }
 
     function setPickedViewMode(viewMode) {
-        pickedViewMode = viewMode === "grid" ? "grid" : "list";
+        const nextViewMode = viewMode === "stack" ? "stack" : viewMode === "grid" ? "grid" : "list";
+
+        if (pickedViewMode === "stack" && nextViewMode !== "stack") {
+            restorePickedDeckFromStack();
+        }
+
+        pickedViewMode = nextViewMode;
 
         workspace.classList.toggle("campaign-test-draft-picked-grid-active", pickedViewMode === "grid");
         workspace.classList.toggle("campaign-test-draft-picked-list-active", pickedViewMode === "list");
+        workspace.classList.toggle("campaign-test-draft-picked-stack-active", pickedViewMode === "stack");
 
         if (pickedListViewButton) {
             pickedListViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", pickedViewMode === "list");
@@ -1717,7 +2157,11 @@
             pickedGridViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", pickedViewMode === "grid");
         }
 
-        if (pickedViewMode === "grid") {
+        if (pickedStackViewButton) {
+            pickedStackViewButton.classList.toggle("campaign-test-draft-zone-view-button-active", pickedViewMode === "stack");
+        }
+
+        if (pickedViewMode === "grid" || pickedViewMode === "stack") {
             const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
             const targetWidth = Math.max(620, Math.round(viewportWidth * 0.50));
             const maxWidth = Math.max(460, viewportWidth - 520);
@@ -1729,11 +2173,19 @@
         } else if (!workspace.dataset.userResizedSidePanel) {
             workspace.style.setProperty("--campaign-test-draft-side-width", "340px");
         }
+
+        if (pickedViewMode === "stack") {
+            buildPickedStackColumnsForDeck();
+        } else {
+            sortExistingPickedZones();
+            bindDraftDragAndDrop();
+            bindPickedCardHoverPreviews();
+        }
     }
 
     function clampDraftSidePanelWidth(rawWidth) {
         const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-        const minWidth = pickedViewMode === "grid" ? 520 : 300;
+        const minWidth = pickedViewMode === "grid" || pickedViewMode === "stack" ? 520 : 300;
         const maxWidth = Math.max(minWidth, viewportWidth - 430);
 
         return Math.max(minWidth, Math.min(rawWidth, maxWidth));
@@ -1817,6 +2269,7 @@
         bindDraftDragAndDrop();
         bindPickedCardHoverPreviews();
         bindBasicLandButtons();
+        setPickedViewMode(pickedViewMode);
 
         currentPage = 1;
         applyPagination();
@@ -1912,6 +2365,7 @@
                     '<div><span>Deck</span><strong>' + escapeHtml(deckCount) + '</strong></div>' +
                     '<div><span>Sideboard</span><strong>' + escapeHtml(sideboardCount) + '</strong></div>' +
                     '<div><span>Status</span><strong>Deckbuilding</strong></div>' +
+                    '<a href="' + escapeHtml((payload.deckbuilder_url || deckbuilderUrl || "")) + '" class="action-button campaign-test-draft-build-deck-button">Build your Deck</a>' +
                 '</div>' +
             '</div>';
     }
@@ -2396,6 +2850,12 @@
         });
     }
 
+    if (pickedStackViewButton) {
+        pickedStackViewButton.addEventListener("click", function () {
+            setPickedViewMode("stack");
+        });
+    }
+
     if (resizeHandle) {
         resizeHandle.addEventListener("pointerdown", function (event) {
             isResizingDraftPanels = true;
@@ -2488,6 +2948,20 @@
         virtualUsersBackdrop.addEventListener("click", closeVirtualUsersModal);
     }
 
+    if (virtualUsersMaximizeButton) {
+        virtualUsersMaximizeButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            setVirtualUsersMaximized(!virtualUsersMaximized);
+        });
+    }
+
+    if (virtualUsersTitle) {
+        virtualUsersTitle.addEventListener("dblclick", function () {
+            setVirtualUsersMaximized(!virtualUsersMaximized);
+        });
+    }
+
     if (virtualUsersCloseButton) {
         virtualUsersCloseButton.addEventListener("click", closeVirtualUsersModal);
     }
@@ -2523,6 +2997,12 @@
     if (virtualGridViewButton) {
         virtualGridViewButton.addEventListener("click", function () {
             setVirtualUsersViewMode("grid");
+        });
+    }
+
+    if (virtualStackViewButton) {
+        virtualStackViewButton.addEventListener("click", function () {
+            setVirtualUsersViewMode("stack");
         });
     }
 

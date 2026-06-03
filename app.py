@@ -177,17 +177,21 @@ from db.draftdb import ensure_draft_testing_schema
 
 from db.deckdb import (
     add_basic_land_to_deck,
+    archive_deck,
     build_deckbuilder_context_for_draft_test,
     get_basic_land_counts_for_deck,
     get_deck_by_id,
+    get_loadable_deck_rows,
     get_or_create_deck_for_draft_test,
     remove_basic_land_from_deck,
+    update_deck_settings,
     ensure_deck_schema,
 )
 
 from modes.draft import (
     create_draft_test_from_pack_pool,
     get_draft_test_detail_state,
+    get_draft_test_full_card_stats_state,
     get_draft_test_virtual_player_detail_state,
     move_human_draft_test_pick_zone_state,
     normalize_draft_test_start_payload,
@@ -11624,15 +11628,171 @@ def serialize_deckbuilder_context_for_ajax(deckbuilder_context):
         "basic_land_names": deckbuilder_context.get("basic_land_names") or [],
     }
 
+VIRTUAL_DRAFTER_COLOR_PAIR_NAMES = {
+    "GU": [
+        "Carl, Simic Intern",
+        "Ooze Wrangler",
+        "Biomancer’s Regret",
+        "Dave, Adapted Twice",
+        "Blorpo, Lab Familiar",
+        "Failed Krasis",
+        "Mostly Merfolk",
+        "The Extra Limb",
+        "Experiment Maybe",
+        "Subjectively Alive",
+        "Frog Lizard Steve",
+        "Ooze with Ambition",
+        "Simic Lunch Break",
+        "Momir’s Tax Write-Off",
+    ],
+    "UG": [
+        "Carl, Simic Intern",
+        "Ooze Wrangler",
+        "Biomancer’s Regret",
+        "Dave, Adapted Twice",
+        "Blorpo, Lab Familiar",
+        "Failed Krasis",
+        "Mostly Merfolk",
+        "The Extra Limb",
+        "Experiment Maybe",
+        "Subjectively Alive",
+        "Frog Lizard Steve",
+        "Ooze with Ambition",
+        "Simic Lunch Break",
+        "Momir’s Tax Write-Off",
+    ],
+    "RG": [
+        "Grunn Jr.",
+        "Project Beefslab",
+        "Trample Enthusiast",
+        "Chad, Apex Intern",
+        "The Mana Sink",
+        "Bobo, the Vanillamorph",
+    ],
+    "GR": [
+        "Grunn Jr.",
+        "Project Beefslab",
+        "Trample Enthusiast",
+        "Chad, Apex Intern",
+        "The Mana Sink",
+        "Bobo, the Vanillamorph",
+    ],
+    "UR": [
+        "Unstable Homunculus",
+        "The Backup Clone",
+        "The Wrong Token",
+        "The 0/1 Problem",
+        "Accidentally Hexproof",
+    ],
+    "RU": [
+        "Unstable Homunculus",
+        "The Backup Clone",
+        "The Wrong Token",
+        "The 0/1 Problem",
+        "Accidentally Hexproof",
+    ],
+    "BR": [
+        "Larry, Formerly Human",
+        "Mutant #24601",
+        "Squee’s Backup",
+        "The Wrong Token",
+    ],
+    "RB": [
+        "Larry, Formerly Human",
+        "Mutant #24601",
+        "Squee’s Backup",
+        "The Wrong Token",
+    ],
+    "WB": [
+        "Fblthp’s Cousin",
+        "The 0/1 Problem",
+        "The Backup Clone",
+        "Subjectively Alive",
+    ],
+    "BW": [
+        "Fblthp’s Cousin",
+        "The 0/1 Problem",
+        "The Backup Clone",
+        "Subjectively Alive",
+    ],
+}
+
+VIRTUAL_DRAFTER_FALLBACK_NAMES = [
+    "Bobo, the Vanillamorph",
+    "Fblthp’s Cousin",
+    "Squee’s Backup",
+    "The 0/1 Problem",
+    "Unstable Homunculus",
+    "Larry, Formerly Human",
+    "Mutant #24601",
+    "Project Beefslab",
+    "Accidentally Hexproof",
+    "The Backup Clone",
+    "Gooey Gary",
+    "The Mana Sink",
+    "The Wrong Token",
+    "Momir’s Tax Write-Off",
+]
+
+
+def get_virtual_drafter_friendly_name(row):
+    if not row:
+        return "Test Subject - Unknown"
+
+    try:
+        seat_index = int(row["seat_index"] or 0)
+    except (TypeError, ValueError):
+        seat_index = 0
+
+    subject_number = max(1, seat_index)
+
+    color_1 = (row["color_preference_1"] or "").strip().upper()
+    color_2 = (row["color_preference_2"] or "").strip().upper()
+    color_pair_key = f"{color_1}{color_2}"
+
+    candidate_names = VIRTUAL_DRAFTER_COLOR_PAIR_NAMES.get(color_pair_key)
+
+    if not candidate_names:
+        sorted_pair_key = "".join(sorted([color_1, color_2]))
+        candidate_names = VIRTUAL_DRAFTER_COLOR_PAIR_NAMES.get(sorted_pair_key)
+
+    if not candidate_names:
+        candidate_names = VIRTUAL_DRAFTER_FALLBACK_NAMES
+
+    try:
+        draft_test_id = int(row["draft_test_id"] or 0)
+    except (TypeError, ValueError):
+        draft_test_id = 0
+
+    try:
+        draft_test_player_id = int(row["draft_test_player_id"] or 0)
+    except (TypeError, ValueError):
+        draft_test_player_id = 0
+
+    name_index = (
+        draft_test_id
+        + draft_test_player_id
+        + (seat_index * 7)
+        + sum(ord(character) for character in color_pair_key)
+    ) % len(candidate_names)
+
+    return f"Test Subject {subject_number} - {candidate_names[name_index]}"
+
 def serialize_draft_test_virtual_player(row):
     if not row:
         return None
+
+    is_human = int(row["is_human"] or 0) == 1
+    display_name = row["display_name"] or ""
+
+    if not is_human:
+        display_name = get_virtual_drafter_friendly_name(row)
 
     return {
         "draft_test_player_id": row["draft_test_player_id"],
         "draft_test_id": row["draft_test_id"],
         "seat_index": row["seat_index"],
-        "display_name": row["display_name"] or "",
+        "display_name": display_name,
         "is_human": row["is_human"],
         "campaign_player_id": row["campaign_player_id"] if "campaign_player_id" in row.keys() else None,
         "portrait_image_path": row["portrait_image_path"] if "portrait_image_path" in row.keys() else "",
@@ -11675,6 +11835,10 @@ def serialize_draft_test_state_for_ajax(draft_state):
     return {
         "ok": True,
         "session": serialize_draft_test_row(session),
+        "deckbuilder_url": url_for(
+            "campaign_chaos_test_draft_deck_builder",
+            draft_test_id=session["draft_test_id"],
+        ) if session else "",
         "current_human_pack": serialize_draft_test_row(current_human_pack),
         "current_pack_cards": [
             serialize_draft_test_card(card)
@@ -11700,37 +11864,80 @@ def campaign_chaos_test_draft(draft_test_id):
         flash(draft_state.get("message") or "Test Draft was not found.")
         return redirect(url_for("campaign_chaos_packs"))
 
-    session_row = draft_state.get("session")
-    session_status = (session_row["status"] if session_row else "") or ""
-
-    if session_status == "complete":
-        deckbuilder_context = build_deckbuilder_context_for_draft_test(draft_state)
-
-        if not deckbuilder_context.get("ok"):
-            flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
-            return redirect(url_for("campaign_chaos_packs"))
-
-        deckbuilder_context["routes"] = {
-            "move_zone_url": url_for(
-                "campaign_chaos_test_draft_pick_zone",
-                draft_test_id=session_row["draft_test_id"],
-            ),
-            "basic_land_url": url_for(
-                "deckbuilder_basic_land",
-                deck_id=deckbuilder_context["deck_id"],
-            ),
-            "back_url": url_for("campaign_chaos_packs"),
-        }
-
-        return render_template(
-            "deckbuilder.html",
-            deckbuilder=deckbuilder_context,
-        )
-
     return render_template(
         "campaign_test_draft.html",
         draft_state=draft_state,
     )
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/deck-builder", methods=["GET"])
+def campaign_chaos_test_draft_deck_builder(draft_test_id):
+    draft_state = get_draft_test_detail_state(draft_test_id)
+
+    if not draft_state.get("ok"):
+        flash(draft_state.get("message") or "Test Draft was not found.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    session_row = draft_state.get("session")
+    session_status = (session_row["status"] if session_row else "") or ""
+
+    if session_status != "complete":
+        flash("The draft is not complete yet.")
+        return redirect(url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=draft_test_id,
+        ))
+
+    preferred_deck_id = request.args.get("deck_id")
+
+    deckbuilder_context = build_deckbuilder_context_for_draft_test(
+        draft_state,
+        preferred_deck_id=preferred_deck_id,
+    )
+
+    if not deckbuilder_context.get("ok"):
+        flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
+        return redirect(url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=draft_test_id,
+        ))
+
+    deckbuilder_context["routes"] = {
+        "move_zone_url": url_for(
+            "campaign_chaos_test_draft_pick_zone",
+            draft_test_id=session_row["draft_test_id"],
+        ),
+        "basic_land_url": url_for(
+            "deckbuilder_basic_land",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
+        "back_url": url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=session_row["draft_test_id"],
+        ),
+    }
+
+    return render_template(
+        "deckbuilder.html",
+        deckbuilder=deckbuilder_context,
+    )
+
+
+@app.route("/campaign-chaos/test-draft/<int:draft_test_id>/full-stats", methods=["GET"])
+def campaign_chaos_test_draft_full_stats(draft_test_id):
+    stats_result = get_draft_test_full_card_stats_state(draft_test_id)
+
+    if not stats_result.get("ok"):
+        return jsonify(stats_result), 400
+
+    return jsonify({
+        "ok": True,
+        "total_cards": stats_result.get("total_cards", 0),
+        "total_packs": stats_result.get("total_packs", 0),
+        "rarity_counts": stats_result.get("rarity_counts", {}),
+        "type_counts": stats_result.get("type_counts", {}),
+        "mana_counts": stats_result.get("mana_counts", {}),
+        "color_counts": stats_result.get("color_counts", {}),
+    })
 
 @app.route("/campaign-chaos/test-draft/<int:draft_test_id>/virtual-player", methods=["GET"])
 def campaign_chaos_test_draft_virtual_player(draft_test_id):
@@ -11774,6 +11981,130 @@ def campaign_chaos_test_draft_pick(draft_test_id):
         "campaign_chaos_test_draft",
         draft_test_id=draft_test_id,
     ))
+
+@app.route("/deck-builder/<int:deck_id>", methods=["GET"])
+def deckbuilder_open(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        flash("Deck was not found.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if source_type != "draft_test" or not source_id:
+        flash("This Deck Builder source is not supported yet.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    draft_state = get_draft_test_detail_state(source_id)
+
+    if not draft_state.get("ok"):
+        flash(draft_state.get("message") or "Draft state could not be loaded.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    deckbuilder_context = build_deckbuilder_context_for_draft_test(
+        draft_state,
+        preferred_deck_id=deck_id,
+    )
+
+    if not deckbuilder_context.get("ok"):
+        flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
+        return redirect(url_for("campaign_chaos_packs"))
+
+    deckbuilder_context["routes"] = {
+        "move_zone_url": url_for(
+            "campaign_chaos_test_draft_pick_zone",
+            draft_test_id=source_id,
+        ),
+        "basic_land_url": url_for(
+            "deckbuilder_basic_land",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
+        "back_url": url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=source_id,
+        ),
+    }
+
+    return render_template(
+        "deckbuilder.html",
+        deckbuilder=deckbuilder_context,
+    )
+
+
+@app.route("/deck-builder/loadable-decks", methods=["GET"])
+def deckbuilder_loadable_decks():
+    search_text = request.args.get("search_text") or ""
+    deck_rows = get_loadable_deck_rows(
+        search_text=search_text,
+        limit=100,
+    )
+
+    decks = []
+
+    for deck_row in deck_rows:
+        decks.append({
+            "deck_id": deck_row["deck_id"],
+            "deck_name": deck_row["deck_name"] or "Untitled Deck",
+            "deck_format": deck_row["deck_format"] or "",
+            "source_type": deck_row["source_type"] or "",
+            "source_id": deck_row["source_id"],
+            "updated_at_utc": deck_row["updated_at_utc"] or deck_row["created_at_utc"] or "",
+            "load_url": url_for(
+                "deckbuilder_open",
+                deck_id=deck_row["deck_id"],
+            ),
+        })
+
+    return jsonify({
+        "ok": True,
+        "decks": decks,
+        "count": len(decks),
+    })
+
+@app.route("/deck-builder/<int:deck_id>/delete", methods=["POST"])
+def deckbuilder_delete(deck_id):
+    result = archive_deck(deck_id)
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    redirect_url = url_for("campaign_chaos_packs")
+
+    if (result.get("source_type") or "").strip().lower() == "draft_test" and result.get("source_id"):
+        redirect_url = url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=result["source_id"],
+        )
+
+    return jsonify({
+        "ok": True,
+        "message": result.get("message") or "Deck deleted.",
+        "redirect_url": redirect_url,
+    })
+
+@app.route("/deck-builder/<int:deck_id>/save", methods=["POST"])
+def deckbuilder_save(deck_id):
+    deck_name = request.form.get("deck_name")
+    view_mode = request.form.get("view_mode")
+    sort_mode = request.form.get("sort_mode")
+    card_size = request.form.get("card_size")
+    sideboard_flex = request.form.get("sideboard_flex")
+    deck_flex = request.form.get("deck_flex")
+
+    save_result = update_deck_settings(
+        deck_id=deck_id,
+        deck_name=deck_name,
+        view_mode=view_mode,
+        sort_mode=sort_mode,
+        card_size=card_size,
+        sideboard_flex=sideboard_flex,
+        deck_flex=deck_flex,
+    )
+
+    status_code = 200 if save_result.get("ok") else 400
+    return jsonify(save_result), status_code
 
 @app.route("/deckbuilder/<int:deck_id>/basic-land", methods=["POST"])
 def deckbuilder_basic_land(deck_id):

@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from db.database import get_db_connection
@@ -182,6 +183,70 @@ def get_deck_by_id(deck_id):
     conn.close()
 
     return row
+
+
+def archive_deck(deck_id):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM decks
+        WHERE deck_id = ?
+          AND status = ?
+        """,
+        (
+            parsed_deck_id,
+            DECK_STATUS_ACTIVE,
+        ),
+    )
+
+    deck_row = cursor.fetchone()
+
+    if not deck_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck was not found or is already deleted.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET status = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            DECK_STATUS_ARCHIVED,
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Deck deleted.",
+        "deck_id": parsed_deck_id,
+        "source_type": deck_row["source_type"] or "",
+        "source_id": deck_row["source_id"],
+    }
 
 
 def get_deckbuilder_basic_land_card_row(cursor, land_name):
@@ -588,6 +653,312 @@ def is_draft_basic_land_pick_row(row):
     except Exception:
         return False
 
+def normalize_deck_view_mode(value):
+    clean_value = str(value or "grid").strip().lower()
+
+    if clean_value in {"list", "grid", "stack"}:
+        return clean_value
+
+    return "grid"
+
+
+def normalize_deck_sort_mode(value):
+    clean_value = str(value or "rarity-desc").strip().lower()
+
+    if clean_value in {
+        "name-asc",
+        "name-desc",
+        "rarity-desc",
+        "rarity-asc",
+        "mv-asc",
+        "mv-desc",
+    }:
+        return clean_value
+
+    return "rarity-desc"
+
+
+def normalize_deck_card_size(value):
+    try:
+        parsed_value = int(value)
+    except (TypeError, ValueError):
+        parsed_value = 100
+
+    if parsed_value < 70:
+        parsed_value = 70
+
+    if parsed_value > 150:
+        parsed_value = 150
+
+    return parsed_value
+
+
+def normalize_deck_flex_value(value, fallback):
+    try:
+        parsed_value = float(value)
+    except (TypeError, ValueError):
+        parsed_value = fallback
+
+    if parsed_value < 0.10:
+        parsed_value = 0.10
+
+    if parsed_value > 0.90:
+        parsed_value = 0.90
+
+    return parsed_value
+
+
+def get_deck_builder_layout(deck_id, layout_key="default"):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+
+    if parsed_deck_id is None:
+        return None
+
+    clean_layout_key = str(layout_key or "default").strip() or "default"
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_builder_layouts
+        WHERE deck_id = ?
+          AND layout_key = ?
+        """,
+        (
+            parsed_deck_id,
+            clean_layout_key,
+        ),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    return row
+
+
+def get_deck_builder_layout_json(layout_row):
+    if not layout_row:
+        return {}
+
+    try:
+        parsed_json = json.loads(layout_row["layout_json"] or "{}")
+
+        if isinstance(parsed_json, dict):
+            return parsed_json
+    except Exception:
+        pass
+
+    return {}
+
+
+def update_deck_settings(
+    deck_id,
+    deck_name,
+    view_mode="grid",
+    sort_mode="rarity-desc",
+    card_size=100,
+    sideboard_flex=0.40,
+    deck_flex=0.60,
+):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    clean_deck_name = str(deck_name or "").strip()
+
+    if not clean_deck_name:
+        return {
+            "ok": False,
+            "message": "Deck Name is required.",
+        }
+
+    clean_view_mode = normalize_deck_view_mode(view_mode)
+    clean_sort_mode = normalize_deck_sort_mode(sort_mode)
+    clean_card_size = normalize_deck_card_size(card_size)
+    clean_sideboard_flex = normalize_deck_flex_value(sideboard_flex, 0.40)
+    clean_deck_flex = normalize_deck_flex_value(deck_flex, 0.60)
+
+    flex_total = clean_sideboard_flex + clean_deck_flex
+
+    if flex_total <= 0:
+        clean_sideboard_flex = 0.40
+        clean_deck_flex = 0.60
+    else:
+        clean_sideboard_flex = clean_sideboard_flex / flex_total
+        clean_deck_flex = clean_deck_flex / flex_total
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM decks
+        WHERE deck_id = ?
+          AND status = ?
+        """,
+        (
+            parsed_deck_id,
+            DECK_STATUS_ACTIVE,
+        ),
+    )
+
+    deck_row = cursor.fetchone()
+
+    if not deck_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck was not found.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET deck_name = ?,
+            default_view_mode = ?,
+            default_sort_mode = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            clean_deck_name,
+            clean_view_mode,
+            clean_sort_mode,
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    layout_json = {
+        "card_size": clean_card_size,
+    }
+
+    cursor.execute(
+        """
+        INSERT INTO deck_builder_layouts (
+            deck_id,
+            layout_key,
+            view_mode,
+            sort_mode,
+            sideboard_flex,
+            deck_flex,
+            layout_json,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(deck_id, layout_key) DO UPDATE SET
+            view_mode = excluded.view_mode,
+            sort_mode = excluded.sort_mode,
+            sideboard_flex = excluded.sideboard_flex,
+            deck_flex = excluded.deck_flex,
+            layout_json = excluded.layout_json,
+            updated_at_utc = excluded.updated_at_utc
+        """,
+        (
+            parsed_deck_id,
+            "default",
+            clean_view_mode,
+            clean_sort_mode,
+            clean_sideboard_flex,
+            clean_deck_flex,
+            json.dumps(layout_json),
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Deck saved.",
+        "deck_id": parsed_deck_id,
+        "deck_name": clean_deck_name,
+        "view_mode": clean_view_mode,
+        "sort_mode": clean_sort_mode,
+        "card_size": clean_card_size,
+        "sideboard_flex": clean_sideboard_flex,
+        "deck_flex": clean_deck_flex,
+    }
+
+def get_loadable_deck_rows(search_text="", limit=100):
+    ensure_deck_schema()
+
+    clean_search_text = str(search_text or "").strip().lower()
+
+    try:
+        parsed_limit = int(limit or 100)
+    except (TypeError, ValueError):
+        parsed_limit = 100
+
+    if parsed_limit < 1:
+        parsed_limit = 1
+
+    if parsed_limit > 250:
+        parsed_limit = 250
+
+    where_clauses = [
+        "status = ?",
+        "source_type = ?",
+    ]
+    params = [
+        DECK_STATUS_ACTIVE,
+        DECK_SOURCE_TYPE_DRAFT_TEST,
+    ]
+
+    if clean_search_text:
+        where_clauses.append(
+            """
+            (
+                LOWER(deck_name) LIKE ?
+                OR LOWER(COALESCE(deck_format, '')) LIKE ?
+                OR CAST(COALESCE(source_id, '') AS TEXT) LIKE ?
+            )
+            """
+        )
+        like_value = f"%{clean_search_text}%"
+        params.extend([
+            like_value,
+            like_value,
+            like_value,
+        ])
+
+    sql = f"""
+        SELECT *
+        FROM decks
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY
+            COALESCE(updated_at_utc, created_at_utc) DESC,
+            deck_id DESC
+        LIMIT ?
+    """
+
+    params.append(parsed_limit)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return rows
+
 def get_deck_by_source(source_type, source_id):
     ensure_deck_schema()
 
@@ -606,12 +977,14 @@ def get_deck_by_source(source_type, source_id):
         FROM decks
         WHERE source_type = ?
           AND source_id = ?
+          AND status = ?
         ORDER BY deck_id DESC
         LIMIT 1
         """,
         (
             clean_source_type,
             parsed_source_id,
+            DECK_STATUS_ACTIVE,
         ),
     )
 
@@ -882,6 +1255,20 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
 
     campaign_name = session_row["campaign_name"] if "campaign_name" in session_row.keys() else "No Campaign"
 
+    deck_row = deck_result.get("deck")
+    layout_row = get_deck_builder_layout(deck_result["deck_id"])
+    layout_json = get_deck_builder_layout_json(layout_row)
+
+    default_view_mode = normalize_deck_view_mode(
+        layout_row["view_mode"] if layout_row else (deck_row["default_view_mode"] if deck_row else "grid")
+    )
+    default_sort_mode = normalize_deck_sort_mode(
+        layout_row["sort_mode"] if layout_row else (deck_row["default_sort_mode"] if deck_row else "rarity-desc")
+    )
+    default_card_size = normalize_deck_card_size(layout_json.get("card_size", 100))
+    sideboard_flex = normalize_deck_flex_value(layout_row["sideboard_flex"] if layout_row else 0.40, 0.40)
+    deck_flex = normalize_deck_flex_value(layout_row["deck_flex"] if layout_row else 0.60, 0.60)
+
     return {
         "ok": True,
         "deck_id": deck_result["deck_id"],
@@ -909,6 +1296,9 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
         "basic_land_names": draft_state.get("basic_land_names") or DECK_BUILDER_BASIC_LANDS,
         "basic_land_cards": get_deckbuilder_basic_land_cards(),
         "basic_land_counts": get_basic_land_counts_for_deck(deck_result["deck_id"]),
-        "default_view_mode": "grid",
-        "default_sort_mode": "rarity-desc",
+        "default_view_mode": default_view_mode,
+        "default_sort_mode": default_sort_mode,
+        "default_card_size": default_card_size,
+        "sideboard_flex": sideboard_flex,
+        "deck_flex": deck_flex,
     }
