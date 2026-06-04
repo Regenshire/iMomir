@@ -179,12 +179,17 @@ from db.deckdb import (
     add_basic_land_to_deck,
     archive_deck,
     build_deckbuilder_context_for_draft_test,
+    duplicate_deckbuilder_card,
     get_basic_land_counts_for_deck,
     get_deck_by_id,
     get_loadable_deck_rows,
     get_or_create_deck_for_draft_test,
+    move_deckbuilder_card,
     remove_basic_land_from_deck,
+    remove_deckbuilder_card,
     update_deck_settings,
+    update_deckbuilder_basic_land_printing,
+    update_deckbuilder_card_printing,
     ensure_deck_schema,
 )
 
@@ -11579,11 +11584,18 @@ def serialize_deckbuilder_card(card):
     card_uuid = deckbuilder_row_get(card, "card_uuid", "") or ""
     pick_reason = deckbuilder_row_get(card, "pick_reason", "") or ""
     is_basic_land = deckbuilder_row_get(card, "is_basic_land", None)
+    deck_card_id = deckbuilder_row_get(card, "deck_card_id", "") or ""
+    source_kind = deckbuilder_row_get(card, "source_kind", "") or ""
 
     if is_basic_land is None:
         is_basic_land = 1 if str(pick_reason).strip().lower() == "basic land" else 0
 
+    if not source_kind:
+        source_kind = "basic_land" if int(is_basic_land or 0) == 1 else "deck_card"
+
     return {
+        "source_kind": source_kind,
+        "deck_card_id": deck_card_id,
         "draft_test_pick_id": deckbuilder_row_get(card, "draft_test_pick_id", "") or "",
         "pick_number": deckbuilder_row_get(card, "pick_number", 0) or 0,
         "pack_number": deckbuilder_row_get(card, "pack_number", 0) or 0,
@@ -11626,6 +11638,19 @@ def serialize_deckbuilder_context_for_ajax(deckbuilder_context):
         ],
         "basic_land_counts": deckbuilder_context.get("basic_land_counts") or {},
         "basic_land_names": deckbuilder_context.get("basic_land_names") or [],
+        "basic_land_cards": [
+            {
+                "card_uuid": row["card_uuid"] or "",
+                "card_name": row["card_name"] or "",
+                "set_code": row["set_code"] or "",
+                "collector_number": row["collector_number"] or "",
+                "rarity": row["rarity"] or "common",
+                "type_line": row["type_line"] or "Basic Land",
+                "mana_value": row["mana_value"] if row["mana_value"] is not None else 0,
+                "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]) if row["card_uuid"] else "",
+            }
+            for row in deckbuilder_context.get("basic_land_cards", [])
+        ],
     }
 
 VIRTUAL_DRAFTER_COLOR_PAIR_NAMES = {
@@ -12083,6 +12108,484 @@ def deckbuilder_delete(deck_id):
         "message": result.get("message") or "Deck deleted.",
         "redirect_url": redirect_url,
     })
+
+@app.route("/deck-builder/<int:deck_id>/change-printing-options", methods=["GET"])
+def deckbuilder_change_printing_options(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+            "results": [],
+        }), 404
+
+    deck_card_id = request.args.get("deck_card_id") or ""
+    land_name = (request.args.get("land_name") or "").strip()
+    current_card_uuid = (request.args.get("current_card_uuid") or "").strip()
+
+    search_text = (request.args.get("q") or "").strip()
+    rarity_filters = request.args.getlist("rarity") or []
+    color_filters = request.args.getlist("color_identity") or []
+    mana_operator = (request.args.get("mana_operator") or "").strip()
+    mana_value = (request.args.get("mana_value") or "").strip()
+    type_filter = (request.args.get("type") or "").strip().lower()
+    set_code_filter = (request.args.get("set_code") or "").strip().upper()
+    year_start = (request.args.get("year_start") or "").strip()
+    year_end = (request.args.get("year_end") or "").strip()
+    sort_option = (request.args.get("sort") or "year_newest").strip()
+    digital_filter = (request.args.get("digital") or "").strip().lower()
+
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+
+    try:
+        page_size = int(request.args.get("page_size") or 500)
+    except (TypeError, ValueError):
+        page_size = 500
+
+    if page_size < 10:
+        page_size = 10
+
+    if page_size > 1000:
+        page_size = 1000
+
+    target_card_name = ""
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if deck_card_id:
+        cursor.execute(
+            """
+            SELECT
+                deck_card_id,
+                card_uuid,
+                card_name
+            FROM deck_cards
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                deck_id,
+                deck_card_id,
+            ),
+        )
+
+        deck_card_row = cursor.fetchone()
+
+        if not deck_card_row:
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "message": "Deck card was not found.",
+                "results": [],
+            }), 404
+
+        target_card_name = (deck_card_row["card_name"] or "").strip()
+        current_card_uuid = current_card_uuid or (deck_card_row["card_uuid"] or "").strip()
+
+    elif land_name:
+        target_card_name = land_name
+
+    if not target_card_name:
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "message": "Card name was not found.",
+            "results": [],
+        }), 400
+
+    # In Change Printing mode, force exact-name results.
+    # The visible search box can still show the card name and the advanced filters still work.
+    where_clauses = [
+        "LOWER(cc.card_name) = LOWER(?)",
+    ]
+    params = [target_card_name]
+
+    if land_name:
+        where_clauses.append("LOWER(cc.type_line) LIKE '%basic land%'")
+
+    if set_code_filter:
+        where_clauses.append("UPPER(cc.set_code) = ?")
+        params.append(set_code_filter)
+
+    if rarity_filters:
+        rarity_placeholders = ",".join(["?"] * len(rarity_filters))
+        where_clauses.append(f"LOWER(cc.rarity) IN ({rarity_placeholders})")
+        params.extend([str(item or "").strip().lower() for item in rarity_filters if str(item or "").strip()])
+
+    if type_filter:
+        where_clauses.append("LOWER(cc.type_line) LIKE ?")
+        params.append(f"%{type_filter}%")
+
+    if mana_operator and mana_value:
+        try:
+            parsed_mana_value = float(mana_value)
+
+            if mana_operator in {"=", "<=", ">=", "<", ">"}:
+                where_clauses.append(f"COALESCE(cc.mana_value, 0) {mana_operator} ?")
+                params.append(parsed_mana_value)
+        except (TypeError, ValueError):
+            pass
+
+    if year_start:
+        try:
+            parsed_year_start = int(year_start)
+            where_clauses.append("CAST(substr(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) >= ?")
+            params.append(parsed_year_start)
+        except (TypeError, ValueError):
+            pass
+
+    if year_end:
+        try:
+            parsed_year_end = int(year_end)
+            where_clauses.append("CAST(substr(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) <= ?")
+            params.append(parsed_year_end)
+        except (TypeError, ValueError):
+            pass
+
+    if digital_filter == "exclude":
+        where_clauses.append(
+            """
+            UPPER(cc.set_code) NOT IN (
+                'AKR', 'ANA', 'ANB', 'EA1', 'HBG', 'J21', 'KLR',
+                'MED', 'ME2', 'ME3', 'ME4', 'PRM', 'PZ1', 'PZ2',
+                'SIR', 'SIS', 'TPR', 'VMA'
+            )
+            AND UPPER(cc.set_code) NOT LIKE 'Y%'
+            """
+        )
+    elif digital_filter == "only":
+        where_clauses.append(
+            """
+            (
+                UPPER(cc.set_code) IN (
+                    'AKR', 'ANA', 'ANB', 'EA1', 'HBG', 'J21', 'KLR',
+                    'MED', 'ME2', 'ME3', 'ME4', 'PRM', 'PZ1', 'PZ2',
+                    'SIR', 'SIS', 'TPR', 'VMA'
+                )
+                OR UPPER(cc.set_code) LIKE 'Y%'
+            )
+            """
+        )
+
+    # Match the Custom Draft Set color filter behavior enough for this modal.
+    color_filters = [
+        str(item or "").strip().lower()
+        for item in color_filters
+        if str(item or "").strip()
+    ]
+
+    color_symbols = [
+        item.upper()
+        for item in color_filters
+        if item in {"w", "u", "b", "r", "g"}
+    ]
+
+    if "land" in color_filters:
+        where_clauses.append("LOWER(cc.type_line) LIKE '%land%'")
+    elif "colorless" in color_filters:
+        where_clauses.append("(cc.color_identity_json IS NULL OR cc.color_identity_json = '[]')")
+    elif "multi_any" in color_filters:
+        where_clauses.append(
+            """
+            (
+                cc.color_identity_json LIKE '%W%' OR
+                cc.color_identity_json LIKE '%U%' OR
+                cc.color_identity_json LIKE '%B%' OR
+                cc.color_identity_json LIKE '%R%' OR
+                cc.color_identity_json LIKE '%G%'
+            )
+            AND LENGTH(cc.color_identity_json) > 5
+            """
+        )
+    elif color_symbols:
+        color_clauses = []
+
+        for color_symbol in color_symbols:
+            color_clauses.append("cc.color_identity_json LIKE ?")
+            params.append(f"%{color_symbol}%")
+
+        where_clauses.append("(" + " OR ".join(color_clauses) + ")")
+
+    where_sql = " AND ".join(where_clauses)
+
+    if sort_option == "name_desc":
+        order_sql = "cc.card_name COLLATE NOCASE DESC"
+    elif sort_option == "set_asc":
+        order_sql = "cc.set_code COLLATE NOCASE ASC, cc.collector_number COLLATE NOCASE ASC"
+    elif sort_option == "set_desc":
+        order_sql = "cc.set_code COLLATE NOCASE DESC, cc.collector_number COLLATE NOCASE ASC"
+    elif sort_option == "year_oldest":
+        order_sql = "COALESCE(s.release_date, '') ASC, cc.set_code COLLATE NOCASE ASC, cc.collector_number COLLATE NOCASE ASC"
+    elif sort_option == "rarity_low_high":
+        order_sql = """
+            CASE LOWER(cc.rarity)
+                WHEN 'common' THEN 1
+                WHEN 'uncommon' THEN 2
+                WHEN 'rare' THEN 3
+                WHEN 'mythic' THEN 4
+                ELSE 0
+            END ASC,
+            cc.card_name COLLATE NOCASE ASC
+        """
+    elif sort_option == "rarity_high_low":
+        order_sql = """
+            CASE LOWER(cc.rarity)
+                WHEN 'common' THEN 1
+                WHEN 'uncommon' THEN 2
+                WHEN 'rare' THEN 3
+                WHEN 'mythic' THEN 4
+                ELSE 0
+            END DESC,
+            cc.card_name COLLATE NOCASE ASC
+        """
+    elif sort_option == "mv_low_high":
+        order_sql = "COALESCE(cc.mana_value, 999) ASC, cc.card_name COLLATE NOCASE ASC"
+    elif sort_option == "mv_high_low":
+        order_sql = "COALESCE(cc.mana_value, -1) DESC, cc.card_name COLLATE NOCASE ASC"
+    elif sort_option == "edhrec_rank_best":
+        order_sql = "CASE WHEN cc.edhrec_rank IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_rank ASC"
+    elif sort_option == "edhrec_rank_worst":
+        order_sql = "CASE WHEN cc.edhrec_rank IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_rank DESC"
+    elif sort_option == "edhrec_salt_high":
+        order_sql = "CASE WHEN cc.edhrec_saltiness IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_saltiness DESC"
+    elif sort_option == "edhrec_salt_low":
+        order_sql = "CASE WHEN cc.edhrec_saltiness IS NULL THEN 1 ELSE 0 END ASC, cc.edhrec_saltiness ASC"
+    elif sort_option == "name_asc":
+        order_sql = "cc.card_name COLLATE NOCASE ASC"
+    else:
+        order_sql = "COALESCE(s.release_date, '') DESC, cc.set_code COLLATE NOCASE ASC, cc.collector_number COLLATE NOCASE ASC"
+
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) AS total_count
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        WHERE {where_sql}
+        """,
+        params,
+    )
+
+    total_row = cursor.fetchone()
+    total_count = int(total_row["total_count"] or 0) if total_row else 0
+
+    offset = (page - 1) * page_size
+
+    cursor.execute(
+        f"""
+        SELECT
+            cc.card_uuid,
+            cc.card_name,
+            cc.set_code,
+            s.release_date,
+            cc.collector_number,
+            cc.rarity,
+            cc.type_line,
+            cc.mana_cost,
+            cc.mana_value,
+            cc.colors_json,
+            cc.color_identity_json,
+            cc.edhrec_rank,
+            cc.edhrec_saltiness,
+            NULL AS sort_price,
+            CASE
+                WHEN cc.card_uuid = ? THEN 1
+                ELSE 0
+            END AS already_in_set
+        FROM chaos_cards cc
+        LEFT JOIN sets s
+            ON s.set_code = cc.set_code
+        WHERE {where_sql}
+        ORDER BY
+            CASE
+                WHEN cc.card_uuid = ? THEN 0
+                ELSE 1
+            END,
+            {order_sql}
+        LIMIT ?
+        OFFSET ?
+        """,
+        [
+            current_card_uuid,
+            *params,
+            current_card_uuid,
+            page_size,
+            offset,
+        ],
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    import math
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count else 1
+
+    return jsonify({
+        "ok": True,
+        "card_name": target_card_name,
+        "current_card_uuid": current_card_uuid,
+        "results": [
+            serialize_custom_draft_card_search_result(row)
+            for row in rows
+        ],
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    })
+
+@app.route("/deck-builder/<int:deck_id>/change-printing", methods=["POST"])
+def deckbuilder_change_printing(deck_id):
+    payload = request.get_json(silent=True) or {}
+
+    deck_card_id = (
+        request.form.get("deck_card_id")
+        or payload.get("deck_card_id")
+        or ""
+    )
+
+    land_name = (
+        request.form.get("land_name")
+        or payload.get("land_name")
+        or ""
+    ).strip()
+
+    new_card_uuid = (
+        request.form.get("card_uuid")
+        or payload.get("card_uuid")
+        or ""
+    ).strip()
+
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    if land_name:
+        result = update_deckbuilder_basic_land_printing(
+            deck_id=deck_id,
+            land_name=land_name,
+            new_card_uuid=new_card_uuid,
+        )
+    else:
+        result = update_deckbuilder_card_printing(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            new_card_uuid=new_card_uuid,
+        )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
+
+        if not draft_state.get("ok"):
+            return jsonify({
+                "ok": False,
+                "message": draft_state.get("message") or "Draft source could not be loaded.",
+            }), 400
+
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
+
+        payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+        payload["change_printing_result"] = result
+        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
+
+        if land_name:
+            payload["_basicLandCountsAuthoritative"] = True
+            payload["_basicLandPaletteAuthoritative"] = True
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    return jsonify({
+        "ok": False,
+        "message": "Standalone Deck Builder refresh is not wired yet.",
+    }), 400
+
+@app.route("/deck-builder/<int:deck_id>/card-action", methods=["POST"])
+def deckbuilder_card_action(deck_id):
+    action = (request.form.get("action") or "").strip().lower()
+    deck_card_id = request.form.get("deck_card_id") or ""
+    target_zone = (request.form.get("target_zone") or "").strip().lower()
+
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if action == "duplicate":
+        result = duplicate_deckbuilder_card(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+        )
+    elif action == "move":
+        result = move_deckbuilder_card(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            deck_zone=target_zone,
+        )
+    elif action == "remove":
+        result = remove_deckbuilder_card(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+        )
+    else:
+        result = {
+            "ok": False,
+            "message": "Unsupported Deck Builder card action.",
+        }
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
+
+        if not draft_state.get("ok"):
+            return jsonify({
+                "ok": False,
+                "message": draft_state.get("message") or "Draft source could not be loaded.",
+            }), 400
+
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
+
+        payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+        payload["card_action_result"] = result
+        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
+
+        if result.get("action") in {"add", "remove"} or result.get("land_name"):
+            payload["_basicLandCountsAuthoritative"] = True
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    return jsonify({
+        "ok": False,
+        "message": "Standalone Deck Builder refresh is not wired yet.",
+    }), 400
 
 @app.route("/deck-builder/<int:deck_id>/save", methods=["POST"])
 def deckbuilder_save(deck_id):

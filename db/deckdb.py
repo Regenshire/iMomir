@@ -46,7 +46,7 @@ def normalize_deck_source_type(value):
 def normalize_deck_zone(value):
     clean_value = str(value or "deck").strip().lower()
 
-    if clean_value in {"deck", "sideboard"}:
+    if clean_value in {"deck", "sideboard", "removed"}:
         return clean_value
 
     return "deck"
@@ -120,6 +120,21 @@ def ensure_deck_schema():
 
     cursor.execute(
         """
+        CREATE TABLE IF NOT EXISTS deck_basic_land_printings (
+            deck_basic_land_printing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            deck_id INTEGER NOT NULL,
+            land_name TEXT NOT NULL,
+            card_uuid TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            updated_at_utc TEXT,
+            UNIQUE(deck_id, land_name),
+            FOREIGN KEY (deck_id) REFERENCES decks (deck_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_decks_source
         ON decks (source_type, source_id)
         """
@@ -143,6 +158,13 @@ def ensure_deck_schema():
         """
         CREATE INDEX IF NOT EXISTS idx_deck_cards_source
         ON deck_cards (source_type, source_id, source_item_id)
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_deck_basic_land_printings_deck
+        ON deck_basic_land_printings (deck_id, land_name)
         """
     )
 
@@ -249,11 +271,42 @@ def archive_deck(deck_id):
     }
 
 
-def get_deckbuilder_basic_land_card_row(cursor, land_name):
+def get_deckbuilder_basic_land_card_row(cursor, land_name, deck_id=None):
     clean_land_name = normalize_deck_basic_land_name(land_name)
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
 
     if not clean_land_name:
         return None
+
+    if parsed_deck_id is not None:
+        cursor.execute(
+            """
+            SELECT
+                cc.card_uuid,
+                cc.card_name,
+                cc.set_code,
+                cc.collector_number,
+                cc.rarity,
+                cc.type_line,
+                cc.mana_value,
+                cc.image_url
+            FROM deck_basic_land_printings dblp
+            INNER JOIN chaos_cards cc
+                ON cc.card_uuid = dblp.card_uuid
+            WHERE dblp.deck_id = ?
+              AND LOWER(dblp.land_name) = LOWER(?)
+            LIMIT 1
+            """,
+            (
+                parsed_deck_id,
+                clean_land_name,
+            ),
+        )
+
+        override_row = cursor.fetchone()
+
+        if override_row:
+            return override_row
 
     cursor.execute(
         """
@@ -325,6 +378,827 @@ def get_basic_land_counts_for_deck(deck_id):
 
     return counts
 
+def deckbuilder_row_get(row, key, default=None):
+    if row is None:
+        return default
+
+    try:
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+    except Exception:
+        pass
+
+    try:
+        if isinstance(row, dict):
+            return row.get(key, default)
+    except Exception:
+        pass
+
+    return default
+
+
+def import_draft_cards_into_deck(deck_id, draft_cards, default_zone):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    clean_default_zone = normalize_deck_zone(default_zone)
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    if clean_default_zone not in {"deck", "sideboard"}:
+        clean_default_zone = "deck"
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    imported_count = 0
+
+    for card in draft_cards or []:
+        draft_test_pick_id = normalize_deck_optional_int(deckbuilder_row_get(card, "draft_test_pick_id"))
+
+        if draft_test_pick_id is None:
+            continue
+
+        card_uuid = str(deckbuilder_row_get(card, "card_uuid", "") or "").strip()
+        card_name = str(deckbuilder_row_get(card, "card_name", "") or "").strip()
+
+        if not card_uuid or not card_name:
+            continue
+
+        cursor.execute(
+            """
+            SELECT deck_card_id
+            FROM deck_cards
+            WHERE deck_id = ?
+              AND source_type = ?
+              AND source_item_id = ?
+            LIMIT 1
+            """,
+            (
+                parsed_deck_id,
+                "draft_pick",
+                draft_test_pick_id,
+            ),
+        )
+
+        existing_row = cursor.fetchone()
+
+        if existing_row:
+            continue
+
+        cursor.execute(
+            """
+            INSERT INTO deck_cards (
+                deck_id,
+                card_uuid,
+                card_name,
+                deck_zone,
+                quantity,
+                source_type,
+                source_id,
+                source_item_id,
+                is_basic_land,
+                stack_column,
+                stack_order,
+                display_order,
+                created_at_utc,
+                updated_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                parsed_deck_id,
+                card_uuid,
+                card_name,
+                clean_default_zone,
+                1,
+                "draft_pick",
+                normalize_deck_optional_int(deckbuilder_row_get(card, "draft_test_id")),
+                draft_test_pick_id,
+                0,
+                None,
+                None,
+                0,
+                now_utc,
+                now_utc,
+            ),
+        )
+
+        imported_count += 1
+
+    if imported_count > 0:
+        cursor.execute(
+            """
+            UPDATE decks
+            SET updated_at_utc = ?
+            WHERE deck_id = ?
+            """,
+            (
+                now_utc,
+                parsed_deck_id,
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": f"Imported {imported_count} drafted card(s).",
+        "imported_count": imported_count,
+    }
+
+
+def import_draft_state_into_deck(deck_id, draft_state):
+    deck_cards = [
+        card
+        for card in ((draft_state or {}).get("human_deck_cards") or [])
+        if not is_draft_basic_land_pick_row(card)
+    ]
+
+    sideboard_cards = [
+        card
+        for card in ((draft_state or {}).get("human_sideboard_cards") or [])
+        if not is_draft_basic_land_pick_row(card)
+    ]
+
+    deck_result = import_draft_cards_into_deck(
+        deck_id=deck_id,
+        draft_cards=deck_cards,
+        default_zone="deck",
+    )
+
+    if not deck_result.get("ok"):
+        return deck_result
+
+    sideboard_result = import_draft_cards_into_deck(
+        deck_id=deck_id,
+        draft_cards=sideboard_cards,
+        default_zone="sideboard",
+    )
+
+    if not sideboard_result.get("ok"):
+        return sideboard_result
+
+    return {
+        "ok": True,
+        "message": "Draft cards imported into Deck Builder.",
+        "deck_imported_count": deck_result.get("imported_count", 0),
+        "sideboard_imported_count": sideboard_result.get("imported_count", 0),
+    }
+
+
+def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_lands=False):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+
+    if parsed_deck_id is None:
+        return []
+
+    clean_deck_zone = normalize_deck_zone(deck_zone) if deck_zone else ""
+
+    where_clauses = [
+        "dc.deck_id = ?",
+    ]
+    params = [parsed_deck_id]
+
+    if clean_deck_zone:
+        where_clauses.append("dc.deck_zone = ?")
+        params.append(clean_deck_zone)
+    else:
+        where_clauses.append("dc.deck_zone IN ('deck', 'sideboard')")
+
+    if not include_basic_lands:
+        where_clauses.append("dc.is_basic_land = 0")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT
+            dc.deck_card_id,
+            dc.card_uuid,
+            dc.card_name,
+            dc.deck_zone,
+            dc.quantity,
+            dc.source_type,
+            dc.source_id,
+            dc.source_item_id,
+            dc.is_basic_land,
+            cc.set_code,
+            cc.collector_number,
+            cc.rarity,
+            cc.type_line,
+            cc.mana_value,
+            cc.mana_cost,
+            cc.colors_json,
+            cc.color_identity_json,
+            cc.image_url
+        FROM deck_cards dc
+        LEFT JOIN chaos_cards cc
+            ON cc.card_uuid = dc.card_uuid
+        WHERE {" AND ".join(where_clauses)}
+        ORDER BY
+            dc.deck_zone ASC,
+            dc.display_order ASC,
+            dc.deck_card_id ASC
+        """,
+        params,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    cards = []
+
+    for row in rows:
+        quantity = int(row["quantity"] or 1)
+
+        if quantity < 1:
+            continue
+
+        for copy_index in range(quantity):
+            is_basic_land = int(row["is_basic_land"] or 0) == 1
+
+            cards.append({
+                "source_kind": "basic_land" if is_basic_land else "deck_card",
+                "deck_card_id": row["deck_card_id"],
+                "draft_test_pick_id": f"deckcard_{row['deck_card_id']}_{copy_index + 1}",
+                "card_uuid": row["card_uuid"] or "",
+                "card_name": row["card_name"] or "",
+                "deck_zone": row["deck_zone"] or "deck",
+                "pick_number": 0,
+                "pack_number": 0,
+                "pick_reason": "Basic land" if is_basic_land else (row["source_type"] or "Deck Builder"),
+                "is_basic_land": 1 if is_basic_land else 0,
+                "set_code": row["set_code"] or "",
+                "collector_number": row["collector_number"] or "",
+                "rarity": row["rarity"] or ("common" if is_basic_land else ""),
+                "type_line": row["type_line"] or ("Basic Land" if is_basic_land else ""),
+                "mana_value": row["mana_value"] if row["mana_value"] is not None else 0,
+                "mana_cost": row["mana_cost"] or "",
+                "colors_json": row["colors_json"] or "[]",
+                "color_identity_json": row["color_identity_json"] or "[]",
+                "image_url": row["image_url"] or "",
+            })
+
+    return cards
+
+
+def duplicate_deckbuilder_card(deck_id, deck_card_id):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    source_row = cursor.fetchone()
+
+    if not source_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    if int(source_row["is_basic_land"] or 0) == 1:
+        conn.close()
+        return add_basic_land_to_deck(
+            deck_id=parsed_deck_id,
+            land_name=source_row["card_name"],
+        )
+
+    cursor.execute(
+        """
+        INSERT INTO deck_cards (
+            deck_id,
+            card_uuid,
+            card_name,
+            deck_zone,
+            quantity,
+            source_type,
+            source_id,
+            source_item_id,
+            is_basic_land,
+            stack_column,
+            stack_order,
+            display_order,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            parsed_deck_id,
+            source_row["card_uuid"] or "",
+            source_row["card_name"] or "",
+            source_row["deck_zone"] or "deck",
+            1,
+            "duplicate",
+            parsed_deck_id,
+            parsed_deck_card_id,
+            0,
+            source_row["stack_column"],
+            source_row["stack_order"],
+            source_row["display_order"] or 0,
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    new_deck_card_id = int(cursor.lastrowid)
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Card duplicated.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": new_deck_card_id,
+    }
+
+
+def move_deckbuilder_card(deck_id, deck_card_id, deck_zone):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+    clean_deck_zone = normalize_deck_zone(deck_zone)
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    if clean_deck_zone not in {"deck", "sideboard"}:
+        return {
+            "ok": False,
+            "message": "Invalid deck zone.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    deck_card_row = cursor.fetchone()
+
+    if not deck_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    if int(deck_card_row["is_basic_land"] or 0) == 1 and clean_deck_zone == "sideboard":
+        conn.close()
+        return remove_basic_land_from_deck(
+            deck_id=parsed_deck_id,
+            land_name=deck_card_row["card_name"],
+        )
+
+    cursor.execute(
+        """
+        UPDATE deck_cards
+        SET deck_zone = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            clean_deck_zone,
+            now_utc,
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Card moved.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": parsed_deck_card_id,
+        "deck_zone": clean_deck_zone,
+    }
+
+def update_deckbuilder_card_printing(deck_id, deck_card_id, new_card_uuid):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+    clean_new_card_uuid = str(new_card_uuid or "").strip()
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    if not clean_new_card_uuid:
+        return {
+            "ok": False,
+            "message": "New card UUID is required.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    deck_card_row = cursor.fetchone()
+
+    if not deck_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            card_name,
+            type_line
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (clean_new_card_uuid,),
+    )
+
+    new_card_row = cursor.fetchone()
+
+    if not new_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Selected printing was not found.",
+        }
+
+    original_name = (deck_card_row["card_name"] or "").strip()
+    new_name = (new_card_row["card_name"] or "").strip()
+
+    if original_name.lower() != new_name.lower():
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Selected printing does not match the current card name.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE deck_cards
+        SET card_uuid = ?,
+            card_name = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            new_card_row["card_uuid"],
+            new_card_row["card_name"],
+            now_utc,
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Printing changed.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": parsed_deck_card_id,
+        "card_uuid": clean_new_card_uuid,
+    }
+
+
+def update_deckbuilder_basic_land_printing(deck_id, land_name, new_card_uuid):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    clean_land_name = normalize_deck_basic_land_name(land_name)
+    clean_new_card_uuid = str(new_card_uuid or "").strip()
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    if not clean_land_name:
+        return {
+            "ok": False,
+            "message": "Invalid basic land.",
+        }
+
+    if not clean_new_card_uuid:
+        return {
+            "ok": False,
+            "message": "New card UUID is required.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            card_name,
+            type_line
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (clean_new_card_uuid,),
+    )
+
+    new_card_row = cursor.fetchone()
+
+    if not new_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Selected Basic Land printing was not found.",
+        }
+
+    if (new_card_row["card_name"] or "").strip().lower() != clean_land_name.lower():
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Selected printing does not match the selected Basic Land.",
+        }
+
+    if "basic land" not in (new_card_row["type_line"] or "").strip().lower():
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Selected printing is not a Basic Land.",
+        }
+
+    cursor.execute(
+        """
+        INSERT INTO deck_basic_land_printings (
+            deck_id,
+            land_name,
+            card_uuid,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(deck_id, land_name) DO UPDATE SET
+            card_uuid = excluded.card_uuid,
+            updated_at_utc = excluded.updated_at_utc
+        """,
+        (
+            parsed_deck_id,
+            clean_land_name,
+            clean_new_card_uuid,
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE deck_cards
+        SET card_uuid = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+          AND is_basic_land = 1
+          AND LOWER(card_name) = LOWER(?)
+        """,
+        (
+            clean_new_card_uuid,
+            now_utc,
+            parsed_deck_id,
+            clean_land_name,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": f"{clean_land_name} printing changed.",
+        "deck_id": parsed_deck_id,
+        "land_name": clean_land_name,
+        "card_uuid": clean_new_card_uuid,
+        "action": "change_basic_land_printing",
+    }
+
+
+def remove_deckbuilder_card(deck_id, deck_card_id):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    deck_card_row = cursor.fetchone()
+
+    if not deck_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    if int(deck_card_row["is_basic_land"] or 0) == 1:
+        conn.close()
+        return remove_basic_land_from_deck(
+            deck_id=parsed_deck_id,
+            land_name=deck_card_row["card_name"],
+        )
+
+    if (deck_card_row["source_type"] or "").strip().lower() == "draft_pick":
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = ?,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                "removed",
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            DELETE FROM deck_cards
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Card removed.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": parsed_deck_card_id,
+    }
 
 def get_saved_basic_land_cards_for_deck(deck_id):
     ensure_deck_schema()
@@ -381,6 +1255,8 @@ def get_saved_basic_land_cards_for_deck(deck_id):
 
         for copy_index in range(quantity):
             cards.append({
+                "source_kind": "basic_land",
+                "deck_card_id": row["deck_card_id"],
                 "draft_test_pick_id": f"deckcard_{row['deck_card_id']}_{copy_index + 1}",
                 "card_uuid": row["card_uuid"] or "",
                 "card_name": row["card_name"] or "",
@@ -447,6 +1323,7 @@ def add_basic_land_to_deck(deck_id, land_name):
     land_card_row = get_deckbuilder_basic_land_card_row(
         cursor=cursor,
         land_name=clean_land_name,
+        deck_id=parsed_deck_id,
     )
 
     if not land_card_row:
@@ -1142,8 +2019,10 @@ def get_or_create_deck_for_draft_test(draft_state):
         deck_format="Limited",
     )
 
-def get_deckbuilder_basic_land_cards():
+def get_deckbuilder_basic_land_cards(deck_id=None):
     ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -1151,56 +2030,14 @@ def get_deckbuilder_basic_land_cards():
     basic_land_cards = []
 
     for land_name in DECK_BUILDER_BASIC_LANDS:
-        cursor.execute(
-            """
-            SELECT
-                card_uuid,
-                card_name,
-                set_code,
-                collector_number,
-                rarity,
-                type_line,
-                mana_value,
-                image_url
-            FROM chaos_cards
-            WHERE LOWER(card_name) = LOWER(?)
-              AND LOWER(type_line) LIKE '%basic land%'
-            ORDER BY
-                CASE
-                    WHEN LOWER(set_code) IN ('fdn', 'dmu', 'neo', 'znr') THEN 0
-                    ELSE 1
-                END,
-                set_code DESC,
-                collector_number ASC
-            LIMIT 1
-            """,
-            (land_name,),
+        row = get_deckbuilder_basic_land_card_row(
+            cursor=cursor,
+            land_name=land_name,
+            deck_id=parsed_deck_id,
         )
 
-        row = cursor.fetchone()
-
         if row:
-            basic_land_cards.append({
-                "card_uuid": row["card_uuid"] or "",
-                "card_name": row["card_name"] or land_name,
-                "set_code": row["set_code"] or "",
-                "collector_number": row["collector_number"] or "",
-                "rarity": row["rarity"] or "common",
-                "type_line": row["type_line"] or "Basic Land",
-                "mana_value": row["mana_value"] if row["mana_value"] is not None else 0,
-                "image_url": row["image_url"] or "",
-            })
-        else:
-            basic_land_cards.append({
-                "card_uuid": "",
-                "card_name": land_name,
-                "set_code": "",
-                "collector_number": "",
-                "rarity": "common",
-                "type_line": "Basic Land",
-                "mana_value": 0,
-                "image_url": "",
-            })
+            basic_land_cards.append(row)
 
     conn.close()
 
@@ -1256,6 +2093,18 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
     campaign_name = session_row["campaign_name"] if "campaign_name" in session_row.keys() else "No Campaign"
 
     deck_row = deck_result.get("deck")
+
+    import_result = import_draft_state_into_deck(
+        deck_id=deck_result["deck_id"],
+        draft_state=draft_state,
+    )
+
+    if not import_result.get("ok"):
+        return {
+            "ok": False,
+            "message": import_result.get("message") or "Could not import drafted cards into Deck Builder.",
+        }
+
     layout_row = get_deck_builder_layout(deck_result["deck_id"])
     layout_json = get_deck_builder_layout_json(layout_row)
 
@@ -1283,18 +2132,18 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
         "deck_name": deck_result["deck"]["deck_name"] if deck_result.get("deck") else "",
         "deck_format": deck_result["deck"]["deck_format"] if deck_result.get("deck") else "Limited",
         "human_player": human_player,
-        "deck_cards": [
-            card
-            for card in (draft_state.get("human_deck_cards") or [])
-            if not is_draft_basic_land_pick_row(card)
-        ] + get_saved_basic_land_cards_for_deck(deck_result["deck_id"]),
-        "sideboard_cards": [
-            card
-            for card in (draft_state.get("human_sideboard_cards") or [])
-            if not is_draft_basic_land_pick_row(card)
-        ],
+        "deck_cards": get_saved_deckbuilder_cards_for_deck(
+            deck_result["deck_id"],
+            deck_zone="deck",
+            include_basic_lands=True,
+        ),
+        "sideboard_cards": get_saved_deckbuilder_cards_for_deck(
+            deck_result["deck_id"],
+            deck_zone="sideboard",
+            include_basic_lands=False,
+        ),
         "basic_land_names": draft_state.get("basic_land_names") or DECK_BUILDER_BASIC_LANDS,
-        "basic_land_cards": get_deckbuilder_basic_land_cards(),
+        "basic_land_cards": get_deckbuilder_basic_land_cards(deck_result["deck_id"]),
         "basic_land_counts": get_basic_land_counts_for_deck(deck_result["deck_id"]),
         "default_view_mode": default_view_mode,
         "default_sort_mode": default_sort_mode,

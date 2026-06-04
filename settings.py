@@ -350,16 +350,16 @@ CHAOS_DUPLICATE_LOG_ALL_DETECTIONS = True
 
 CHAOS_BATCH_REPEAT_REPLACEMENT_CHANCES = {
     "common": {
-        1: 0.10,
-        2: 0.20,
-        3: 0.40,
-        4: 0.50,
+        1: 0.20,
+        2: 0.40,
+        3: 0.60,
+        4: 0.80,
     },
     "uncommon": {
-        1: 0.15,
-        2: 0.30,
-        3: 0.45,
-        4: 0.60,
+        1: 0.30,
+        2: 0.50,
+        3: 0.70,
+        4: 0.90,
     },
     "rare": {
         1: 0.70,
