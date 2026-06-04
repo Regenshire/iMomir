@@ -652,6 +652,136 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
 
     return cards
 
+def add_card_to_deckbuilder_sideboard(deck_id, card_uuid):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    clean_card_uuid = str(card_uuid or "").strip()
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    if not clean_card_uuid:
+        return {
+            "ok": False,
+            "message": "Card UUID is required.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM decks
+        WHERE deck_id = ?
+          AND status = ?
+        """,
+        (
+            parsed_deck_id,
+            DECK_STATUS_ACTIVE,
+        ),
+    )
+
+    deck_row = cursor.fetchone()
+
+    if not deck_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck was not found.",
+        }
+
+    cursor.execute(
+        """
+        SELECT
+            card_uuid,
+            card_name
+        FROM chaos_cards
+        WHERE card_uuid = ?
+        """,
+        (clean_card_uuid,),
+    )
+
+    card_row = cursor.fetchone()
+
+    if not card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Card was not found.",
+        }
+
+    cursor.execute(
+        """
+        INSERT INTO deck_cards (
+            deck_id,
+            card_uuid,
+            card_name,
+            deck_zone,
+            quantity,
+            source_type,
+            source_id,
+            source_item_id,
+            is_basic_land,
+            stack_column,
+            stack_order,
+            display_order,
+            created_at_utc,
+            updated_at_utc
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            parsed_deck_id,
+            card_row["card_uuid"],
+            card_row["card_name"],
+            "sideboard",
+            1,
+            "manual_add",
+            parsed_deck_id,
+            None,
+            0,
+            None,
+            None,
+            0,
+            now_utc,
+            now_utc,
+        ),
+    )
+
+    deck_card_id = int(cursor.lastrowid)
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Card added to sideboard.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": deck_card_id,
+        "card_uuid": clean_card_uuid,
+        "card_name": card_row["card_name"],
+        "deck_zone": "sideboard",
+    }
+
 
 def duplicate_deckbuilder_card(deck_id, deck_card_id):
     ensure_deck_schema()

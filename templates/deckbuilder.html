@@ -19,8 +19,10 @@
     data-save-url="{{ url_for('deckbuilder_save', deck_id=deckbuilder.deck_id) }}"
     data-delete-url="{{ url_for('deckbuilder_delete', deck_id=deckbuilder.deck_id) }}"
     data-card-action-url="{{ url_for('deckbuilder_card_action', deck_id=deckbuilder.deck_id) }}"
-    data-change-printing-options-url="{{ url_for('deckbuilder_change_printing_options', deck_id=deckbuilder.deck_id) }}"
+    data-change-printing-options-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
     data-change-printing-url="{{ url_for('deckbuilder_change_printing', deck_id=deckbuilder.deck_id) }}"
+    data-add-card-search-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
+    data-add-card-url="{{ url_for('deckbuilder_cards_add', deck_id=deckbuilder.deck_id) }}"
     data-load-decks-url="{{ url_for('deckbuilder_loadable_decks') }}"
     data-move-zone-url="{{ deckbuilder.routes.move_zone_url }}"
     data-basic-land-url="{{ deckbuilder.routes.basic_land_url }}"
@@ -247,6 +249,16 @@
                 </div>
 
                 <div class="deckbuilder-zone-header-actions">
+                    <button
+                        type="button"
+                        id="deckbuilderOpenAddCardsButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Add Card"
+                        aria-label="Add Card"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+
                     <button
                         type="button"
                         id="deckbuilderSideboardFilterButton"
@@ -594,260 +606,9 @@
             Alternate Image Settings
         </button>
     </div>
-    <div
-        id="deckbuilderChangePrintingOverlay"
-        class="custom-draft-card-search-overlay hidden"
-        aria-hidden="true"
-    >
-        <div class="custom-draft-card-search-window">
-            <div class="custom-draft-card-search-window-header">
-                <div>
-                    <h2 id="deckbuilderChangePrintingTitle">Change Printing</h2>
-                    <p id="deckbuilderChangePrintingSubtitle" class="page-subtitle">
-                        Choose a replacement printing.
-                    </p>
-                </div>
 
-                <button
-                    type="button"
-                    id="deckbuilderChangePrintingCloseButton"
-                    class="custom-draft-card-search-close-button"
-                    aria-label="Close Change Printing"
-                    title="Close"
-                >
-                    ×
-                </button>
-            </div>
+    {% include "_card_search_modal.html" %}
 
-            <div class="custom-draft-card-search-panel">
-                <div class="custom-draft-card-search-text-row">
-                    <label class="custom-draft-filter-field custom-draft-search-text-field">
-                        <span>Search Text</span>
-                        <div class="custom-draft-search-text-input-wrap">
-                            <input
-                                type="text"
-                                id="deckbuilderChangePrintingSearchInput"
-                                class="campaign-add-pack-custom-input custom-draft-search-text-input"
-                                placeholder="Card name..."
-                                autocomplete="off"
-                            >
-                        </div>
-                    </label>
-                </div>
-
-                <div class="custom-draft-search-builder-grid">
-                    <div id="deckbuilderChangePrintingRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
-                        <span>Rarity</span>
-
-                        <button
-                            type="button"
-                            class="custom-draft-multi-select-button"
-                            aria-haspopup="true"
-                            aria-expanded="false"
-                        >
-                            <span class="custom-draft-multi-select-label">Any</span>
-                            <span class="custom-draft-multi-select-chevron">▾</span>
-                        </button>
-
-                        <div class="custom-draft-multi-select-menu hidden">
-                            <label><input type="checkbox" value="common"><span>Common</span></label>
-                            <label><input type="checkbox" value="uncommon"><span>Uncommon</span></label>
-                            <label><input type="checkbox" value="rare"><span>Rare</span></label>
-                            <label><input type="checkbox" value="mythic"><span>Mythic</span></label>
-                        </div>
-                    </div>
-
-                    <div id="deckbuilderChangePrintingColorFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any" data-all-label="All colors">
-                        <span>Color Identity</span>
-
-                        <button
-                            type="button"
-                            class="custom-draft-multi-select-button"
-                            aria-haspopup="true"
-                            aria-expanded="false"
-                        >
-                            <span class="custom-draft-multi-select-label">Any</span>
-                            <span class="custom-draft-multi-select-chevron">▾</span>
-                        </button>
-
-                        <div class="custom-draft-multi-select-menu hidden">
-                            <label><input type="checkbox" value="w"><span>White</span></label>
-                            <label><input type="checkbox" value="u"><span>Blue</span></label>
-                            <label><input type="checkbox" value="b"><span>Black</span></label>
-                            <label><input type="checkbox" value="r"><span>Red</span></label>
-                            <label><input type="checkbox" value="g"><span>Green</span></label>
-                            <label><input type="checkbox" value="colorless"><span>Colorless</span></label>
-                            <label><input type="checkbox" value="land"><span>Land</span></label>
-                            <label><input type="checkbox" value="multi_selected"><span>Multi (Selected Colors Only)</span></label>
-                            <label><input type="checkbox" value="multi_has_selected"><span>Multi (Has Selected)</span></label>
-                            <label><input type="checkbox" value="multi_any"><span>Multi (Any)</span></label>
-                        </div>
-                    </div>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Set Code</span>
-                        <input
-                            type="text"
-                            id="deckbuilderChangePrintingSetCodeFilter"
-                            class="custom-draft-filter-input"
-                            maxlength="12"
-                            placeholder="Any"
-                            autocomplete="off"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Mana Value Rule</span>
-                        <select id="deckbuilderChangePrintingManaOperatorFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="=">=</option>
-                            <option value="<=">&lt;=</option>
-                            <option value=">=">&gt;=</option>
-                            <option value="<">&lt;</option>
-                            <option value=">">&gt;</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Mana Value</span>
-                        <input
-                            type="number"
-                            id="deckbuilderChangePrintingManaValueFilter"
-                            class="custom-draft-filter-input"
-                            min="0"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Spell Type</span>
-                        <select id="deckbuilderChangePrintingTypeFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="creature">Creature</option>
-                            <option value="artifact">Artifact</option>
-                            <option value="enchantment">Enchantment</option>
-                            <option value="instant">Instant</option>
-                            <option value="sorcery">Sorcery</option>
-                            <option value="planeswalker">Planeswalker</option>
-                            <option value="battle">Battle</option>
-                            <option value="land">Land</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Start Year</span>
-                        <input
-                            type="number"
-                            id="deckbuilderChangePrintingYearStartFilter"
-                            class="custom-draft-filter-input"
-                            min="1993"
-                            max="2100"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>End Year</span>
-                        <input
-                            type="number"
-                            id="deckbuilderChangePrintingYearEndFilter"
-                            class="custom-draft-filter-input"
-                            min="1993"
-                            max="2100"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Digital Cards</span>
-                        <select id="deckbuilderChangePrintingDigitalFilter" class="custom-draft-filter-input">
-                            <option value="exclude" selected>Exclude MTGO/Arena/Alchemy</option>
-                            <option value="">Include Digital</option>
-                            <option value="only">Digital Only</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Per Page</span>
-                        <select id="deckbuilderChangePrintingPageSizeSelect" class="custom-draft-filter-input">
-                            <option value="100">100</option>
-                            <option value="250">250</option>
-                            <option value="500" selected>500</option>
-                            <option value="750">750</option>
-                            <option value="1000">1000</option>
-                        </select>
-                    </label>
-                </div>
-
-                <div class="custom-draft-search-action-row">
-                    <div class="custom-draft-search-action-left">
-                        <button
-                            type="button"
-                            id="deckbuilderChangePrintingSearchButton"
-                            class="action-button"
-                        >
-                            Search
-                        </button>
-
-                        <button
-                            type="button"
-                            id="deckbuilderChangePrintingClearButton"
-                            class="action-button secondary-button"
-                        >
-                            Clear Search
-                        </button>
-                    </div>
-
-                    <label class="custom-draft-filter-field custom-draft-search-sort-field">
-                        <span>Sort By</span>
-                        <select id="deckbuilderChangePrintingSortSelect" class="custom-draft-filter-input">
-                            <option value="name_asc">Name A-Z</option>
-                            <option value="name_desc">Name Z-A</option>
-                            <option value="set_asc">Set Code A-Z</option>
-                            <option value="set_desc">Set Code Z-A</option>
-                            <option value="year_newest" selected>Year Newest</option>
-                            <option value="year_oldest">Year Oldest</option>
-                            <option value="rarity_low_high">Rarity Common → Mythic</option>
-                            <option value="rarity_high_low">Rarity Mythic → Common</option>
-                            <option value="mv_low_high">Mana Value Low → High</option>
-                            <option value="mv_high_low">Mana Value High → Low</option>
-                            <option value="edhrec_rank_best">EDHREC Rank Best</option>
-                            <option value="edhrec_rank_worst">EDHREC Rank Worst</option>
-                            <option value="edhrec_salt_high">EDHREC Salt High</option>
-                            <option value="edhrec_salt_low">EDHREC Salt Low</option>
-                            <option value="price_high">Price High</option>
-                            <option value="price_low">Price Low</option>
-                        </select>
-                    </label>
-                </div>
-
-                <div class="custom-draft-search-footer-bar">
-                    <div id="deckbuilderChangePrintingPagination" class="custom-draft-search-pagination custom-draft-search-pagination-hidden">
-                        <button type="button" id="deckbuilderChangePrintingPrevButton" class="custom-draft-page-arrow" disabled aria-label="Previous page">‹</button>
-                        <span class="custom-draft-page-label-prefix">Page</span>
-                        <input
-                            type="number"
-                            id="deckbuilderChangePrintingPageInput"
-                            class="custom-draft-page-input"
-                            value="1"
-                            min="1"
-                            step="1"
-                            aria-label="Current page"
-                        >
-                        <span id="deckbuilderChangePrintingPageTotal" class="custom-draft-page-label-suffix">of —</span>
-                        <button type="button" id="deckbuilderChangePrintingNextButton" class="custom-draft-page-arrow" disabled aria-label="Next page">›</button>
-                    </div>
-
-                    <div id="deckbuilderChangePrintingStatus" class="custom-draft-card-search-status hidden"></div>
-                </div>
-
-                <div id="deckbuilderChangePrintingResults" class="custom-draft-card-search-results hidden"></div>
-            </div>
-        </div>
-    </div>
     <div id="deckbuilderHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
         <img
             id="deckbuilderHoverPreviewImage"
@@ -980,6 +741,8 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
 <script>
 (function () {
     const workspace = document.getElementById("deckbuilderWorkspace");
@@ -989,6 +752,7 @@
     const sortSelect = document.getElementById("deckbuilderSortSelect");
     const cardSizeSelect = document.getElementById("deckbuilderCardSizeSelect");
     const basicLandPaletteTemplate = document.getElementById("deckbuilderBasicLandPaletteTemplate");
+    const openAddCardsButton = document.getElementById("deckbuilderOpenAddCardsButton");
     const sideboardFilterButton = document.getElementById("deckbuilderSideboardFilterButton");
     const sideboardFilterPanel = document.getElementById("deckbuilderSideboardFilterPanel");
     const sideboardFilterText = document.getElementById("deckbuilderSideboardFilterText");
@@ -1019,31 +783,7 @@
     const cardContextMenu = document.getElementById("deckbuilderCardContextMenu");
     const contextMoveButton = document.getElementById("deckbuilderContextMoveButton");
     const landPaletteContextMenu = document.getElementById("deckbuilderLandPaletteContextMenu");
-    const changePrintingOverlay = document.getElementById("deckbuilderChangePrintingOverlay");
-    const changePrintingCloseButton = document.getElementById("deckbuilderChangePrintingCloseButton");
-    const changePrintingTitle = document.getElementById("deckbuilderChangePrintingTitle");
-    const changePrintingSubtitle = document.getElementById("deckbuilderChangePrintingSubtitle");
-    const changePrintingSearchInput = document.getElementById("deckbuilderChangePrintingSearchInput");
-    const changePrintingRarityFilter = document.getElementById("deckbuilderChangePrintingRarityFilter");
-    const changePrintingColorFilter = document.getElementById("deckbuilderChangePrintingColorFilter");
-    const changePrintingSetCodeFilter = document.getElementById("deckbuilderChangePrintingSetCodeFilter");
-    const changePrintingManaOperatorFilter = document.getElementById("deckbuilderChangePrintingManaOperatorFilter");
-    const changePrintingManaValueFilter = document.getElementById("deckbuilderChangePrintingManaValueFilter");
-    const changePrintingTypeFilter = document.getElementById("deckbuilderChangePrintingTypeFilter");
-    const changePrintingYearStartFilter = document.getElementById("deckbuilderChangePrintingYearStartFilter");
-    const changePrintingYearEndFilter = document.getElementById("deckbuilderChangePrintingYearEndFilter");
-    const changePrintingDigitalFilter = document.getElementById("deckbuilderChangePrintingDigitalFilter");
-    const changePrintingPageSizeSelect = document.getElementById("deckbuilderChangePrintingPageSizeSelect");
-    const changePrintingSortSelect = document.getElementById("deckbuilderChangePrintingSortSelect");
-    const changePrintingSearchButton = document.getElementById("deckbuilderChangePrintingSearchButton");
-    const changePrintingClearButton = document.getElementById("deckbuilderChangePrintingClearButton");
-    const changePrintingPagination = document.getElementById("deckbuilderChangePrintingPagination");
-    const changePrintingPrevButton = document.getElementById("deckbuilderChangePrintingPrevButton");
-    const changePrintingNextButton = document.getElementById("deckbuilderChangePrintingNextButton");
-    const changePrintingPageInput = document.getElementById("deckbuilderChangePrintingPageInput");
-    const changePrintingPageTotal = document.getElementById("deckbuilderChangePrintingPageTotal");
-    const changePrintingStatus = document.getElementById("deckbuilderChangePrintingStatus");
-    const changePrintingResults = document.getElementById("deckbuilderChangePrintingResults");
+    const sharedCardSearchOverlay = document.getElementById("customDraftCardSearchOverlay");
     const landPaletteAddMenuLabel = document.getElementById("deckbuilderLandPaletteAddMenuLabel");
     const landPaletteQuantityMenu = document.getElementById("deckbuilderLandPaletteQuantityMenu");
     const loadDeckModal = document.getElementById("deckbuilderLoadDeckModal");
@@ -1071,8 +811,7 @@
     let activeContextCard = null;
     let activeLandPaletteCard = null;
     let activeChangePrintingTarget = null;
-    let changePrintingPage = 1;
-    let changePrintingTotalPages = 1;
+    let deckbuilderCardSearchModal = null;
     let deckbuilderBasicLandCounts = {};
 
     workspace.style.setProperty("--deckbuilder-sideboard-flex", workspace.dataset.sideboardFlex || "0.40");
@@ -1086,6 +825,8 @@
     const cardActionUrl = workspace.dataset.cardActionUrl || "";
     const changePrintingOptionsUrl = workspace.dataset.changePrintingOptionsUrl || "";
     const changePrintingUrl = workspace.dataset.changePrintingUrl || "";
+    const addCardSearchUrl = workspace.dataset.addCardSearchUrl || "";
+    const addCardUrl = workspace.dataset.addCardUrl || "";
     const loadDecksUrl = workspace.dataset.loadDecksUrl || "";
     const deckbuilderDragMimeType = "application/x-imomir-deckbuilder";
 
@@ -3431,7 +3172,9 @@
                 payload = forceBasicLandPrintingIntoPayload(payload, changedLandName, cardUuid);
             }
 
-            setChangePrintingOverlayVisible(false);
+            if (deckbuilderCardSearchModal && deckbuilderCardSearchModal.isOpen()) {
+                deckbuilderCardSearchModal.close();
+            }
             applyDeckbuilderPayload(payload);
 
             if (window.iMomirToast) {
@@ -3476,66 +3219,23 @@
     function openChangePrintingModal(changeTarget) {
         activeChangePrintingTarget = changeTarget || null;
 
-        if (!activeChangePrintingTarget) {
+        if (!activeChangePrintingTarget || !deckbuilderCardSearchModal) {
             return;
         }
 
-        const cardName = activeChangePrintingTarget.cardName || activeChangePrintingTarget.landName || "Card";
+        let updateUrl = changePrintingUrl;
 
-        if (changePrintingTitle) {
-            changePrintingTitle.textContent = "Change Printing";
+        if (activeChangePrintingTarget.landName) {
+            updateUrl += "?land_name=" + encodeURIComponent(activeChangePrintingTarget.landName || "");
+        } else if (activeChangePrintingTarget.deckCardId) {
+            updateUrl += "?deck_card_id=" + encodeURIComponent(activeChangePrintingTarget.deckCardId || "");
         }
 
-        if (changePrintingSubtitle) {
-            changePrintingSubtitle.textContent = "Choose a replacement printing for " + cardName + ".";
-        }
-
-        if (changePrintingSearchInput) {
-            changePrintingSearchInput.value = cardName;
-        }
-
-        [
-            changePrintingSetCodeFilter,
-            changePrintingManaOperatorFilter,
-            changePrintingManaValueFilter,
-            changePrintingTypeFilter,
-            changePrintingYearStartFilter,
-            changePrintingYearEndFilter
-        ].forEach(function (field) {
-            if (field) {
-                field.value = "";
-            }
+        deckbuilderCardSearchModal.openChangePrinting({
+            cardName: activeChangePrintingTarget.cardName || activeChangePrintingTarget.landName || "",
+            currentCardUuid: activeChangePrintingTarget.currentCardUuid || "",
+            updateUrl: updateUrl
         });
-
-        if (changePrintingDigitalFilter) {
-            changePrintingDigitalFilter.value = "exclude";
-        }
-
-        if (changePrintingPageSizeSelect) {
-            changePrintingPageSizeSelect.value = "500";
-        }
-
-        if (changePrintingSortSelect) {
-            changePrintingSortSelect.value = "year_newest";
-        }
-
-        getSelectedDeckbuilderChangePrintingMultiValues(changePrintingRarityFilter).forEach(function () {});
-        Array.from(document.querySelectorAll("#deckbuilderChangePrintingOverlay input[type='checkbox']")).forEach(function (checkbox) {
-            checkbox.checked = false;
-        });
-
-        bindDeckbuilderChangePrintingMultiSelect(changePrintingRarityFilter);
-        bindDeckbuilderChangePrintingMultiSelect(changePrintingColorFilter);
-        updateDeckbuilderChangePrintingMultiLabel(changePrintingRarityFilter);
-        updateDeckbuilderChangePrintingMultiLabel(changePrintingColorFilter);
-
-        if (changePrintingResults) {
-            changePrintingResults.innerHTML = "";
-            changePrintingResults.classList.add("hidden");
-        }
-
-        setChangePrintingOverlayVisible(true);
-        runChangePrintingSearch(1);
     }
 
     function setLandPaletteQuantityLabels(landName) {
@@ -3843,6 +3543,92 @@
         });
     }
 
+    deckbuilderCardSearchModal = window.iMomirCardSearchModal.init({
+        searchUrl: addCardSearchUrl || changePrintingOptionsUrl,
+        addUrl: addCardUrl,
+
+        showMessage: function (messageText, isError) {
+            if (!messageText) {
+                return;
+            }
+
+            if (window.iMomirToast) {
+                if (isError) {
+                    window.iMomirToast.error(messageText);
+                } else {
+                    window.iMomirToast.success(messageText);
+                }
+            } else if (isError) {
+                window.alert(messageText);
+            }
+        },
+
+        bindZoomableImages: function () {
+            bindHoverPreviews();
+        },
+
+        getExistingCardLookup: function () {
+            const lookup = {
+                cardUuids: new Set(),
+                printingKeys: new Set()
+            };
+
+            Array.from(document.querySelectorAll(".deckbuilder-card[data-card-uuid]")).forEach(function (cardElement) {
+                const cardUuid = String(cardElement.dataset.cardUuid || "").trim();
+
+                if (cardUuid) {
+                    lookup.cardUuids.add(cardUuid);
+                }
+            });
+
+            return lookup;
+        },
+
+        onAddSuccess: function (payload, context) {
+            applyDeckbuilderPayload(payload);
+
+            if (context && typeof context.setStatus === "function") {
+                context.setStatus(payload.message || "Card added to sideboard.", false);
+            }
+        },
+
+        onChangePrintingSuccess: function (payload, context) {
+            const changedLandName = activeChangePrintingTarget
+                ? (activeChangePrintingTarget.landName || "")
+                : "";
+
+            if (changedLandName) {
+                payload._basicLandCountsAuthoritative = true;
+                payload._basicLandPaletteAuthoritative = true;
+                payload = forceBasicLandPrintingIntoPayload(
+                    payload,
+                    changedLandName,
+                    context.cardUuid || ""
+                );
+            }
+
+            applyDeckbuilderPayload(payload);
+
+            if (context && typeof context.close === "function") {
+                context.close();
+            }
+
+            if (window.iMomirToast) {
+                window.iMomirToast.success(payload.message || "Printing changed.");
+            }
+
+            activeChangePrintingTarget = null;
+        }
+    });
+
+    if (openAddCardsButton) {
+        openAddCardsButton.addEventListener("click", function () {
+            if (deckbuilderCardSearchModal) {
+                deckbuilderCardSearchModal.openAddCards();
+            }
+        });
+    }
+
     if (saveDeckButton) {
         saveDeckButton.addEventListener("click", saveDeckSettings);
     }
@@ -3855,111 +3641,6 @@
             }
         });
     }
-
-    if (changePrintingCloseButton) {
-        changePrintingCloseButton.addEventListener("click", function () {
-            setChangePrintingOverlayVisible(false);
-        });
-    }
-
-    if (changePrintingSearchButton) {
-        changePrintingSearchButton.addEventListener("click", function () {
-            runChangePrintingSearch(1);
-        });
-    }
-
-    if (changePrintingClearButton) {
-        changePrintingClearButton.addEventListener("click", function () {
-            if (!activeChangePrintingTarget) {
-                return;
-            }
-
-            if (changePrintingSearchInput) {
-                changePrintingSearchInput.value = activeChangePrintingTarget.cardName || activeChangePrintingTarget.landName || "";
-            }
-
-            [
-                changePrintingSetCodeFilter,
-                changePrintingManaOperatorFilter,
-                changePrintingManaValueFilter,
-                changePrintingTypeFilter,
-                changePrintingYearStartFilter,
-                changePrintingYearEndFilter
-            ].forEach(function (field) {
-                if (field) {
-                    field.value = "";
-                }
-            });
-
-            Array.from(document.querySelectorAll("#deckbuilderChangePrintingOverlay input[type='checkbox']")).forEach(function (checkbox) {
-                checkbox.checked = false;
-            });
-
-            updateDeckbuilderChangePrintingMultiLabel(changePrintingRarityFilter);
-            updateDeckbuilderChangePrintingMultiLabel(changePrintingColorFilter);
-
-            if (changePrintingDigitalFilter) {
-                changePrintingDigitalFilter.value = "exclude";
-            }
-
-            if (changePrintingSortSelect) {
-                changePrintingSortSelect.value = "year_newest";
-            }
-
-            runChangePrintingSearch(1);
-        });
-    }
-
-    if (changePrintingPrevButton) {
-        changePrintingPrevButton.addEventListener("click", function () {
-            if (changePrintingPage > 1) {
-                runChangePrintingSearch(changePrintingPage - 1);
-            }
-        });
-    }
-
-    if (changePrintingNextButton) {
-        changePrintingNextButton.addEventListener("click", function () {
-            if (changePrintingPage < changePrintingTotalPages) {
-                runChangePrintingSearch(changePrintingPage + 1);
-            }
-        });
-    }
-
-    if (changePrintingPageInput) {
-        changePrintingPageInput.addEventListener("change", function () {
-            const requestedPage = parseInt(changePrintingPageInput.value, 10);
-
-            if (!Number.isFinite(requestedPage)) {
-                return;
-            }
-
-            runChangePrintingSearch(Math.max(1, Math.min(requestedPage, changePrintingTotalPages)));
-        });
-    }
-
-    [
-        changePrintingManaOperatorFilter,
-        changePrintingManaValueFilter,
-        changePrintingTypeFilter,
-        changePrintingSetCodeFilter,
-        changePrintingYearStartFilter,
-        changePrintingYearEndFilter,
-        changePrintingDigitalFilter,
-        changePrintingPageSizeSelect,
-        changePrintingSortSelect
-    ].forEach(function (filterElement) {
-        if (!filterElement) {
-            return;
-        }
-
-        filterElement.addEventListener("keydown", function (event) {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                runChangePrintingSearch(1);
-            }
-        });
-    });
 
     if (loadDeckButton) {
         loadDeckButton.addEventListener("click", openLoadDeckModal);
@@ -4207,22 +3888,25 @@
             setDeckbuilderCopyMenuOpen(false);
             setDeckbuilderContextMenuOpen(false);
             setLandPaletteContextMenuOpen(false);
-            setChangePrintingOverlayVisible(false);
+
+            if (deckbuilderCardSearchModal && deckbuilderCardSearchModal.isOpen()) {
+                deckbuilderCardSearchModal.close();
+            }
         }
     });
 
     setDeckbuilderBasicLandCounts(getCurrentDeckBasicLandCounts());
-    bindDragSources();
-    bindDropZones();
-    bindHoverPreviews();
-    bindCardContextMenus();
     updateDeckbuilderCardSize(deckbuilderCardSize);
     setViewMode(deckbuilderViewMode);
-    sortDeckbuilderZones();
+    //sortDeckbuilderZones();
     setSideboardFilterPanelVisible(false);
     setDeckbuilderCopyFormat("simple");
     moveSideboardPaletteCardsToEnd();
     applySideboardFilters();
+    bindDragSources();
+    bindDropZones();
+    bindHoverPreviews();
+    bindCardContextMenus();
     updateCounts();
 })();
 </script>

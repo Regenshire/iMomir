@@ -254,378 +254,7 @@
             </div>
         </div>
 
-        <div
-            id="customDraftCardSearchOverlay"
-            class="custom-draft-card-search-overlay hidden"
-            aria-hidden="true"
-        >
-            <div class="custom-draft-card-search-window">
-                <div class="custom-draft-card-search-window-header">
-                    <div>
-                        <h2>Add Cards</h2>
-                        <p class="page-subtitle">
-                            Search by card name, set, color identity, rarity, mana value, year, spell type, EDHREC rank, or saltiness.
-                        </p>
-                    </div>
-
-                    <button
-                        type="button"
-                        id="customDraftCardSearchCloseButton"
-                        class="custom-draft-card-search-close-button"
-                        aria-label="Close Add Cards search"
-                        title="Close"
-                    >
-                        ×
-                    </button>
-                </div>
-
-                <div class="custom-draft-card-search-panel">
-                <div class="custom-draft-card-search-text-row">
-                    <label class="custom-draft-filter-field custom-draft-search-text-field">
-                        <span>Search Text</span>
-                        <div class="custom-draft-search-text-input-wrap">
-                            <input
-                                type="text"
-                                id="customDraftCardSearchInput"
-                                class="campaign-add-pack-custom-input custom-draft-search-text-input"
-                                placeholder="Optional: card name, rarity, type, collector number..."
-                                autocomplete="off"
-                            >
-                            <button
-                                type="button"
-                                id="customDraftBulkImportToggleButton"
-                                class="custom-draft-bulk-import-toggle-button"
-                                aria-expanded="false"
-                                aria-controls="customDraftBulkImportPanel"
-                                title="Bulk import from Moxfield / Archidekt list"
-                                aria-label="Bulk import cards from a list"
-                            >
-                                <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" class="custom-draft-bulk-import-icon">
-                                    <rect x="3" y="2" width="9" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6"/>
-                                    <rect x="5" y="4" width="9" height="12" rx="1.5" stroke="currentColor" stroke-width="1.6" fill="none"/>
-                                    <line x1="6" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                                    <line x1="6" y1="9.5" x2="10" y2="9.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                                    <line x1="6" y1="12" x2="8.5" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                                    <line x1="14" y1="13" x2="14" y2="18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                                    <polyline points="11.5,15.5 14,18 16.5,15.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </label>
-                </div>
-
-                <div class="custom-draft-bulk-import-panel" id="customDraftBulkImportPanel" aria-hidden="true">
-                    <div class="custom-draft-bulk-import-body">
-                        <label class="custom-draft-filter-field">
-                            <span>Paste List</span>
-                            <textarea
-                                id="customDraftBulkImportText"
-                                class="campaign-add-pack-custom-textarea custom-draft-bulk-import-textarea"
-                                placeholder="Paste a Moxfield or Archidekt export list here..."
-                            ></textarea>
-                        </label>
-
-                        <div class="custom-draft-bulk-import-row">
-                            <label class="custom-draft-filter-field">
-                                <span>Upload List File</span>
-                                <input
-                                    type="file"
-                                    id="customDraftBulkImportFile"
-                                    class="campaign-player-file"
-                                    accept=".txt,.csv,.dek,.dec,text/plain,text/csv"
-                                >
-                            </label>
-
-                            <div class="custom-draft-bulk-import-button-stack">
-                                <button
-                                    type="button"
-                                    id="customDraftBulkImportButton"
-                                    class="action-button secondary-button custom-draft-bulk-import-button"
-                                >
-                                    Load List into Search Results
-                                </button>
-
-                                <button
-                                    type="button"
-                                    id="customDraftBulkImportAddMostRecentButton"
-                                    class="action-button custom-draft-bulk-import-button"
-                                >
-                                    Add Most Recent to Set
-                                </button>
-                            </div>
-                        </div>
-
-                        <p class="custom-draft-bulk-import-help">
-                            This does not automatically add cards. It loads matching printings into the grouped search results so you can choose the exact versions to add.
-                        </p>
-                    </div>
-                </div>
-
-                <div class="custom-draft-search-builder-grid">
-                    <div id="customDraftSearchRarityFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any">
-                        <span>Rarity</span>
-
-                        <button
-                            type="button"
-                            class="custom-draft-multi-select-button"
-                            aria-haspopup="true"
-                            aria-expanded="false"
-                        >
-                            <span class="custom-draft-multi-select-label">Any</span>
-                            <span class="custom-draft-multi-select-chevron">▾</span>
-                        </button>
-
-                        <div class="custom-draft-multi-select-menu hidden">
-                            <label>
-                                <input type="checkbox" value="common">
-                                <span>Common</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="uncommon">
-                                <span>Uncommon</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="rare">
-                                <span>Rare</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="mythic">
-                                <span>Mythic</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div id="customDraftSearchColorFilter" class="custom-draft-filter-field custom-draft-multi-select" data-placeholder="Any" data-all-label="All colors">
-                        <span>Color Identity</span>
-
-                        <button
-                            type="button"
-                            class="custom-draft-multi-select-button"
-                            aria-haspopup="true"
-                            aria-expanded="false"
-                        >
-                            <span class="custom-draft-multi-select-label">Any</span>
-                            <span class="custom-draft-multi-select-chevron">▾</span>
-                        </button>
-
-                        <div class="custom-draft-multi-select-menu hidden">
-                            <label>
-                                <input type="checkbox" value="w">
-                                <span>White</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="u">
-                                <span>Blue</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="b">
-                                <span>Black</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="r">
-                                <span>Red</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="g">
-                                <span>Green</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="colorless">
-                                <span>Colorless</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="land">
-                                <span>Land</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="multi_selected">
-                                <span>Multi (Selected Colors Only)</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="multi_has_selected">
-                                <span>Multi (Has Selected)</span>
-                            </label>
-
-                            <label>
-                                <input type="checkbox" value="multi_any">
-                                <span>Multi (Any)</span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Set Code</span>
-                        <input
-                            type="text"
-                            id="customDraftSearchSetCodeFilter"
-                            class="custom-draft-filter-input"
-                            maxlength="12"
-                            placeholder="Any"
-                            autocomplete="off"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Mana Value Rule</span>
-                        <select id="customDraftSearchManaOperatorFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="=">=</option>
-                            <option value="<=">&lt;=</option>
-                            <option value=">=">&gt;=</option>
-                            <option value="<">&lt;</option>
-                            <option value=">">&gt;</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Mana Value</span>
-                        <input
-                            type="number"
-                            id="customDraftSearchManaValueFilter"
-                            class="custom-draft-filter-input"
-                            min="0"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Spell Type</span>
-                        <select id="customDraftSearchTypeFilter" class="custom-draft-filter-input">
-                            <option value="">Any</option>
-                            <option value="creature">Creature</option>
-                            <option value="artifact">Artifact</option>
-                            <option value="enchantment">Enchantment</option>
-                            <option value="instant">Instant</option>
-                            <option value="sorcery">Sorcery</option>
-                            <option value="planeswalker">Planeswalker</option>
-                            <option value="battle">Battle</option>
-                            <option value="land">Land</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Start Year</span>
-                        <input
-                            type="number"
-                            id="customDraftSearchYearStartFilter"
-                            class="custom-draft-filter-input"
-                            min="1993"
-                            max="2100"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>End Year</span>
-                        <input
-                            type="number"
-                            id="customDraftSearchYearEndFilter"
-                            class="custom-draft-filter-input"
-                            min="1993"
-                            max="2100"
-                            step="1"
-                            placeholder="Any"
-                        >
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Digital Cards</span>
-                        <select id="customDraftSearchDigitalFilter" class="custom-draft-filter-input">
-                            <option value="exclude" selected>Exclude MTGO/Arena/Alchemy</option>
-                            <option value="">Include Digital</option>
-                            <option value="only">Digital Only</option>
-                        </select>
-                    </label>
-
-                    <label class="custom-draft-filter-field">
-                        <span>Per Page</span>
-                        <select id="customDraftSearchPageSizeSelect" class="custom-draft-filter-input">
-                            <option value="100">100</option>
-                            <option value="250">250</option>
-                            <option value="500" selected>500</option>
-                            <option value="750">750</option>
-                            <option value="1000">1000</option>
-                        </select>
-                    </label>
-                </div>
-
-                <div class="custom-draft-search-action-row">
-                    <div class="custom-draft-search-action-left">
-                        <button
-                            type="button"
-                            id="customDraftCardSearchButton"
-                            class="action-button"
-                        >
-                            Search
-                        </button>
-
-                        <button
-                            type="button"
-                            id="customDraftSearchClearFiltersButton"
-                            class="action-button secondary-button"
-                        >
-                            Clear Search
-                        </button>
-                    </div>
-
-                    <label class="custom-draft-filter-field custom-draft-search-sort-field">
-                        <span>Sort By</span>
-                        <select id="customDraftSearchSortSelect" class="custom-draft-filter-input">
-                            <option value="name_asc">Name A-Z</option>
-                            <option value="name_desc">Name Z-A</option>
-                            <option value="set_asc">Set Code A-Z</option>
-                            <option value="set_desc">Set Code Z-A</option>
-                            <option value="year_newest">Year Newest</option>
-                            <option value="year_oldest">Year Oldest</option>
-                            <option value="rarity_low_high">Rarity Common → Mythic</option>
-                            <option value="rarity_high_low">Rarity Mythic → Common</option>
-                            <option value="mv_low_high">Mana Value Low → High</option>
-                            <option value="mv_high_low">Mana Value High → Low</option>
-                            <option value="edhrec_rank_best">EDHREC Rank Best</option>
-                            <option value="edhrec_rank_worst">EDHREC Rank Worst</option>
-                            <option value="edhrec_salt_high">EDHREC Salt High</option>
-                            <option value="edhrec_salt_low">EDHREC Salt Low</option>
-                            <option value="price_high">Price High</option>
-                            <option value="price_low">Price Low</option>
-                        </select>
-                    </label>
-                </div>
-
-                <div class="custom-draft-search-footer-bar">
-                    <div id="customDraftCardSearchPagination" class="custom-draft-search-pagination custom-draft-search-pagination-hidden">
-                        <button type="button" id="customDraftSearchPrevButton" class="custom-draft-page-arrow" disabled aria-label="Previous page">‹</button>
-                        <span class="custom-draft-page-label-prefix">Page</span>
-                        <input
-                            type="number"
-                            id="customDraftSearchPageInput"
-                            class="custom-draft-page-input"
-                            value="1"
-                            min="1"
-                            step="1"
-                            aria-label="Current page"
-                        >
-                        <span id="customDraftSearchPageTotal" class="custom-draft-page-label-suffix">of —</span>
-                        <button type="button" id="customDraftSearchNextButton" class="custom-draft-page-arrow" disabled aria-label="Next page">›</button>
-                    </div>
-                    <div id="customDraftCardSearchStatus" class="custom-draft-card-search-status hidden"></div>
-                </div>
-                <div id="customDraftCardSearchResults" class="custom-draft-card-search-results hidden"></div>
-            </div>
-        </div>
-    </div>
+        {% include "_card_search_modal.html" %}
 
         <div id="customDraftSetCardListPanel" class="page-panel custom-draft-set-card-list-panel">
             <div class="custom-draft-card-list-header">
@@ -1304,6 +933,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
 <script>
 (function () {
     const customDraftSetManageForm = document.getElementById("customDraftSetManageForm");
@@ -1365,6 +995,7 @@
     const bulkApplySpecialSlotButton = document.getElementById("customDraftBulkApplySpecialSlotButton");
     const bulkRemoveCardsButton = document.getElementById("customDraftBulkRemoveCardsButton");
     const currentCardList = document.getElementById("customDraftCurrentCardList");
+    const currentCardCountBadge = document.querySelector(".custom-draft-card-count");
     const currentCardListPanel = document.getElementById("customDraftSetCardListPanel");
     const maximizeCardListButton = document.getElementById("customDraftMaximizeCardListButton");
     const currentCardGrid = document.getElementById("customDraftCurrentCardGrid");
@@ -1403,6 +1034,7 @@
     const addUrl = {{ url_for('custom_draft_set_cards_add', set_code=custom_set.set_code)|tojson }};
 
     let activeChangePrintingState = null;
+    let cardSearchModal = null;
     let currentVisibleCardCopyFormat = "simple";
     let currentSearchPage = 1;
     let currentSearchTotalPages = 1;
@@ -2993,6 +2625,352 @@
         ].join(" ").toLowerCase();
     }
 
+    function getSpecialSlotOptionsHtml(selectedValue) {
+        const selectedString = String(selectedValue ?? "0");
+
+        const sourceSelect = document.querySelector(".custom-draft-card-category-select")
+            || bulkSpecialSlotSelect;
+
+        if (!sourceSelect) {
+            return '<option value="0">Normal</option>';
+        }
+
+        return Array.from(sourceSelect.options).map(function (option) {
+            const optionValue = String(option.value ?? "");
+            const selectedAttribute = optionValue === selectedString ? " selected" : "";
+
+            return '<option value="' + escapeHtml(optionValue) + '"' + selectedAttribute + '>' + escapeHtml(option.textContent || optionValue) + '</option>';
+        }).join("");
+    }
+
+    function escapeHtml(rawValue) {
+        return String(rawValue ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function createCurrentCardRowFromPayload(card) {
+        if (!card) {
+            return null;
+        }
+
+        const cardUuid = card.card_uuid || "";
+        const cardName = card.card_name || "";
+        const customSetCardId = String(card.custom_set_card_id || "");
+        const setCode = card.card_set_code || "";
+        const collectorNumber = card.collector_number || "";
+        const rarity = card.rarity || "";
+        const typeLine = card.type_line || "";
+        const colorIdentityJson = card.color_identity_json || "[]";
+        const manaValue = card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value);
+        const edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
+        const edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
+        const sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
+        const specialCategoryIndex = String(card.special_category_index ?? "0");
+        const hasAlternateSource = Boolean(card.has_alternate_source);
+        const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
+        const isFoil = Boolean(card.sheet_is_foil);
+        const imageSrc = card.image_src || ("/chaos-card-image/" + encodeURIComponent(cardUuid));
+        const cacheBustedImageSrc = imageSrc + "?v=" + Date.now();
+
+        const row = document.createElement("div");
+
+        row.className = "custom-draft-current-card-row";
+        row.dataset.customSetCardId = customSetCardId;
+        row.dataset.cardUuid = cardUuid;
+        row.dataset.cardSearch = buildCurrentCardSearchTextFromCard(card);
+        row.dataset.rarity = String(rarity).toLowerCase();
+        row.dataset.colorIdentity = String(colorIdentityJson).toLowerCase();
+        row.dataset.manaValue = manaValue;
+        row.dataset.typeLine = String(typeLine).toLowerCase();
+        row.dataset.cardName = String(cardName).toLowerCase();
+        row.dataset.displayCardName = cardName;
+        row.dataset.setCode = String(setCode).toUpperCase();
+        row.dataset.collectorNumber = collectorNumber;
+        row.dataset.specialCategory = specialCategoryIndex;
+        row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+        row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
+        row.dataset.isFoil = isFoil ? "1" : "0";
+        row.dataset.edhrecRank = edhrecRank;
+        row.dataset.edhrecSaltiness = edhrecSaltiness;
+        row.dataset.sortPrice = sortPrice;
+
+        row.innerHTML = [
+            '<div class="custom-draft-current-card-image-wrap">',
+                '<img',
+                    ' src="' + escapeHtml(cacheBustedImageSrc) + '"',
+                    ' alt="' + escapeHtml(cardName) + '"',
+                    ' class="custom-draft-current-card-image custom-draft-card-zoomable"',
+                    ' role="button"',
+                    ' tabindex="0"',
+                    ' data-zoom-src="' + escapeHtml(cacheBustedImageSrc) + '"',
+                    ' data-zoom-alt="' + escapeHtml(cardName) + '"',
+                    ' aria-label="Zoom ' + escapeHtml(cardName) + '"',
+                '>',
+            '</div>',
+
+            '<div class="custom-draft-current-card-main">',
+                '<div class="custom-draft-current-card-title-row">',
+                    '<label class="custom-draft-current-card-select-wrap">',
+                        '<input',
+                            ' type="checkbox"',
+                            ' class="custom-draft-current-card-checkbox"',
+                            ' value="' + escapeHtml(customSetCardId) + '"',
+                            ' aria-label="Select ' + escapeHtml(cardName) + '"',
+                        '>',
+                    '</label>',
+
+                    '<div class="custom-draft-current-card-title">' + escapeHtml(cardName) + '</div>',
+
+                    '<button',
+                        ' type="button"',
+                        ' class="alternate-image-gear custom-draft-change-printing-button"',
+                        ' data-card-name="' + escapeHtml(cardName) + '"',
+                        ' data-current-card-uuid="' + escapeHtml(cardUuid) + '"',
+                        ' data-update-url="' + escapeHtml(card.printing_update_url || "") + '"',
+                        ' title="Change printing"',
+                        ' aria-label="Change printing for ' + escapeHtml(cardName) + '"',
+                    '>',
+                        '<svg class="custom-draft-change-printing-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">',
+                            '<rect x="7" y="5" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>',
+                            '<rect x="5" y="3" width="10" height="14" rx="1.8" ry="1.8" fill="none" stroke="currentColor" stroke-width="1.8"></rect>',
+                            '<line x1="8" y1="8" x2="12" y2="8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+                            '<line x1="8" y1="11" x2="12" y2="11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+                            '<line x1="8" y1="14" x2="11" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></line>',
+                        '</svg>',
+                    '</button>',
+
+                    '<button',
+                        ' type="button"',
+                        ' class="alternate-image-gear alternate-image-button' + (hasAlternateSource ? ' custom-draft-alternate-image-active' : '') + '"',
+                        ' data-card-uuid="' + escapeHtml(cardUuid) + '"',
+                        ' data-card-name="' + escapeHtml(cardName) + '"',
+                        ' data-is-foil="' + (isFoil ? '1' : '0') + '"',
+                        ' data-foil-update-url="' + escapeHtml(card.foil_update_url || "") + '"',
+                        ' title="Alternate image settings"',
+                        ' aria-label="Alternate image settings for ' + escapeHtml(cardName) + '"',
+                    '>',
+                        '⚙',
+                    '</button>',
+                '</div>',
+
+                '<div class="custom-draft-current-card-meta">',
+                    '<span>' + escapeHtml(setCode) + '</span>',
+                    '<span>#' + escapeHtml(collectorNumber || "?") + '</span>',
+                    '<span>' + escapeHtml(rarity || "unknown rarity") + '</span>',
+                    '<span>MV ' + escapeHtml(formatCurrentCardNumber(card.mana_value, 1)) + '</span>',
+                    '<span>EDHREC ' + escapeHtml(card.edhrec_rank === null || card.edhrec_rank === undefined ? "?" : card.edhrec_rank) + '</span>',
+                    '<span>Salt ' + escapeHtml(formatCurrentCardNumber(card.edhrec_saltiness, 2)) + '</span>',
+                    '<span>Price ' + escapeHtml(formatCurrentCardPrice(card.sort_price)) + '</span>',
+                    '<span class="custom-draft-color-identity" data-color-json="' + escapeHtml(colorIdentityJson) + '">Color Identity: ' + escapeHtml(getColorIdentityLabel(colorIdentityJson, typeLine)) + '</span>',
+                    '<span>' + escapeHtml(typeLine || "unknown type") + '</span>',
+                    (isFoil ? '<span class="custom-draft-foil-meta-line">Foil</span>' : ''),
+                    (hasAlternateSource ? '<span class="custom-draft-alternate-image-meta-line">Alternate Image - ' + (alternateRemoveBleed ? 'Remove Bleed' : 'No Bleed') + '</span>' : ''),
+                '</div>',
+            '</div>',
+
+            '<label class="custom-draft-current-card-category">',
+                '<span>Special Slot</span>',
+                '<select',
+                    ' class="custom-draft-card-category-select"',
+                    ' data-update-url="' + escapeHtml(card.category_update_url || "") + '"',
+                '>',
+                    getSpecialSlotOptionsHtml(specialCategoryIndex),
+                '</select>',
+            '</label>',
+
+            '<div class="custom-draft-current-card-actions">',
+                '<button',
+                    ' type="button"',
+                    ' class="action-button secondary-button campaign-danger-button custom-draft-card-remove-button"',
+                    ' data-delete-url="' + escapeHtml(card.delete_url || "") + '"',
+                    ' data-card-name="' + escapeHtml(cardName) + '"',
+                '>',
+                    'Remove',
+                '</button>',
+            '</div>'
+        ].join("");
+
+        return row;
+    }
+
+    function addCurrentCardRowFromAddPayload(card) {
+        if (!card || !currentCardList) {
+            return null;
+        }
+
+        const customSetCardId = String(card.custom_set_card_id || "");
+        const cardUuid = String(card.card_uuid || "");
+
+        if (customSetCardId) {
+            const existingById = currentCardList.querySelector(
+                '.custom-draft-current-card-row[data-custom-set-card-id="' + CSS.escape(customSetCardId) + '"]'
+            );
+
+            if (existingById) {
+                return existingById;
+            }
+        }
+
+        if (cardUuid) {
+            const existingByUuid = currentCardList.querySelector(
+                '.custom-draft-current-card-row[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+            );
+
+            if (existingByUuid) {
+                return existingByUuid;
+            }
+        }
+
+        const newRow = createCurrentCardRowFromPayload(card);
+
+        if (!newRow) {
+            return null;
+        }
+
+        currentCardList.appendChild(newRow);
+        bindCurrentCardRowControls(newRow);
+        updateCurrentCardCountBadge();
+        filterCurrentCards();
+        updateCurrentSelectionState();
+        updateSetStatsRollout();
+        bindZoomableImages();
+
+        return newRow;
+    }
+
+    function bindCurrentCardRowControls(row) {
+        if (!row) {
+            return;
+        }
+
+        const checkbox = row.querySelector(".custom-draft-current-card-checkbox");
+        const categorySelect = row.querySelector(".custom-draft-card-category-select");
+        const removeButton = row.querySelector(".custom-draft-card-remove-button");
+        const changePrintingButton = row.querySelector(".custom-draft-change-printing-button");
+
+        if (checkbox && checkbox.dataset.bound !== "1") {
+            checkbox.dataset.bound = "1";
+            checkbox.addEventListener("change", updateCurrentSelectionState);
+        }
+
+        if (categorySelect && categorySelect.dataset.bound !== "1") {
+            categorySelect.dataset.bound = "1";
+            categorySelect.addEventListener("change", async function () {
+                const updateUrl = categorySelect.dataset.updateUrl || "";
+
+                if (!updateUrl) {
+                    return;
+                }
+
+                categorySelect.disabled = true;
+
+                try {
+                    const response = await fetch(updateUrl, {
+                        method: "POST",
+                        headers: {
+                            "Accept": "application/json",
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            special_category_index: categorySelect.value || "0"
+                        })
+                    });
+
+                    const payload = await response.json();
+
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.message || "Failed to update special slot category.");
+                    }
+
+                    row.dataset.specialCategory = categorySelect.value || "0";
+                    filterCurrentCards();
+                } catch (error) {
+                    console.error(error);
+                    showUiMessage(error.message || "Failed to update special slot category.", true);
+                } finally {
+                    categorySelect.disabled = false;
+                }
+            });
+        }
+
+        if (changePrintingButton && changePrintingButton.dataset.bound !== "1") {
+            changePrintingButton.dataset.bound = "1";
+            changePrintingButton.addEventListener("click", async function () {
+                const cardName = changePrintingButton.dataset.cardName || "";
+                const currentCardUuid = changePrintingButton.dataset.currentCardUuid || "";
+                const updateUrl = changePrintingButton.dataset.updateUrl || "";
+
+                if (!cardName || !currentCardUuid || !updateUrl || !cardSearchModal) {
+                    return;
+                }
+
+                await cardSearchModal.openChangePrinting({
+                    cardName: cardName,
+                    currentCardUuid: currentCardUuid,
+                    updateUrl: updateUrl
+                });
+            });
+        }
+
+        if (removeButton && removeButton.dataset.bound !== "1") {
+            removeButton.dataset.bound = "1";
+            removeButton.addEventListener("click", async function () {
+                const deleteUrl = removeButton.dataset.deleteUrl || "";
+                const cardName = removeButton.dataset.cardName || "this card";
+
+                if (!deleteUrl) {
+                    return;
+                }
+
+                const confirmed = await confirmUiAction({
+                    title: "Remove Card",
+                    message: "Remove " + cardName + " from this custom draft set?",
+                    confirmText: "Remove",
+                    cancelText: "Cancel",
+                    danger: true
+                });
+
+                if (!confirmed) {
+                    return;
+                }
+
+                removeButton.disabled = true;
+                removeButton.classList.add("action-button-loading");
+                removeButton.textContent = "Removing...";
+
+                try {
+                    const response = await fetch(deleteUrl, {
+                        method: "POST",
+                        headers: {
+                            "Accept": "application/json"
+                        }
+                    });
+
+                    const payload = await response.json();
+
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.message || "Failed to remove card.");
+                    }
+
+                    row.remove();
+                    updateCurrentCardCountBadge();
+                    filterCurrentCards();
+                    showUiMessage(payload.message || "Card removed.", false);
+                } catch (error) {
+                    console.error(error);
+                    removeButton.disabled = false;
+                    removeButton.classList.remove("action-button-loading");
+                    removeButton.textContent = "Remove";
+                    showUiMessage(error.message || "Failed to remove card.", true);
+                }
+            });
+        }
+    }
+
     function updateCurrentCardRowFromPrintingPayload(card) {
         if (!card || !currentCardList) {
             return null;
@@ -3426,192 +3404,32 @@
     }
 
     function bindCurrentCardControls() {
-        const categorySelects = Array.from(document.querySelectorAll(".custom-draft-card-category-select"));
-        const removeButtons = Array.from(document.querySelectorAll(".custom-draft-card-remove-button"));
-        const changePrintingButtons = Array.from(document.querySelectorAll(".custom-draft-change-printing-button"));
-        const currentCardCheckboxes = Array.from(document.querySelectorAll(".custom-draft-current-card-checkbox"));
-
-        currentCardCheckboxes.forEach(function (checkbox) {
-            checkbox.addEventListener("change", updateCurrentSelectionState);
+        Array.from(document.querySelectorAll(".custom-draft-current-card-row")).forEach(function (row) {
+            bindCurrentCardRowControls(row);
         });
 
-        if (selectAllCurrentCardsButton) {
+        if (selectAllCurrentCardsButton && selectAllCurrentCardsButton.dataset.bound !== "1") {
+            selectAllCurrentCardsButton.dataset.bound = "1";
             selectAllCurrentCardsButton.addEventListener("click", selectAllVisibleCurrentCards);
         }
 
-        if (clearCurrentCardSelectionButton) {
+        if (clearCurrentCardSelectionButton && clearCurrentCardSelectionButton.dataset.bound !== "1") {
+            clearCurrentCardSelectionButton.dataset.bound = "1";
             clearCurrentCardSelectionButton.addEventListener("click", clearCurrentCardSelection);
         }
 
-        if (bulkApplySpecialSlotButton) {
+        if (bulkApplySpecialSlotButton && bulkApplySpecialSlotButton.dataset.bound !== "1") {
+            bulkApplySpecialSlotButton.dataset.bound = "1";
             bulkApplySpecialSlotButton.addEventListener("click", bulkAssignSpecialSlot);
         }
 
-        if (bulkRemoveCardsButton) {
+        if (bulkRemoveCardsButton && bulkRemoveCardsButton.dataset.bound !== "1") {
+            bulkRemoveCardsButton.dataset.bound = "1";
             bulkRemoveCardsButton.addEventListener("click", bulkRemoveSelectedCards);
         }
-
-        categorySelects.forEach(function (select) {
-            select.addEventListener("change", async function () {
-                const updateUrl = select.dataset.updateUrl || "";
-
-                if (!updateUrl) {
-                    return;
-                }
-
-                select.disabled = true;
-
-                try {
-                    const response = await fetch(updateUrl, {
-                        method: "POST",
-                        headers: {
-                            "Accept": "application/json",
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            special_category_index: select.value || "0"
-                        })
-                    });
-
-                    const payload = await response.json();
-
-                    if (!response.ok || !payload.ok) {
-                        throw new Error(payload.message || "Failed to update special slot category.");
-                    }
-
-                    const row = select.closest(".custom-draft-current-card-row");
-                    if (row) {
-                        row.dataset.specialCategory = select.value || "0";
-                    }
-
-                    filterCurrentCards();
-                } catch (error) {
-                    console.error(error);
-                    showUiMessage(error.message || "Failed to update special slot category.", true);
-                } finally {
-                    select.disabled = false;
-                }
-            });
-        });
-
-        changePrintingButtons.forEach(function (button) {
-            button.addEventListener("click", async function () {
-                const cardName = button.dataset.cardName || "";
-                const currentCardUuid = button.dataset.currentCardUuid || "";
-                const updateUrl = button.dataset.updateUrl || "";
-
-                if (!cardName || !currentCardUuid || !updateUrl) {
-                    return;
-                }
-
-                setChangePrintingMode({
-                    cardName: cardName,
-                    currentCardUuid: currentCardUuid,
-                    updateUrl: updateUrl
-                });
-
-                clearSearchResults();
-                setSearchStatus("", false);
-
-                if (searchInput) {
-                    searchInput.value = cardName;
-                }
-
-                clearRarityValues(searchRarityFilter);
-
-                clearColorValues(searchColorFilter);
-
-                if (searchManaOperatorFilter) {
-                    searchManaOperatorFilter.value = "";
-                }
-
-                if (searchManaValueFilter) {
-                    searchManaValueFilter.value = "";
-                }
-
-                if (searchTypeFilter) {
-                    searchTypeFilter.value = "";
-                }
-
-                if (searchSetCodeFilter) {
-                    searchSetCodeFilter.value = "";
-                }
-
-                if (searchYearStartFilter) {
-                    searchYearStartFilter.value = "";
-                }
-
-                if (searchYearEndFilter) {
-                    searchYearEndFilter.value = "";
-                }
-
-                if (searchSortSelect) {
-                    searchSortSelect.value = "year_newest";
-                }
-
-                openAddCardsSearch();
-                await runCardSearch();
-            });
-        });
-
-        removeButtons.forEach(function (button) {
-            button.addEventListener("click", async function () {
-                const deleteUrl = button.dataset.deleteUrl || "";
-                const cardName = button.dataset.cardName || "this card";
-
-                if (!deleteUrl) {
-                    return;
-                }
-
-                const confirmed = await confirmUiAction({
-                    title: "Remove Card",
-                    message: "Remove " + cardName + " from this custom draft set?",
-                    confirmText: "Remove",
-                    cancelText: "Cancel",
-                    danger: true
-                });
-
-                if (!confirmed) {
-                    return;
-                }
-
-                button.disabled = true;
-                button.classList.add("action-button-loading");
-                button.textContent = "Removing...";
-
-                try {
-                    const response = await fetch(deleteUrl, {
-                        method: "POST",
-                        headers: {
-                            "Accept": "application/json"
-                        }
-                    });
-
-                    const payload = await response.json();
-
-                    if (!response.ok || !payload.ok) {
-                        throw new Error(payload.message || "Failed to remove card.");
-                    }
-
-                    const row = button.closest(".custom-draft-current-card-row");
-                    if (row) {
-                        row.remove();
-                    }
-
-                    filterCurrentCards();
-                    showUiMessage(payload.message || "Card removed.", false);
-                } catch (error) {
-                    console.error(error);
-                    button.disabled = false;
-                    button.classList.remove("action-button-loading");
-                    button.textContent = "Remove";
-                    showUiMessage(error.message || "Failed to remove card.", true);
-                }
-            });
-        });
     }
 
-        function getRarityRank(rarityValue, highToLow) {
+    function getRarityRank(rarityValue, highToLow) {
         const cleanRarity = String(rarityValue || "").toLowerCase();
 
         const lowHighRanks = {
@@ -4256,6 +4074,14 @@
         }
     }
 
+    function updateCurrentCardCountBadge() {
+        if (!currentCardCountBadge) {
+            return;
+        }
+
+        currentCardCountBadge.textContent = String(getCurrentCardRows().length) + " card(s)";
+    }
+
     function getCurrentCardRows() {
         if (!currentCardList) {
             return [];
@@ -4818,29 +4644,6 @@
         });
     }
 
-    const bulkImportToggleButton = document.getElementById("customDraftBulkImportToggleButton");
-    const bulkImportPanel = document.getElementById("customDraftBulkImportPanel");
-
-    function setBulkImportPanelOpen(isOpen) {
-        if (!bulkImportPanel || !bulkImportToggleButton) {
-            return;
-        }
-
-        bulkImportPanel.classList.toggle("custom-draft-bulk-import-panel-open", Boolean(isOpen));
-        bulkImportPanel.setAttribute("aria-hidden", isOpen ? "false" : "true");
-        bulkImportToggleButton.classList.toggle("custom-draft-bulk-import-toggle-active", Boolean(isOpen));
-        bulkImportToggleButton.setAttribute("aria-expanded", isOpen ? "true" : "false");
-    }
-
-    if (bulkImportToggleButton) {
-        bulkImportToggleButton.addEventListener("click", function () {
-            const isOpen = bulkImportPanel
-                ? bulkImportPanel.classList.contains("custom-draft-bulk-import-panel-open")
-                : false;
-            setBulkImportPanelOpen(!isOpen);
-        });
-    }
-
     function openAddCardsSearch() {
         if (!searchOverlay) {
             return;
@@ -4862,114 +4665,76 @@
             return;
         }
 
-        setBulkImportPanelOpen(false);
         searchOverlay.classList.add("hidden");
         searchOverlay.setAttribute("aria-hidden", "true");
         document.body.classList.remove("custom-draft-search-maximized-active");
         setChangePrintingMode(null);
     }
 
-    if (openAddCardsButton) {
-        openAddCardsButton.addEventListener("click", function () {
-            setChangePrintingMode(null);
-            openAddCardsSearch();
-        });
-    }
+    cardSearchModal = window.iMomirCardSearchModal.init({
+        searchUrl: searchUrl,
+        addUrl: addUrl,
+        bulkImportUrl: bulkImportUrl,
+        bulkImportAddMostRecentUrl: bulkImportAddMostRecentUrl,
 
-    if (closeAddCardsButton) {
-        closeAddCardsButton.addEventListener("click", closeAddCardsSearch);
-    }
+        showMessage: showUiMessage,
+        confirmAction: confirmUiAction,
+        bindZoomableImages: bindZoomableImages,
 
-    if (searchButton) {
-        searchButton.addEventListener("click", runCardSearch);
-    }
+        onPageSizeChange: function (pageSizeValue) {
+            setClientSetting(addCardsPageSizeStorageKey, pageSizeValue || "500");
+        },
 
-    if (bulkImportButton) {
-        bulkImportButton.addEventListener("click", runBulkImportSearch);
-    }
+        getExistingCardLookup: getCurrentSetCardLookup,
 
-    if (bulkImportAddMostRecentButton) {
-        bulkImportAddMostRecentButton.addEventListener("click", runBulkImportAddMostRecent);
-    }
-
-    if (searchInput) {
-        searchInput.addEventListener("keydown", function (event) {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                runCardSearch();
+        onAddSuccess: function (payload, context) {
+            if (payload.card) {
+                addCurrentCardRowFromAddPayload(payload.card);
             }
-        });
-    }
 
-    [
-        searchManaOperatorFilter,
-        searchManaValueFilter,
-        searchTypeFilter,
-        searchSetCodeFilter,
-        searchSortSelect,
-        searchYearStartFilter,
-        searchYearEndFilter,
-        searchDigitalFilter,
-        searchPageSizeSelect
-    ].forEach(function (searchFilterElement) {
-        if (!searchFilterElement) {
-            return;
-        }
+            filterCurrentCards();
+            updateSetStatsRollout();
+            bindZoomableImages();
 
-        searchFilterElement.addEventListener("keydown", function (event) {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                runCardSearch(1);
+            if (context && typeof context.setStatus === "function") {
+                context.setStatus(payload.message || "Card added. Search results remain open.", false);
             }
-        });
-    });
+        },
 
-    if (searchPageSizeSelect) {
-        searchPageSizeSelect.addEventListener("change", function () {
-            setClientSetting(addCardsPageSizeStorageKey, searchPageSizeSelect.value || "500");
+        onChangePrintingSuccess: function (payload, context) {
+            const updatedRow = updateCurrentCardRowFromPrintingPayload(payload.card);
 
-            if (searchResults && !searchResults.classList.contains("hidden") && getAdvancedSearchHasAnyValue()) {
-                runCardSearch(1);
-            }
-        });
-    }
+            if (!updatedRow) {
+                context.setStatus(payload.message || "Printing updated. Reloading card list...", false);
 
-    if (searchPrevButton) {
-        searchPrevButton.addEventListener("click", function () {
-            if (currentSearchPage > 1) {
-                runCardSearch(currentSearchPage - 1);
-            }
-        });
-    }
+                window.setTimeout(function () {
+                    window.location.reload();
+                }, 450);
 
-    if (searchNextButton) {
-        searchNextButton.addEventListener("click", function () {
-            if (currentSearchPage < currentSearchTotalPages) {
-                runCardSearch(currentSearchPage + 1);
-            }
-        });
-    }
-
-    if (searchPageInput) {
-        searchPageInput.addEventListener("change", function () {
-            const requestedPage = parseInt(searchPageInput.value, 10);
-            if (!Number.isFinite(requestedPage)) {
                 return;
             }
-            const clampedPage = Math.max(1, Math.min(requestedPage, currentSearchTotalPages));
-            runCardSearch(clampedPage);
-        });
 
-        searchPageInput.addEventListener("keydown", function (event) {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                searchPageInput.blur();
+            if (context.resultRow) {
+                context.updateSearchResultGroupFromAddedRow(context.resultRow);
+            }
+
+            context.setStatus(payload.message || "Printing updated.", false);
+
+            context.close();
+            filterCurrentCards();
+            updateSetStatsRollout();
+            bindZoomableImages();
+            showUiMessage(payload.message || "Printing updated.", false);
+        }
+    });
+
+    if (openAddCardsButton) {
+        openAddCardsButton.addEventListener("click", function () {
+            if (cardSearchModal) {
+                cardSearchModal.openAddCards();
             }
         });
     }
-
-    bindRarityCheckboxGroup(searchRarityFilter, filterSearchResults);
-    bindColorCheckboxGroup(searchColorFilter, filterSearchResults);
 
     [
         currentFilterInput,
@@ -5261,8 +5026,8 @@
             return;
         }
 
-        if (searchOverlay && !searchOverlay.classList.contains("hidden")) {
-            closeAddCardsSearch();
+        if (cardSearchModal && cardSearchModal.isOpen()) {
+            cardSearchModal.close();
             return;
         }
 

@@ -177,6 +177,7 @@ from db.draftdb import ensure_draft_testing_schema
 
 from db.deckdb import (
     add_basic_land_to_deck,
+    add_card_to_deckbuilder_sideboard,
     archive_deck,
     build_deckbuilder_context_for_draft_test,
     duplicate_deckbuilder_card,
@@ -12109,6 +12110,117 @@ def deckbuilder_delete(deck_id):
         "redirect_url": redirect_url,
     })
 
+@app.route("/deck-builder/<int:deck_id>/cards/search", methods=["GET"])
+def deckbuilder_cards_search(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+            "results": [],
+        }), 404
+
+    search_text = (request.args.get("q") or "").strip()
+
+    try:
+        page = max(1, int(request.args.get("page") or 1))
+    except (TypeError, ValueError):
+        page = 1
+
+    try:
+        page_size = int(request.args.get("page_size") or 500)
+    except (TypeError, ValueError):
+        page_size = 500
+
+    if page_size < 10:
+        page_size = 10
+
+    if page_size > 1000:
+        page_size = 1000
+
+    rows, total_count = search_chaos_cards_for_custom_draft_set(
+        "__DECKBUILDER__",
+        search_text,
+        rarity_filter=request.args.getlist("rarity") or request.args.get("rarity") or "",
+        color_identity_filter=request.args.getlist("color_identity") or request.args.get("color_identity") or "",
+        mana_operator=request.args.get("mana_operator") or "",
+        mana_value=request.args.get("mana_value") or "",
+        type_filter=request.args.get("type") or "",
+        set_code_filter=request.args.get("set_code") or "",
+        year_start=request.args.get("year_start") or "",
+        year_end=request.args.get("year_end") or "",
+        sort_option=request.args.get("sort") or "name_asc",
+        digital_filter=request.args.get("digital") or "exclude",
+        page=page,
+        page_size=page_size,
+    )
+
+    import math
+    total_pages = max(1, math.ceil(total_count / page_size)) if total_count else 1
+
+    return jsonify({
+        "ok": True,
+        "results": [
+            serialize_custom_draft_card_search_result(row)
+            for row in rows
+        ],
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    })
+
+
+@app.route("/deck-builder/<int:deck_id>/cards/add", methods=["POST"])
+def deckbuilder_cards_add(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    payload = request.get_json(silent=True) or {}
+    card_uuid = (payload.get("card_uuid") or "").strip()
+
+    result = add_card_to_deckbuilder_sideboard(
+        deck_id=deck_id,
+        card_uuid=card_uuid,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
+
+        if not draft_state.get("ok"):
+            return jsonify({
+                "ok": False,
+                "message": draft_state.get("message") or "Draft source could not be loaded.",
+            }), 400
+
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
+
+        deckbuilder_payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+        deckbuilder_payload["add_card_result"] = result
+        deckbuilder_payload["ok"] = bool(deckbuilder_payload.get("ok")) and bool(result.get("ok"))
+
+        return jsonify(deckbuilder_payload), 200 if deckbuilder_payload.get("ok") else 400
+
+    return jsonify({
+        "ok": False,
+        "message": "Standalone Deck Builder refresh is not wired yet.",
+    }), 400
+
 @app.route("/deck-builder/<int:deck_id>/change-printing-options", methods=["GET"])
 def deckbuilder_change_printing_options(deck_id):
     deck_row = get_deck_by_id(deck_id)
@@ -12446,12 +12558,14 @@ def deckbuilder_change_printing(deck_id):
     deck_card_id = (
         request.form.get("deck_card_id")
         or payload.get("deck_card_id")
+        or request.args.get("deck_card_id")
         or ""
     )
 
     land_name = (
         request.form.get("land_name")
         or payload.get("land_name")
+        or request.args.get("land_name")
         or ""
     ).strip()
 
@@ -14900,7 +15014,44 @@ def custom_draft_set_cards_add(set_code):
             "message": str(exc),
         }), 400
 
-    return jsonify(result)
+    added_card = None
+
+    for row in get_custom_draft_set_card_rows(clean_set_code):
+        if (row["card_uuid"] or "").strip() == card_uuid:
+            added_card = serialize_custom_draft_current_card_result(row)
+            break
+
+    if added_card:
+        custom_set_card_id = added_card.get("custom_set_card_id")
+
+        added_card["category_update_url"] = url_for(
+            "custom_draft_set_cards_update_category",
+            set_code=clean_set_code,
+            custom_set_card_id=custom_set_card_id,
+        )
+
+        added_card["printing_update_url"] = url_for(
+            "custom_draft_set_cards_update_printing",
+            set_code=clean_set_code,
+            custom_set_card_id=custom_set_card_id,
+        )
+
+        added_card["delete_url"] = url_for(
+            "custom_draft_set_cards_delete",
+            set_code=clean_set_code,
+            custom_set_card_id=custom_set_card_id,
+        )
+
+        added_card["foil_update_url"] = url_for(
+            "custom_draft_set_cards_update_foil",
+            set_code=clean_set_code,
+            custom_set_card_id=custom_set_card_id,
+        )
+
+    return jsonify({
+        **result,
+        "card": added_card,
+    })
 
 @app.route("/custom-draft-sets/<path:set_code>/cards/<int:custom_set_card_id>/printing", methods=["POST"])
 def custom_draft_set_cards_update_printing(set_code, custom_set_card_id):
