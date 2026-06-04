@@ -27,7 +27,6 @@
         <form
             id="printExportForm"
             method="post"
-            target="_blank"
             class="print-export-form"
         >
             <input type="hidden" id="printExportActionInput" name="print_export_action" value="print">
@@ -145,6 +144,52 @@
                         >
                     </label>
                 </div>
+            </div>
+
+            <div
+                id="printExportStatusPanel"
+                class="print-export-status-panel hidden"
+                aria-hidden="true"
+            >
+                <div class="print-export-status-header">
+                    <div class="print-export-status-spinner" aria-hidden="true"></div>
+
+                    <div>
+                        <div id="printExportStatusTitle" class="print-export-status-title">
+                            Preparing Print / Export
+                        </div>
+
+                        <div id="printExportStatusMessage" class="print-export-status-message">
+                            Preparing request...
+                        </div>
+                    </div>
+                </div>
+
+                <div class="print-export-status-steps">
+                    <div id="printExportStatusStepPrepare" class="print-export-status-step print-export-status-step-active">
+                        Preparing request
+                    </div>
+
+                    <div id="printExportStatusStepGenerate" class="print-export-status-step">
+                        Generating file
+                    </div>
+
+                    <div id="printExportStatusStepDeliver" class="print-export-status-step">
+                        Delivering file
+                    </div>
+
+                    <div id="printExportStatusStepComplete" class="print-export-status-step">
+                        Complete
+                    </div>
+                </div>
+
+                <button
+                    type="button"
+                    id="printExportStatusCloseButton"
+                    class="action-button secondary-button print-export-status-close-button hidden"
+                >
+                    Close
+                </button>
             </div>
         </form>
     </div>

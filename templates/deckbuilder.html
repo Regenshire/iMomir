@@ -758,6 +758,7 @@
 
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 <script>
 (function () {
     const workspace = document.getElementById("deckbuilderWorkspace");
@@ -793,14 +794,6 @@
     const deleteDeckCancelButton = document.getElementById("deckbuilderDeleteDeckCancelButton");
     const deleteDeckConfirmButton = document.getElementById("deckbuilderDeleteDeckConfirmButton");
     const openPrintExportButton = document.getElementById("deckbuilderOpenPrintExportButton");
-    const printExportModal = document.getElementById("printExportModal");
-    const printExportBackdrop = document.getElementById("printExportBackdrop");
-    const printExportCloseButton = document.getElementById("printExportCloseButton");
-    const printExportForm = document.getElementById("printExportForm");
-    const printExportPrintButton = document.getElementById("printExportPrintButton");
-    const printExportExportZipButton = document.getElementById("printExportExportZipButton");
-    const printExportSettingsToggle = document.getElementById("printExportSettingsToggle");
-    const printExportSettingsPanel = document.getElementById("printExportSettingsPanel");
     const copyDecklistButton = document.getElementById("deckbuilderCopyDecklistButton");
     const copyDecklistMenuButton = document.getElementById("deckbuilderCopyDecklistMenuButton");
     const copyDecklistMenu = document.getElementById("deckbuilderCopyDecklistMenu");
@@ -3074,36 +3067,6 @@
         }
     }
 
-    function setPrintExportModalVisible(isVisible) {
-        if (!printExportModal) {
-            return;
-        }
-
-        printExportModal.classList.toggle("hidden", !isVisible);
-        printExportModal.setAttribute("aria-hidden", isVisible ? "false" : "true");
-    }
-
-    function setPrintExportSettingsVisible(isVisible) {
-        if (!printExportSettingsPanel || !printExportSettingsToggle) {
-            return;
-        }
-
-        printExportSettingsPanel.classList.toggle("hidden", !isVisible);
-        printExportSettingsPanel.setAttribute("aria-hidden", isVisible ? "false" : "true");
-        printExportSettingsToggle.setAttribute("aria-expanded", isVisible ? "true" : "false");
-    }
-
-    function submitPrintExportForm(actionUrl) {
-        if (!printExportForm || !actionUrl) {
-            showDeckbuilderError(new Error("Print / Export URL was not configured."));
-            return;
-        }
-
-        printExportForm.action = actionUrl;
-        printExportForm.submit();
-        setPrintExportModalVisible(false);
-    }
-
     function setDeckbuilderCopyMenuOpen(isOpen) {
         if (!copyDecklistMenu || !copyDecklistMenuButton) {
             return;
@@ -3175,6 +3138,35 @@
             setViewMode("stack");
         });
     }
+
+    const deckbuilderPrintExportModal = window.iMomirPrintExportModal.init({
+        openButtonId: "deckbuilderOpenPrintExportButton",
+        printUrl: printUrl,
+        exportZipUrl: exportZipUrl,
+
+        beforeOpen: function () {
+            setDeckbuilderCopyMenuOpen(false);
+            setDeckbuilderContextMenuOpen(false);
+            setLandPaletteContextMenuOpen(false);
+            hideHoverPreview();
+        },
+
+        showMessage: function (messageText, isError) {
+            if (!messageText) {
+                return;
+            }
+
+            if (window.iMomirToast) {
+                if (isError) {
+                    window.iMomirToast.error(messageText);
+                } else {
+                    window.iMomirToast.success(messageText);
+                }
+            } else if (isError) {
+                window.alert(messageText);
+            }
+        }
+    });
 
     deckbuilderCardSearchModal = window.iMomirCardSearchModal.init({
         searchUrl: addCardSearchUrl || changePrintingOptionsUrl,
@@ -3331,53 +3323,6 @@
 
     if (deleteDeckConfirmButton) {
         deleteDeckConfirmButton.addEventListener("click", deleteCurrentDeck);
-    }
-
-    if (openPrintExportButton) {
-        openPrintExportButton.addEventListener("click", function (event) {
-            event.preventDefault();
-            event.stopPropagation();
-
-            setDeckbuilderCopyMenuOpen(false);
-            setDeckbuilderContextMenuOpen(false);
-            setLandPaletteContextMenuOpen(false);
-            setPrintExportSettingsVisible(false);
-            setPrintExportModalVisible(true);
-        });
-    }
-
-    if (printExportBackdrop) {
-        printExportBackdrop.addEventListener("click", function () {
-            setPrintExportModalVisible(false);
-        });
-    }
-
-    if (printExportCloseButton) {
-        printExportCloseButton.addEventListener("click", function () {
-            setPrintExportModalVisible(false);
-        });
-    }
-
-    if (printExportSettingsToggle) {
-        printExportSettingsToggle.addEventListener("click", function () {
-            const shouldOpen = printExportSettingsPanel
-                ? printExportSettingsPanel.classList.contains("hidden")
-                : true;
-
-            setPrintExportSettingsVisible(shouldOpen);
-        });
-    }
-
-    if (printExportPrintButton) {
-        printExportPrintButton.addEventListener("click", function () {
-            submitPrintExportForm(printUrl);
-        });
-    }
-
-    if (printExportExportZipButton) {
-        printExportExportZipButton.addEventListener("click", function () {
-            submitPrintExportForm(exportZipUrl);
-        });
     }
 
     if (copyDecklistButton) {
@@ -3566,7 +3511,9 @@
             closeDeleteDeckModal();
             closeLoadDeckModal();
             setDeckbuilderCopyMenuOpen(false);
-            setPrintExportModalVisible(false);
+            if (deckbuilderPrintExportModal && deckbuilderPrintExportModal.isOpen()) {
+                deckbuilderPrintExportModal.close();
+            }
             setDeckbuilderContextMenuOpen(false);
             setLandPaletteContextMenuOpen(false);
 
