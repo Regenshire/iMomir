@@ -560,7 +560,7 @@
             Change Printing
         </button>
 
-        <button type="button" class="deckbuilder-card-context-menu-item deckbuilder-card-context-menu-item-disabled" data-context-action="alternate-image">
+        <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="alternate-image">
             Alternate Image Settings
         </button>
     </div>
@@ -590,7 +590,7 @@
             Change Printing
         </button>
 
-        <button type="button" class="deckbuilder-card-context-menu-item deckbuilder-card-context-menu-item-disabled" data-land-context-action="alternate-image">
+        <button type="button" class="deckbuilder-card-context-menu-item" data-land-context-action="alternate-image">
             Alternate Image Settings
         </button>
     </div>
@@ -856,6 +856,8 @@
             class="campaign-test-draft-hover-preview-image"
         >
     </div>
+
+        {% include "_alternate_image_modal.html" %}
 
     <div id="deckbuilderDeleteDeckModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
         <div id="deckbuilderDeleteDeckBackdrop" class="campaign-add-pack-backdrop"></div>
@@ -3444,6 +3446,33 @@
         }
     }
 
+    function openDeckbuilderAlternateImageModal(cardUuid, cardName) {
+        const cleanCardUuid = String(cardUuid || "").trim();
+        const cleanCardName = String(cardName || "").trim();
+
+        if (!cleanCardUuid) {
+            showDeckbuilderError(new Error("Card UUID was not found for Alternate Image Settings."));
+            return;
+        }
+
+        if (
+            !window.iMomirAlternateImage
+            || typeof window.iMomirAlternateImage.open !== "function"
+        ) {
+            showDeckbuilderError(new Error("Alternate Image modal is not available on this page."));
+            return;
+        }
+
+        window.iMomirAlternateImage.open(
+            cleanCardUuid,
+            cleanCardName || cleanCardUuid,
+            {
+                foilUpdateUrl: "",
+                isFoil: "0"
+            }
+        );
+    }
+
     function openChangePrintingModal(changeTarget) {
         activeChangePrintingTarget = changeTarget || null;
 
@@ -3716,7 +3745,10 @@
         }
 
         if (actionName === "alternate-image") {
-            showDeckbuilderError(new Error("This option will be wired in the next pass."));
+            openDeckbuilderAlternateImageModal(
+                cardPayload.cardUuid || "",
+                cardPayload.cardName || ""
+            );
             return;
         }
 
@@ -4064,6 +4096,23 @@
                 return;
             }
 
+            if (actionName === "alternate-image") {
+                const cardUuid = activeLandPaletteCard
+                    ? (activeLandPaletteCard.dataset.cardUuid || "")
+                    : "";
+                const cardName = activeLandPaletteCard
+                    ? (activeLandPaletteCard.dataset.basicLandName || activeLandPaletteCard.dataset.cardName || "")
+                    : "";
+
+                setLandPaletteContextMenuOpen(false);
+
+                openDeckbuilderAlternateImageModal(
+                    cardUuid,
+                    cardName
+                );
+                return;
+            }
+
             showDeckbuilderError(new Error("This option will be wired in the next pass."));
             setLandPaletteContextMenuOpen(false);
         });
@@ -4122,6 +4171,33 @@
             document.body.classList.remove("campaign-test-draft-zone-resizing");
         });
     }
+
+    document.addEventListener("imomir:card-image-refreshed", function (event) {
+        const detail = event.detail || {};
+        const cardUuid = detail.cardUuid || "";
+        const imageUrl = detail.imageUrl || "";
+
+        if (!cardUuid) {
+            return;
+        }
+
+        if (imageUrl) {
+            document.querySelectorAll(
+                '.deckbuilder-card[data-card-uuid="' + CSS.escape(cardUuid) + '"] img'
+            ).forEach(function (imageElement) {
+                imageElement.src = imageUrl;
+            });
+
+            document.querySelectorAll(
+                '.deckbuilder-basic-land-card[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+            ).forEach(function (landElement) {
+                landElement.dataset.cardImageSrc = imageUrl;
+            });
+        }
+
+        hideHoverPreview();
+        bindHoverPreviews();
+    });
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape") {

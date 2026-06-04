@@ -859,6 +859,16 @@
         });
     });
 
+    window.iMomirAlternateImage = window.iMomirAlternateImage || {};
+
+    window.iMomirAlternateImage.open = function (cardUuid, cardName, options) {
+        openAlternateModal(
+            cardUuid || "",
+            cardName || "",
+            options || {}
+        );
+    };
+
     if (alternateBackdrop) {
         alternateBackdrop.addEventListener("click", closeAlternateModal);
     }
