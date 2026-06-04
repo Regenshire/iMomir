@@ -24,6 +24,8 @@
     data-add-card-search-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
     data-add-card-url="{{ url_for('deckbuilder_cards_add', deck_id=deckbuilder.deck_id) }}"
     data-load-decks-url="{{ url_for('deckbuilder_loadable_decks') }}"
+    data-print-url="{{ deckbuilder.routes.print_url }}"
+    data-export-zip-url="{{ deckbuilder.routes.export_zip_url }}"
     data-move-zone-url="{{ deckbuilder.routes.move_zone_url }}"
     data-basic-land-url="{{ deckbuilder.routes.basic_land_url }}"
 >
@@ -73,6 +75,16 @@
                 aria-label="Delete Deck"
             >
                 <i class="fa-solid fa-trash"></i>
+            </button>
+
+            <button
+                type="button"
+                id="deckbuilderOpenPrintExportButton"
+                class="action-button deckbuilder-action-button"
+                title="Print or Export Deck"
+                aria-label="Print or Export Deck"
+            >
+                Print / Export
             </button>
 
             <div class="deckbuilder-copy-split">
@@ -607,6 +619,9 @@
         </button>
     </div>
 
+    {% set print_export_defaults = deckbuilder.print_export_defaults %}
+    {% include "_print_export_modal.html" %}
+
     {% include "_card_search_modal.html" %}
 
     <div id="deckbuilderHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
@@ -777,13 +792,21 @@
     const deleteDeckConfirmInput = document.getElementById("deckbuilderDeleteDeckConfirmInput");
     const deleteDeckCancelButton = document.getElementById("deckbuilderDeleteDeckCancelButton");
     const deleteDeckConfirmButton = document.getElementById("deckbuilderDeleteDeckConfirmButton");
+    const openPrintExportButton = document.getElementById("deckbuilderOpenPrintExportButton");
+    const printExportModal = document.getElementById("printExportModal");
+    const printExportBackdrop = document.getElementById("printExportBackdrop");
+    const printExportCloseButton = document.getElementById("printExportCloseButton");
+    const printExportForm = document.getElementById("printExportForm");
+    const printExportPrintButton = document.getElementById("printExportPrintButton");
+    const printExportExportZipButton = document.getElementById("printExportExportZipButton");
+    const printExportSettingsToggle = document.getElementById("printExportSettingsToggle");
+    const printExportSettingsPanel = document.getElementById("printExportSettingsPanel");
     const copyDecklistButton = document.getElementById("deckbuilderCopyDecklistButton");
     const copyDecklistMenuButton = document.getElementById("deckbuilderCopyDecklistMenuButton");
     const copyDecklistMenu = document.getElementById("deckbuilderCopyDecklistMenu");
     const cardContextMenu = document.getElementById("deckbuilderCardContextMenu");
     const contextMoveButton = document.getElementById("deckbuilderContextMoveButton");
     const landPaletteContextMenu = document.getElementById("deckbuilderLandPaletteContextMenu");
-    const sharedCardSearchOverlay = document.getElementById("customDraftCardSearchOverlay");
     const landPaletteAddMenuLabel = document.getElementById("deckbuilderLandPaletteAddMenuLabel");
     const landPaletteQuantityMenu = document.getElementById("deckbuilderLandPaletteQuantityMenu");
     const loadDeckModal = document.getElementById("deckbuilderLoadDeckModal");
@@ -828,6 +851,8 @@
     const addCardSearchUrl = workspace.dataset.addCardSearchUrl || "";
     const addCardUrl = workspace.dataset.addCardUrl || "";
     const loadDecksUrl = workspace.dataset.loadDecksUrl || "";
+    const printUrl = workspace.dataset.printUrl || "";
+    const exportZipUrl = workspace.dataset.exportZipUrl || "";
     const deckbuilderDragMimeType = "application/x-imomir-deckbuilder";
 
     function writeDeckbuilderClientDebug(label, data) {
@@ -2767,428 +2792,6 @@
         });
     }
 
-    function getSelectedDeckbuilderChangePrintingMultiValues(containerElement) {
-        if (!containerElement) {
-            return [];
-        }
-
-        return Array.from(containerElement.querySelectorAll('input[type="checkbox"]:checked'))
-            .map(function (checkbox) {
-                return String(checkbox.value || "").trim().toLowerCase();
-            })
-            .filter(Boolean);
-    }
-
-    function updateDeckbuilderChangePrintingMultiLabel(containerElement) {
-        if (!containerElement) {
-            return;
-        }
-
-        const labelElement = containerElement.querySelector(".custom-draft-multi-select-label");
-        const selectedValues = getSelectedDeckbuilderChangePrintingMultiValues(containerElement);
-        const placeholderText = containerElement.dataset.placeholder || "Any";
-
-        if (!labelElement) {
-            return;
-        }
-
-        if (!selectedValues.length) {
-            labelElement.textContent = placeholderText;
-            return;
-        }
-
-        labelElement.textContent = selectedValues.join(", ");
-    }
-
-    function closeDeckbuilderChangePrintingMultiSelect(containerElement) {
-        if (!containerElement) {
-            return;
-        }
-
-        const button = containerElement.querySelector(".custom-draft-multi-select-button");
-        const menu = containerElement.querySelector(".custom-draft-multi-select-menu");
-
-        if (button) {
-            button.setAttribute("aria-expanded", "false");
-        }
-
-        if (menu) {
-            menu.classList.add("hidden");
-        }
-    }
-
-    function bindDeckbuilderChangePrintingMultiSelect(containerElement) {
-        if (!containerElement) {
-            return;
-        }
-
-        const button = containerElement.querySelector(".custom-draft-multi-select-button");
-        const menu = containerElement.querySelector(".custom-draft-multi-select-menu");
-
-        if (button && menu && button.dataset.deckbuilderChangePrintingBound !== "1") {
-            button.dataset.deckbuilderChangePrintingBound = "1";
-
-            button.addEventListener("click", function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-
-                const shouldOpen = menu.classList.contains("hidden");
-
-                document.querySelectorAll("#deckbuilderChangePrintingOverlay .custom-draft-multi-select").forEach(function (otherContainer) {
-                    if (otherContainer !== containerElement) {
-                        closeDeckbuilderChangePrintingMultiSelect(otherContainer);
-                    }
-                });
-
-                menu.classList.toggle("hidden", !shouldOpen);
-                button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
-            });
-        }
-
-        Array.from(containerElement.querySelectorAll('input[type="checkbox"]')).forEach(function (checkbox) {
-            if (checkbox.dataset.deckbuilderChangePrintingBound === "1") {
-                return;
-            }
-
-            checkbox.dataset.deckbuilderChangePrintingBound = "1";
-
-            checkbox.addEventListener("change", function () {
-                updateDeckbuilderChangePrintingMultiLabel(containerElement);
-            });
-        });
-
-        updateDeckbuilderChangePrintingMultiLabel(containerElement);
-    }
-
-    function setChangePrintingOverlayVisible(isVisible) {
-        if (!changePrintingOverlay) {
-            return;
-        }
-
-        changePrintingOverlay.classList.toggle("hidden", !isVisible);
-        changePrintingOverlay.setAttribute("aria-hidden", isVisible ? "false" : "true");
-        document.body.classList.toggle("custom-draft-search-maximized-active", Boolean(isVisible));
-
-        if (!isVisible) {
-            activeChangePrintingTarget = null;
-
-            if (changePrintingResults) {
-                changePrintingResults.innerHTML = "";
-                changePrintingResults.classList.add("hidden");
-            }
-
-            if (changePrintingStatus) {
-                changePrintingStatus.textContent = "";
-                changePrintingStatus.classList.add("hidden");
-                changePrintingStatus.classList.remove("custom-draft-card-search-status-error");
-            }
-        }
-    }
-
-    function setChangePrintingStatus(messageText, isError) {
-        if (!changePrintingStatus) {
-            return;
-        }
-
-        const cleanMessage = String(messageText || "").trim();
-
-        changePrintingStatus.textContent = cleanMessage;
-        changePrintingStatus.classList.toggle("custom-draft-card-search-status-error", Boolean(isError));
-        changePrintingStatus.classList.toggle("hidden", !cleanMessage);
-    }
-
-    function setChangePrintingPagination(page, totalPages) {
-        changePrintingPage = page || 1;
-        changePrintingTotalPages = totalPages || 1;
-
-        if (changePrintingPagination) {
-            changePrintingPagination.classList.remove("custom-draft-search-pagination-hidden");
-        }
-
-        if (changePrintingPageInput) {
-            changePrintingPageInput.value = changePrintingPage;
-            changePrintingPageInput.max = changePrintingTotalPages;
-        }
-
-        if (changePrintingPageTotal) {
-            changePrintingPageTotal.textContent = "of " + changePrintingTotalPages;
-        }
-
-        if (changePrintingPrevButton) {
-            changePrintingPrevButton.disabled = changePrintingPage <= 1;
-        }
-
-        if (changePrintingNextButton) {
-            changePrintingNextButton.disabled = changePrintingPage >= changePrintingTotalPages;
-        }
-    }
-
-    function buildChangePrintingSearchUrl(page) {
-        const params = new URLSearchParams();
-
-        if (activeChangePrintingTarget.deckCardId) {
-            params.set("deck_card_id", activeChangePrintingTarget.deckCardId);
-        }
-
-        if (activeChangePrintingTarget.landName) {
-            params.set("land_name", activeChangePrintingTarget.landName);
-        }
-
-        if (activeChangePrintingTarget.currentCardUuid) {
-            params.set("current_card_uuid", activeChangePrintingTarget.currentCardUuid);
-        }
-
-        params.set("q", activeChangePrintingTarget.cardName || activeChangePrintingTarget.landName || "");
-
-        getSelectedDeckbuilderChangePrintingMultiValues(changePrintingRarityFilter).forEach(function (rarityValue) {
-            params.append("rarity", rarityValue);
-        });
-
-        getSelectedDeckbuilderChangePrintingMultiValues(changePrintingColorFilter).forEach(function (colorValue) {
-            params.append("color_identity", colorValue);
-        });
-
-        if (changePrintingManaOperatorFilter && changePrintingManaOperatorFilter.value) {
-            params.set("mana_operator", changePrintingManaOperatorFilter.value);
-        }
-
-        if (changePrintingManaValueFilter && changePrintingManaValueFilter.value) {
-            params.set("mana_value", changePrintingManaValueFilter.value);
-        }
-
-        if (changePrintingTypeFilter && changePrintingTypeFilter.value) {
-            params.set("type", changePrintingTypeFilter.value);
-        }
-
-        if (changePrintingSetCodeFilter && changePrintingSetCodeFilter.value) {
-            params.set("set_code", changePrintingSetCodeFilter.value.trim().toUpperCase());
-        }
-
-        if (changePrintingYearStartFilter && changePrintingYearStartFilter.value) {
-            params.set("year_start", changePrintingYearStartFilter.value);
-        }
-
-        if (changePrintingYearEndFilter && changePrintingYearEndFilter.value) {
-            params.set("year_end", changePrintingYearEndFilter.value);
-        }
-
-        if (changePrintingDigitalFilter && changePrintingDigitalFilter.value) {
-            params.set("digital", changePrintingDigitalFilter.value);
-        }
-
-        if (changePrintingPageSizeSelect && changePrintingPageSizeSelect.value) {
-            params.set("page_size", changePrintingPageSizeSelect.value);
-        }
-
-        if (changePrintingSortSelect && changePrintingSortSelect.value) {
-            params.set("sort", changePrintingSortSelect.value);
-        }
-
-        params.set("page", String(page || 1));
-
-        return changePrintingOptionsUrl + "?" + params.toString();
-    }
-
-    function createDeckbuilderChangePrintingRow(card) {
-        const row = document.createElement("div");
-        row.className = "custom-draft-card-search-row custom-draft-card-search-printing-row";
-
-        const imageWrap = document.createElement("div");
-        imageWrap.className = "custom-draft-card-search-image-wrap";
-
-        const image = document.createElement("img");
-        image.className = "custom-draft-card-search-image custom-draft-card-zoomable";
-        image.src = card.image_src || "";
-        image.alt = card.card_name || "Card";
-        imageWrap.appendChild(image);
-
-        const main = document.createElement("div");
-        main.className = "custom-draft-card-search-main";
-
-        const title = document.createElement("div");
-        title.className = "custom-draft-card-search-title";
-        title.textContent = card.card_name || "Unknown Card";
-
-        const meta = document.createElement("div");
-        meta.className = "custom-draft-card-search-meta";
-
-        const metaLineOne = document.createElement("div");
-        metaLineOne.className = "custom-draft-card-search-meta-line";
-        metaLineOne.textContent = [
-            card.set_code || "",
-            card.release_year || "",
-            card.collector_number ? "#" + card.collector_number : "",
-            card.rarity || "",
-            "MV " + (card.mana_value === null || card.mana_value === undefined ? "?" : card.mana_value),
-            "EDHREC " + (card.edhrec_rank === null || card.edhrec_rank === undefined ? "?" : card.edhrec_rank),
-            "Salt " + (card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "?" : Number(card.edhrec_saltiness).toFixed(2)),
-            "Price " + (card.sort_price === null || card.sort_price === undefined ? "?" : "$" + Number(card.sort_price).toFixed(2))
-        ].filter(Boolean).join(" • ");
-
-        const metaLineTwo = document.createElement("div");
-        metaLineTwo.className = "custom-draft-card-search-type-line";
-        metaLineTwo.textContent = card.type_line || "";
-
-        meta.appendChild(metaLineOne);
-        meta.appendChild(metaLineTwo);
-
-        main.appendChild(title);
-        main.appendChild(meta);
-
-        const actions = document.createElement("div");
-        actions.className = "custom-draft-card-search-actions";
-
-        const switchButton = document.createElement("button");
-        switchButton.type = "button";
-        switchButton.className = "action-button secondary-button custom-draft-card-add-button";
-
-        const isCurrentPrinting = card.card_uuid === activeChangePrintingTarget.currentCardUuid;
-
-        switchButton.textContent = isCurrentPrinting ? "Current" : "Switch";
-        switchButton.disabled = Boolean(isCurrentPrinting);
-
-        switchButton.addEventListener("click", function () {
-            submitChangePrinting(card.card_uuid, switchButton);
-        });
-
-        actions.appendChild(switchButton);
-
-        row.appendChild(imageWrap);
-        row.appendChild(main);
-        row.appendChild(actions);
-
-        return row;
-    }
-
-    function renderChangePrintingResults(cards) {
-        if (!changePrintingResults) {
-            return;
-        }
-
-        changePrintingResults.innerHTML = "";
-
-        if (!cards || !cards.length) {
-            const emptyRow = document.createElement("div");
-            emptyRow.className = "custom-draft-card-search-empty";
-            emptyRow.textContent = "No matching printings found.";
-            changePrintingResults.appendChild(emptyRow);
-            changePrintingResults.classList.remove("hidden");
-            return;
-        }
-
-        cards.forEach(function (card) {
-            changePrintingResults.appendChild(createDeckbuilderChangePrintingRow(card));
-        });
-
-        changePrintingResults.classList.remove("hidden");
-    }
-
-    async function runChangePrintingSearch(page) {
-        if (!activeChangePrintingTarget) {
-            return;
-        }
-
-        const requestedPage = page || 1;
-
-        if (changePrintingSearchButton) {
-            changePrintingSearchButton.disabled = true;
-            changePrintingSearchButton.classList.add("action-button-loading");
-            changePrintingSearchButton.textContent = "Searching...";
-        }
-
-        setChangePrintingStatus("Searching printings...", false);
-
-        try {
-            const response = await fetch(buildChangePrintingSearchUrl(requestedPage), {
-                method: "GET",
-                headers: {
-                    "Accept": "application/json",
-                    "X-Requested-With": "XMLHttpRequest"
-                }
-            });
-
-            let payload = await response.json();
-
-            if (!response.ok || !payload.ok) {
-                throw new Error(payload.message || "Could not load printings.");
-            }
-
-            renderChangePrintingResults(payload.results || []);
-            setChangePrintingPagination(payload.page || 1, payload.total_pages || 1);
-
-            const pageSize = payload.page_size || 500;
-            const totalCount = payload.total_count || 0;
-            const start = totalCount ? ((payload.page - 1) * pageSize) + 1 : 0;
-            const end = Math.min((payload.page || 1) * pageSize, totalCount);
-
-            setChangePrintingStatus("Showing " + start + "–" + end + " of " + totalCount + " printing(s).", false);
-        } catch (error) {
-            console.error(error);
-            setChangePrintingStatus(error.message || "Could not load printings.", true);
-        } finally {
-            if (changePrintingSearchButton) {
-                changePrintingSearchButton.disabled = false;
-                changePrintingSearchButton.classList.remove("action-button-loading");
-                changePrintingSearchButton.textContent = "Search";
-            }
-        }
-    }
-
-    async function submitChangePrinting(cardUuid, button) {
-        if (!activeChangePrintingTarget || !cardUuid || !button) {
-            return;
-        }
-
-        button.disabled = true;
-        button.classList.add("action-button-loading");
-        button.textContent = "Switching...";
-
-        try {
-            const response = await fetch(changePrintingUrl, {
-                method: "POST",
-                headers: {
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "X-Requested-With": "XMLHttpRequest"
-                },
-                body: JSON.stringify({
-                    deck_card_id: activeChangePrintingTarget.deckCardId || "",
-                    land_name: activeChangePrintingTarget.landName || "",
-                    card_uuid: cardUuid
-                })
-            });
-
-            let payload = await response.json();
-
-            if (!response.ok || !payload.ok) {
-                throw new Error(payload.message || "Failed to change printing.");
-            }
-
-            const changedLandName = activeChangePrintingTarget.landName || "";
-
-            if (changedLandName) {
-                payload._basicLandCountsAuthoritative = true;
-                payload._basicLandPaletteAuthoritative = true;
-                payload = forceBasicLandPrintingIntoPayload(payload, changedLandName, cardUuid);
-            }
-
-            if (deckbuilderCardSearchModal && deckbuilderCardSearchModal.isOpen()) {
-                deckbuilderCardSearchModal.close();
-            }
-            applyDeckbuilderPayload(payload);
-
-            if (window.iMomirToast) {
-                window.iMomirToast.success("Printing changed.");
-            }
-        } catch (error) {
-            console.error(error);
-            button.disabled = false;
-            button.classList.remove("action-button-loading");
-            button.textContent = "Switch";
-            showDeckbuilderError(error);
-        }
-    }
-
     function openDeckbuilderAlternateImageModal(cardUuid, cardName) {
         const cleanCardUuid = String(cardUuid || "").trim();
         const cleanCardName = String(cardName || "").trim();
@@ -3471,6 +3074,36 @@
         }
     }
 
+    function setPrintExportModalVisible(isVisible) {
+        if (!printExportModal) {
+            return;
+        }
+
+        printExportModal.classList.toggle("hidden", !isVisible);
+        printExportModal.setAttribute("aria-hidden", isVisible ? "false" : "true");
+    }
+
+    function setPrintExportSettingsVisible(isVisible) {
+        if (!printExportSettingsPanel || !printExportSettingsToggle) {
+            return;
+        }
+
+        printExportSettingsPanel.classList.toggle("hidden", !isVisible);
+        printExportSettingsPanel.setAttribute("aria-hidden", isVisible ? "false" : "true");
+        printExportSettingsToggle.setAttribute("aria-expanded", isVisible ? "true" : "false");
+    }
+
+    function submitPrintExportForm(actionUrl) {
+        if (!printExportForm || !actionUrl) {
+            showDeckbuilderError(new Error("Print / Export URL was not configured."));
+            return;
+        }
+
+        printExportForm.action = actionUrl;
+        printExportForm.submit();
+        setPrintExportModalVisible(false);
+    }
+
     function setDeckbuilderCopyMenuOpen(isOpen) {
         if (!copyDecklistMenu || !copyDecklistMenuButton) {
             return;
@@ -3700,6 +3333,53 @@
         deleteDeckConfirmButton.addEventListener("click", deleteCurrentDeck);
     }
 
+    if (openPrintExportButton) {
+        openPrintExportButton.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            setDeckbuilderCopyMenuOpen(false);
+            setDeckbuilderContextMenuOpen(false);
+            setLandPaletteContextMenuOpen(false);
+            setPrintExportSettingsVisible(false);
+            setPrintExportModalVisible(true);
+        });
+    }
+
+    if (printExportBackdrop) {
+        printExportBackdrop.addEventListener("click", function () {
+            setPrintExportModalVisible(false);
+        });
+    }
+
+    if (printExportCloseButton) {
+        printExportCloseButton.addEventListener("click", function () {
+            setPrintExportModalVisible(false);
+        });
+    }
+
+    if (printExportSettingsToggle) {
+        printExportSettingsToggle.addEventListener("click", function () {
+            const shouldOpen = printExportSettingsPanel
+                ? printExportSettingsPanel.classList.contains("hidden")
+                : true;
+
+            setPrintExportSettingsVisible(shouldOpen);
+        });
+    }
+
+    if (printExportPrintButton) {
+        printExportPrintButton.addEventListener("click", function () {
+            submitPrintExportForm(printUrl);
+        });
+    }
+
+    if (printExportExportZipButton) {
+        printExportExportZipButton.addEventListener("click", function () {
+            submitPrintExportForm(exportZipUrl);
+        });
+    }
+
     if (copyDecklistButton) {
         copyDecklistButton.addEventListener("click", function () {
             copyDecklist(deckbuilderCopyFormat);
@@ -3886,6 +3566,7 @@
             closeDeleteDeckModal();
             closeLoadDeckModal();
             setDeckbuilderCopyMenuOpen(false);
+            setPrintExportModalVisible(false);
             setDeckbuilderContextMenuOpen(false);
             setLandPaletteContextMenuOpen(false);
 

@@ -1,0 +1,151 @@
+<div
+    id="printExportModal"
+    class="campaign-add-pack-modal hidden"
+    aria-hidden="true"
+>
+    <div id="printExportBackdrop" class="campaign-add-pack-backdrop"></div>
+
+    <div class="campaign-add-pack-dialog print-export-dialog" role="dialog" aria-modal="true" aria-labelledby="printExportTitle">
+        <div class="campaign-add-pack-header">
+            <div>
+                <h2 id="printExportTitle" class="campaign-add-pack-title">Print / Export</h2>
+                <p class="campaign-add-pack-subtitle">
+                    Print this deck to PDF or export card images and XML for proxy printing.
+                </p>
+            </div>
+
+            <button
+                type="button"
+                id="printExportCloseButton"
+                class="campaign-add-pack-close-button"
+                aria-label="Close Print / Export"
+            >
+                ×
+            </button>
+        </div>
+
+        <form
+            id="printExportForm"
+            method="post"
+            target="_blank"
+            class="print-export-form"
+        >
+            <input type="hidden" id="printExportActionInput" name="print_export_action" value="print">
+
+            <div class="print-export-main-actions">
+                <button
+                    type="button"
+                    id="printExportPrintButton"
+                    class="action-button print-export-primary-button"
+                >
+                    Print to PDF
+                </button>
+
+                <button
+                    type="button"
+                    id="printExportExportZipButton"
+                    class="action-button secondary-button print-export-secondary-button"
+                    {% if print_export_defaults and not print_export_defaults.export_enabled %}disabled{% endif %}
+                >
+                    Export to Zip
+                </button>
+            </div>
+
+            {% if print_export_defaults and not print_export_defaults.export_enabled %}
+            <div class="print-export-warning">
+                Chaos Draft Card Image Export is disabled in Settings.
+            </div>
+            {% endif %}
+
+            <button
+                type="button"
+                id="printExportSettingsToggle"
+                class="campaign-small-link-button print-export-settings-toggle"
+                aria-expanded="false"
+            >
+                <i class="fa-solid fa-gear"></i>
+                Settings
+            </button>
+
+            <div id="printExportSettingsPanel" class="print-export-settings-panel hidden" aria-hidden="true">
+                <label class="toggle-row">
+                    <span>Show Print/Export Labels</span>
+                    <input type="hidden" name="show_print_export_labels" value="0">
+                    <input
+                        type="checkbox"
+                        name="show_print_export_labels"
+                        value="1"
+                        {% if not print_export_defaults or print_export_defaults.show_print_export_labels %}checked{% endif %}
+                    >
+                </label>
+
+                <label class="settings-field print-export-radio-group">
+                    <span>Label Text</span>
+
+                    <div class="print-export-radio-options">
+                        <label>
+                            <input
+                                type="radio"
+                                name="label_text_mode"
+                                value="pack_code"
+                                {% if not print_export_defaults or print_export_defaults.label_text_mode != "proxy" %}checked{% endif %}
+                            >
+                            <span>Show Pack Code / Deck Name</span>
+                        </label>
+
+                        <label>
+                            <input
+                                type="radio"
+                                name="label_text_mode"
+                                value="proxy"
+                                {% if print_export_defaults and print_export_defaults.label_text_mode == "proxy" %}checked{% endif %}
+                            >
+                            <span>Show Proxy Label</span>
+                        </label>
+                    </div>
+                </label>
+
+                <div class="print-export-settings-section">
+                    <div class="print-export-settings-section-title">PDF Printing</div>
+
+                    <label class="toggle-row">
+                        <span>Include Pack Label Cards</span>
+                        <input type="hidden" name="include_pack_label_cards" value="0">
+                        <input
+                            type="checkbox"
+                            name="include_pack_label_cards"
+                            value="1"
+                            {% if print_export_defaults and print_export_defaults.include_pack_label_cards %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row">
+                        <span>PDF Cutting Guides</span>
+                        <input type="hidden" name="pdf_cutting_guides" value="0">
+                        <input
+                            type="checkbox"
+                            name="pdf_cutting_guides"
+                            value="1"
+                            {% if not print_export_defaults or print_export_defaults.pdf_cutting_guides %}checked{% endif %}
+                        >
+                    </label>
+                </div>
+
+                <div class="print-export-settings-section">
+                    <div class="print-export-settings-section-title">Export</div>
+
+                    <label class="toggle-row">
+                        <span>Export - Add Bleed</span>
+                        <input type="hidden" name="export_add_bleed" value="0">
+                        <input
+                            type="checkbox"
+                            name="export_add_bleed"
+                            value="1"
+                            {% if print_export_defaults and print_export_defaults.export_add_bleed %}checked{% endif %}
+                        >
+                    </label>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

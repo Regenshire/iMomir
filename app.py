@@ -185,6 +185,7 @@ from db.deckdb import (
     get_deck_by_id,
     get_loadable_deck_rows,
     get_or_create_deck_for_draft_test,
+    get_saved_deckbuilder_cards_for_deck,
     move_deckbuilder_card,
     remove_basic_land_from_deck,
     remove_deckbuilder_card,
@@ -332,9 +333,84 @@ def get_auto_clear_exports_config_value():
 def get_config_bool(config, key, fallback="0"):
     return (config.get(key) or fallback).strip() == "1"
 
+def parse_print_export_override_bool(raw_value, default_value=False):
+    if isinstance(raw_value, (list, tuple)):
+        values = list(raw_value)
+    else:
+        values = [raw_value]
+
+    clean_values = [
+        str(value or "").strip().lower()
+        for value in values
+        if str(value or "").strip() != ""
+    ]
+
+    for clean_value in reversed(clean_values):
+        if clean_value in {"1", "true", "yes", "on"}:
+            return True
+
+        if clean_value in {"0", "false", "no", "off"}:
+            return False
+
+    return bool(default_value)
+
+
+def set_request_print_export_overrides_from_form(form_data, default_label_text=""):
+    clean_default_label_text = str(default_label_text or "").strip()
+
+    def get_form_values(field_name):
+        if hasattr(form_data, "getlist"):
+            return form_data.getlist(field_name)
+
+        value = form_data.get(field_name) if hasattr(form_data, "get") else None
+        return [] if value is None else [value]
+
+    label_mode = (form_data.get("label_text_mode") or "pack_code").strip().lower()
+
+    if label_mode not in {"pack_code", "proxy"}:
+        label_mode = "pack_code"
+
+    if label_mode == "proxy":
+        label_text = "iMomir PROXY"
+    else:
+        label_text = clean_default_label_text
+
+    g.print_export_labels_enabled_override = parse_print_export_override_bool(
+        get_form_values("show_print_export_labels"),
+        default_value=True,
+    )
+
+    g.print_export_label_text_override = label_text
+    g.print_export_include_pack_label_cards_override = parse_print_export_override_bool(
+        get_form_values("include_pack_label_cards"),
+        default_value=False,
+    )
+
+    g.print_export_pdf_cutting_guides_override = parse_print_export_override_bool(
+        get_form_values("pdf_cutting_guides"),
+        default_value=True,
+    )
+
+    g.print_export_add_bleed_override = parse_print_export_override_bool(
+        get_form_values("export_add_bleed"),
+        default_value=False,
+    )
+
+
+def get_request_print_export_label_text(default_label_text=""):
+    label_text = getattr(g, "print_export_label_text_override", None)
+
+    if label_text is None:
+        return str(default_label_text or "").strip()
+
+    return str(label_text or "").strip()
+
 
 def get_effective_print_label_settings(config):
     labels_enabled = get_config_bool(config, "print_labels_enabled", "1")
+
+    if has_request_context() and hasattr(g, "print_export_labels_enabled_override"):
+        labels_enabled = bool(g.print_export_labels_enabled_override)
 
     tracking_code_enabled = get_config_bool(
         config,
@@ -391,10 +467,13 @@ def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
     if not label_settings.get("print_labels_enabled"):
         return ""
 
+    if has_request_context() and hasattr(g, "print_export_label_text_override"):
+        return (g.print_export_label_text_override or "").strip()
+
     if not label_settings.get("print_label_tracking_code"):
         return ""
 
-    return (pack_tracking_code or "").strip().upper()
+    return (pack_tracking_code or "").strip()
 
 
 def _build_pdf_print_settings(config, print_labels_enabled_override=None):
@@ -3415,6 +3494,9 @@ def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height
     )
 
 def is_pdf_cutting_guides_enabled():
+    if has_request_context() and hasattr(g, "print_export_pdf_cutting_guides_override"):
+        return bool(g.print_export_pdf_cutting_guides_override)
+
     try:
         config = get_request_config() if has_request_context() else get_config()
     except Exception:
@@ -3657,7 +3739,7 @@ def build_pdf_image_reader(image_path, print_mode):
 def build_card_corner_label_text(rendered_entry, pack_tracking_code=None, print_front_back_label=False):
     label_parts = []
 
-    tracking_code = (pack_tracking_code or "").strip().upper()
+    tracking_code = (pack_tracking_code or "").strip()
     if tracking_code:
         label_parts.append(tracking_code)
 
@@ -3708,7 +3790,7 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
     return updated_entry
 
 def draw_card_corner_label(pdf_canvas, slot_x_mm, slot_y_mm, slot_width_mm, slot_height_mm, label_text):
-    label_text = (label_text or "").strip().upper()
+    label_text = (label_text or "").strip()
     if not label_text:
         return
 
@@ -4566,7 +4648,7 @@ def draw_pack_label_decorative_border(image, width, height, template_config):
 
 
 def draw_pack_label_footer(draw, width, height, pack_tracking_code, template_config):
-    clean_pack_code = (pack_tracking_code or "").strip().upper()
+    clean_pack_code = (pack_tracking_code or "").strip()
 
     if not clean_pack_code:
         return
@@ -4719,9 +4801,14 @@ def get_configured_print_pack_labels():
 
     label_settings = get_effective_print_label_settings(config)
 
+    include_pack_label_cards = label_settings.get("print_pack_label_cards")
+
+    if has_request_context() and hasattr(g, "print_export_include_pack_label_cards_override"):
+        include_pack_label_cards = bool(g.print_export_include_pack_label_cards_override)
+
     return (
         label_settings.get("print_labels_enabled")
-        and label_settings.get("print_pack_label_cards")
+        and include_pack_label_cards
     )
 
 
@@ -5659,6 +5746,9 @@ def get_configured_print_bleed_size_mm():
     return bleed_size_mm
 
 def get_configured_export_add_bleed():
+    if has_request_context() and hasattr(g, "print_export_add_bleed_override"):
+        return bool(g.print_export_add_bleed_override)
+
     try:
         if has_request_context():
             config = get_request_config()
@@ -7352,13 +7442,17 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     source_image = image.convert("RGB")
     template_config = template_config or {}
 
+    if has_request_context() and hasattr(g, "print_export_labels_enabled_override"):
+        if not bool(g.print_export_labels_enabled_override):
+            return source_image
+
     draw = ImageDraw.Draw(source_image)
     image_width, image_height = source_image.size
 
     pack_code_enabled = bool(template_config.get("pack_code_enabled", True))
     text_box_enabled = bool(template_config.get("text_box_enabled", True))
 
-    normal_label_text = (label_text or "").strip().upper()
+    normal_label_text = (label_text or "").strip()
     if not pack_code_enabled or not text_box_enabled:
         normal_label_text = ""
 
@@ -12008,6 +12102,92 @@ def campaign_chaos_test_draft_pick(draft_test_id):
         draft_test_id=draft_test_id,
     ))
 
+def get_deckbuilder_export_display_name(deck_row):
+    if not deck_row:
+        return "Deck Builder"
+
+    deck_name = (deck_row["deck_name"] or "").strip()
+
+    if deck_name:
+        return deck_name
+
+    return f"Deck Builder {int(deck_row['deck_id'])}"
+
+
+def get_deckbuilder_pack_tracking_code(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if deck_row:
+        deck_name = (deck_row["deck_name"] or "").strip()
+
+        if deck_name:
+            return deck_name
+
+    try:
+        parsed_deck_id = int(deck_id)
+    except (TypeError, ValueError):
+        parsed_deck_id = 0
+
+    return f"Deck Builder {parsed_deck_id}"
+
+
+def get_deckbuilder_print_cards(deck_id):
+    cards = get_saved_deckbuilder_cards_for_deck(
+        deck_id,
+        deck_zone="deck",
+        include_basic_lands=True,
+    )
+
+    return [
+        card
+        for card in cards
+        if (card.get("card_uuid") or "").strip()
+    ]
+
+
+def build_deckbuilder_image_export_rows(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        raise ValueError("Deck was not found.")
+
+    cards = get_deckbuilder_print_cards(deck_id)
+
+    if not cards:
+        raise ValueError("This deck does not have any cards to export.")
+
+    deck_display_name = get_deckbuilder_export_display_name(deck_row)
+    pack_tracking_code = get_request_print_export_label_text(deck_display_name)
+
+    export_rows = []
+
+    for card_index, card in enumerate(cards, start=1):
+        export_rows.append({
+            "tracked_pack_id": int(deck_id),
+            "pack_tracking_code": pack_tracking_code,
+            "pack_set_code": "DECK",
+            "pack_booster_name": "deck_builder",
+            "booster_index": 0,
+            "pack_display_name": deck_display_name,
+            "print_labels_enabled_override": None,
+            "labels_disabled_for_pack": False,
+
+            "tracked_pack_card_id": card_index,
+            "card_order": card_index,
+            "card_uuid": (card.get("card_uuid") or "").strip(),
+            "card_name": card.get("card_name") or "",
+            "card_set_code": (card.get("set_code") or "").strip().upper(),
+            "sheet_is_foil": 0,
+            "rarity": card.get("rarity") or "",
+            "type_line": card.get("type_line") or "",
+            "scryfall_id": "",
+            "collector_number": card.get("collector_number") or "",
+            "special_category_index": 0,
+            "special_category_name": "",
+        })
+
+    return export_rows
+
 @app.route("/deck-builder/<int:deck_id>", methods=["GET"])
 def deckbuilder_open(deck_id):
     deck_row = get_deck_by_id(deck_id)
@@ -12047,10 +12227,29 @@ def deckbuilder_open(deck_id):
             "deckbuilder_basic_land",
             deck_id=deckbuilder_context["deck_id"],
         ),
+        "print_url": url_for(
+            "deckbuilder_print",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
+        "export_zip_url": url_for(
+            "deckbuilder_export_zip",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
         "back_url": url_for(
             "campaign_chaos_test_draft",
             draft_test_id=source_id,
         ),
+    }
+
+    config = get_request_config()
+
+    deckbuilder_context["print_export_defaults"] = {
+        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
+        "label_text_mode": "pack_code",
+        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
+        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
+        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
+        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
     }
 
     return render_template(
@@ -12088,6 +12287,97 @@ def deckbuilder_loadable_decks():
         "decks": decks,
         "count": len(decks),
     })
+
+@app.route("/deck-builder/<int:deck_id>/print", methods=["POST"])
+def deckbuilder_print(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return "Deck was not found.", 404
+
+    cards = get_deckbuilder_print_cards(deck_id)
+
+    if not cards:
+        return "This deck does not have any cards to print.", 400
+
+    deck_display_name = get_deckbuilder_export_display_name(deck_row)
+
+    set_request_print_export_overrides_from_form(
+        request.form,
+        default_label_text=deck_display_name,
+    )
+
+    label_text = get_request_print_export_label_text(deck_display_name)
+
+    try:
+        pdf_buffer = build_chaos_pack_pdf(
+            cards,
+            deck_display_name,
+            set_code="DECK",
+            booster_name="Deck Builder",
+            pack_tracking_code=label_text,
+            include_pack_labels=True,
+            print_labels_enabled_override=1 if g.print_export_labels_enabled_override else 0,
+        )
+    except Exception as exc:
+        write_debug_log(
+            f"DECK BUILDER PRINT ERROR | deck_id={deck_id} | error={str(exc)}"
+        )
+        return str(exc), 400
+
+    filename = f"{safe_filename(deck_display_name)}_deck_builder.pdf"
+
+    return Response(
+        pdf_buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.route("/deck-builder/<int:deck_id>/export-zip", methods=["POST"])
+def deckbuilder_export_zip(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return "Deck was not found.", 404
+
+    config = get_request_config()
+
+    if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
+        return "Chaos Draft Card Image Export is disabled in Settings.", 400
+
+    deck_display_name = get_deckbuilder_export_display_name(deck_row)
+
+    set_request_print_export_overrides_from_form(
+        request.form,
+        default_label_text=deck_display_name,
+    )
+
+    try:
+        export_rows = build_deckbuilder_image_export_rows(deck_id)
+
+        export_result = build_chaos_card_image_export_zip(
+            export_rows=export_rows,
+            separate_special_slots=False,
+        )
+    except Exception as exc:
+        write_debug_log(
+            f"DECK BUILDER IMAGE EXPORT ERROR | deck_id={deck_id} | error={str(exc)}"
+        )
+        return str(exc), 400
+
+    download_filename = f"{safe_filename(deck_display_name)}_deck_builder_image_export.zip"
+
+    return send_file(
+        export_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=download_filename,
+        max_age=0,
+    )
 
 @app.route("/deck-builder/<int:deck_id>/delete", methods=["POST"])
 def deckbuilder_delete(deck_id):

@@ -5745,6 +5745,89 @@ input {
     font-weight: 800;
 }
 
+.print-export-dialog {
+    max-width: 720px;
+}
+
+.print-export-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.print-export-main-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.print-export-primary-button,
+.print-export-secondary-button {
+    min-width: 160px;
+}
+
+.print-export-warning {
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    background: rgba(127, 29, 29, 0.22);
+    color: #fecaca;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-weight: 700;
+}
+
+.print-export-settings-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+}
+
+.print-export-settings-panel {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: rgba(15, 23, 42, 0.28);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.print-export-radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.print-export-radio-options {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.print-export-radio-options label {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-color, #e5e7eb);
+    font-weight: 700;
+}
+
+.print-export-settings-section {
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.print-export-settings-section-title {
+    color: #cbd5e1;
+    font-size: 0.82rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
 @media (max-width: 760px) {
     .deckbuilder-card-context-submenu {
         left: auto;
