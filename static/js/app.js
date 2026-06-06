@@ -850,6 +850,7 @@ function initializeChaosDraftPage() {
     const chaosOpenUrl = chaosDraftScreen.dataset.chaosOpenUrl || "/chaos-draft/open";
     const chaosViewDataUrl = chaosDraftScreen.dataset.chaosViewDataUrl || "/chaos-draft/view-data";
     const chaosExportUrl = chaosDraftScreen.dataset.chaosExportUrl || "/chaos-draft/export";
+    const cardFaceDataUrl = chaosDraftScreen.dataset.cardFaceDataUrl || "/card-face-data";
     const busyOverlay = document.getElementById("chaosDraftBusyOverlay");
     const busyTitle = document.getElementById("chaosDraftBusyTitle");
     const busyText = document.getElementById("chaosDraftBusyText");
@@ -914,6 +915,9 @@ function initializeChaosDraftPage() {
     let selectedExportAction = "copy";
     let inlinePackViewLoaded = false;
     let currentPackSavedToDb = false;
+    let inlinePackFaceMetadataByUuid = {};
+    let activeInlineZoomSourceImage = null;
+    let activeInlineZoomFlipButton = null;
 
     const jackpotBoosterTypes = new Set([
         "collector",
@@ -974,13 +978,227 @@ function initializeChaosDraftPage() {
         inlinePackViewLoaded = false;
     }
 
-    function openPackZoom(imageSrc, imageAlt) {
-        if (!packZoomOverlay || !packZoomImage) {
+    function getInlinePackCardUuid(imageElement) {
+        if (!imageElement) {
+            return "";
+        }
+
+        const hostElement = imageElement.closest("[data-card-uuid]");
+
+        return String(
+            imageElement.dataset.cardUuid
+            || (hostElement ? hostElement.dataset.cardUuid : "")
+            || ""
+        ).trim();
+    }
+
+    function getInlinePackFaceMetadata(imageElement) {
+        const cardUuid = getInlinePackCardUuid(imageElement);
+
+        if (!cardUuid) {
+            return null;
+        }
+
+        return inlinePackFaceMetadataByUuid[cardUuid] || null;
+    }
+
+    function updateInlinePackFlipButtonFace(buttonElement, faceName) {
+        if (!buttonElement) {
             return;
         }
 
-        packZoomImage.src = imageSrc || "";
-        packZoomImage.alt = imageAlt || "Pack card image";
+        if (faceName === "back") {
+            buttonElement.classList.add("chaos-pack-inline-flip-button-flipped");
+            buttonElement.setAttribute("aria-label", "Show front face");
+            buttonElement.setAttribute("title", "Show front face");
+        } else {
+            buttonElement.classList.remove("chaos-pack-inline-flip-button-flipped");
+            buttonElement.setAttribute("aria-label", "Show back face");
+            buttonElement.setAttribute("title", "Show back face");
+        }
+    }
+
+    function setInlinePackImageFace(imageElement, metadata, faceName, flipButton) {
+        if (!imageElement || !metadata) {
+            return;
+        }
+
+        const targetFace = faceName === "back" ? "back" : "front";
+        const targetSrc = targetFace === "back" ? metadata.back_src : metadata.front_src;
+        const targetAlt = targetFace === "back" ? metadata.back_alt : metadata.front_alt;
+
+        if (!targetSrc) {
+            return;
+        }
+
+        imageElement.classList.add("chaos-pack-inline-card-flipping");
+
+        window.setTimeout(function () {
+            imageElement.src = targetSrc;
+            imageElement.alt = targetAlt || imageElement.alt || "";
+            imageElement.dataset.currentFace = targetFace;
+            updateInlinePackFlipButtonFace(flipButton, targetFace);
+        }, 120);
+
+        window.setTimeout(function () {
+            imageElement.classList.remove("chaos-pack-inline-card-flipping");
+        }, 300);
+    }
+
+    function flipInlinePackImage(imageElement, flipButton) {
+        const metadata = getInlinePackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return;
+        }
+
+        const currentFace = imageElement.dataset.currentFace === "back" ? "back" : "front";
+        const nextFace = currentFace === "back" ? "front" : "back";
+
+        setInlinePackImageFace(imageElement, metadata, nextFace, flipButton);
+
+        if (imageElement === packZoomImage && activeInlineZoomSourceImage) {
+            const sourceButton = activeInlineZoomSourceImage
+                .closest(".chaos-pack-inline-image-wrap")
+                ?.querySelector(".chaos-pack-inline-flip-button");
+
+            setInlinePackImageFace(activeInlineZoomSourceImage, metadata, nextFace, sourceButton);
+        }
+    }
+
+    function createInlinePackFlipButton(imageElement) {
+        const metadata = getInlinePackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return null;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chaos-pack-inline-flip-button";
+        button.innerHTML = '<i class="fa-solid fa-rotate"></i>';
+        button.setAttribute("aria-label", "Show back face");
+        button.setAttribute("title", "Show back face");
+
+        button.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            flipInlinePackImage(imageElement, button);
+        });
+
+        return button;
+    }
+
+    function addInlinePackFlipButtonToImage(imageElement) {
+        const metadata = getInlinePackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return;
+        }
+
+        const imageWrap = imageElement.closest(".chaos-pack-inline-image-wrap");
+
+        if (!imageWrap || imageWrap.querySelector(".chaos-pack-inline-flip-button")) {
+            return;
+        }
+
+        imageWrap.classList.add("chaos-pack-inline-flip-host");
+        imageElement.dataset.currentFace = imageElement.dataset.currentFace || "front";
+
+        const button = createInlinePackFlipButton(imageElement);
+
+        if (button) {
+            imageWrap.appendChild(button);
+        }
+    }
+
+    async function loadInlinePackFaceMetadata(cards) {
+        const cardUuids = [];
+
+        (cards || []).forEach(function (cardData) {
+            const cardUuid = String(cardData.card_uuid || "").trim();
+
+            if (cardUuid && !cardUuids.includes(cardUuid)) {
+                cardUuids.push(cardUuid);
+            }
+        });
+
+        inlinePackFaceMetadataByUuid = {};
+
+        if (!cardUuids.length) {
+            return;
+        }
+
+        try {
+            const response = await fetch(cardFaceDataUrl, {
+                method: "POST",
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    chaos_card_uuids: cardUuids
+                })
+            });
+
+            const payload = await response.json();
+
+            if (!response.ok || !payload.ok) {
+                console.warn("Inline pack flip: card-face-data failed.", payload);
+                return;
+            }
+
+            inlinePackFaceMetadataByUuid = payload.chaos_cards || {};
+        } catch (error) {
+            console.warn("Inline pack flip: card-face-data failed.", error);
+        }
+    }
+
+    function openPackZoom(imageElement) {
+        if (!packZoomOverlay || !packZoomImage || !imageElement) {
+            return;
+        }
+
+        const metadata = getInlinePackFaceMetadata(imageElement);
+        const currentFace = imageElement.dataset.currentFace === "back" ? "back" : "front";
+        const imageSrc = currentFace === "back" && metadata
+            ? metadata.back_src
+            : (imageElement.src || "");
+        const imageAlt = currentFace === "back" && metadata
+            ? metadata.back_alt
+            : (imageElement.alt || "Pack card image");
+
+        if (!imageSrc) {
+            return;
+        }
+
+        activeInlineZoomSourceImage = imageElement;
+
+        packZoomImage.src = imageSrc;
+        packZoomImage.alt = imageAlt;
+        packZoomImage.dataset.cardUuid = getInlinePackCardUuid(imageElement);
+        packZoomImage.dataset.currentFace = currentFace;
+
+        if (activeInlineZoomFlipButton) {
+            activeInlineZoomFlipButton.remove();
+            activeInlineZoomFlipButton = null;
+        }
+
+        const zoomContent = packZoomImage.closest(".card-zoom-content");
+
+        if (zoomContent) {
+            zoomContent.classList.add("chaos-pack-inline-flip-host");
+
+            if (metadata && metadata.is_dual_faced && metadata.back_src) {
+                activeInlineZoomFlipButton = createInlinePackFlipButton(packZoomImage);
+
+                if (activeInlineZoomFlipButton) {
+                    updateInlinePackFlipButtonFace(activeInlineZoomFlipButton, currentFace);
+                    zoomContent.appendChild(activeInlineZoomFlipButton);
+                }
+            }
+        }
+
         packZoomOverlay.classList.remove("hidden");
         packZoomOverlay.setAttribute("aria-hidden", "false");
         document.body.style.overflow = "hidden";
@@ -991,10 +1209,19 @@ function initializeChaosDraftPage() {
             return;
         }
 
+        if (activeInlineZoomFlipButton) {
+            activeInlineZoomFlipButton.remove();
+            activeInlineZoomFlipButton = null;
+        }
+
+        activeInlineZoomSourceImage = null;
+
         packZoomOverlay.classList.add("hidden");
         packZoomOverlay.setAttribute("aria-hidden", "true");
         packZoomImage.src = "";
         packZoomImage.alt = "";
+        packZoomImage.dataset.cardUuid = "";
+        packZoomImage.dataset.currentFace = "front";
         document.body.style.overflow = "";
     }
 
@@ -1030,12 +1257,13 @@ function initializeChaosDraftPage() {
         return badges.join("");
     }
 
-    function renderInlinePackView(payload) {
+    async function renderInlinePackView(payload) {
         if (!inlineViewPanel || !inlineViewGrid || !payload) {
             return;
         }
 
         const cards = Array.isArray(payload.cards) ? payload.cards : [];
+        await loadInlinePackFaceMetadata(cards);
 
         if (inlineViewTitle) {
             inlineViewTitle.textContent = payload.pack_display_name || "Pack contents";
@@ -1057,17 +1285,20 @@ function initializeChaosDraftPage() {
         cards.forEach(function (cardData) {
             const cardElement = document.createElement("div");
             cardElement.className = "chaos-pack-inline-card";
+            cardElement.dataset.cardUuid = cardData.card_uuid || "";
+            cardElement.dataset.cardName = cardData.card_name || "";
 
             const badgesMarkup = buildPackBadgeMarkup(cardData);
 
             cardElement.innerHTML = `
-                <div class="chaos-pack-inline-image-wrap">
+                <div class="chaos-pack-inline-image-wrap" data-card-uuid="${cardData.card_uuid || ""}">
                     <img
                         src="${cardData.image_src}"
                         alt="${cardData.card_name}"
                         class="chaos-pack-inline-image"
                         role="button"
                         tabindex="0"
+                        data-card-uuid="${cardData.card_uuid || ""}"
                     >
                 </div>
                 <div class="chaos-pack-inline-info">
@@ -1078,16 +1309,20 @@ function initializeChaosDraftPage() {
 
             const imageElement = cardElement.querySelector(".chaos-pack-inline-image");
             if (imageElement) {
+                imageElement.dataset.currentFace = "front";
+
                 imageElement.addEventListener("click", function () {
-                    openPackZoom(cardData.image_src, cardData.card_name);
+                    openPackZoom(imageElement);
                 });
 
                 imageElement.addEventListener("keydown", function (event) {
                     if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        openPackZoom(cardData.image_src, cardData.card_name);
+                        openPackZoom(imageElement);
                     }
                 });
+
+                addInlinePackFlipButtonToImage(imageElement);
             }
 
             inlineViewGrid.appendChild(cardElement);
@@ -1111,7 +1346,7 @@ function initializeChaosDraftPage() {
             throw new Error(payload.message || "Failed to load pack view.");
         }
 
-        renderInlinePackView(payload);
+        await renderInlinePackView(payload);
     }
 
     function resetOpenPackUiState() {
@@ -2233,7 +2468,11 @@ function initializeChaosDraftPage() {
     }
 
     if (packZoomOverlay) {
-        packZoomOverlay.addEventListener("click", function () {
+        packZoomOverlay.addEventListener("click", function (event) {
+            if (event.target && event.target.closest && event.target.closest(".chaos-pack-inline-flip-button")) {
+                return;
+            }
+
             closePackZoom();
         });
     }

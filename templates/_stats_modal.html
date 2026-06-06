@@ -1,0 +1,51 @@
+<div
+    id="statsModal"
+    class="campaign-add-pack-modal hidden"
+    aria-hidden="true"
+>
+    <div id="statsBackdrop" class="campaign-add-pack-backdrop"></div>
+
+    <div class="campaign-add-pack-dialog stats-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="statsModalTitle">
+        <div class="campaign-add-pack-header">
+            <div>
+                <h2 id="statsModalTitle" class="campaign-add-pack-title">
+                    {{ stats_modal_title|default("Stats") }}
+                </h2>
+
+                <p id="statsModalSubtitle" class="campaign-add-pack-subtitle">
+                    {{ stats_modal_subtitle|default("Review card statistics.") }}
+                </p>
+            </div>
+
+            <button
+                type="button"
+                id="statsCloseButton"
+                class="campaign-add-pack-close-button"
+                aria-label="Close Stats"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="custom-draft-set-stats-panel stats-modal-panel">
+            <div id="statsSummaryGrid" class="custom-draft-set-stats-summary"></div>
+
+            <div class="custom-draft-set-stats-grid">
+                <div class="custom-draft-set-stats-card">
+                    <h3>Mana Value Distribution</h3>
+                    <div id="statsManaDistribution" class="custom-draft-stat-bar-list"></div>
+                </div>
+
+                <div class="custom-draft-set-stats-card">
+                    <h3>Color Identity</h3>
+                    <div id="statsColorDistribution" class="custom-draft-stat-pill-list"></div>
+                </div>
+
+                <div class="custom-draft-set-stats-card">
+                    <h3>Card Types</h3>
+                    <div id="statsTypeDistribution" class="custom-draft-stat-row-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

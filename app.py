@@ -190,6 +190,7 @@ from db.deckdb import (
     remove_basic_land_from_deck,
     remove_deckbuilder_card,
     update_deck_settings,
+    update_deckbuilder_stack_layout,
     update_deckbuilder_basic_land_printing,
     update_deckbuilder_card_printing,
     ensure_deck_schema,
@@ -356,7 +357,7 @@ def parse_print_export_override_bool(raw_value, default_value=False):
 
 
 def set_request_print_export_overrides_from_form(form_data, default_label_text=""):
-    clean_default_label_text = str(default_label_text or "").strip()
+    clean_default_label_text = None if default_label_text is None else str(default_label_text or "").strip()
 
     def get_form_values(field_name):
         if hasattr(form_data, "getlist"):
@@ -372,6 +373,8 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
 
     if label_mode == "proxy":
         label_text = "iMomir PROXY"
+    elif clean_default_label_text is None:
+        label_text = None
     else:
         label_text = clean_default_label_text
 
@@ -380,7 +383,9 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
         default_value=True,
     )
 
-    g.print_export_label_text_override = label_text
+    if label_text is not None:
+        g.print_export_label_text_override = label_text
+
     g.print_export_include_pack_label_cards_override = parse_print_export_override_bool(
         get_form_values("include_pack_label_cards"),
         default_value=False,
@@ -7892,7 +7897,64 @@ def resolve_image_export_bleed_source_path(cached_result, image_source, export_a
         "used_fullbleed_source": False,
     }
 
-def build_custom_draft_set_image_export_rows(set_code):
+
+def parse_custom_draft_selected_card_ids(raw_card_ids):
+    parsed_ids = []
+
+    for raw_card_id in raw_card_ids or []:
+        try:
+            parsed_id = int(raw_card_id)
+        except (TypeError, ValueError):
+            continue
+
+        if parsed_id > 0 and parsed_id not in parsed_ids:
+            parsed_ids.append(parsed_id)
+
+    return parsed_ids
+
+
+def get_custom_draft_selected_card_ids_from_form():
+    if not has_request_context():
+        return []
+
+    return parse_custom_draft_selected_card_ids(
+        request.form.getlist("custom_set_card_ids")
+    )
+
+
+def get_custom_draft_set_print_cards(set_code, selected_card_ids=None):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    custom_set_cards = get_custom_draft_set_card_rows(clean_set_code)
+    selected_id_lookup = set(parse_custom_draft_selected_card_ids(selected_card_ids or []))
+
+    if selected_id_lookup:
+        custom_set_cards = [
+            card
+            for card in custom_set_cards
+            if int(card["custom_set_card_id"] or 0) in selected_id_lookup
+        ]
+
+    return [
+        {
+            "card_uuid": (card["card_uuid"] or "").strip(),
+            "card_name": card["card_name"] or "",
+        }
+        for card in custom_set_cards
+        if (card["card_uuid"] or "").strip()
+    ]
+
+
+def get_custom_draft_set_export_display_name(custom_set, clean_set_code):
+    if custom_set and custom_set["set_name"]:
+        return (custom_set["set_name"] or "").strip()
+
+    return clean_set_code
+
+
+def get_custom_draft_set_default_label_text(clean_set_code):
+    return normalize_custom_draft_set_code(clean_set_code).replace("^", "CUSTOM")
+
+def build_custom_draft_set_image_export_rows(set_code, selected_card_ids=None):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     custom_set = get_custom_draft_set(clean_set_code)
 
@@ -7900,8 +7962,19 @@ def build_custom_draft_set_image_export_rows(set_code):
         raise ValueError("Custom draft set was not found.")
 
     custom_set_cards = get_custom_draft_set_card_rows(clean_set_code)
+    selected_id_lookup = set(parse_custom_draft_selected_card_ids(selected_card_ids or []))
+
+    if selected_id_lookup:
+        custom_set_cards = [
+            card
+            for card in custom_set_cards
+            if int(card["custom_set_card_id"] or 0) in selected_id_lookup
+        ]
 
     if not custom_set_cards:
+        if selected_id_lookup:
+            raise ValueError("No selected custom draft set cards were available to export.")
+
         raise ValueError("This custom draft set does not have any cards to export.")
 
     set_name = custom_set["set_name"] if custom_set["set_name"] else "Custom Draft Set"
@@ -10232,9 +10305,21 @@ def clear_history():
 
 @app.route("/card-image/<card_key>", methods=["GET"])
 def card_image(card_key):
+    requested_face = (request.args.get("face") or "front").strip().lower()
+    if requested_face not in {"front", "back"}:
+        requested_face = "front"
+
     card = get_card_by_key(card_key)
 
     if not card:
+        return ("Not found", 404)
+
+    if requested_face == "back":
+        back_image_url = get_standard_card_back_image_url(card)
+
+        if back_image_url:
+            return redirect(back_image_url)
+
         return ("Not found", 404)
 
     card = ensure_card_has_local_image(card)
@@ -10759,6 +10844,7 @@ def campaign_chaos_packs():
         pack_summary=pack_summary,
         enable_chaos_card_image_export=(get_request_config().get("enable_chaos_card_image_export") or "0").strip() == "1",
         custom_title_pack_type_options=get_custom_title_sheet_pack_type_options(),
+        print_export_defaults=get_print_export_defaults_from_config(get_request_config()),
     )
 
 @app.route("/campaign-chaos/history", methods=["GET"])
@@ -11352,12 +11438,79 @@ def campaign_chaos_pack_preview_view():
     )
 
 
-@app.route("/campaign-chaos/packs/preview/print", methods=["GET"])
+def build_campaign_preview_image_export_rows(preview_pack):
+    cards = list((preview_pack or {}).get("cards") or [])
+
+    if not cards:
+        raise ValueError("No generated pack preview cards are available to export.")
+
+    pack_display_name = (
+        preview_pack.get("pack_display_name")
+        or preview_pack.get("display_name")
+        or "Generated Pack"
+    )
+
+    pack_tracking_code = preview_pack.get("pack_tracking_code") or "PREVIEW"
+    pack_set_code = preview_pack.get("set_code") or ""
+    pack_booster_name = preview_pack.get("booster_name") or "preview"
+
+    export_rows = []
+
+    for card_index, card in enumerate(cards, start=1):
+        card_uuid = (card.get("card_uuid") or "").strip()
+
+        if not card_uuid:
+            continue
+
+        card_row = get_chaos_card_by_uuid(card_uuid)
+
+        export_rows.append({
+            "tracked_pack_id": 0,
+            "pack_tracking_code": pack_tracking_code,
+            "pack_set_code": (pack_set_code or "").strip().upper(),
+            "pack_booster_name": (pack_booster_name or "").strip().lower(),
+            "booster_index": 0,
+            "pack_display_name": pack_display_name,
+            "print_labels_enabled_override": None,
+            "labels_disabled_for_pack": False,
+
+            "tracked_pack_card_id": card_index,
+            "card_order": card_index,
+            "card_uuid": card_uuid,
+            "card_name": card.get("card_name") or (card_row["card_name"] if card_row else ""),
+            "card_set_code": (
+                card.get("set_code")
+                or card.get("card_set_code")
+                or (card_row["set_code"] if card_row else "")
+                or ""
+            ).strip().upper(),
+            "sheet_is_foil": int(card.get("sheet_is_foil") or 0),
+            "rarity": card.get("rarity") or (card_row["rarity"] if card_row else "") or "",
+            "type_line": card.get("type_line") or (card_row["type_line"] if card_row else "") or "",
+            "scryfall_id": "",
+            "collector_number": card.get("collector_number") or (card_row["collector_number"] if card_row else "") or "",
+            "special_category_index": 0,
+            "special_category_name": "",
+        })
+
+    if not export_rows:
+        raise ValueError("No generated pack preview cards were available to export.")
+
+    return export_rows
+
+
+@app.route("/campaign-chaos/packs/preview/print", methods=["GET", "POST"])
 def campaign_chaos_pack_preview_print():
     preview_pack = get_chaos_session_state("pending_manage_pack_preview", default_value=None)
 
     if not preview_pack:
         return "No generated pack preview is available.", 404
+
+    if request.method == "POST" and "print_export_action" in request.form:
+        set_request_print_export_overrides_from_form(
+            request.form,
+            default_label_text=None,
+        )
 
     try:
         pdf_buffer = build_chaos_pack_pdf(
@@ -11366,6 +11519,11 @@ def campaign_chaos_pack_preview_print():
             set_code=preview_pack.get("set_code"),
             booster_name=preview_pack.get("booster_name"),
             pack_tracking_code=preview_pack.get("pack_tracking_code"),
+            print_labels_enabled_override=(
+                1 if getattr(g, "print_export_labels_enabled_override", True) else 0
+                if request.method == "POST" and "print_export_action" in request.form
+                else None
+            ),
         )
     except Exception as exc:
         return str(exc), 400
@@ -11377,6 +11535,43 @@ def campaign_chaos_pack_preview_print():
             "Content-Disposition": 'inline; filename="campaign_pack_preview.pdf"',
             "Cache-Control": "no-store",
         },
+    )
+
+
+@app.route("/campaign-chaos/packs/preview/export-zip", methods=["POST"])
+def campaign_chaos_pack_preview_export_zip():
+    preview_pack = get_chaos_session_state("pending_manage_pack_preview", default_value=None)
+
+    if not preview_pack:
+        return "No generated pack preview is available.", 404
+
+    config = get_request_config()
+
+    if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
+        return "Chaos Draft Card Image Export is disabled in Settings.", 400
+
+    if "print_export_action" in request.form:
+        set_request_print_export_overrides_from_form(
+            request.form,
+            default_label_text=None,
+        )
+
+    try:
+        export_rows = build_campaign_preview_image_export_rows(preview_pack)
+        export_result = build_chaos_card_image_export_zip(
+            export_rows=export_rows,
+            separate_special_slots=False,
+        )
+    except Exception as exc:
+        write_debug_log(f"PREVIEW IMAGE EXPORT ERROR | error={str(exc)}")
+        return str(exc), 400
+
+    return send_file(
+        export_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=export_result["zip_filename"],
+        max_age=0,
     )
 
 @app.route("/campaign-chaos/packs/search/bulk-create-one", methods=["POST"])
@@ -11443,6 +11638,76 @@ def campaign_chaos_pack_preview_save():
     clear_chaos_session_state("pending_manage_pack_preview")
 
     return jsonify(result)
+
+def get_campaign_print_export_pack_ids_from_form():
+    return normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
+
+
+def apply_campaign_print_export_overrides_from_form():
+    if "print_export_action" not in request.form:
+        return
+
+    set_request_print_export_overrides_from_form(
+        request.form,
+        default_label_text=None,
+    )
+
+
+@app.route("/campaign-chaos/packs/print", methods=["POST"])
+def campaign_chaos_packs_print():
+    selected_pack_ids = get_campaign_print_export_pack_ids_from_form()
+
+    if not selected_pack_ids:
+        return "No packs were selected.", 400
+
+    apply_campaign_print_export_overrides_from_form()
+
+    try:
+        print_result = build_tracked_packs_combined_pdf(
+            selected_pack_ids,
+            build_chaos_pack_pdf,
+            write_debug_log,
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    return Response(
+        print_result["buffer"].getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="campaign_saved_packs_{print_result["pack_count"]}.pdf"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.route("/campaign-chaos/packs/export-zip", methods=["POST"])
+def campaign_chaos_packs_export_zip():
+    selected_pack_ids = get_campaign_print_export_pack_ids_from_form()
+
+    if not selected_pack_ids:
+        return "No packs were selected.", 400
+
+    config = get_request_config()
+
+    if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
+        return "Chaos Draft Card Image Export is disabled in Settings.", 400
+
+    apply_campaign_print_export_overrides_from_form()
+
+    try:
+        export_result = build_chaos_card_image_export_zip(selected_pack_ids)
+    except Exception as exc:
+        write_debug_log(f"IMAGE EXPORT ERROR | error={str(exc)}")
+        return str(exc), 400
+
+    return send_file(
+        export_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=export_result["zip_filename"],
+        max_age=0,
+    )
 
 @app.route("/campaign-chaos/packs/action", methods=["POST"])
 def campaign_chaos_packs_action():
@@ -11699,6 +11964,9 @@ def serialize_deckbuilder_card(card):
         "deck_zone": deckbuilder_row_get(card, "deck_zone", "deck") or "deck",
         "pick_reason": pick_reason,
         "is_basic_land": 1 if int(is_basic_land or 0) == 1 else 0,
+        "stack_column": deckbuilder_row_get(card, "stack_column", "") or "",
+        "stack_order": deckbuilder_row_get(card, "stack_order", None),
+        "display_order": deckbuilder_row_get(card, "display_order", None),
         "set_code": deckbuilder_row_get(card, "set_code", "") or "",
         "collector_number": deckbuilder_row_get(card, "collector_number", "") or "",
         "rarity": deckbuilder_row_get(card, "rarity", "") or "",
@@ -12030,10 +12298,29 @@ def campaign_chaos_test_draft_deck_builder(draft_test_id):
             "deckbuilder_basic_land",
             deck_id=deckbuilder_context["deck_id"],
         ),
+        "print_url": url_for(
+            "deckbuilder_print",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
+        "export_zip_url": url_for(
+            "deckbuilder_export_zip",
+            deck_id=deckbuilder_context["deck_id"],
+        ),
         "back_url": url_for(
             "campaign_chaos_test_draft",
             draft_test_id=session_row["draft_test_id"],
         ),
+    }
+
+    config = get_request_config()
+
+    deckbuilder_context["print_export_defaults"] = {
+        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
+        "label_text_mode": "pack_code",
+        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
+        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
+        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
+        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
     }
 
     return render_template(
@@ -12143,6 +12430,17 @@ def get_deckbuilder_print_cards(deck_id):
         for card in cards
         if (card.get("card_uuid") or "").strip()
     ]
+
+
+def get_print_export_defaults_from_config(config):
+    return {
+        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
+        "label_text_mode": "pack_code",
+        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
+        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
+        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
+        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
+    }
 
 
 def build_deckbuilder_image_export_rows(deck_id):
@@ -12913,6 +13211,60 @@ def deckbuilder_change_printing(deck_id):
         if land_name:
             payload["_basicLandCountsAuthoritative"] = True
             payload["_basicLandPaletteAuthoritative"] = True
+
+        return jsonify(payload), 200 if payload.get("ok") else 400
+
+    return jsonify({
+        "ok": False,
+        "message": "Standalone Deck Builder refresh is not wired yet.",
+    }), 400
+
+@app.route("/deck-builder/<int:deck_id>/stack-layout", methods=["POST"])
+def deckbuilder_stack_layout(deck_id):
+    deck_card_id = request.form.get("deck_card_id") or ""
+    target_zone = (request.form.get("target_zone") or "").strip().lower()
+    stack_column = (request.form.get("stack_column") or "").strip().lower()
+    ordered_deck_card_ids = request.form.getlist("ordered_deck_card_ids")
+
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    result = update_deckbuilder_stack_layout(
+        deck_id=deck_id,
+        deck_card_id=deck_card_id,
+        target_zone=target_zone,
+        stack_column=stack_column,
+        ordered_deck_card_ids=ordered_deck_card_ids,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
+
+        if not draft_state.get("ok"):
+            return jsonify({
+                "ok": False,
+                "message": draft_state.get("message") or "Draft source could not be loaded.",
+            }), 400
+
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
+
+        payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+        payload["stack_layout_result"] = result
+        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
 
         return jsonify(payload), 200 if payload.get("ok") else 400
 
@@ -13985,20 +14337,221 @@ def debug_alternate_source_add():
         "alternate_source_id": int(alternate_source_id),
     })
 
+def get_standard_card_back_image_url(card):
+    if not card:
+        return ""
+
+    layout = (card["layout"] if "layout" in card.keys() else "") or ""
+    layout = layout.strip().lower()
+
+    if not is_dual_faced_layout(layout):
+        return ""
+
+    image_url = (card["image_url"] if "image_url" in card.keys() else "") or ""
+    parsed_image_url = parse_scryfall_image_url(image_url)
+
+    if parsed_image_url:
+        return build_scryfall_face_image_url(
+            parsed_image_url["scryfall_id"],
+            "back",
+            image_quality=parsed_image_url["quality"],
+        ) or ""
+
+    scryfall_id = (card["scryfall_id"] if "scryfall_id" in card.keys() else "") or ""
+
+    if scryfall_id:
+        return build_scryfall_face_image_url(
+            scryfall_id,
+            "back",
+            image_quality=get_effective_chaos_scryfall_image_quality(),
+        ) or ""
+
+    return ""
+
+
+def get_standard_card_front_image_url(card):
+    if not card:
+        return ""
+
+    image_url = (card["image_url"] if "image_url" in card.keys() else "") or ""
+
+    if image_url:
+        return image_url
+
+    scryfall_id = (card["scryfall_id"] if "scryfall_id" in card.keys() else "") or ""
+
+    if scryfall_id:
+        return build_scryfall_face_image_url(
+            scryfall_id,
+            "front",
+            image_quality=get_effective_chaos_scryfall_image_quality(),
+        ) or ""
+
+    return ""
+
+def get_chaos_card_front_back_face_data(card_row):
+    if not card_row:
+        return None
+
+    is_dual_faced = int(card_row["is_dual_faced"] or 0) == 1
+
+    if not is_dual_faced:
+        return None
+
+    front_image_url = (card_row["front_image_url"] or "").strip()
+    back_image_url = (card_row["back_image_url"] or "").strip()
+    front_face_name = (card_row["front_face_name"] or card_row["card_name"] or "").strip()
+    back_face_name = (card_row["back_face_name"] or "").strip()
+
+    if front_image_url and back_image_url:
+        return {
+            "front_image_url": front_image_url,
+            "back_image_url": back_image_url,
+            "front_face_name": front_face_name,
+            "back_face_name": back_face_name or f"{front_face_name} (Back)",
+        }
+
+    faces = parse_faces_json(card_row["faces_json"])
+
+    if len(faces) < 2:
+        return None
+
+    front_image_url = (faces[0].get("image_url") or "").strip()
+    back_image_url = (faces[1].get("image_url") or "").strip()
+
+    if not front_image_url or not back_image_url:
+        return None
+
+    return {
+        "front_image_url": front_image_url,
+        "back_image_url": back_image_url,
+        "front_face_name": (faces[0].get("name") or card_row["card_name"] or "").strip(),
+        "back_face_name": (faces[1].get("name") or card_row["card_name"] or "").strip(),
+    }
+
+def get_chaos_card_face_metadata(card_uuid):
+    clean_card_uuid = (card_uuid or "").strip()
+
+    if not clean_card_uuid:
+        return None
+
+    card_row = get_chaos_card_by_uuid(clean_card_uuid)
+
+    if not card_row:
+        return None
+
+    face_data = get_chaos_card_front_back_face_data(card_row)
+
+    if not face_data:
+        return {
+            "is_dual_faced": False,
+        }
+
+    return {
+        "is_dual_faced": True,
+        "front_src": url_for("chaos_card_image", card_uuid=clean_card_uuid, face="front"),
+        "back_src": url_for("chaos_card_image", card_uuid=clean_card_uuid, face="back"),
+        "front_alt": face_data["front_face_name"] or card_row["card_name"] or "",
+        "back_alt": face_data["back_face_name"] or card_row["card_name"] or "",
+    }
+
+
+def get_standard_card_face_metadata(card_key):
+    clean_card_key = (card_key or "").strip()
+
+    if not clean_card_key:
+        return None
+
+    card = get_card_by_key(clean_card_key)
+
+    if not card:
+        return None
+
+    back_image_url = get_standard_card_back_image_url(card)
+
+    if not back_image_url:
+        return {
+            "is_dual_faced": False,
+        }
+
+    return {
+        "is_dual_faced": True,
+        "front_src": url_for("card_image", card_key=clean_card_key, face="front"),
+        "back_src": url_for("card_image", card_key=clean_card_key, face="back"),
+        "front_alt": card["name"] or "",
+        "back_alt": f"{card['name']} (Back)" if card["name"] else "Back face",
+    }
+
+
+@app.route("/card-face-data", methods=["POST"])
+def card_face_data():
+    payload = request.get_json(silent=True) or {}
+
+    chaos_card_uuids = []
+    standard_card_keys = []
+
+    for raw_card_uuid in payload.get("chaos_card_uuids") or []:
+        clean_card_uuid = str(raw_card_uuid or "").strip()
+
+        if clean_card_uuid and clean_card_uuid not in chaos_card_uuids:
+            chaos_card_uuids.append(clean_card_uuid)
+
+    for raw_card_key in payload.get("card_keys") or []:
+        clean_card_key = str(raw_card_key or "").strip()
+
+        if clean_card_key and clean_card_key not in standard_card_keys:
+            standard_card_keys.append(clean_card_key)
+
+    chaos_cards = {}
+    standard_cards = {}
+
+    for card_uuid in chaos_card_uuids:
+        metadata = get_chaos_card_face_metadata(card_uuid)
+
+        if metadata:
+            chaos_cards[card_uuid] = metadata
+
+    for card_key in standard_card_keys:
+        metadata = get_standard_card_face_metadata(card_key)
+
+        if metadata:
+            standard_cards[card_key] = metadata
+
+    return jsonify({
+        "ok": True,
+        "chaos_cards": chaos_cards,
+        "cards": standard_cards,
+    })
+
 @app.route("/chaos-card-image/<card_uuid>", methods=["GET"])
 def chaos_card_image(card_uuid):
+    requested_face = (request.args.get("face") or "front").strip().lower()
+    if requested_face not in {"front", "back"}:
+        requested_face = "front"
+
     card_row = get_chaos_card_by_uuid(card_uuid)
 
     if not card_row:
         return ("Not found", 404)
 
-    page_entries = build_chaos_print_pages_for_card(card_row)
-    if not page_entries:
-        return ("Not found", 404)
+    face_data = get_chaos_card_front_back_face_data(card_row)
 
-    first_page = page_entries[0]
-    image_url = (first_page.get("image_url") or "").strip()
-    page_kind = (first_page.get("page_kind") or "").strip().lower()
+    if requested_face == "back":
+        if not face_data:
+            return ("Not found", 404)
+
+        image_url = face_data["back_image_url"]
+        page_kind = "back"
+        face_name = face_data["back_face_name"] or card_row["card_name"] or ""
+    else:
+        if face_data:
+            image_url = face_data["front_image_url"]
+            page_kind = "front"
+            face_name = face_data["front_face_name"] or card_row["card_name"] or ""
+        else:
+            image_url = (card_row["image_url"] or "").strip()
+            page_kind = "single"
+            face_name = (card_row["card_name"] or "").strip()
 
     image_source = resolve_card_image_source_for_page(
         card_row,
@@ -14015,9 +14568,9 @@ def chaos_card_image(card_uuid):
         return ("Not found", 404)
 
     cached_result = download_chaos_image_to_cache(
-        first_page.get("card_uuid"),
-        first_page.get("page_kind"),
-        first_page.get("face_name"),
+        card_row["card_uuid"],
+        page_kind,
+        face_name,
         image_url,
     )
 
@@ -14346,29 +14899,102 @@ def custom_draft_sets_add():
         flash(str(exc))
         return redirect(url_for("sets"))
 
+@app.route("/custom-draft-sets/<path:set_code>/print", methods=["POST"])
+def custom_draft_set_print(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        return "Custom draft set was not found.", 404
+
+    selected_card_ids = get_custom_draft_selected_card_ids_from_form()
+    cards = get_custom_draft_set_print_cards(
+        clean_set_code,
+        selected_card_ids=selected_card_ids,
+    )
+
+    if not cards:
+        if selected_card_ids:
+            return "No selected custom draft set cards were available to print.", 400
+
+        return "This custom draft set does not have any cards to print.", 400
+
+    set_display_name = get_custom_draft_set_export_display_name(custom_set, clean_set_code)
+    default_label_text = get_custom_draft_set_default_label_text(clean_set_code)
+
+    set_request_print_export_overrides_from_form(
+        request.form,
+        default_label_text=default_label_text,
+    )
+
+    label_text = get_request_print_export_label_text(default_label_text)
+
+    try:
+        pdf_buffer = build_chaos_pack_pdf(
+            cards,
+            set_display_name,
+            set_code=clean_set_code,
+            booster_name="Custom Draft Set",
+            pack_tracking_code=label_text,
+            include_pack_labels=True,
+            print_labels_enabled_override=1 if g.print_export_labels_enabled_override else 0,
+        )
+    except Exception as exc:
+        write_debug_log(
+            f"CUSTOM SET PRINT ERROR | set_code={clean_set_code} | error={str(exc)}"
+        )
+        return str(exc), 400
+
+    filename = f"{safe_filename(set_display_name)}_{safe_filename(clean_set_code)}.pdf"
+
+    return Response(
+        pdf_buffer.getvalue(),
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
 @app.route("/custom-draft-sets/<path:set_code>/export-zip", methods=["POST"])
 def custom_draft_set_export_zip(set_code):
     clean_set_code = normalize_custom_draft_set_code(set_code)
+    custom_set = get_custom_draft_set(clean_set_code)
+
+    if not custom_set:
+        return "Custom draft set was not found.", 404
 
     config = get_request_config()
 
     if (config.get("enable_chaos_card_image_export") or "0").strip() != "1":
-        flash("Chaos Draft Card Image Export is disabled in Settings.")
-        return redirect(url_for("custom_draft_set_manage", set_code=clean_set_code))
+        return "Chaos Draft Card Image Export is disabled in Settings.", 400
+
+    set_display_name = get_custom_draft_set_export_display_name(custom_set, clean_set_code)
+    default_label_text = get_custom_draft_set_default_label_text(clean_set_code)
+
+    set_request_print_export_overrides_from_form(
+        request.form,
+        default_label_text=default_label_text,
+    )
 
     try:
-        export_rows = build_custom_draft_set_image_export_rows(clean_set_code)
+        selected_card_ids = get_custom_draft_selected_card_ids_from_form()
+        export_rows = build_custom_draft_set_image_export_rows(
+            clean_set_code,
+            selected_card_ids=selected_card_ids,
+        )
+
         export_result = build_chaos_card_image_export_zip(
             export_rows=export_rows,
             separate_special_slots=(config.get("export_separate_special_slots") or "0").strip() == "1",
         )
     except Exception as exc:
-        write_debug_log(f"CUSTOM SET IMAGE EXPORT ERROR | set_code={clean_set_code} | error={str(exc)}")
+        write_debug_log(
+            f"CUSTOM SET IMAGE EXPORT ERROR | set_code={clean_set_code} | error={str(exc)}"
+        )
         return str(exc), 400
 
-    custom_set = get_custom_draft_set(clean_set_code)
-    set_name = custom_set["set_name"] if custom_set and custom_set["set_name"] else clean_set_code
-    download_filename = f"{safe_filename(set_name)}_{safe_filename(clean_set_code)}_image_export.zip"
+    download_filename = f"{safe_filename(set_display_name)}_{safe_filename(clean_set_code)}_image_export.zip"
 
     return send_file(
         export_result["zip_path"],
@@ -14447,6 +15073,7 @@ def custom_draft_set_manage(set_code):
         pack_slots=pack_slots,
         custom_set_cards=custom_set_cards,
         special_category_options=special_category_options,
+        print_export_defaults=get_print_export_defaults_from_config(get_request_config()),
     )
 
 def get_custom_draft_booster_label(booster_name):

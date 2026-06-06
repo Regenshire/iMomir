@@ -593,6 +593,9 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
             dc.source_id,
             dc.source_item_id,
             dc.is_basic_land,
+            dc.stack_column,
+            dc.stack_order,
+            dc.display_order,
             cc.set_code,
             cc.collector_number,
             cc.rarity,
@@ -639,6 +642,9 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
                 "pack_number": 0,
                 "pick_reason": "Basic land" if is_basic_land else (row["source_type"] or "Deck Builder"),
                 "is_basic_land": 1 if is_basic_land else 0,
+                "stack_column": row["stack_column"] or "",
+                "stack_order": row["stack_order"],
+                "display_order": row["display_order"],
                 "set_code": row["set_code"] or "",
                 "collector_number": row["collector_number"] or "",
                 "rarity": row["rarity"] or ("common" if is_basic_land else ""),
@@ -945,21 +951,40 @@ def move_deckbuilder_card(deck_id, deck_card_id, deck_zone):
             land_name=deck_card_row["card_name"],
         )
 
-    cursor.execute(
-        """
-        UPDATE deck_cards
-        SET deck_zone = ?,
-            updated_at_utc = ?
-        WHERE deck_id = ?
-          AND deck_card_id = ?
-        """,
-        (
-            clean_deck_zone,
-            now_utc,
-            parsed_deck_id,
-            parsed_deck_card_id,
-        ),
-    )
+    if clean_deck_zone == "sideboard":
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = ?,
+                stack_column = NULL,
+                stack_order = NULL,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                clean_deck_zone,
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = ?,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                clean_deck_zone,
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
 
     cursor.execute(
         """
@@ -982,6 +1007,183 @@ def move_deckbuilder_card(deck_id, deck_card_id, deck_zone):
         "deck_id": parsed_deck_id,
         "deck_card_id": parsed_deck_card_id,
         "deck_zone": clean_deck_zone,
+    }
+
+def normalize_deck_stack_column(value):
+    clean_value = str(value or "").strip().lower()
+
+    if clean_value in {"0", "1", "2", "3", "4", "5", "6", "land"}:
+        return clean_value
+
+    return ""
+
+
+def update_deckbuilder_stack_layout(deck_id, deck_card_id, target_zone, stack_column, ordered_deck_card_ids):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+    clean_target_zone = normalize_deck_zone(target_zone)
+    clean_stack_column = normalize_deck_stack_column(stack_column)
+    parsed_ordered_ids = []
+
+    for raw_card_id in ordered_deck_card_ids or []:
+        parsed_card_id = normalize_deck_optional_int(raw_card_id)
+
+        if parsed_card_id is not None and parsed_card_id not in parsed_ordered_ids:
+            parsed_ordered_ids.append(parsed_card_id)
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    if clean_target_zone not in {"deck", "sideboard"}:
+        return {
+            "ok": False,
+            "message": "Invalid deck zone.",
+        }
+
+    if clean_target_zone == "deck" and not clean_stack_column:
+        return {
+            "ok": False,
+            "message": "Invalid stack column.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    deck_card_row = cursor.fetchone()
+
+    if not deck_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    if int(deck_card_row["is_basic_land"] or 0) == 1:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Basic lands are managed by quantity and cannot be manually reordered.",
+        }
+
+    if clean_target_zone == "sideboard":
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = 'sideboard',
+                stack_column = NULL,
+                stack_order = NULL,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = 'deck',
+                stack_column = ?,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                clean_stack_column,
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+
+    display_order = 0
+
+    for ordered_card_id in parsed_ordered_ids:
+        cursor.execute(
+            """
+            SELECT deck_card_id
+            FROM deck_cards
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+              AND is_basic_land = 0
+            LIMIT 1
+            """,
+            (
+                parsed_deck_id,
+                ordered_card_id,
+            ),
+        )
+
+        if not cursor.fetchone():
+            continue
+
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = 'deck',
+                display_order = ?,
+                stack_order = ?,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                display_order,
+                display_order,
+                now_utc,
+                parsed_deck_id,
+                ordered_card_id,
+            ),
+        )
+
+        display_order += 10
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Stack layout updated.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": parsed_deck_card_id,
+        "deck_zone": clean_target_zone,
+        "stack_column": clean_stack_column,
     }
 
 def update_deckbuilder_card_printing(deck_id, deck_card_id, new_card_uuid):
@@ -1350,6 +1552,9 @@ def get_saved_basic_land_cards_for_deck(deck_id):
             dc.deck_zone,
             dc.quantity,
             dc.is_basic_land,
+            dc.stack_column,
+            dc.stack_order,
+            dc.display_order,
             cc.set_code,
             cc.collector_number,
             cc.rarity,

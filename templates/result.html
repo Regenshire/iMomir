@@ -33,13 +33,14 @@
             <div class="result-label">Tower of Power</div>
 
             {% if card %}
-                <div class="card-display">
+                <div class="card-display" data-card-key="{{ card['card_key'] }}">
                     {% if card["image_blob"] or card["image_url"] %}
                         <img
                             src="{{ url_for('card_image', card_key=card['card_key']) }}"
                             alt="{{ card['name'] }}"
                             class="card-image card-image-zoomable"
                             id="resultCardImage"
+                            data-card-key="{{ card['card_key'] }}"
                             role="button"
                             tabindex="0"
                             aria-label="Zoom card image"
@@ -111,13 +112,14 @@
                 <div class="result-mana">{{ mana_value }}</div>
 
                 {% if card %}
-                    <div class="card-display">
+                    <div class="card-display" data-card-key="{{ card['card_key'] }}">
                         {% if card["image_blob"] or card["image_url"] %}
                             <img
                                 src="{{ url_for('card_image', card_key=card['card_key']) }}"
                                 alt="{{ card['name'] }}"
                                 class="card-image card-image-zoomable"
                                 id="resultCardImage"
+                                data-card-key="{{ card['card_key'] }}"
                                 role="button"
                                 tabindex="0"
                                 aria-label="Zoom card image"
@@ -189,6 +191,7 @@
             <div id="cardZoomBackdrop" class="card-zoom-backdrop"></div>
             <div class="card-zoom-content">
                 <img
+                    id="cardZoomImage"
                     src="{{ url_for('card_image', card_key=card['card_key']) }}"
                     alt="{{ card['name'] }}"
                     class="card-zoom-image"
@@ -198,4 +201,269 @@
         {% endif %}
     </div>
 </div>
+{% if card %}
+<style>
+.card-display,
+.card-zoom-content {
+    position: relative;
+}
+
+.result-card-flip-button {
+    position: absolute;
+    top: 5%;
+    left: 10px;
+    z-index: 25;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease, left 0.15s ease, right 0.15s ease;
+}
+
+.card-display:hover .result-card-flip-button,
+.result-card-flip-button:focus-visible {
+    opacity: 1;
+}
+
+.result-card-flip-button-flipped {
+    left: auto;
+    right: 10px;
+}
+
+.card-zoom-content .result-card-flip-button {
+    opacity: 1;
+    top: 5%;
+    left: calc(50% - min(46vw, 260px) + 14px);
+    z-index: 10002;
+}
+
+.card-zoom-content .result-card-flip-button-flipped {
+    left: auto;
+    right: calc(50% - min(46vw, 260px) + 14px);
+}
+</style>
+
+<script>
+(function () {
+    const resultImage = document.getElementById("resultCardImage");
+    const zoomOverlay = document.getElementById("cardZoomOverlay");
+    const zoomBackdrop = document.getElementById("cardZoomBackdrop");
+    const zoomImage = document.getElementById("cardZoomImage");
+    const faceDataUrl = "{{ url_for('card_face_data') }}";
+
+    let resultMetadata = null;
+    let resultFlipButton = null;
+    let zoomFlipButton = null;
+
+    function getCardKey() {
+        if (!resultImage) {
+            return "";
+        }
+
+        return (
+            resultImage.dataset.cardKey
+            || resultImage.closest("[data-card-key]")?.dataset.cardKey
+            || ""
+        ).trim();
+    }
+
+    function updateFlipButtonFace(buttonElement, face) {
+        if (!buttonElement) {
+            return;
+        }
+
+        if (face === "back") {
+            buttonElement.classList.add("result-card-flip-button-flipped");
+            buttonElement.setAttribute("aria-label", "Show front face");
+            buttonElement.title = "Show front face";
+        } else {
+            buttonElement.classList.remove("result-card-flip-button-flipped");
+            buttonElement.setAttribute("aria-label", "Show back face");
+            buttonElement.title = "Show back face";
+        }
+    }
+
+    function applyFaceToImage(imageElement, face) {
+        if (!imageElement || !resultMetadata) {
+            return;
+        }
+
+        if (face === "back") {
+            imageElement.src = resultMetadata.back_src || imageElement.src;
+            imageElement.alt = resultMetadata.back_alt || imageElement.alt || "";
+            imageElement.dataset.face = "back";
+        } else {
+            imageElement.src = resultMetadata.front_src || imageElement.src;
+            imageElement.alt = resultMetadata.front_alt || imageElement.alt || "";
+            imageElement.dataset.face = "front";
+        }
+    }
+
+    function flipImage(imageElement, buttonElement) {
+        if (!imageElement || !resultMetadata) {
+            return;
+        }
+
+        const currentFace = imageElement.dataset.face === "back" ? "back" : "front";
+        const nextFace = currentFace === "back" ? "front" : "back";
+
+        applyFaceToImage(imageElement, nextFace);
+        updateFlipButtonFace(buttonElement, nextFace);
+    }
+
+    function createFlipButton(targetImage, isZoomButton) {
+        const buttonElement = document.createElement("button");
+        buttonElement.type = "button";
+        buttonElement.className = "result-card-flip-button";
+        buttonElement.textContent = "↻";
+        updateFlipButtonFace(buttonElement, targetImage.dataset.face === "back" ? "back" : "front");
+
+        buttonElement.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            flipImage(targetImage, buttonElement);
+
+            if (isZoomButton && resultImage) {
+                applyFaceToImage(resultImage, targetImage.dataset.face);
+                updateFlipButtonFace(resultFlipButton, targetImage.dataset.face);
+            }
+        });
+
+        return buttonElement;
+    }
+
+    async function loadResultFaceMetadata() {
+        const cardKey = getCardKey();
+
+        if (!cardKey) {
+            return null;
+        }
+
+        const response = await fetch(faceDataUrl, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                card_keys: [cardKey],
+            }),
+        });
+
+        const payload = await response.json();
+
+        if (!payload || !payload.ok || !payload.cards || !payload.cards[cardKey]) {
+            return null;
+        }
+
+        const metadata = payload.cards[cardKey];
+
+        if (!metadata.is_dual_faced || !metadata.back_src) {
+            return null;
+        }
+
+        return metadata;
+    }
+
+    function addResultFlipButton() {
+        if (!resultImage || !resultMetadata || resultFlipButton) {
+            return;
+        }
+
+        const cardDisplay = resultImage.closest(".card-display");
+
+        if (!cardDisplay) {
+            return;
+        }
+
+        resultImage.dataset.face = resultImage.dataset.face || "front";
+
+        resultFlipButton = createFlipButton(resultImage, false);
+        cardDisplay.appendChild(resultFlipButton);
+    }
+
+    function removeZoomFlipButton() {
+        if (zoomFlipButton) {
+            zoomFlipButton.remove();
+            zoomFlipButton = null;
+        }
+    }
+
+    function openResultZoom() {
+        if (!resultImage || !zoomOverlay || !zoomImage) {
+            return;
+        }
+
+        zoomImage.src = resultImage.src || "";
+        zoomImage.alt = resultImage.alt || "";
+        zoomImage.dataset.face = resultImage.dataset.face || "front";
+
+        removeZoomFlipButton();
+
+        if (resultMetadata) {
+            zoomFlipButton = createFlipButton(zoomImage, true);
+            const zoomContent = zoomImage.closest(".card-zoom-content");
+
+            if (zoomContent) {
+                zoomContent.appendChild(zoomFlipButton);
+            }
+        }
+
+        zoomOverlay.classList.remove("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "false");
+    }
+
+    function closeResultZoom() {
+        if (!zoomOverlay || !zoomImage) {
+            return;
+        }
+
+        removeZoomFlipButton();
+
+        zoomOverlay.classList.add("hidden");
+        zoomOverlay.setAttribute("aria-hidden", "true");
+        zoomImage.dataset.face = "front";
+    }
+
+    if (resultImage) {
+        resultImage.dataset.face = "front";
+        resultImage.addEventListener("click", openResultZoom);
+        resultImage.addEventListener("dblclick", openResultZoom);
+    }
+
+    if (zoomBackdrop) {
+        zoomBackdrop.addEventListener("click", closeResultZoom);
+    }
+
+    if (zoomImage) {
+        zoomImage.addEventListener("click", closeResultZoom);
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            closeResultZoom();
+        }
+    });
+
+    loadResultFaceMetadata()
+        .then(function (metadata) {
+            resultMetadata = metadata;
+            addResultFlipButton();
+        })
+        .catch(function () {
+            resultMetadata = null;
+        });
+})();
+</script>
+{% endif %}
 {% endblock %}

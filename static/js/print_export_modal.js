@@ -62,8 +62,8 @@
         const stepDeliver = getElement("printExportStatusStepDeliver");
         const stepComplete = getElement("printExportStatusStepComplete");
 
-        const printUrl = config.printUrl || "";
-        const exportZipUrl = config.exportZipUrl || "";
+        let activePrintUrl = config.printUrl || "";
+        let activeExportZipUrl = config.exportZipUrl || "";
 
         let activeObjectUrl = "";
 
@@ -80,6 +80,11 @@
                     window.iMomirToast.success(messageText || "Print / Export complete.");
                 }
             }
+        }
+
+        function setUrls(nextPrintUrl, nextExportZipUrl) {
+            activePrintUrl = nextPrintUrl || config.printUrl || "";
+            activeExportZipUrl = nextExportZipUrl || config.exportZipUrl || "";
         }
 
         function setModalVisible(isVisible) {
@@ -281,7 +286,7 @@
             }
 
             const isExport = actionType === "export";
-            const actionUrl = isExport ? exportZipUrl : printUrl;
+            const actionUrl = isExport ? activeExportZipUrl : activePrintUrl;
 
             if (!actionUrl) {
                 showMessage("Print / Export URL was not configured.", true);
@@ -452,7 +457,17 @@
         bindEvents();
 
         return {
-            open: function () {
+            open: function (options) {
+                options = options || {};
+
+                if (options.printUrl || options.exportZipUrl) {
+                    setUrls(options.printUrl || "", options.exportZipUrl || "");
+                }
+
+                if (typeof options.beforeOpen === "function") {
+                    options.beforeOpen();
+                }
+
                 resetStatusPanel();
                 setSettingsVisible(false);
                 setModalVisible(true);
@@ -460,6 +475,7 @@
             close: function () {
                 setModalVisible(false);
             },
+            setUrls: setUrls,
             isOpen: function () {
                 return Boolean(modal && !modal.classList.contains("hidden"));
             }

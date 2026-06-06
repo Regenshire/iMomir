@@ -335,14 +335,14 @@
                         View
                     </a>
 
-                    <a
-                        id="campaignAddPackPreviewPrintLink"
+                    <button
+                        type="button"
+                        id="campaignAddPackPreviewPrintExportButton"
                         class="action-button secondary-button campaign-add-pack-preview-button"
-                        href="#"
-                        target="_blank"
+                        disabled
                     >
-                        Print
-                    </a>
+                        Print / Export
+                    </button>
 
                     <button
                         type="button"
@@ -646,26 +646,12 @@
             <div class="campaign-bulk-action-groups">
                 <div class="campaign-bulk-action-group campaign-bulk-feature-actions" aria-label="Pack features">
                     <button
-                        type="submit"
-                        name="bulk_action"
-                        value="print"
+                        type="button"
+                        id="campaignOpenPrintExportButton"
                         class="action-button"
-                        formtarget="_blank"
                     >
-                        Print Selected
+                        Print / Export
                     </button>
-
-                    {% if enable_chaos_card_image_export %}
-                    <button
-                        type="submit"
-                        name="bulk_action"
-                        value="export_zip"
-                        class="action-button secondary-button"
-                        formtarget="_blank"
-                    >
-                        Export to Zip
-                    </button>
-                    {% endif %}
 
                     <button
                         type="submit"
@@ -840,6 +826,9 @@
         </button>
     </div>
 
+    {% set print_export_subject_label = "selected packs" %}
+    {% include "_print_export_modal.html" %}
+
     <div id="campaignTestDraftModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
         <div id="campaignTestDraftBackdrop" class="campaign-add-pack-backdrop"></div>
 
@@ -980,6 +969,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 <script>
 (function () {
     const form = document.getElementById("campaignManagePacksForm");
@@ -1015,7 +1005,7 @@
     const addPackPreviewTitle = document.getElementById("campaignAddPackPreviewTitle");
     const addPackPreviewMeta = document.getElementById("campaignAddPackPreviewMeta");
     const addPackPreviewViewLink = document.getElementById("campaignAddPackPreviewViewLink");
-    const addPackPreviewPrintLink = document.getElementById("campaignAddPackPreviewPrintLink");
+    const addPackPreviewPrintExportButton = document.getElementById("campaignAddPackPreviewPrintExportButton");
     const addPackPreviewSaveButton = document.getElementById("campaignAddPackPreviewSaveButton");
     const showSearchPanelButton = document.getElementById("campaignShowSearchPanelButton");
     const addPackSearchPanel = document.getElementById("campaignAddPackSearchPanel");
@@ -1060,7 +1050,12 @@
     const testDraftHumanNameInput = document.getElementById("campaignTestDraftHumanName");
     const testDraftPlayerPortraitWrap = document.getElementById("campaignTestDraftPlayerPortraitWrap");
     const testDraftPlayerName = document.getElementById("campaignTestDraftPlayerName");
+    const openPrintExportButton = document.getElementById("campaignOpenPrintExportButton");
 
+    const campaignPrintUrl = {{ url_for('campaign_chaos_packs_print')|tojson }};
+    const campaignExportZipUrl = {{ url_for('campaign_chaos_packs_export_zip')|tojson }};
+    const campaignPreviewPrintUrl = {{ url_for('campaign_chaos_pack_preview_print')|tojson }};
+    const campaignPreviewExportZipUrl = {{ url_for('campaign_chaos_pack_preview_export_zip')|tojson }};
     const bulkCreateOnePackUrl = {{ url_for('campaign_chaos_manage_pack_bulk_create_one')|tojson }};
 
     let activePackLabelSettingsUrl = "";
@@ -1068,6 +1063,28 @@
     let customTitlePackNameWasEdited = false;
 
     let addPackModalHasSavedChanges = false;
+
+    const campaignPrintExportModal = window.iMomirPrintExportModal.init({
+        openButtonId: "campaignPrintExportUnusedButton",
+        printUrl: campaignPrintUrl,
+        exportZipUrl: campaignExportZipUrl,
+
+        beforeOpen: function () {
+            if (addPackModal && !addPackModal.classList.contains("hidden")) {
+                closeAddPackModal();
+            }
+
+            if (summaryModal && !summaryModal.classList.contains("hidden")) {
+                closeSummaryModal();
+            }
+
+            if (testDraftModal && !testDraftModal.classList.contains("hidden")) {
+                closeTestDraftModal();
+            }
+        },
+
+        showMessage: showUiMessage
+    });
 
     function showUiMessage(messageText, isError) {
         const cleanMessage = messageText || "";
@@ -1132,6 +1149,39 @@
             .filter(function (value) {
                 return value !== "";
             });
+    }
+
+    function clearCampaignPrintExportPackInputs() {
+        const printExportForm = document.getElementById("printExportForm");
+
+        if (!printExportForm) {
+            return;
+        }
+
+        Array.from(printExportForm.querySelectorAll(".campaign-print-export-pack-input")).forEach(function (inputElement) {
+            inputElement.remove();
+        });
+    }
+
+    function setCampaignPrintExportPackInputs(packIds) {
+        const printExportForm = document.getElementById("printExportForm");
+
+        if (!printExportForm) {
+            return;
+        }
+
+        clearCampaignPrintExportPackInputs();
+
+        (packIds || []).forEach(function (packId) {
+            const hiddenInput = document.createElement("input");
+
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "pack_ids";
+            hiddenInput.value = String(packId || "");
+            hiddenInput.className = "campaign-print-export-pack-input";
+
+            printExportForm.appendChild(hiddenInput);
+        });
     }
 
     function getRequiredTestDraftPackCount() {
@@ -1207,6 +1257,35 @@
 
         testDraftValidationMessage.textContent = "Ready: " + selectedCount + " selected pack(s). This draft requires " + requiredPackCount + ".";
         testDraftStartButton.disabled = false;
+    }
+
+    function openCampaignPrintExportModal() {
+        const selectedPackIds = getSelectedPackIdsForTestDraft();
+
+        if (!selectedPackIds.length) {
+            showUiMessage("Select at least one saved pack first.", true);
+            return;
+        }
+
+        setCampaignPrintExportPackInputs(selectedPackIds);
+
+        if (campaignPrintExportModal) {
+            campaignPrintExportModal.open({
+                printUrl: campaignPrintUrl,
+                exportZipUrl: campaignExportZipUrl
+            });
+        }
+    }
+
+    function openCampaignPreviewPrintExportModal() {
+        clearCampaignPrintExportPackInputs();
+
+        if (campaignPrintExportModal) {
+            campaignPrintExportModal.open({
+                printUrl: campaignPreviewPrintUrl,
+                exportZipUrl: campaignPreviewExportZipUrl
+            });
+        }
     }
 
     function openTestDraftModal() {
@@ -2011,8 +2090,8 @@
             addPackPreviewViewLink.href = "#";
         }
 
-        if (addPackPreviewPrintLink) {
-            addPackPreviewPrintLink.href = "#";
+        if (addPackPreviewPrintExportButton) {
+            addPackPreviewPrintExportButton.disabled = true;
         }
 
         if (addPackPreviewSaveButton) {
@@ -2041,8 +2120,8 @@
             addPackPreviewViewLink.href = payload.view_url || "#";
         }
 
-        if (addPackPreviewPrintLink) {
-            addPackPreviewPrintLink.href = payload.print_url || "#";
+        if (addPackPreviewPrintExportButton) {
+            addPackPreviewPrintExportButton.disabled = false;
         }
 
         if (addPackPreviewSaveButton) {
@@ -2596,6 +2675,14 @@
         }
     }
 
+    if (openPrintExportButton) {
+        openPrintExportButton.addEventListener("click", openCampaignPrintExportModal);
+    }
+
+    if (addPackPreviewPrintExportButton) {
+        addPackPreviewPrintExportButton.addEventListener("click", openCampaignPreviewPrintExportModal);
+    }
+
     if (summaryButton) {
         summaryButton.addEventListener("click", openSummaryModal);
     }
@@ -3073,6 +3160,11 @@
 
     document.addEventListener("keydown", function (event) {
         if (event.key !== "Escape") {
+            return;
+        }
+
+        if (campaignPrintExportModal && campaignPrintExportModal.isOpen()) {
+            campaignPrintExportModal.close();
             return;
         }
 

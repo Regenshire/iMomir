@@ -8598,6 +8598,39 @@ input {
     min-width: 220px;
 }
 
+.stats-modal-dialog {
+    max-width: 980px;
+}
+
+.stats-modal-panel {
+    margin-top: 0;
+}
+
+.deckbuilder-stack-column-over {
+    border-color: rgba(66, 205, 111, 0.85);
+    background: rgba(66, 205, 111, 0.10);
+    box-shadow: inset 0 0 0 1px rgba(66, 205, 111, 0.18);
+}
+
+.deckbuilder-stack-drag-active .deckbuilder-stack-column.hidden {
+    display: block !important;
+    opacity: 0.55;
+    border-style: dashed;
+}
+
+.deckbuilder-stack-drag-active .deckbuilder-stack-column.hidden .deckbuilder-stack-column-body {
+    min-height: 170px;
+}
+
+.deckbuilder-stack-insertion-marker {
+    height: 4px;
+    width: 100%;
+    margin: 4px 0;
+    border-radius: 999px;
+    background: rgba(66, 205, 111, 0.95);
+    box-shadow: 0 0 0 3px rgba(66, 205, 111, 0.16);
+}
+
 @media (max-width: 900px) {
     .custom-draft-pack-layout-list {
         grid-template-columns: 1fr;
@@ -9019,6 +9052,144 @@ input {
 
     .custom-draft-card-remove-button {
         margin-top: 0;
+    }
+}
+
+.imomir-card-flip-wrap {
+    position: relative;
+}
+
+.imomir-card-flip-control {
+    position: absolute;
+    top: 50%;
+    z-index: 12;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(8, 13, 23, 0.84);
+    color: #f8fafc;
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.45),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.86);
+    transition:
+        opacity 140ms ease,
+        transform 140ms ease,
+        background 140ms ease,
+        left 220ms ease,
+        right 220ms ease;
+    pointer-events: auto;
+}
+
+.imomir-card-flip-control-front {
+    left: 10px;
+    right: auto;
+}
+
+.imomir-card-flip-control-back {
+    left: auto;
+    right: 10px;
+}
+
+.imomir-card-flip-wrap:hover .imomir-card-flip-control,
+.imomir-card-flip-control:focus-visible {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+}
+
+.imomir-card-flip-control:hover,
+.imomir-card-flip-control:focus-visible {
+    background: rgba(37, 99, 235, 0.92);
+}
+
+.imomir-card-flip-control i {
+    font-size: 1rem;
+}
+
+.imomir-card-flip-animating img {
+    animation: imomir-card-face-flip 280ms ease;
+}
+
+.imomir-card-flip-control-stack-visible {
+    top: 5%;
+    transform: scale(0.86);
+}
+
+.imomir-card-flip-wrap:hover .imomir-card-flip-control-stack-visible,
+.imomir-card-flip-control-stack-visible:focus-visible {
+    transform: scale(1);
+}
+
+.imomir-card-flip-control-stack-visible.imomir-card-flip-control-front {
+    left: 10px;
+}
+
+.imomir-card-flip-control-stack-visible.imomir-card-flip-control-back {
+    right: 10px;
+}
+
+.deckbuilder-stack-column-body .imomir-card-flip-control,
+.campaign-test-draft-stack-column-body .imomir-card-flip-control {
+    opacity: 0;
+}
+
+.deckbuilder-stack-column-body .deckbuilder-card:hover > .imomir-card-flip-control,
+.campaign-test-draft-stack-column-body .campaign-test-draft-picked-row:hover > .imomir-card-flip-control,
+.deckbuilder-stack-column-body .imomir-card-flip-control:focus-visible,
+.campaign-test-draft-stack-column-body .imomir-card-flip-control:focus-visible {
+    opacity: 1;
+}
+
+.imomir-card-flip-control-zoom-page {
+    top: 5%;
+    transform: scale(0.92);
+}
+
+.imomir-card-flip-wrap:hover .imomir-card-flip-control-zoom-page,
+.imomir-card-flip-control-zoom-page:focus-visible,
+.card-zoom-content .imomir-card-flip-control-zoom-page {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.card-zoom-content.imomir-card-flip-wrap {
+    position: relative;
+}
+
+.card-zoom-content .imomir-card-flip-control {
+    z-index: 10001;
+}
+
+.card-zoom-content .imomir-card-flip-control-front {
+    left: calc(50% - min(46vw, 260px) + 14px);
+}
+
+.card-zoom-content .imomir-card-flip-control-back {
+    right: calc(50% - min(46vw, 260px) + 14px);
+}
+
+@keyframes imomir-card-face-flip {
+    0% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
+    }
+
+    45% {
+        transform: rotateY(84deg) scale(0.985);
+        filter: brightness(1.18);
+    }
+
+    55% {
+        transform: rotateY(96deg) scale(0.985);
+        filter: brightness(1.18);
+    }
+
+    100% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
     }
 }
 

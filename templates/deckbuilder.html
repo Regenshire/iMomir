@@ -19,6 +19,7 @@
     data-save-url="{{ url_for('deckbuilder_save', deck_id=deckbuilder.deck_id) }}"
     data-delete-url="{{ url_for('deckbuilder_delete', deck_id=deckbuilder.deck_id) }}"
     data-card-action-url="{{ url_for('deckbuilder_card_action', deck_id=deckbuilder.deck_id) }}"
+    data-stack-layout-url="{{ url_for('deckbuilder_stack_layout', deck_id=deckbuilder.deck_id) }}"
     data-change-printing-options-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
     data-change-printing-url="{{ url_for('deckbuilder_change_printing', deck_id=deckbuilder.deck_id) }}"
     data-add-card-search-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
@@ -220,6 +221,16 @@
         </div>
 
         <div class="deckbuilder-view-buttons">
+            <button
+                type="button"
+                id="deckbuilderStatsButton"
+                class="campaign-test-draft-zone-view-button"
+                title="Deck Stats"
+                aria-label="Deck Stats"
+            >
+                <i class="fa-solid fa-chart-column"></i>
+            </button>
+
             <button
                 type="button"
                 id="deckbuilderListViewButton"
@@ -478,6 +489,8 @@
                         data-card-set-code="{{ picked_card.set_code or '' }}"
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                        data-stack-column="{{ picked_card.stack_column or '' }}"
+                        data-stack-order="{{ picked_card.stack_order if picked_card.stack_order is not none else '' }}"
                     >
                         <img
                             src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
@@ -538,6 +551,8 @@
                         data-card-set-code="{{ picked_card.set_code or '' }}"
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                        data-stack-column="{{ picked_card.stack_column or '' }}"
+                        data-stack-order="{{ picked_card.stack_order if picked_card.stack_order is not none else '' }}"
                     >
                         <img
                             src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
@@ -618,6 +633,10 @@
             Alternate Image Settings
         </button>
     </div>
+
+    {% set stats_modal_title = "Deck Stats" %}
+    {% set stats_modal_subtitle = "Stats for the current main deck only." %}
+    {% include "_stats_modal.html" %}
 
     {% set print_export_defaults = deckbuilder.print_export_defaults %}
     {% include "_print_export_modal.html" %}
@@ -759,6 +778,8 @@
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stats_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_flip.js') }}"></script>
 <script>
 (function () {
     const workspace = document.getElementById("deckbuilderWorkspace");
@@ -782,6 +803,7 @@
     const listViewButton = document.getElementById("deckbuilderListViewButton");
     const gridViewButton = document.getElementById("deckbuilderGridViewButton");
     const stackViewButton = document.getElementById("deckbuilderStackViewButton");
+    const statsButton = document.getElementById("deckbuilderStatsButton");
     const deckNameInput = document.getElementById("deckbuilderDeckNameInput");
     const saveDeckButton = document.getElementById("deckbuilderSaveDeckButton");
     const loadDeckButton = document.getElementById("deckbuilderLoadDeckButton");
@@ -839,6 +861,7 @@
     const saveDeckUrl = workspace.dataset.saveUrl || "";
     const deleteDeckUrl = workspace.dataset.deleteUrl || "";
     const cardActionUrl = workspace.dataset.cardActionUrl || "";
+    const stackLayoutUrl = workspace.dataset.stackLayoutUrl || "";
     const changePrintingOptionsUrl = workspace.dataset.changePrintingOptionsUrl || "";
     const changePrintingUrl = workspace.dataset.changePrintingUrl || "";
     const addCardSearchUrl = workspace.dataset.addCardSearchUrl || "";
@@ -1278,6 +1301,171 @@
         if (sideboardCount) {
             sideboardCount.textContent = String(getDeckbuilderCards(sideboardList).length);
         }
+    }
+
+    function setDeckbuilderStatsModalVisible(isVisible) {
+        if (!statsModal) {
+            return;
+        }
+
+        statsModal.classList.toggle("hidden", !isVisible);
+        statsModal.setAttribute("aria-hidden", isVisible ? "false" : "true");
+
+        if (isVisible) {
+            updateDeckbuilderStatsModal();
+        }
+    }
+
+    function openDeckbuilderStatsModal() {
+        hideHoverPreview();
+        setDeckbuilderCopyMenuOpen(false);
+        setDeckbuilderContextMenuOpen(false);
+        setLandPaletteContextMenuOpen(false);
+        setDeckbuilderStatsModalVisible(true);
+    }
+
+    function closeDeckbuilderStatsModal() {
+        setDeckbuilderStatsModalVisible(false);
+    }
+
+    function getDeckbuilderStatsCards() {
+        return getDeckbuilderCards(deckList).map(function (cardElement) {
+            const colorIdentity = parseDeckbuilderColorIdentity(cardElement.dataset.cardColorIdentity || "[]");
+            const typeLine = String(cardElement.dataset.cardTypeLine || "").trim();
+            const cardName = String(cardElement.dataset.cardName || "").trim();
+            const manaValue = parseFloat(cardElement.dataset.cardManaValue || "");
+            const rarity = String(cardElement.dataset.cardRarity || "").trim().toLowerCase();
+            const isBasicLand = cardElement.dataset.isBasicLand === "1";
+
+            return {
+                cardName: cardName,
+                colorIdentity: colorIdentity,
+                typeLine: typeLine,
+                manaValue: Number.isFinite(manaValue) ? manaValue : 0,
+                rarity: rarity,
+                isBasicLand: isBasicLand
+            };
+        });
+    }
+
+    function getDeckbuilderPrimaryType(typeLine) {
+        const cleanTypeLine = String(typeLine || "").toLowerCase();
+
+        if (cleanTypeLine.indexOf("land") !== -1) {
+            return "Land";
+        }
+
+        if (cleanTypeLine.indexOf("creature") !== -1) {
+            return "Creature";
+        }
+
+        if (cleanTypeLine.indexOf("instant") !== -1) {
+            return "Instant";
+        }
+
+        if (cleanTypeLine.indexOf("sorcery") !== -1) {
+            return "Sorcery";
+        }
+
+        if (cleanTypeLine.indexOf("artifact") !== -1) {
+            return "Artifact";
+        }
+
+        if (cleanTypeLine.indexOf("enchantment") !== -1) {
+            return "Enchantment";
+        }
+
+        if (cleanTypeLine.indexOf("planeswalker") !== -1) {
+            return "Planeswalker";
+        }
+
+        if (cleanTypeLine.indexOf("battle") !== -1) {
+            return "Battle";
+        }
+
+        return "Other";
+    }
+
+    function getDeckbuilderStatsColorLabel(cardInfo) {
+        const colors = cardInfo.colorIdentity || [];
+
+        if (!colors.length) {
+            return "Colorless";
+        }
+
+        if (colors.length >= 2) {
+            return "Multicolor";
+        }
+
+        const colorSymbol = colors[0];
+
+        if (colorSymbol === "W") {
+            return "White";
+        }
+
+        if (colorSymbol === "U") {
+            return "Blue";
+        }
+
+        if (colorSymbol === "B") {
+            return "Black";
+        }
+
+        if (colorSymbol === "R") {
+            return "Red";
+        }
+
+        if (colorSymbol === "G") {
+            return "Green";
+        }
+
+        return "Colorless";
+    }
+
+    function incrementDeckbuilderStatsCount(counts, keyName) {
+        const cleanKeyName = String(keyName || "").trim();
+
+        if (!cleanKeyName) {
+            return;
+        }
+
+        counts[cleanKeyName] = (counts[cleanKeyName] || 0) + 1;
+    }
+
+    function renderDeckbuilderStatsRows(containerElement, rows) {
+        if (!containerElement) {
+            return;
+        }
+
+        containerElement.innerHTML = "";
+
+        rows.forEach(function (rowData) {
+            const row = document.createElement("div");
+            row.className = "custom-draft-stat-row";
+
+            const label = document.createElement("span");
+            label.textContent = rowData.label;
+
+            const value = document.createElement("strong");
+            value.textContent = String(rowData.value || 0);
+
+            row.appendChild(label);
+            row.appendChild(value);
+            containerElement.appendChild(row);
+        });
+    }
+
+    function getDeckbuilderStatsCardsForSharedModal() {
+        return getDeckbuilderCards(deckList).map(function (cardElement) {
+            return {
+                cardName: String(cardElement.dataset.cardName || "").trim(),
+                colorIdentity: parseDeckbuilderColorIdentity(cardElement.dataset.cardColorIdentity || "[]"),
+                typeLine: String(cardElement.dataset.cardTypeLine || "").trim(),
+                manaValue: cardElement.dataset.cardManaValue || "",
+                rarity: String(cardElement.dataset.cardRarity || "").trim().toLowerCase(),
+                isBasicLand: cardElement.dataset.isBasicLand === "1"
+            };
+        });
     }
 
     async function submitDeckbuilderAjax(actionUrl, formData) {
@@ -1950,7 +2138,7 @@
             : "Pack " + escapeHtml(card.pack_number) + " • Pick " + escapeHtml(card.pick_number);
 
         return (
-            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(card.source_kind || (card.is_basic_land ? "basic_land" : "deck_card")) + '" data-deck-card-id="' + escapeHtml(card.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(card.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(card.card_name || "") + '" data-card-uuid="' + escapeHtml(card.card_uuid || "") + '" data-card-rarity="' + escapeHtml(card.rarity || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(card.type_line || "") + '" data-card-color-identity="' + escapeHtml(card.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(card.set_code || "") + '" data-card-collector-number="' + escapeHtml(card.collector_number || "") + '" data-is-basic-land="' + escapeHtml(card.is_basic_land ? "1" : "0") + '">' +
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(card.source_kind || (card.is_basic_land ? "basic_land" : "deck_card")) + '" data-deck-card-id="' + escapeHtml(card.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(card.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(card.card_name || "") + '" data-card-uuid="' + escapeHtml(card.card_uuid || "") + '" data-card-rarity="' + escapeHtml(card.rarity || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(card.type_line || "") + '" data-card-color-identity="' + escapeHtml(card.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(card.set_code || "") + '" data-card-collector-number="' + escapeHtml(card.collector_number || "") + '" data-is-basic-land="' + escapeHtml(card.is_basic_land ? "1" : "0") + '" data-stack-column="' + escapeHtml(card.stack_column || "") + '" data-stack-order="' + escapeHtml(card.stack_order ?? "") + '">' +
                 '<img src="' + escapeHtml(card.image_src) + '" alt="' + escapeHtml(card.card_name) + '" class="campaign-test-draft-picked-thumb">' +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(card.card_name) + '</div>' +
@@ -2063,6 +2251,18 @@
         Array.from(document.querySelectorAll(".deckbuilder-card-dragging")).forEach(function (draggedElement) {
             draggedElement.classList.remove("deckbuilder-card-dragging");
         });
+
+        Array.from(document.querySelectorAll(".deckbuilder-stack-column-over")).forEach(function (columnElement) {
+            columnElement.classList.remove("deckbuilder-stack-column-over");
+        });
+
+        Array.from(document.querySelectorAll(".deckbuilder-stack-insertion-marker")).forEach(function (markerElement) {
+            markerElement.remove();
+        });
+
+        if (workspace) {
+            workspace.classList.remove("deckbuilder-stack-drag-active");
+        }
     }
 
     function setDropZonesActive(isActive) {
@@ -2097,6 +2297,11 @@
 
                 cardElement.classList.add("deckbuilder-card-dragging");
                 setDropZonesActive(true);
+
+                if (workspace && deckbuilderViewMode === "stack") {
+                    workspace.classList.add("deckbuilder-stack-drag-active");
+                }
+
                 hideHoverPreview();
 
                 setDeckbuilderDragTransfer(
@@ -2143,6 +2348,11 @@
 
                 landElement.classList.add("deckbuilder-card-dragging");
                 setDropZonesActive(true);
+
+                if (workspace && deckbuilderViewMode === "stack") {
+                    workspace.classList.add("deckbuilder-stack-drag-active");
+                }
+
                 hideHoverPreview();
 
                 setDeckbuilderDragTransfer(
@@ -2168,6 +2378,10 @@
             dropZone.dataset.dropBound = "1";
 
             dropZone.addEventListener("dragover", function (event) {
+                if (deckbuilderViewMode === "stack" && dropZone === deckList) {
+                    return;
+                }
+
                 event.preventDefault();
 
                 if (event.dataTransfer) {
@@ -2186,6 +2400,10 @@
             });
 
             dropZone.addEventListener("drop", async function (event) {
+                if (deckbuilderViewMode === "stack" && dropZone === deckList) {
+                    return;
+                }
+
                 event.preventDefault();
 
                 const targetZone = dropZone.dataset.dropZone || "deck";
@@ -2439,13 +2657,8 @@
         });
     }
 
-    function buildStackColumnsForZone(listElement) {
-        if (!listElement) {
-            return;
-        }
-
-        const existingCards = getDeckbuilderCards(listElement);
-        const columnDefs = [
+    function getDeckbuilderStackColumnDefs() {
+        return [
             { key: "0", label: "0" },
             { key: "1", label: "1" },
             { key: "2", label: "2" },
@@ -2455,12 +2668,323 @@
             { key: "6", label: "6+" },
             { key: "land", label: "Lands" }
         ];
+    }
 
+    function normalizeDeckbuilderStackColumnKey(rawValue) {
+        const cleanValue = String(rawValue || "").trim().toLowerCase();
+
+        if (["0", "1", "2", "3", "4", "5", "6", "land"].indexOf(cleanValue) !== -1) {
+            return cleanValue;
+        }
+
+        return "";
+    }
+
+    function inferDeckbuilderStackColumnKey(cardElement) {
+        const cardName = String(cardElement?.dataset?.cardName || "").trim();
+        const typeLine = String(cardElement?.dataset?.cardTypeLine || "").toLowerCase();
+
+        if (
+            typeLine.indexOf("land") !== -1
+            || cardName.match(/^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/i)
+        ) {
+            return "land";
+        }
+
+        const manaValue = getCardManaValue(cardElement);
+
+        if (!Number.isFinite(manaValue) || manaValue === 999) {
+            return "0";
+        }
+
+        if (manaValue >= 6) {
+            return "6";
+        }
+
+        return String(Math.max(0, Math.floor(manaValue)));
+    }
+
+    function getDeckbuilderStackColumnKey(cardElement) {
+        const inferredColumn = inferDeckbuilderStackColumnKey(cardElement);
+
+        if (inferredColumn === "land") {
+            return "land";
+        }
+
+        return normalizeDeckbuilderStackColumnKey(cardElement?.dataset?.stackColumn || "") || inferredColumn;
+    }
+
+    function clearStackInsertionMarkers() {
+        Array.from(document.querySelectorAll(".deckbuilder-stack-insertion-marker")).forEach(function (markerElement) {
+            markerElement.remove();
+        });
+    }
+
+    function getStackInsertBeforeDeckCardId(stackBody, clientY) {
+        if (!stackBody) {
+            return "";
+        }
+
+        const cards = Array.from(stackBody.querySelectorAll(".deckbuilder-card:not(.deckbuilder-card-dragging)"));
+
+        for (const cardElement of cards) {
+            const rect = cardElement.getBoundingClientRect();
+            const midpoint = rect.top + Math.min(rect.height, 54) / 2;
+
+            if (clientY < midpoint) {
+                return cardElement.dataset.deckCardId || "";
+            }
+        }
+
+        return "";
+    }
+
+    function showStackInsertionMarker(stackBody, beforeDeckCardId) {
+        if (!stackBody) {
+            return;
+        }
+
+        clearStackInsertionMarkers();
+
+        const marker = document.createElement("div");
+        marker.className = "deckbuilder-stack-insertion-marker";
+
+        if (beforeDeckCardId) {
+            const beforeCard = stackBody.querySelector(
+                '.deckbuilder-card[data-deck-card-id="' + CSS.escape(beforeDeckCardId) + '"]'
+            );
+
+            if (beforeCard) {
+                stackBody.insertBefore(marker, beforeCard);
+                return;
+            }
+        }
+
+        stackBody.appendChild(marker);
+    }
+
+    function getStackOrderedDeckCardIdsWithInsertion(targetColumnKey, movingDeckCardId, insertBeforeDeckCardId) {
+        const orderedIds = [];
+        let insertedMovingCard = false;
+        const cleanMovingDeckCardId = String(movingDeckCardId || "").trim();
+        const cleanInsertBeforeDeckCardId = String(insertBeforeDeckCardId || "").trim();
+        const cleanTargetColumnKey = normalizeDeckbuilderStackColumnKey(targetColumnKey) || "0";
+
+        getDeckbuilderStackColumnDefs().forEach(function (columnDef) {
+            const column = deckList.querySelector(
+                '.deckbuilder-stack-column[data-stack-column="' + CSS.escape(columnDef.key) + '"]'
+            );
+
+            if (!column) {
+                return;
+            }
+
+            const body = column.querySelector(".deckbuilder-stack-column-body");
+
+            if (!body) {
+                return;
+            }
+
+            const cards = Array.from(body.querySelectorAll(".deckbuilder-card"));
+
+            cards.forEach(function (cardElement) {
+                const deckCardId = String(cardElement.dataset.deckCardId || "").trim();
+
+                if (!deckCardId || deckCardId === cleanMovingDeckCardId) {
+                    return;
+                }
+
+                if (
+                    columnDef.key === cleanTargetColumnKey
+                    && cleanInsertBeforeDeckCardId
+                    && deckCardId === cleanInsertBeforeDeckCardId
+                    && cleanMovingDeckCardId
+                    && !insertedMovingCard
+                ) {
+                    orderedIds.push(cleanMovingDeckCardId);
+                    insertedMovingCard = true;
+                }
+
+                orderedIds.push(deckCardId);
+            });
+
+            if (
+                columnDef.key === cleanTargetColumnKey
+                && cleanMovingDeckCardId
+                && !insertedMovingCard
+                && !cleanInsertBeforeDeckCardId
+            ) {
+                orderedIds.push(cleanMovingDeckCardId);
+                insertedMovingCard = true;
+            }
+        });
+
+        if (cleanMovingDeckCardId && !insertedMovingCard) {
+            orderedIds.push(cleanMovingDeckCardId);
+        }
+
+        return orderedIds;
+    }
+
+    async function submitDeckbuilderStackLayout(droppedItem, targetColumnKey, insertBeforeDeckCardId) {
+        if (!stackLayoutUrl) {
+            throw new Error("Stack Layout URL was not configured.");
+        }
+
+        const deckCardId = String(droppedItem.deckCardId || "").trim();
+
+        if (!deckCardId) {
+            throw new Error("Only saved Deck Builder cards can be positioned in Stack Mode.");
+        }
+
+        const cleanTargetColumnKey = normalizeDeckbuilderStackColumnKey(targetColumnKey) || "0";
+        const orderedDeckCardIds = getStackOrderedDeckCardIdsWithInsertion(
+            cleanTargetColumnKey,
+            deckCardId,
+            insertBeforeDeckCardId
+        );
+
+        const formData = new FormData();
+
+        formData.append("deck_card_id", deckCardId);
+        formData.append("target_zone", "deck");
+        formData.append("stack_column", cleanTargetColumnKey);
+
+        orderedDeckCardIds.forEach(function (orderedDeckCardId) {
+            formData.append("ordered_deck_card_ids", orderedDeckCardId);
+        });
+
+        return submitDeckbuilderAjax(stackLayoutUrl, formData);
+    }
+
+    function bindStackColumnDropTargets() {
+        Array.from(document.querySelectorAll(".deckbuilder-stack-column-body")).forEach(function (stackBody) {
+            if (stackBody.dataset.stackDropBound === "1") {
+                return;
+            }
+
+            stackBody.dataset.stackDropBound = "1";
+
+            stackBody.addEventListener("dragover", function (event) {
+                const columnElement = stackBody.closest(".deckbuilder-stack-column");
+                const columnKey = columnElement ? columnElement.dataset.stackColumn || "0" : "0";
+                const droppedItem = getDeckbuilderDragTransfer(event);
+
+                if (!droppedItem) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (event.dataTransfer) {
+                    event.dataTransfer.dropEffect = droppedItem.type === "basic-land" ? "copy" : "move";
+                }
+
+                Array.from(document.querySelectorAll(".deckbuilder-stack-column-over")).forEach(function (otherColumn) {
+                    if (otherColumn !== columnElement) {
+                        otherColumn.classList.remove("deckbuilder-stack-column-over");
+                    }
+                });
+
+                if (columnElement) {
+                    columnElement.classList.add("deckbuilder-stack-column-over");
+                }
+
+                if (droppedItem.type !== "basic-land" && columnKey !== "land") {
+                    showStackInsertionMarker(
+                        stackBody,
+                        getStackInsertBeforeDeckCardId(stackBody, event.clientY)
+                    );
+                } else {
+                    clearStackInsertionMarkers();
+                }
+            });
+
+            stackBody.addEventListener("dragleave", function (event) {
+                const columnElement = stackBody.closest(".deckbuilder-stack-column");
+
+                if (columnElement && !columnElement.contains(event.relatedTarget)) {
+                    columnElement.classList.remove("deckbuilder-stack-column-over");
+                    clearStackInsertionMarkers();
+                }
+            });
+
+            stackBody.addEventListener("drop", async function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const columnElement = stackBody.closest(".deckbuilder-stack-column");
+                const rawColumnKey = columnElement ? columnElement.dataset.stackColumn || "0" : "0";
+                const droppedItem = getDeckbuilderDragTransfer(event);
+
+                draggedDeckbuilderItem = null;
+                clearDropZoneState();
+
+                if (!droppedItem) {
+                    return;
+                }
+
+                try {
+                    if (columnElement) {
+                        columnElement.classList.add("deckbuilder-drop-zone-working");
+                    }
+
+                    let payload = null;
+
+                    if (droppedItem.type === "basic-land") {
+                        payload = await updateBasicLand(droppedItem.landName, "add");
+
+                        if (payload && payload.ok) {
+                            payload._basicLandCountsAuthoritative = true;
+                        }
+                    } else if (droppedItem.type === "picked-card") {
+                        if (droppedItem.isBasicLand === "1") {
+                            return;
+                        }
+
+                        const targetColumnKey = normalizeDeckbuilderStackColumnKey(rawColumnKey) || inferDeckbuilderStackColumnKey({
+                            dataset: {
+                                cardName: droppedItem.cardName || "",
+                                cardTypeLine: "",
+                                cardManaValue: "0"
+                            }
+                        });
+
+                        const insertBeforeDeckCardId = getStackInsertBeforeDeckCardId(stackBody, event.clientY);
+
+                        payload = await submitDeckbuilderStackLayout(
+                            droppedItem,
+                            targetColumnKey,
+                            insertBeforeDeckCardId
+                        );
+                    }
+
+                    if (payload) {
+                        applyDeckbuilderPayload(payload);
+                    }
+                } catch (error) {
+                    showDeckbuilderError(error);
+                } finally {
+                    if (columnElement) {
+                        columnElement.classList.remove("deckbuilder-drop-zone-working");
+                    }
+                }
+            });
+        });
+    }
+
+    function buildStackColumnsForZone(listElement) {
+        if (!listElement) {
+            return;
+        }
+
+        const existingCards = getDeckbuilderCards(listElement);
         const columns = {};
 
         listElement.innerHTML = "";
 
-        columnDefs.forEach(function (columnDef) {
+        getDeckbuilderStackColumnDefs().forEach(function (columnDef) {
             const column = document.createElement("div");
             column.className = "deckbuilder-stack-column";
             column.dataset.stackColumn = columnDef.key;
@@ -2471,6 +2995,7 @@
 
             const body = document.createElement("div");
             body.className = "deckbuilder-stack-column-body";
+            body.dataset.stackColumn = columnDef.key;
 
             column.appendChild(title);
             column.appendChild(body);
@@ -2478,23 +3003,10 @@
             columns[columnDef.key] = body;
         });
 
-        existingCards.sort(compareDeckbuilderCards).forEach(function (cardElement) {
-            let columnKey = String(Math.floor(getCardManaValue(cardElement)));
-            const cardName = cardElement.dataset.cardName || "";
-            const typeLine = String(cardElement.dataset.cardTypeLine || "").toLowerCase();
-
-            if (
-                typeLine.indexOf("land") !== -1
-                || cardName.match(/^(Plains|Island|Swamp|Mountain|Forest|Wastes)$/i)
-            ) {
-                columnKey = "land";
-            } else if (columnKey === "999") {
-                columnKey = "0";
-            } else if (parseInt(columnKey, 10) >= 6) {
-                columnKey = "6";
-            }
-
+        existingCards.forEach(function (cardElement) {
+            const columnKey = getDeckbuilderStackColumnKey(cardElement);
             const targetColumn = columns[columnKey] || columns["0"];
+
             targetColumn.appendChild(cardElement);
         });
 
@@ -2503,6 +3015,7 @@
             columnElement.classList.toggle("hidden", !hasCards);
         });
 
+        bindStackColumnDropTargets();
         bindDragSources();
         bindHoverPreviews();
         bindCardContextMenus();
@@ -3139,6 +3652,44 @@
         });
     }
 
+    const deckbuilderStatsModal = window.iMomirStatsModal.init({
+        openButtonId: "deckbuilderStatsButton",
+        title: "Deck Stats",
+        subtitle: "Stats for the current main deck only.",
+        totalLabel: "Deck Cards",
+        averageManaValueExcludesLands: true,
+
+        beforeOpen: function () {
+            hideHoverPreview();
+            setDeckbuilderCopyMenuOpen(false);
+            setDeckbuilderContextMenuOpen(false);
+            setLandPaletteContextMenuOpen(false);
+        },
+
+        getCards: getDeckbuilderStatsCardsForSharedModal,
+
+        getSummaryItems: function (stats) {
+            return [
+                {
+                    label: "Deck Cards",
+                    value: stats.totalCards
+                },
+                {
+                    label: "Lands",
+                    value: stats.landCount
+                },
+                {
+                    label: "Creatures",
+                    value: stats.creatureCount
+                },
+                {
+                    label: "Average MV",
+                    value: stats.averageManaValue.toFixed(1)
+                }
+            ];
+        }
+    });
+
     const deckbuilderPrintExportModal = window.iMomirPrintExportModal.init({
         openButtonId: "deckbuilderOpenPrintExportButton",
         printUrl: printUrl,
@@ -3510,6 +4061,11 @@
             hideHoverPreview();
             closeDeleteDeckModal();
             closeLoadDeckModal();
+
+            if (deckbuilderStatsModal && deckbuilderStatsModal.isOpen()) {
+                deckbuilderStatsModal.close();
+            }
+
             setDeckbuilderCopyMenuOpen(false);
             if (deckbuilderPrintExportModal && deckbuilderPrintExportModal.isOpen()) {
                 deckbuilderPrintExportModal.close();

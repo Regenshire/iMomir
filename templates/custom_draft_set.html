@@ -14,19 +14,13 @@
             </div>
 
             <div class="chaos-pack-view-header-actions">
-                <form
-                    method="post"
-                    action="{{ url_for('custom_draft_set_export_zip', set_code=custom_set.set_code) }}"
-                    class="custom-draft-export-set-form"
-                    target="_blank"
+                <button
+                    type="button"
+                    id="customDraftOpenPrintExportButton"
+                    class="action-button secondary-button custom-draft-export-set-button"
                 >
-                    <button
-                        type="submit"
-                        class="action-button secondary-button custom-draft-export-set-button"
-                    >
-                        Export Set to Zip
-                    </button>
-                </form>
+                    Print / Export
+                </button>
 
                 <a class="action-button secondary-button chaos-pack-view-back-button" href="{{ url_for('sets') }}">
                     Back
@@ -268,6 +262,17 @@
                         {{ custom_set_cards|length }} card(s)
                     </div>
 
+                    <button
+                        type="button"
+                        id="customDraftSelectedPrintExportButton"
+                        class="custom-draft-header-icon-button"
+                        title="Print / Export Selected Cards"
+                        aria-label="Print / Export Selected Cards"
+                        disabled
+                    >
+                        <i class="fa-solid fa-file-export"></i>
+                    </button>
+
                     <div class="custom-draft-copy-split">
                         <button
                             type="button"
@@ -380,44 +385,6 @@
                             <path d="M6 8h9v12H6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path>
                         </svg>
                     </button>
-                </div>
-            </div>
-
-            <div id="customDraftSetStatsPanel" class="custom-draft-set-stats-panel hidden">
-                <div class="custom-draft-set-stats-summary">
-                    <div>
-                        <span>Matching Cards</span>
-                        <strong id="customDraftStatsVisibleCount">0</strong>
-                    </div>
-                    <div>
-                        <span>Creatures</span>
-                        <strong id="customDraftStatsCreatureCount">0</strong>
-                    </div>
-                    <div>
-                        <span>Noncreatures</span>
-                        <strong id="customDraftStatsNonCreatureCount">0</strong>
-                    </div>
-                    <div>
-                        <span>Average MV</span>
-                        <strong id="customDraftStatsAverageManaValue">0.0</strong>
-                    </div>
-                </div>
-
-                <div class="custom-draft-set-stats-grid">
-                    <div class="custom-draft-set-stats-card">
-                        <h3>Mana Value Distribution</h3>
-                        <div id="customDraftStatsManaDistribution" class="custom-draft-stat-bar-list"></div>
-                    </div>
-
-                    <div class="custom-draft-set-stats-card">
-                        <h3>Color Identity</h3>
-                        <div id="customDraftStatsColorDistribution" class="custom-draft-stat-pill-list"></div>
-                    </div>
-
-                    <div class="custom-draft-set-stats-card">
-                        <h3>Card Types</h3>
-                        <div id="customDraftStatsTypeDistribution" class="custom-draft-stat-row-list"></div>
-                    </div>
                 </div>
             </div>
 
@@ -917,6 +884,13 @@
             </button>
         </div>
     </form>
+    {% set print_export_subject_label = "custom draft set" %}
+    {% include "_print_export_modal.html" %}
+
+    {% set stats_modal_title = "Set Card Stats" %}
+    {% set stats_modal_subtitle = "Stats for the currently visible filtered cards." %}
+    {% include "_stats_modal.html" %}
+
     {% include "_alternate_image_modal.html" %}
 
     <div id="customDraftCardZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
@@ -934,10 +908,14 @@
 
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stats_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_flip.js') }}"></script>
 <script>
 (function () {
     const customDraftSetManageForm = document.getElementById("customDraftSetManageForm");
     const openAddCardsButton = document.getElementById("customDraftOpenAddCardsButton");
+    const openPrintExportButton = document.getElementById("customDraftOpenPrintExportButton");
     const searchPageSizeSelect = document.getElementById("customDraftSearchPageSizeSelect");
 
     const currentCardTools = document.getElementById("customDraftCurrentCardTools");
@@ -975,18 +953,11 @@
     const currentCardGrid = document.getElementById("customDraftCurrentCardGrid");
     const listViewButton = document.getElementById("customDraftListViewButton");
     const gridViewButton = document.getElementById("customDraftGridViewButton");
+    const selectedPrintExportButton = document.getElementById("customDraftSelectedPrintExportButton");
     const copyVisibleCardsButton = document.getElementById("customDraftCopyVisibleCardsButton");
     const copyVisibleCardsMenuButton = document.getElementById("customDraftCopyVisibleCardsMenuButton");
     const copyVisibleCardsMenu = document.getElementById("customDraftCopyVisibleCardsMenu");
     const statsToggleButton = document.getElementById("customDraftStatsToggleButton");
-    const statsPanel = document.getElementById("customDraftSetStatsPanel");
-    const statsVisibleCount = document.getElementById("customDraftStatsVisibleCount");
-    const statsCreatureCount = document.getElementById("customDraftStatsCreatureCount");
-    const statsNonCreatureCount = document.getElementById("customDraftStatsNonCreatureCount");
-    const statsAverageManaValue = document.getElementById("customDraftStatsAverageManaValue");
-    const statsManaDistribution = document.getElementById("customDraftStatsManaDistribution");
-    const statsColorDistribution = document.getElementById("customDraftStatsColorDistribution");
-    const statsTypeDistribution = document.getElementById("customDraftStatsTypeDistribution");
 
     const zoomOverlay = document.getElementById("customDraftCardZoomOverlay");
     const zoomBackdrop = document.getElementById("customDraftCardZoomBackdrop");
@@ -1006,6 +977,8 @@
     const bulkCategoryUrl = {{ url_for('custom_draft_set_cards_bulk_update_category', set_code=custom_set.set_code)|tojson }};
     const bulkDeleteUrl = {{ url_for('custom_draft_set_cards_bulk_delete', set_code=custom_set.set_code)|tojson }};
     const addUrl = {{ url_for('custom_draft_set_cards_add', set_code=custom_set.set_code)|tojson }};
+    const printUrl = {{ url_for('custom_draft_set_print', set_code=custom_set.set_code)|tojson }};
+    const exportZipUrl = {{ url_for('custom_draft_set_export_zip', set_code=custom_set.set_code)|tojson }};
 
     let cardSearchModal = null;
     let currentVisibleCardCopyFormat = "simple";
@@ -2600,121 +2573,22 @@
         });
     }
 
-    function updateSetStatsRollout() {
-        const visibleRows = getCurrentFilteredCardRows();
-        const totalCards = visibleRows.length;
-
-        let creatureCount = 0;
-        let manaTotal = 0;
-        let manaCount = 0;
-
-        const manaBuckets = {
-            "0": 0,
-            "1": 0,
-            "2": 0,
-            "3": 0,
-            "4": 0,
-            "5": 0,
-            "6+": 0
-        };
-
-        const colorCounts = {
-            "W": 0,
-            "U": 0,
-            "B": 0,
-            "R": 0,
-            "G": 0,
-            "M": 0,
-            "C": 0
-        };
-
-        const typeCounts = {
-            "Creature": 0,
-            "Instant": 0,
-            "Sorcery": 0,
-            "Artifact": 0,
-            "Enchantment": 0,
-            "Planeswalker": 0,
-            "Battle": 0,
-            "Land": 0,
-            "Other": 0
-        };
-
-        visibleRows.forEach(function (row) {
-            const typeLine = row.dataset.typeLine || "";
-            const cleanTypeLine = typeLine.toLowerCase();
-            const primaryType = getPrimaryCardType(typeLine);
-
-            typeCounts[primaryType] = (typeCounts[primaryType] || 0) + 1;
-
-            if (cleanTypeLine.indexOf("creature") !== -1) {
-                creatureCount += 1;
-            }
-
-            const manaValue = Number(row.dataset.manaValue);
-
-            if (Number.isFinite(manaValue)) {
-                manaTotal += manaValue;
-                manaCount += 1;
-
-                if (manaValue >= 6) {
-                    manaBuckets["6+"] += 1;
-                } else {
-                    manaBuckets[String(Math.max(0, Math.floor(manaValue)))] += 1;
-                }
-            }
-
-            const colors = normalizeColorArray(row.dataset.colorIdentity || "[]");
-
-            if (!colors.length) {
-                colorCounts["C"] += 1;
-            } else if (colors.length >= 2) {
-                colorCounts["M"] += 1;
-            } else {
-                const colorSymbol = colors[0];
-
-                if (colorCounts[colorSymbol] !== undefined) {
-                    colorCounts[colorSymbol] += 1;
-                }
-            }
+    function getCustomDraftStatsCardsForSharedModal() {
+        return getCurrentFilteredCardRows().map(function (row) {
+            return {
+                cardName: String(row.dataset.displayCardName || row.dataset.cardName || "").trim(),
+                colorIdentity: normalizeColorArray(row.dataset.colorIdentity || "[]"),
+                typeLine: String(row.dataset.typeLine || "").trim(),
+                manaValue: row.dataset.manaValue || "",
+                rarity: String(row.dataset.rarity || "").trim().toLowerCase()
+            };
         });
+    }
 
-        const nonCreatureCount = totalCards - creatureCount;
-        const averageManaValue = manaCount ? (manaTotal / manaCount) : 0;
-        const maxManaBucket = Math.max.apply(null, Object.keys(manaBuckets).map(function (bucketKey) {
-            return manaBuckets[bucketKey];
-        }));
-
-        if (statsVisibleCount) {
-            statsVisibleCount.textContent = totalCards;
+    function updateSetStatsRollout() {
+        if (customDraftStatsModal && customDraftStatsModal.isOpen()) {
+            customDraftStatsModal.refresh();
         }
-
-        if (statsCreatureCount) {
-            statsCreatureCount.textContent = creatureCount;
-        }
-
-        if (statsNonCreatureCount) {
-            statsNonCreatureCount.textContent = nonCreatureCount;
-        }
-
-        if (statsAverageManaValue) {
-            statsAverageManaValue.textContent = averageManaValue.toFixed(1);
-        }
-
-        renderManaDistribution(statsManaDistribution, manaBuckets, maxManaBucket);
-        renderColorDistribution(statsColorDistribution, colorCounts, totalCards);
-
-        renderStatRows(statsTypeDistribution, Object.keys(typeCounts)
-            .filter(function (typeName) {
-                return typeCounts[typeName] > 0;
-            })
-            .map(function (typeName) {
-                return {
-                    label: typeName,
-                    value: typeCounts[typeName] + " • " + formatPercent(typeCounts[typeName], totalCards)
-                };
-            })
-        );
     }
 
     function getFrontCardNameForExport(cardName) {
@@ -3236,6 +3110,60 @@
             .filter(Boolean);
     }
 
+    function clearCustomDraftPrintExportSelectedInputs() {
+        const printExportForm = document.getElementById("printExportForm");
+
+        if (!printExportForm) {
+            return;
+        }
+
+        Array.from(printExportForm.querySelectorAll(".custom-draft-selected-print-export-input")).forEach(function (inputElement) {
+            inputElement.remove();
+        });
+    }
+
+    function setCustomDraftPrintExportSelectedInputs(selectedCardIds) {
+        const printExportForm = document.getElementById("printExportForm");
+
+        if (!printExportForm) {
+            return;
+        }
+
+        clearCustomDraftPrintExportSelectedInputs();
+
+        (selectedCardIds || []).forEach(function (cardId) {
+            const hiddenInput = document.createElement("input");
+
+            hiddenInput.type = "hidden";
+            hiddenInput.name = "custom_set_card_ids";
+            hiddenInput.value = String(cardId || "");
+            hiddenInput.className = "custom-draft-selected-print-export-input";
+
+            printExportForm.appendChild(hiddenInput);
+        });
+    }
+
+    function openSelectedPrintExportModal() {
+        const selectedCardIds = getSelectedCustomSetCardIds();
+
+        if (!selectedCardIds.length) {
+            showUiMessage("Select at least one card to print or export.", true);
+            return;
+        }
+
+        closeVisibleCardCopyMenu();
+
+        document.querySelectorAll(".custom-draft-multi-select").forEach(function (containerElement) {
+            closeCustomDraftMultiSelect(containerElement);
+        });
+
+        setCustomDraftPrintExportSelectedInputs(selectedCardIds);
+
+        if (customDraftPrintExportModal) {
+            customDraftPrintExportModal.open();
+        }
+    }
+
     function updateCurrentSelectionState() {
         const selectedCount = getSelectedCustomSetCardIds().length;
 
@@ -3249,6 +3177,23 @@
 
         if (bulkRemoveCardsButton) {
             bulkRemoveCardsButton.disabled = selectedCount === 0;
+        }
+
+        if (selectedPrintExportButton) {
+            selectedPrintExportButton.disabled = selectedCount === 0;
+            selectedPrintExportButton.classList.toggle("custom-draft-header-icon-button-active", selectedCount > 0);
+            selectedPrintExportButton.setAttribute(
+                "title",
+                selectedCount > 0
+                    ? "Print / Export " + selectedCount + " selected card(s)"
+                    : "Print / Export Selected Cards"
+            );
+            selectedPrintExportButton.setAttribute(
+                "aria-label",
+                selectedCount > 0
+                    ? "Print / Export " + selectedCount + " selected card(s)"
+                    : "Print / Export Selected Cards"
+            );
         }
 
         getCurrentCardRows().forEach(function (row) {
@@ -3470,6 +3415,40 @@
         });
     }
 
+    const customDraftStatsModal = window.iMomirStatsModal.init({
+        openButtonId: "customDraftStatsToggleButton",
+        title: "Set Card Stats",
+        subtitle: "Stats for the currently visible filtered cards.",
+        totalLabel: "Matching Cards",
+
+        beforeOpen: function () {
+            closeVisibleCardCopyMenu();
+
+            document.querySelectorAll(".custom-draft-multi-select").forEach(function (containerElement) {
+                closeCustomDraftMultiSelect(containerElement);
+            });
+        },
+
+        getCards: getCustomDraftStatsCardsForSharedModal
+    });
+
+    const customDraftPrintExportModal = window.iMomirPrintExportModal.init({
+        openButtonId: "customDraftOpenPrintExportButton",
+        printUrl: printUrl,
+        exportZipUrl: exportZipUrl,
+
+        beforeOpen: function () {
+            clearCustomDraftPrintExportSelectedInputs();
+            closeVisibleCardCopyMenu();
+
+            document.querySelectorAll(".custom-draft-multi-select").forEach(function (containerElement) {
+                closeCustomDraftMultiSelect(containerElement);
+            });
+        },
+
+        showMessage: showUiMessage
+    });
+
     cardSearchModal = window.iMomirCardSearchModal.init({
         searchUrl: searchUrl,
         addUrl: addUrl,
@@ -3607,6 +3586,10 @@
         });
     }
 
+    if (selectedPrintExportButton) {
+        selectedPrintExportButton.addEventListener("click", openSelectedPrintExportModal);
+    }
+
     if (copyVisibleCardsButton) {
         copyVisibleCardsButton.addEventListener("click", copyVisibleCardsToClipboard);
     }
@@ -3649,19 +3632,9 @@
     });
 
     if (statsToggleButton) {
-        statsToggleButton.addEventListener("click", function () {
-            if (!statsPanel) {
-                return;
-            }
-
-            const shouldShow = statsPanel.classList.contains("hidden");
-            statsPanel.classList.toggle("hidden", !shouldShow);
-            statsToggleButton.classList.toggle("custom-draft-header-icon-button-active", shouldShow);
-            statsToggleButton.setAttribute("aria-pressed", shouldShow ? "true" : "false");
-            statsToggleButton.setAttribute("aria-label", shouldShow ? "Hide Stats" : "Show Stats");
-            statsToggleButton.setAttribute("title", shouldShow ? "Hide Stats" : "Show Stats");
-            updateSetStatsRollout();
-        });
+        statsToggleButton.setAttribute("aria-label", "Show Stats");
+        statsToggleButton.setAttribute("title", "Show Stats");
+        statsToggleButton.setAttribute("aria-pressed", "false");
     }
 
     if (maximizeCardListButton) {
@@ -3754,6 +3727,16 @@
 
         if (zoomOverlay && !zoomOverlay.classList.contains("hidden")) {
             closeZoom();
+            return;
+        }
+
+        if (customDraftStatsModal && customDraftStatsModal.isOpen()) {
+            customDraftStatsModal.close();
+            return;
+        }
+
+        if (customDraftPrintExportModal && customDraftPrintExportModal.isOpen()) {
+            customDraftPrintExportModal.close();
             return;
         }
 

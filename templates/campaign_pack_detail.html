@@ -125,13 +125,14 @@
             data-tracked-pack-card-id="{{ card.tracked_pack_card_id }}"
             {% endif %}
         >
-            <div class="chaos-pack-view-image-wrap">
+            <div class="chaos-pack-view-image-wrap" data-card-uuid="{{ card.card_uuid }}">
                 <img
                     src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
                     alt="{{ card.card_name }}"
                     class="chaos-pack-view-image campaign-pack-detail-zoomable"
                     role="button"
                     tabindex="0"
+                    data-card-uuid="{{ card.card_uuid }}"
                     data-zoom-src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
                     data-zoom-alt="{{ card.card_name }}"
                     aria-label="Zoom {{ card.card_name }}"
@@ -253,6 +254,81 @@
         </div>
     </div>
 </div>
+
+<style>
+.campaign-pack-flip-host {
+    position: relative;
+}
+
+.campaign-pack-flip-button {
+    position: absolute;
+    top: 5%;
+    left: 10px;
+    z-index: 30;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease,
+        left 0.15s ease,
+        right 0.15s ease;
+}
+
+.campaign-pack-flip-host:hover .campaign-pack-flip-button,
+.campaign-pack-flip-button:focus-visible {
+    opacity: 1;
+}
+
+.campaign-pack-flip-button-flipped {
+    left: auto;
+    right: 10px;
+}
+
+.card-zoom-content.campaign-pack-flip-host .campaign-pack-flip-button {
+    opacity: 1;
+    z-index: 10002;
+    top: 5%;
+    left: calc(50% - min(46vw, 260px) + 14px);
+}
+
+.card-zoom-content.campaign-pack-flip-host .campaign-pack-flip-button-flipped {
+    left: auto;
+    right: calc(50% - min(46vw, 260px) + 14px);
+}
+
+.campaign-pack-card-flipping {
+    animation: campaign-pack-card-flip 280ms ease;
+}
+
+@keyframes campaign-pack-card-flip {
+    0% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
+    }
+
+    50% {
+        transform: rotateY(88deg) scale(0.985);
+        filter: brightness(1.15);
+    }
+
+    100% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
+    }
+}
+</style>
 
 <script>
 (function () {
@@ -597,26 +673,250 @@
         updateCampaignPackFoilBadge(detail.cardUuid || "", Boolean(detail.isFoil));
     });
 
+    const cardFaceDataUrl = "{{ url_for('card_face_data') }}";
+    const campaignPackFaceMetadataByUuid = {};
+    let activeZoomSourceImage = null;
+    let activeZoomFlipButton = null;
+
+    function getCardUuidForCampaignPackImage(imageElement) {
+        if (!imageElement) {
+            return "";
+        }
+
+        const hostElement = imageElement.closest("[data-card-uuid]");
+
+        return String(
+            imageElement.dataset.cardUuid
+            || (hostElement ? hostElement.dataset.cardUuid : "")
+            || ""
+        ).trim();
+    }
+
+    function getCampaignPackFaceMetadata(imageElement) {
+        const cardUuid = getCardUuidForCampaignPackImage(imageElement);
+
+        if (!cardUuid) {
+            return null;
+        }
+
+        return campaignPackFaceMetadataByUuid[cardUuid] || null;
+    }
+
+    function setCampaignPackImageFace(imageElement, metadata, faceName, flipButton) {
+        if (!imageElement || !metadata) {
+            return;
+        }
+
+        const targetFace = faceName === "back" ? "back" : "front";
+        const targetSrc = targetFace === "back" ? metadata.back_src : metadata.front_src;
+        const targetAlt = targetFace === "back" ? metadata.back_alt : metadata.front_alt;
+
+        if (!targetSrc) {
+            return;
+        }
+
+        imageElement.classList.add("campaign-pack-card-flipping");
+
+        window.setTimeout(function () {
+            imageElement.src = targetSrc;
+            imageElement.alt = targetAlt || imageElement.alt || "";
+            imageElement.dataset.currentFace = targetFace;
+
+            if (targetFace === "back") {
+                flipButton?.classList.add("campaign-pack-flip-button-flipped");
+                flipButton?.setAttribute("aria-label", "Show front face");
+                flipButton?.setAttribute("title", "Show front face");
+            } else {
+                flipButton?.classList.remove("campaign-pack-flip-button-flipped");
+                flipButton?.setAttribute("aria-label", "Show back face");
+                flipButton?.setAttribute("title", "Show back face");
+            }
+        }, 120);
+
+        window.setTimeout(function () {
+            imageElement.classList.remove("campaign-pack-card-flipping");
+        }, 300);
+    }
+
+    function flipCampaignPackImage(imageElement, flipButton) {
+        const metadata = getCampaignPackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return;
+        }
+
+        const currentFace = imageElement.dataset.currentFace === "back" ? "back" : "front";
+        const nextFace = currentFace === "back" ? "front" : "back";
+
+        setCampaignPackImageFace(imageElement, metadata, nextFace, flipButton);
+
+        if (imageElement === zoomImage && activeZoomSourceImage) {
+            const sourceButton = activeZoomSourceImage
+                .closest(".chaos-pack-view-image-wrap")
+                ?.querySelector(".campaign-pack-flip-button");
+
+            setCampaignPackImageFace(activeZoomSourceImage, metadata, nextFace, sourceButton);
+        }
+    }
+
+    function createCampaignPackFlipButton(imageElement) {
+        const metadata = getCampaignPackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return null;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "campaign-pack-flip-button";
+        button.innerHTML = '<i class="fa-solid fa-rotate"></i>';
+        button.setAttribute("aria-label", "Show back face");
+        button.setAttribute("title", "Show back face");
+
+        button.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            flipCampaignPackImage(imageElement, button);
+        });
+
+        return button;
+    }
+
+    function addCampaignPackFlipButtonToCard(imageElement) {
+        const metadata = getCampaignPackFaceMetadata(imageElement);
+
+        if (!metadata || !metadata.is_dual_faced || !metadata.back_src) {
+            return;
+        }
+
+        const imageWrap = imageElement.closest(".chaos-pack-view-image-wrap");
+
+        if (!imageWrap || imageWrap.querySelector(".campaign-pack-flip-button")) {
+            return;
+        }
+
+        imageWrap.classList.add("campaign-pack-flip-host");
+        imageElement.dataset.currentFace = "front";
+
+        const button = createCampaignPackFlipButton(imageElement);
+
+        if (button) {
+            imageWrap.appendChild(button);
+        }
+    }
+
+    async function loadCampaignPackFaceMetadata() {
+        const cardUuids = [];
+
+        zoomableImages.forEach(function (imageElement) {
+            const cardUuid = getCardUuidForCampaignPackImage(imageElement);
+
+            if (cardUuid && !cardUuids.includes(cardUuid)) {
+                cardUuids.push(cardUuid);
+            }
+        });
+
+        if (!cardUuids.length) {
+            console.warn("Campaign Pack flip: no card UUIDs found.");
+            return;
+        }
+
+        const response = await fetch(cardFaceDataUrl, {
+            method: "POST",
+            headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                chaos_card_uuids: cardUuids
+            })
+        });
+
+        const payload = await response.json();
+
+        if (!response.ok || !payload.ok) {
+            console.warn("Campaign Pack flip: card-face-data failed.", payload);
+            return;
+        }
+
+        Object.assign(campaignPackFaceMetadataByUuid, payload.chaos_cards || {});
+
+        zoomableImages.forEach(function (imageElement) {
+            const cardUuid = getCardUuidForCampaignPackImage(imageElement);
+            const metadata = campaignPackFaceMetadataByUuid[cardUuid];
+
+            if (metadata && metadata.is_dual_faced && metadata.back_src) {
+                imageElement.dataset.currentFace = "front";
+                addCampaignPackFlipButtonToCard(imageElement);
+            }
+        });
+    }
+
     if (zoomOverlay && zoomBackdrop && zoomImage && zoomableImages.length) {
         function openZoom(imageElement) {
-            const imageSrc = imageElement.getAttribute("data-zoom-src") || imageElement.src || "";
-            const imageAlt = imageElement.getAttribute("data-zoom-alt") || imageElement.alt || "";
+            const metadata = getCampaignPackFaceMetadata(imageElement);
+            const currentFace = imageElement.dataset.currentFace === "back" ? "back" : "front";
+            const imageSrc = currentFace === "back" && metadata
+                ? metadata.back_src
+                : (imageElement.src || imageElement.getAttribute("data-zoom-src") || "");
+            const imageAlt = currentFace === "back" && metadata
+                ? metadata.back_alt
+                : (imageElement.alt || imageElement.getAttribute("data-zoom-alt") || "");
 
             if (!imageSrc) {
                 return;
             }
 
+            activeZoomSourceImage = imageElement;
+
             zoomImage.src = imageSrc;
             zoomImage.alt = imageAlt;
+            zoomImage.dataset.cardUuid = getCardUuidForCampaignPackImage(imageElement);
+            zoomImage.dataset.currentFace = currentFace;
+
+            if (activeZoomFlipButton) {
+                activeZoomFlipButton.remove();
+                activeZoomFlipButton = null;
+            }
+
+            const zoomContent = zoomImage.closest(".card-zoom-content");
+
+            if (zoomContent) {
+                zoomContent.classList.add("campaign-pack-flip-host");
+
+                if (metadata && metadata.is_dual_faced && metadata.back_src) {
+                    activeZoomFlipButton = createCampaignPackFlipButton(zoomImage);
+
+                    if (activeZoomFlipButton) {
+                        if (currentFace === "back") {
+                            activeZoomFlipButton.classList.add("campaign-pack-flip-button-flipped");
+                            activeZoomFlipButton.setAttribute("aria-label", "Show front face");
+                            activeZoomFlipButton.setAttribute("title", "Show front face");
+                        }
+
+                        zoomContent.appendChild(activeZoomFlipButton);
+                    }
+                }
+            }
+
             zoomOverlay.classList.remove("hidden");
             zoomOverlay.setAttribute("aria-hidden", "false");
         }
 
         function closeZoom() {
+            if (activeZoomFlipButton) {
+                activeZoomFlipButton.remove();
+                activeZoomFlipButton = null;
+            }
+
+            activeZoomSourceImage = null;
+
             zoomOverlay.classList.add("hidden");
             zoomOverlay.setAttribute("aria-hidden", "true");
             zoomImage.src = "";
             zoomImage.alt = "";
+            zoomImage.dataset.cardUuid = "";
+            zoomImage.dataset.currentFace = "front";
         }
 
         zoomableImages.forEach(function (imageElement) {
@@ -633,7 +933,14 @@
         });
 
         zoomBackdrop.addEventListener("click", closeZoom);
-        zoomImage.addEventListener("click", closeZoom);
+
+        zoomImage.addEventListener("click", function (event) {
+            if (event.target && event.target.closest && event.target.closest(".campaign-pack-flip-button")) {
+                return;
+            }
+
+            closeZoom();
+        });
 
         document.addEventListener("keydown", function (event) {
             if (event.key !== "Escape") {
@@ -650,6 +957,8 @@
             }
         });
     }
+
+    loadCampaignPackFaceMetadata();
     const packViewCopySplit = document.getElementById("packViewCopySplit");
     const packViewCopyMainButton = document.getElementById("packViewCopyMainButton");
     const packViewCopyMenuButton = document.getElementById("packViewCopyMenuButton");

@@ -444,6 +444,7 @@
                         data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
                         data-current-zone="deck"
                         data-card-name="{{ picked_card.card_name }}"
+                        data-card-uuid="{{ picked_card.card_uuid }}"
                         data-card-rarity="{{ picked_card.rarity or '' }}"
                         data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
                         data-card-type-line="{{ picked_card.type_line or '' }}"
@@ -508,6 +509,7 @@
                         data-draft-test-pick-id="{{ picked_card.draft_test_pick_id }}"
                         data-current-zone="sideboard"
                         data-card-name="{{ picked_card.card_name }}"
+                        data-card-uuid="{{ picked_card.card_uuid }}"
                         data-card-rarity="{{ picked_card.rarity or '' }}"
                         data-card-mana-value="{{ picked_card.mana_value if picked_card.mana_value is not none else '' }}"
                         data-card-type-line="{{ picked_card.type_line or '' }}"
@@ -708,6 +710,7 @@
 
 </div>
 
+<script src="{{ url_for('static', filename='js/card_flip.js') }}"></script>
 <script>
 (function () {
     const workspace = document.getElementById("campaignTestDraftWorkspace");
@@ -843,7 +846,7 @@
             : "Pack " + escapeHtml(pickedCard.pack_number) + " • Pick " + escapeHtml(pickedCard.pick_number);
 
         return (
-            '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(pickedCard.type_line || "") + '">' +
+            '<div class="campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-draft-test-pick-id="' + escapeHtml(pickedCard.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(pickedCard.card_name || "") + '" data-card-uuid="' + escapeHtml(pickedCard.card_uuid || "") + '" data-card-rarity="' + escapeHtml(pickedCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(pickedCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(pickedCard.type_line || "") + '">' +
                 '<img src="' + escapeHtml(pickedCard.image_src) + '" alt="' + escapeHtml(pickedCard.card_name) + '" class="campaign-test-draft-picked-thumb">' +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(pickedCard.card_name) + '</div>' +
