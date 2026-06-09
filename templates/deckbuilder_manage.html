@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Decks{% endblock %}
+
+{% block content %}
+<div class="deckbuilder-manage-page">
+    <header class="deckbuilder-manage-header">
+        <div>
+            <h1>Decks</h1>
+            <p>Open, create, duplicate, or delete saved Deck Builder decks.</p>
+        </div>
+
+        <form method="post" action="{{ new_deck_url }}">
+            <button type="submit" class="action-button deckbuilder-manage-new-button">
+                <i class="fa-solid fa-plus"></i>
+                New Deck
+            </button>
+        </form>
+    </header>
+
+    <section class="deckbuilder-manage-toolbar">
+        <form method="get" action="{{ url_for('deckbuilder_index') }}" class="deckbuilder-manage-search-form">
+            <input
+                type="text"
+                name="search_text"
+                class="campaign-add-pack-custom-input deckbuilder-manage-search-input"
+                value="{{ search_text or '' }}"
+                placeholder="Search decks..."
+                autocomplete="off"
+            >
+
+            <button type="submit" class="action-button secondary-button">
+                Search
+            </button>
+
+            {% if search_text %}
+            <a href="{{ url_for('deckbuilder_index') }}" class="action-button secondary-button">
+                Clear
+            </a>
+            {% endif %}
+        </form>
+    </section>
+
+    <section class="deckbuilder-manage-list">
+        {% if decks %}
+            {% for deck in decks %}
+            <article class="deckbuilder-manage-card">
+                <div class="deckbuilder-manage-card-main">
+                    <div class="deckbuilder-manage-card-title">
+                        {{ deck.deck_name }}
+                    </div>
+
+                    <div class="deckbuilder-manage-card-meta">
+                        {{ deck.deck_format or "Deck" }}
+                        <span>•</span>
+                        {{ deck.source_label }}
+                        {% if deck.updated_at_utc %}
+                        <span>•</span>
+                        Updated {{ deck.updated_at_utc }}
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="deckbuilder-manage-card-actions">
+                    <a href="{{ deck.open_url }}" class="action-button deckbuilder-manage-open-button">
+                        Open
+                    </a>
+
+                    <form method="post" action="{{ deck.duplicate_url }}">
+                        <button type="submit" class="action-button secondary-button">
+                            Duplicate
+                        </button>
+                    </form>
+
+                    <form
+                        method="post"
+                        action="{{ deck.delete_url }}"
+                        class="deckbuilder-manage-delete-form"
+                        data-deck-name="{{ deck.deck_name }}"
+                    >
+                        <button type="submit" class="action-button campaign-danger-button">
+                            Delete
+                        </button>
+                    </form>
+                </div>
+            </article>
+            {% endfor %}
+        {% else %}
+            <div class="deckbuilder-manage-empty">
+                <h2>No decks found</h2>
+                <p>Create a new standalone deck to get started.</p>
+
+                <form method="post" action="{{ new_deck_url }}">
+                    <button type="submit" class="action-button">
+                        <i class="fa-solid fa-plus"></i>
+                        New Deck
+                    </button>
+                </form>
+            </div>
+        {% endif %}
+    </section>
+</div>
+
+<style>
+.deckbuilder-manage-page {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.deckbuilder-manage-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.84);
+    border: 1px solid rgba(148, 163, 184, 0.20);
+}
+
+.deckbuilder-manage-header h1 {
+    margin: 0;
+}
+
+.deckbuilder-manage-header p {
+    margin: 0.25rem 0 0;
+    color: rgba(226, 232, 240, 0.78);
+}
+
+.deckbuilder-manage-toolbar {
+    padding: 1rem;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.54);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.deckbuilder-manage-search-form {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.deckbuilder-manage-search-input {
+    min-width: min(480px, 100%);
+}
+
+.deckbuilder-manage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.deckbuilder-manage-card {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.deckbuilder-manage-card-title {
+    font-size: 1.08rem;
+    font-weight: 800;
+}
+
+.deckbuilder-manage-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.25rem;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.9rem;
+}
+
+.deckbuilder-manage-card-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.deckbuilder-manage-card-actions form {
+    margin: 0;
+}
+
+.deckbuilder-manage-empty {
+    display: grid;
+    place-items: center;
+    gap: 0.75rem;
+    min-height: 260px;
+    border-radius: 18px;
+    background: rgba(15, 23, 42, 0.54);
+    border: 1px dashed rgba(148, 163, 184, 0.30);
+    text-align: center;
+}
+
+.deckbuilder-manage-empty h2,
+.deckbuilder-manage-empty p {
+    margin: 0;
+}
+
+@media (max-width: 780px) {
+    .deckbuilder-manage-header,
+    .deckbuilder-manage-card,
+    .deckbuilder-manage-search-form {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .deckbuilder-manage-card-actions {
+        justify-content: flex-start;
+    }
+}
+</style>
+
+<script>
+(function () {
+    document.querySelectorAll(".deckbuilder-manage-delete-form").forEach(function (formElement) {
+        formElement.addEventListener("submit", function (event) {
+            const deckName = formElement.dataset.deckName || "this deck";
+            const confirmation = window.prompt(
+                "Type DELETE to delete " + deckName + "."
+            );
+
+            if (confirmation !== "DELETE") {
+                event.preventDefault();
+            }
+        });
+    });
+})();
+</script>
+{% endblock %}

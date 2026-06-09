@@ -2,6 +2,7 @@ import json
 import os
 import random
 import re
+import unicodedata
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -1681,19 +1682,26 @@ def get_custom_pack_normalized_card_name_sql(column_sql):
     """
 
 def normalize_custom_pack_card_name_for_lookup(card_name):
-    clean_name = str(card_name or "").strip().lower()
+    clean_name = unicodedata.normalize("NFKD", str(card_name or "").strip().lower())
+    clean_name = "".join(
+        character
+        for character in clean_name
+        if not unicodedata.combining(character)
+    )
 
-    clean_name = clean_name.replace("…", "")
-    clean_name = clean_name.replace(".", "")
-    clean_name = clean_name.replace(" ", "")
-    clean_name = clean_name.replace("’", "")
-    clean_name = clean_name.replace("'", "")
-    clean_name = clean_name.replace("`", "")
-    clean_name = clean_name.replace("´", "")
-    clean_name = clean_name.replace("‘", "")
-    clean_name = clean_name.replace("ʼ", "")
-    clean_name = clean_name.replace("-", "")
-    clean_name = clean_name.replace(",", "")
+    replacements = {
+        "æ": "ae",
+        "œ": "oe",
+        "ß": "ss",
+        "&": "and",
+    }
+
+    for source_text, replacement_text in replacements.items():
+        clean_name = clean_name.replace(source_text, replacement_text)
+
+    # Remove all punctuation, whitespace, symbols, apostrophes, dashes, slashes,
+    # ellipses, quotes, commas, periods, colons, and other separator marks.
+    clean_name = re.sub(r"[^a-z0-9]+", "", clean_name)
 
     return clean_name
 
@@ -1777,6 +1785,138 @@ def parse_custom_pack_decklist_text(decklist_text):
         })
 
     return parsed_cards
+
+def get_custom_pack_candidate_rows_for_python_match(
+    preferred_set_code=None,
+    requested_set_code=None,
+    requested_collector_number=None,
+):
+    clean_preferred_set_code = (preferred_set_code or "").strip().upper()
+    clean_requested_set_code = (requested_set_code or "").strip().upper()
+    clean_collector_number = (requested_collector_number or "").strip()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    where_clauses = []
+    params = []
+
+    if clean_requested_set_code:
+        where_clauses.append("UPPER(COALESCE(set_code, '')) = ?")
+        params.append(clean_requested_set_code)
+    elif clean_preferred_set_code:
+        where_clauses.append("UPPER(COALESCE(set_code, '')) = ?")
+        params.append(clean_preferred_set_code)
+
+    if clean_collector_number:
+        collector_number_conditions = [
+            "LOWER(COALESCE(collector_number, '')) = LOWER(?)"
+        ]
+        collector_number_params = [clean_collector_number]
+
+        if clean_collector_number.isdigit():
+            collector_number_conditions.append(
+                """
+                (
+                    COALESCE(collector_number, '') GLOB '[0-9]*'
+                    AND CAST(COALESCE(collector_number, '0') AS INTEGER) = CAST(? AS INTEGER)
+                )
+                """
+            )
+            collector_number_params.append(clean_collector_number)
+
+        where_clauses.append("(" + " OR ".join(collector_number_conditions) + ")")
+        params.extend(collector_number_params)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    cursor.execute(
+        f"""
+        SELECT
+            card_uuid,
+            set_code,
+            card_name,
+            rarity,
+            type_line,
+            image_url,
+            scryfall_id,
+            collector_number,
+            is_booster
+        FROM chaos_cards
+        {where_sql}
+        ORDER BY
+            is_booster DESC,
+            set_code ASC,
+            CAST(collector_number AS INTEGER) ASC,
+            collector_number ASC,
+            card_name COLLATE NOCASE ASC
+        """,
+        params,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return rows
+
+
+def score_custom_pack_python_name_match(requested_name, candidate_name):
+    normalized_requested = normalize_custom_pack_card_name_for_lookup(requested_name)
+    normalized_candidate = normalize_custom_pack_card_name_for_lookup(candidate_name)
+
+    if not normalized_requested or not normalized_candidate:
+        return None
+
+    if normalized_requested == normalized_candidate:
+        return 0
+
+    # Helps with abbreviated split/DFC/user-entered versions:
+    # "Welcome to Jurassic Park" vs "Welcome to . . . // Jurassic Park"
+    if normalized_requested in normalized_candidate:
+        return 10 + (len(normalized_candidate) - len(normalized_requested))
+
+    if normalized_candidate in normalized_requested:
+        return 20 + (len(normalized_requested) - len(normalized_candidate))
+
+    return None
+
+
+def resolve_custom_pack_card_by_python_name_match(
+    card_name,
+    preferred_set_code=None,
+    requested_set_code=None,
+    requested_collector_number=None,
+):
+    clean_name = (card_name or "").strip()
+
+    if not clean_name:
+        return None
+
+    candidate_rows = get_custom_pack_candidate_rows_for_python_match(
+        preferred_set_code=preferred_set_code,
+        requested_set_code=requested_set_code,
+        requested_collector_number=requested_collector_number,
+    )
+
+    best_row = None
+    best_score = None
+
+    for row in candidate_rows:
+        score = score_custom_pack_python_name_match(
+            clean_name,
+            row["card_name"] or "",
+        )
+
+        if score is None:
+            continue
+
+        if best_score is None or score < best_score:
+            best_score = score
+            best_row = row
+
+    return best_row
 
 def resolve_custom_pack_card_by_name(
     card_name,
@@ -1947,7 +2087,16 @@ def resolve_custom_pack_card_by_name(
 
     row = cursor.fetchone()
     conn.close()
-    return row
+
+    if row:
+        return row
+
+    return resolve_custom_pack_card_by_python_name_match(
+        clean_name,
+        preferred_set_code=clean_preferred_set_code,
+        requested_set_code=clean_requested_set_code,
+        requested_collector_number=clean_collector_number,
+    )
 
 def get_custom_pack_populate_options_for_set(set_code):
     clean_set_code = (set_code or "").strip().upper()

@@ -1647,7 +1647,7 @@
 
             const confirmed = await confirmAction({
                 title: "Add Most Recent Printings",
-                message: "This will add the most recent matching printing for each parsed card name directly to this custom set.",
+                message: config.bulkImportAddMostRecentConfirmMessage || "This will add the most recent matching printing for each parsed card name directly.",
                 confirmText: "Add Cards",
                 cancelText: "Cancel"
             });
@@ -1658,6 +1658,7 @@
 
             bulkImportAddMostRecentButton.disabled = true;
             bulkImportAddMostRecentButton.classList.add("action-button-loading");
+            const bulkImportAddMostRecentDefaultText = config.bulkImportAddMostRecentText || "Add Most Recent to Set";
             bulkImportAddMostRecentButton.textContent = "Adding...";
             setSearchStatus("", false);
 
@@ -1691,7 +1692,7 @@
             } finally {
                 bulkImportAddMostRecentButton.disabled = false;
                 bulkImportAddMostRecentButton.classList.remove("action-button-loading");
-                bulkImportAddMostRecentButton.textContent = "Add Most Recent to Set";
+                bulkImportAddMostRecentButton.textContent = bulkImportAddMostRecentDefaultText;
             }
         }
 
@@ -1854,7 +1855,7 @@
             if (bulkImportAddMostRecentButton) {
                 bulkImportAddMostRecentButton.disabled = false;
                 bulkImportAddMostRecentButton.classList.remove("action-button-loading");
-                bulkImportAddMostRecentButton.textContent = "Add Most Recent to Set";
+                bulkImportAddMostRecentButton.textContent = config.bulkImportAddMostRecentText || "Add Most Recent to Set";
             }
         }
 

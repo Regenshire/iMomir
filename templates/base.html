@@ -37,6 +37,13 @@
             </a>
 
             <a
+              class="app-tab {% if request.endpoint in ['deckbuilder_index', 'deckbuilder_open', 'deckbuilder_new'] %}app-tab-active{% endif %}"
+              href="{{ url_for('deckbuilder_index') }}"
+            >
+              Decks
+            </a>
+
+            <a
               class="app-tab {% if request.endpoint == 'config' %}app-tab-active{% endif %}"
               href="{{ url_for('config') }}"
             >

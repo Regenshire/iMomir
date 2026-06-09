@@ -163,6 +163,7 @@ from db.database import (
     set_import_metadata,
     update_config_values,
     normalize_custom_draft_set_code,
+    resolve_most_recent_chaos_card_printing_for_import_item,
     search_chaos_cards_for_custom_draft_import_list,
     search_chaos_cards_for_custom_draft_set,
     update_custom_draft_pack_layout,
@@ -179,8 +180,12 @@ from db.deckdb import (
     add_basic_land_to_deck,
     add_card_to_deckbuilder_sideboard,
     archive_deck,
+    build_deckbuilder_context_for_deck,
     build_deckbuilder_context_for_draft_test,
+    bulk_deckbuilder_card_action,
     duplicate_deckbuilder_card,
+    create_standalone_deck,
+    duplicate_deck,
     get_basic_land_counts_for_deck,
     get_deck_by_id,
     get_loadable_deck_rows,
@@ -192,6 +197,7 @@ from db.deckdb import (
     update_deck_settings,
     update_deckbuilder_stack_layout,
     update_deckbuilder_basic_land_printing,
+    update_deckbuilder_card_foil,
     update_deckbuilder_card_printing,
     ensure_deck_schema,
 )
@@ -8205,7 +8211,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
         front_relative_xml_path = f"\\Images\\{finish_folder_name}\\{front_filename}"
 
         if back_page_entry and back_page_entry.get("image_url"):
-            back_filename = f"{base_filename}_back.jpg"
+            back_filename = f"{base_filename} [Back].jpg"
             back_output_path = os.path.join(finish_output_dir, back_filename)
 
             back_image_source = resolve_card_image_source_for_page(
@@ -11964,6 +11970,7 @@ def serialize_deckbuilder_card(card):
         "deck_zone": deckbuilder_row_get(card, "deck_zone", "deck") or "deck",
         "pick_reason": pick_reason,
         "is_basic_land": 1 if int(is_basic_land or 0) == 1 else 0,
+        "sheet_is_foil": 1 if int(deckbuilder_row_get(card, "sheet_is_foil", 0) or 0) == 1 else 0,
         "stack_column": deckbuilder_row_get(card, "stack_column", "") or "",
         "stack_order": deckbuilder_row_get(card, "stack_order", None),
         "display_order": deckbuilder_row_get(card, "display_order", None),
@@ -12432,6 +12439,53 @@ def get_deckbuilder_print_cards(deck_id):
     ]
 
 
+def get_deckbuilder_routes(deckbuilder_context, back_url=None):
+    deck_id = deckbuilder_context["deck_id"]
+
+    return {
+        "move_zone_url": "",
+        "basic_land_url": url_for(
+            "deckbuilder_basic_land",
+            deck_id=deck_id,
+        ),
+        "print_url": url_for(
+            "deckbuilder_print",
+            deck_id=deck_id,
+        ),
+        "export_zip_url": url_for(
+            "deckbuilder_export_zip",
+            deck_id=deck_id,
+        ),
+        "back_url": back_url or url_for("deckbuilder_index"),
+    }
+
+
+def attach_deckbuilder_common_context(deckbuilder_context, back_url=None):
+    config = get_request_config()
+
+    deckbuilder_context["routes"] = get_deckbuilder_routes(
+        deckbuilder_context,
+        back_url=back_url,
+    )
+
+    deckbuilder_context["print_export_defaults"] = get_print_export_defaults_from_config(config)
+
+    return deckbuilder_context
+
+
+def get_fresh_deckbuilder_ajax_payload(deck_id, extra_result_key=None, extra_result=None):
+    deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
+    payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+
+    if extra_result_key:
+        payload[extra_result_key] = extra_result
+
+    if extra_result is not None:
+        payload["ok"] = bool(payload.get("ok")) and bool(extra_result.get("ok"))
+
+    return payload
+
+
 def get_print_export_defaults_from_config(config):
     return {
         "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
@@ -12475,7 +12529,7 @@ def build_deckbuilder_image_export_rows(deck_id):
             "card_uuid": (card.get("card_uuid") or "").strip(),
             "card_name": card.get("card_name") or "",
             "card_set_code": (card.get("set_code") or "").strip().upper(),
-            "sheet_is_foil": 0,
+            "sheet_is_foil": 1 if int(card.get("sheet_is_foil") or 0) == 1 else 0,
             "rarity": card.get("rarity") or "",
             "type_line": card.get("type_line") or "",
             "scryfall_id": "",
@@ -12486,69 +12540,127 @@ def build_deckbuilder_image_export_rows(deck_id):
 
     return export_rows
 
+@app.route("/deck-builder", methods=["GET"])
+def deckbuilder_index():
+    search_text = request.args.get("search_text") or ""
+    deck_rows = get_loadable_deck_rows(
+        search_text=search_text,
+        limit=250,
+    )
+
+    decks = []
+
+    for deck_row in deck_rows:
+        source_type = (deck_row["source_type"] or "").strip().lower()
+
+        if source_type == "draft_test":
+            source_label = f"Draft Test #{deck_row['source_id']}"
+        elif source_type == "standalone":
+            source_label = "Standalone"
+        else:
+            source_label = source_type or "Deck"
+
+        decks.append({
+            "deck_id": int(deck_row["deck_id"]),
+            "deck_name": deck_row["deck_name"] or "Untitled Deck",
+            "deck_format": deck_row["deck_format"] or "",
+            "source_type": source_type,
+            "source_label": source_label,
+            "source_id": deck_row["source_id"],
+            "created_at_utc": deck_row["created_at_utc"] or "",
+            "updated_at_utc": deck_row["updated_at_utc"] or deck_row["created_at_utc"] or "",
+            "open_url": url_for("deckbuilder_open", deck_id=deck_row["deck_id"]),
+            "duplicate_url": url_for("deckbuilder_duplicate", deck_id=deck_row["deck_id"]),
+            "delete_url": url_for("deckbuilder_delete", deck_id=deck_row["deck_id"]),
+        })
+
+    return render_template(
+        "deckbuilder_manage.html",
+        decks=decks,
+        search_text=search_text,
+        new_deck_url=url_for("deckbuilder_new"),
+    )
+
+
+@app.route("/deck-builder/new", methods=["GET", "POST"])
+def deckbuilder_new():
+    deck_name = request.form.get("deck_name") if request.method == "POST" else ""
+    deck_format = request.form.get("deck_format") if request.method == "POST" else ""
+
+    if not deck_name:
+        deck_name = f"Untitled Deck {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+    if not deck_format:
+        deck_format = "Constructed"
+
+    result = create_standalone_deck(
+        deck_name=deck_name,
+        deck_format=deck_format,
+    )
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not create deck.")
+        return redirect(url_for("deckbuilder_index"))
+
+    return redirect(url_for("deckbuilder_open", deck_id=result["deck_id"]))
+
+
+@app.route("/deck-builder/<int:deck_id>/duplicate", methods=["POST"])
+def deckbuilder_duplicate(deck_id):
+    result = duplicate_deck(deck_id)
+
+    if not result.get("ok"):
+        flash(result.get("message") or "Could not duplicate deck.")
+        return redirect(url_for("deckbuilder_index"))
+
+    return redirect(url_for("deckbuilder_open", deck_id=result["deck_id"]))
+
+
 @app.route("/deck-builder/<int:deck_id>", methods=["GET"])
 def deckbuilder_open(deck_id):
     deck_row = get_deck_by_id(deck_id)
 
     if not deck_row:
         flash("Deck was not found.")
-        return redirect(url_for("campaign_chaos_packs"))
+        return redirect(url_for("deckbuilder_index"))
 
     source_type = (deck_row["source_type"] or "").strip().lower()
     source_id = deck_row["source_id"]
 
-    if source_type != "draft_test" or not source_id:
-        flash("This Deck Builder source is not supported yet.")
-        return redirect(url_for("campaign_chaos_packs"))
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
 
-    draft_state = get_draft_test_detail_state(source_id)
+        if not draft_state.get("ok"):
+            flash(draft_state.get("message") or "Draft state could not be loaded.")
+            return redirect(url_for("deckbuilder_index"))
 
-    if not draft_state.get("ok"):
-        flash(draft_state.get("message") or "Draft state could not be loaded.")
-        return redirect(url_for("campaign_chaos_packs"))
+        deckbuilder_context = build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
 
-    deckbuilder_context = build_deckbuilder_context_for_draft_test(
-        draft_state,
-        preferred_deck_id=deck_id,
-    )
+        back_url = url_for(
+            "campaign_chaos_test_draft",
+            draft_test_id=source_id,
+        )
+    else:
+        deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
+        back_url = url_for("deckbuilder_index")
 
     if not deckbuilder_context.get("ok"):
         flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
-        return redirect(url_for("campaign_chaos_packs"))
+        return redirect(url_for("deckbuilder_index"))
 
-    deckbuilder_context["routes"] = {
-        "move_zone_url": url_for(
+    attach_deckbuilder_common_context(
+        deckbuilder_context,
+        back_url=back_url,
+    )
+
+    if source_type == "draft_test" and source_id:
+        deckbuilder_context["routes"]["move_zone_url"] = url_for(
             "campaign_chaos_test_draft_pick_zone",
             draft_test_id=source_id,
-        ),
-        "basic_land_url": url_for(
-            "deckbuilder_basic_land",
-            deck_id=deckbuilder_context["deck_id"],
-        ),
-        "print_url": url_for(
-            "deckbuilder_print",
-            deck_id=deckbuilder_context["deck_id"],
-        ),
-        "export_zip_url": url_for(
-            "deckbuilder_export_zip",
-            deck_id=deckbuilder_context["deck_id"],
-        ),
-        "back_url": url_for(
-            "campaign_chaos_test_draft",
-            draft_test_id=source_id,
-        ),
-    }
-
-    config = get_request_config()
-
-    deckbuilder_context["print_export_defaults"] = {
-        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
-        "label_text_mode": "pack_code",
-        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
-        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
-        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
-        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
-    }
+        )
 
     return render_template(
         "deckbuilder.html",
@@ -12567,11 +12679,21 @@ def deckbuilder_loadable_decks():
     decks = []
 
     for deck_row in deck_rows:
+        source_type = (deck_row["source_type"] or "").strip().lower()
+
+        if source_type == "draft_test":
+            source_label = f"Draft Test #{deck_row['source_id']}"
+        elif source_type == "standalone":
+            source_label = "Standalone"
+        else:
+            source_label = source_type or "Deck"
+
         decks.append({
             "deck_id": deck_row["deck_id"],
             "deck_name": deck_row["deck_name"] or "Untitled Deck",
             "deck_format": deck_row["deck_format"] or "",
-            "source_type": deck_row["source_type"] or "",
+            "source_type": source_type,
+            "source_label": source_label,
             "source_id": deck_row["source_id"],
             "updated_at_utc": deck_row["updated_at_utc"] or deck_row["created_at_utc"] or "",
             "load_url": url_for(
@@ -12684,7 +12806,7 @@ def deckbuilder_delete(deck_id):
     if not result.get("ok"):
         return jsonify(result), 400
 
-    redirect_url = url_for("campaign_chaos_packs")
+    redirect_url = url_for("deckbuilder_index")
 
     if (result.get("source_type") or "").strip().lower() == "draft_test" and result.get("source_id"):
         redirect_url = url_for(
@@ -12759,6 +12881,208 @@ def deckbuilder_cards_search(deck_id):
         "total_pages": total_pages,
     })
 
+def get_deckbuilder_context_for_deck_row(deck_id, deck_row):
+    source_type = (deck_row["source_type"] or "").strip().lower()
+    source_id = deck_row["source_id"]
+
+    if source_type == "draft_test" and source_id:
+        draft_state = get_draft_test_detail_state(source_id)
+
+        if not draft_state.get("ok"):
+            return {
+                "ok": False,
+                "message": draft_state.get("message") or "Draft source could not be loaded.",
+            }
+
+        return build_deckbuilder_context_for_draft_test(
+            draft_state,
+            preferred_deck_id=deck_id,
+        )
+
+    return build_deckbuilder_context_for_deck(deck_id)
+
+
+def get_deckbuilder_payload_after_update(deck_id, deck_row, result_key="", result=None):
+    deckbuilder_context = get_deckbuilder_context_for_deck_row(deck_id, deck_row)
+
+    if not deckbuilder_context.get("ok"):
+        return deckbuilder_context
+
+    payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+
+    if result_key:
+        payload[result_key] = result or {}
+
+    if result is not None:
+        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
+
+    return payload
+
+
+def read_import_text_from_request():
+    import_text_parts = []
+
+    form_import_text = request.form.get("import_text") or ""
+    if form_import_text.strip():
+        import_text_parts.append(form_import_text)
+
+    uploaded_file = request.files.get("import_file")
+    if uploaded_file and uploaded_file.filename:
+        file_bytes = uploaded_file.read()
+
+        try:
+            file_text = file_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            file_text = file_bytes.decode("latin-1", errors="replace")
+
+        if file_text.strip():
+            import_text_parts.append(file_text)
+
+    return "\n".join(import_text_parts).strip()
+
+
+@app.route("/deck-builder/<int:deck_id>/cards/import-list", methods=["POST"])
+def deckbuilder_cards_import_list(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+            "results": [],
+        }), 404
+
+    combined_import_text = read_import_text_from_request()
+
+    if not combined_import_text:
+        return jsonify({
+            "ok": False,
+            "message": "Paste a Moxfield/Archidekt list or upload a list file.",
+        }), 400
+
+    parsed_items = parse_custom_draft_bulk_import_text(combined_import_text)
+
+    if not parsed_items:
+        return jsonify({
+            "ok": False,
+            "message": "No card names could be parsed from the imported list.",
+        }), 400
+
+    rows = search_chaos_cards_for_custom_draft_import_list(
+        "__DECKBUILDER__",
+        parsed_items,
+        limit=9999,
+    )
+
+    results = [
+        serialize_custom_draft_card_search_result(row)
+        for row in rows
+    ]
+
+    matched_names = {
+        str(row["card_name"] or "").strip().lower()
+        for row in rows
+    }
+
+    unmatched_items = []
+    for item in parsed_items:
+        item_name = str(item.get("card_name") or "").strip()
+        if item_name and item_name.lower() not in matched_names:
+            unmatched_items.append(item_name)
+
+    unmatched_unique = []
+    seen_unmatched = set()
+
+    for item_name in unmatched_items:
+        item_key = item_name.lower()
+        if item_key in seen_unmatched:
+            continue
+
+        seen_unmatched.add(item_key)
+        unmatched_unique.append(item_name)
+
+    return jsonify({
+        "ok": True,
+        "message": "Imported list loaded into search results.",
+        "parsed_count": len(parsed_items),
+        "result_count": len(results),
+        "unmatched_count": len(unmatched_unique),
+        "unmatched": unmatched_unique[:50],
+        "results": results,
+    })
+
+
+@app.route("/deck-builder/<int:deck_id>/cards/import-list/add-most-recent", methods=["POST"])
+def deckbuilder_cards_import_list_add_most_recent(deck_id):
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    combined_import_text = read_import_text_from_request()
+
+    if not combined_import_text:
+        return jsonify({
+            "ok": False,
+            "message": "Paste a Moxfield/Archidekt list or upload a list file.",
+        }), 400
+
+    parsed_items = parse_custom_draft_bulk_import_text(combined_import_text)
+
+    if not parsed_items:
+        return jsonify({
+            "ok": False,
+            "message": "No card names could be parsed from the imported list.",
+        }), 400
+
+    added_count = 0
+    unresolved_items = []
+
+    for item in parsed_items:
+        resolved_row = resolve_most_recent_chaos_card_printing_for_import_item(item)
+
+        if not resolved_row:
+            unresolved_items.append(item.get("card_name") or "")
+            continue
+
+        quantity = parse_custom_draft_bulk_import_quantity(item.get("quantity") or 1)
+
+        for _ in range(quantity):
+            add_result = add_card_to_deckbuilder_sideboard(
+                deck_id=deck_id,
+                card_uuid=resolved_row["card_uuid"],
+            )
+
+            if add_result.get("ok"):
+                added_count += 1
+
+    result = {
+        "ok": True,
+        "message": (
+            f"Added {added_count} card(s) to sideboard. "
+            f"Unresolved {len(unresolved_items)} card name(s)."
+        ),
+        "added_count": added_count,
+        "unresolved_count": len(unresolved_items),
+        "unresolved": [
+            item_name
+            for item_name in unresolved_items
+            if item_name
+        ][:50],
+    }
+
+    payload = get_deckbuilder_payload_after_update(
+        deck_id,
+        deck_row,
+        result_key="bulk_import_result",
+        result=result,
+    )
+
+    return jsonify(payload), 200 if payload.get("ok") else 400
+
 
 @app.route("/deck-builder/<int:deck_id>/cards/add", methods=["POST"])
 def deckbuilder_cards_add(deck_id):
@@ -12781,33 +13105,14 @@ def deckbuilder_cards_add(deck_id):
     if not result.get("ok"):
         return jsonify(result), 400
 
-    source_type = (deck_row["source_type"] or "").strip().lower()
-    source_id = deck_row["source_id"]
+    deckbuilder_payload = get_deckbuilder_payload_after_update(
+        deck_id,
+        deck_row,
+        result_key="add_card_result",
+        result=result,
+    )
 
-    if source_type == "draft_test" and source_id:
-        draft_state = get_draft_test_detail_state(source_id)
-
-        if not draft_state.get("ok"):
-            return jsonify({
-                "ok": False,
-                "message": draft_state.get("message") or "Draft source could not be loaded.",
-            }), 400
-
-        deckbuilder_context = build_deckbuilder_context_for_draft_test(
-            draft_state,
-            preferred_deck_id=deck_id,
-        )
-
-        deckbuilder_payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
-        deckbuilder_payload["add_card_result"] = result
-        deckbuilder_payload["ok"] = bool(deckbuilder_payload.get("ok")) and bool(result.get("ok"))
-
-        return jsonify(deckbuilder_payload), 200 if deckbuilder_payload.get("ok") else 400
-
-    return jsonify({
-        "ok": False,
-        "message": "Standalone Deck Builder refresh is not wired yet.",
-    }), 400
+    return jsonify(deckbuilder_payload), 200 if deckbuilder_payload.get("ok") else 400
 
 @app.route("/deck-builder/<int:deck_id>/change-printing-options", methods=["GET"])
 def deckbuilder_change_printing_options(deck_id):
@@ -13214,10 +13519,16 @@ def deckbuilder_change_printing(deck_id):
 
         return jsonify(payload), 200 if payload.get("ok") else 400
 
-    return jsonify({
-        "ok": False,
-        "message": "Standalone Deck Builder refresh is not wired yet.",
-    }), 400
+    payload = get_fresh_deckbuilder_ajax_payload(
+        deck_id,
+        extra_result_key="card_action_result",
+        extra_result=result,
+    )
+
+    if result.get("action") in {"add", "remove"} or result.get("land_name"):
+        payload["_basicLandCountsAuthoritative"] = True
+
+    return jsonify(payload), 200 if payload.get("ok") else 400
 
 @app.route("/deck-builder/<int:deck_id>/stack-layout", methods=["POST"])
 def deckbuilder_stack_layout(deck_id):
@@ -13261,17 +13572,50 @@ def deckbuilder_stack_layout(deck_id):
             draft_state,
             preferred_deck_id=deck_id,
         )
+    else:
+        deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
 
-        payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
-        payload["stack_layout_result"] = result
-        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
+    payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+    payload["stack_layout_result"] = result
+    payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
 
-        return jsonify(payload), 200 if payload.get("ok") else 400
+    return jsonify(payload), 200 if payload.get("ok") else 400
 
-    return jsonify({
-        "ok": False,
-        "message": "Standalone Deck Builder refresh is not wired yet.",
-    }), 400
+@app.route("/deck-builder/<int:deck_id>/card-action-bulk", methods=["POST"])
+def deckbuilder_card_action_bulk(deck_id):
+    action = (request.form.get("action") or "").strip().lower()
+    target_zone = (request.form.get("target_zone") or "").strip().lower()
+    deck_card_ids = request.form.getlist("deck_card_ids")
+
+    deck_row = get_deck_by_id(deck_id)
+
+    if not deck_row:
+        return jsonify({
+            "ok": False,
+            "message": "Deck was not found.",
+        }), 404
+
+    result = bulk_deckbuilder_card_action(
+        deck_id=deck_id,
+        deck_card_ids=deck_card_ids,
+        action=action,
+        target_zone=target_zone,
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    payload = get_deckbuilder_payload_after_update(
+        deck_id,
+        deck_row,
+        result_key="bulk_card_action_result",
+        result=result,
+    )
+
+    if action in {"move", "remove"}:
+        payload["_basicLandCountsAuthoritative"] = True
+
+    return jsonify(payload), 200 if payload.get("ok") else 400
 
 @app.route("/deck-builder/<int:deck_id>/card-action", methods=["POST"])
 def deckbuilder_card_action(deck_id):
@@ -13306,6 +13650,18 @@ def deckbuilder_card_action(deck_id):
             deck_id=deck_id,
             deck_card_id=deck_card_id,
         )
+    elif action == "set_foil":
+        result = update_deckbuilder_card_foil(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            is_foil=True,
+        )
+    elif action == "remove_foil":
+        result = update_deckbuilder_card_foil(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            is_foil=False,
+        )
     else:
         result = {
             "ok": False,
@@ -13328,20 +13684,17 @@ def deckbuilder_card_action(deck_id):
             draft_state,
             preferred_deck_id=deck_id,
         )
+    else:
+        deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
 
-        payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
-        payload["card_action_result"] = result
-        payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
+    payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
+    payload["card_action_result"] = result
+    payload["ok"] = bool(payload.get("ok")) and bool(result.get("ok"))
 
-        if result.get("action") in {"add", "remove"} or result.get("land_name"):
-            payload["_basicLandCountsAuthoritative"] = True
+    if result.get("action") in {"add", "remove"} or result.get("land_name"):
+        payload["_basicLandCountsAuthoritative"] = True
 
-        return jsonify(payload), 200 if payload.get("ok") else 400
-
-    return jsonify({
-        "ok": False,
-        "message": "Standalone Deck Builder refresh is not wired yet.",
-    }), 400
+    return jsonify(payload), 200 if payload.get("ok") else 400
 
 @app.route("/deck-builder/<int:deck_id>/save", methods=["POST"])
 def deckbuilder_save(deck_id):
@@ -13441,22 +13794,19 @@ def deckbuilder_basic_land(deck_id):
                     draft_state,
                     preferred_deck_id=deck_id,
                 )
-
-                write_debug_log(
-                    "DECKBUILDER BASIC LAND CONTEXT | "
-                    f"deck_id={deck_id} | context_ok={deckbuilder_context.get('ok')} | "
-                    f"context_deck_id={deckbuilder_context.get('deck_id')} | "
-                    f"deck_cards={len(deckbuilder_context.get('deck_cards') or [])} | "
-                    f"sideboard_cards={len(deckbuilder_context.get('sideboard_cards') or [])} | "
-                    f"context_counts={json.dumps(deckbuilder_context.get('basic_land_counts') or {}, default=str)}"
-                )
-
-                payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
             else:
-                payload = {
-                    "ok": False,
-                    "message": "This Deck Builder source is not supported yet.",
-                }
+                deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
+
+            write_debug_log(
+                "DECKBUILDER BASIC LAND CONTEXT | "
+                f"deck_id={deck_id} | context_ok={deckbuilder_context.get('ok')} | "
+                f"context_deck_id={deckbuilder_context.get('deck_id')} | "
+                f"deck_cards={len(deckbuilder_context.get('deck_cards') or [])} | "
+                f"sideboard_cards={len(deckbuilder_context.get('sideboard_cards') or [])} | "
+                f"context_counts={json.dumps(deckbuilder_context.get('basic_land_counts') or {}, default=str)}"
+            )
+
+            payload = serialize_deckbuilder_context_for_ajax(deckbuilder_context)
 
             payload["basic_land_result"] = result
             payload["ok"] = bool(result.get("ok")) and bool(payload.get("ok"))

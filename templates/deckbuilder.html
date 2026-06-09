@@ -19,11 +19,14 @@
     data-save-url="{{ url_for('deckbuilder_save', deck_id=deckbuilder.deck_id) }}"
     data-delete-url="{{ url_for('deckbuilder_delete', deck_id=deckbuilder.deck_id) }}"
     data-card-action-url="{{ url_for('deckbuilder_card_action', deck_id=deckbuilder.deck_id) }}"
+    data-bulk-card-action-url="{{ url_for('deckbuilder_card_action_bulk', deck_id=deckbuilder.deck_id) }}"
     data-stack-layout-url="{{ url_for('deckbuilder_stack_layout', deck_id=deckbuilder.deck_id) }}"
     data-change-printing-options-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
     data-change-printing-url="{{ url_for('deckbuilder_change_printing', deck_id=deckbuilder.deck_id) }}"
     data-add-card-search-url="{{ url_for('deckbuilder_cards_search', deck_id=deckbuilder.deck_id) }}"
     data-add-card-url="{{ url_for('deckbuilder_cards_add', deck_id=deckbuilder.deck_id) }}"
+    data-bulk-import-url="{{ url_for('deckbuilder_cards_import_list', deck_id=deckbuilder.deck_id) }}"
+    data-bulk-import-add-most-recent-url="{{ url_for('deckbuilder_cards_import_list_add_most_recent', deck_id=deckbuilder.deck_id) }}"
     data-load-decks-url="{{ url_for('deckbuilder_loadable_decks') }}"
     data-print-url="{{ deckbuilder.routes.print_url }}"
     data-export-zip-url="{{ deckbuilder.routes.export_zip_url }}"
@@ -223,6 +226,26 @@
         <div class="deckbuilder-view-buttons">
             <button
                 type="button"
+                id="deckbuilderSelectAllButton"
+                class="campaign-test-draft-zone-view-button"
+                title="Select All Visible Cards"
+                aria-label="Select All Visible Cards"
+            >
+                <i class="fa-solid fa-check-double"></i>
+            </button>
+
+            <button
+                type="button"
+                id="deckbuilderClearSelectionButton"
+                class="campaign-test-draft-zone-view-button"
+                title="Clear Selection"
+                aria-label="Clear Selection"
+            >
+                <i class="fa-solid fa-square-xmark"></i>
+            </button>
+
+            <button
+                type="button"
                 id="deckbuilderStatsButton"
                 class="campaign-test-draft-zone-view-button"
                 title="Deck Stats"
@@ -382,6 +405,20 @@
                         </select>
                     </label>
 
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Alternate Image</span>
+                        <select
+                            id="deckbuilderSideboardFilterAlternateImage"
+                            class="campaign-test-draft-picked-sort-select"
+                        >
+                            <option value="">Any</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="remove_bleed">Yes - Remove Bleed</option>
+                            <option value="no_remove_bleed">Yes - No Bleed Removal</option>
+                        </select>
+                    </label>
+
                     <div class="deckbuilder-sideboard-filter-actions">
                         <button
                             type="button"
@@ -489,20 +526,26 @@
                         data-card-set-code="{{ picked_card.set_code or '' }}"
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                        data-is-foil="{{ picked_card.sheet_is_foil or 0 }}"
+                        data-has-alternate-image="{{ picked_card.has_alternate_image or 0 }}"
+                        data-alternate-image-remove-bleed="{{ picked_card.alternate_image_remove_bleed or 0 }}"
                         data-stack-column="{{ picked_card.stack_column or '' }}"
                         data-stack-order="{{ picked_card.stack_order if picked_card.stack_order is not none else '' }}"
                     >
-                        <img
-                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
-                            alt="{{ picked_card.card_name }}"
-                            class="campaign-test-draft-picked-thumb"
-                        >
+                        <div class="deckbuilder-card-image-wrap">
+                            <img
+                                src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                                alt="{{ picked_card.card_name }}"
+                                class="campaign-test-draft-picked-thumb"
+                            >
+                        </div>
 
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
-                            <div class="campaign-test-draft-picked-meta">
-                                Pack {{ picked_card.pack_number }} • Pick {{ picked_card.pick_number }}
-                            </div>
+
+                            {% if picked_card.sheet_is_foil %}
+                            <div class="deckbuilder-card-meta-badge">Foil</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -522,9 +565,146 @@
         ></div>
 
         <section class="deckbuilder-zone deckbuilder-zone-deck">
-            <div class="deckbuilder-zone-header">
-                <h2>Deck</h2>
-                <span>Main deck</span>
+            <div class="deckbuilder-zone-header deckbuilder-zone-header-with-actions">
+                <div>
+                    <h2>Deck</h2>
+                    <span>Main deck</span>
+                </div>
+
+                <div class="deckbuilder-zone-header-actions">
+                    <button
+                        type="button"
+                        id="deckbuilderDeckSelectAllButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Select All Visible Deck Cards"
+                        aria-label="Select All Visible Deck Cards"
+                    >
+                        <i class="fa-solid fa-check-double"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="deckbuilderDeckClearSelectionButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Clear Deck Selection"
+                        aria-label="Clear Deck Selection"
+                    >
+                        <i class="fa-solid fa-square-xmark"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="deckbuilderDeckFilterButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Filter Deck"
+                        aria-label="Filter Deck"
+                        aria-expanded="false"
+                    >
+                        <i class="fa-solid fa-filter"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div
+                id="deckbuilderDeckFilterPanel"
+                class="deckbuilder-sideboard-filter-panel hidden"
+                aria-hidden="true"
+            >
+                <div class="deckbuilder-sideboard-filter-grid">
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Search Text</span>
+                        <input
+                            type="text"
+                            id="deckbuilderDeckFilterText"
+                            class="campaign-add-pack-custom-input deckbuilder-sideboard-filter-input"
+                            placeholder="Card name, type, set..."
+                        >
+                    </label>
+
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Rarity</span>
+                        <select id="deckbuilderDeckFilterRarity" class="campaign-test-draft-picked-sort-select">
+                            <option value="">Any</option>
+                            <option value="common">Common</option>
+                            <option value="uncommon">Uncommon</option>
+                            <option value="rare">Rare</option>
+                            <option value="mythic">Mythic</option>
+                        </select>
+                    </label>
+
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Color Identity</span>
+                        <select id="deckbuilderDeckFilterColor" class="campaign-test-draft-picked-sort-select">
+                            <option value="">Any</option>
+                            <option value="W">White</option>
+                            <option value="U">Blue</option>
+                            <option value="B">Black</option>
+                            <option value="R">Red</option>
+                            <option value="G">Green</option>
+                            <option value="colorless">Colorless</option>
+                            <option value="multi">Multicolor</option>
+                        </select>
+                    </label>
+
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Mana Value</span>
+                        <div class="deckbuilder-sideboard-filter-inline">
+                            <select id="deckbuilderDeckFilterManaOperator" class="campaign-test-draft-picked-sort-select">
+                                <option value="">Any</option>
+                                <option value="eq">=</option>
+                                <option value="lte">≤</option>
+                                <option value="gte">≥</option>
+                            </select>
+
+                            <input
+                                type="number"
+                                id="deckbuilderDeckFilterManaValue"
+                                class="campaign-add-pack-custom-input deckbuilder-sideboard-filter-number"
+                                min="0"
+                                step="1"
+                            >
+                        </div>
+                    </label>
+
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Type</span>
+                        <select id="deckbuilderDeckFilterType" class="campaign-test-draft-picked-sort-select">
+                            <option value="">Any</option>
+                            <option value="creature">Creature</option>
+                            <option value="instant">Instant</option>
+                            <option value="sorcery">Sorcery</option>
+                            <option value="artifact">Artifact</option>
+                            <option value="enchantment">Enchantment</option>
+                            <option value="planeswalker">Planeswalker</option>
+                            <option value="land">Land</option>
+                        </select>
+                    </label>
+
+                    <label class="deckbuilder-sideboard-filter-field">
+                        <span>Alternate Image</span>
+                        <select id="deckbuilderDeckFilterAlternateImage" class="campaign-test-draft-picked-sort-select">
+                            <option value="">Any</option>
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                            <option value="remove_bleed">Yes - Remove Bleed</option>
+                            <option value="no_remove_bleed">Yes - No Bleed Removal</option>
+                        </select>
+                    </label>
+
+                    <div class="deckbuilder-sideboard-filter-actions">
+                        <button
+                            type="button"
+                            id="deckbuilderDeckClearFiltersButton"
+                            class="action-button secondary-button deckbuilder-sideboard-clear-filter-button"
+                        >
+                            Clear Filters
+                        </button>
+                    </div>
+                </div>
+
+                <div id="deckbuilderDeckFilterStatus" class="deckbuilder-sideboard-filter-status">
+                    Showing all deck cards.
+                </div>
             </div>
 
             <div
@@ -551,24 +731,26 @@
                         data-card-set-code="{{ picked_card.set_code or '' }}"
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
+                        data-is-foil="{{ picked_card.sheet_is_foil or 0 }}"
+                        data-has-alternate-image="{{ picked_card.has_alternate_image or 0 }}"
+                        data-alternate-image-remove-bleed="{{ picked_card.alternate_image_remove_bleed or 0 }}"
                         data-stack-column="{{ picked_card.stack_column or '' }}"
                         data-stack-order="{{ picked_card.stack_order if picked_card.stack_order is not none else '' }}"
                     >
-                        <img
-                            src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
-                            alt="{{ picked_card.card_name }}"
-                            class="campaign-test-draft-picked-thumb"
-                        >
+                        <div class="deckbuilder-card-image-wrap">
+                            <img
+                                src="{{ url_for('chaos_card_image', card_uuid=picked_card.card_uuid) }}"
+                                alt="{{ picked_card.card_name }}"
+                                class="campaign-test-draft-picked-thumb"
+                            >
+                        </div>
 
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
-                            <div class="campaign-test-draft-picked-meta">
-                                {% if picked_card.pick_reason == "Basic land" %}
-                                    Basic Land
-                                {% else %}
-                                    Pick {{ picked_card.pick_number }} • Pack {{ picked_card.pack_number }}
-                                {% endif %}
-                            </div>
+
+                            {% if picked_card.sheet_is_foil %}
+                            <div class="deckbuilder-card-meta-badge">Foil</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}
@@ -597,6 +779,10 @@
 
         <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="change-printing">
             Change Printing
+        </button>
+
+        <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="foil">
+            Set Foil
         </button>
 
         <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="alternate-image">
@@ -644,12 +830,14 @@
     {% include "_card_search_modal.html" %}
 
     <div id="deckbuilderHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
-        <img
-            id="deckbuilderHoverPreviewImage"
-            src=""
-            alt=""
-            class="campaign-test-draft-hover-preview-image"
-        >
+        <div class="campaign-test-draft-hover-preview-image-wrap">
+            <img
+                id="deckbuilderHoverPreviewImage"
+                src=""
+                alt=""
+                class="campaign-test-draft-hover-preview-image"
+            >
+        </div>
     </div>
 
         {% include "_alternate_image_modal.html" %}
@@ -726,6 +914,21 @@
         </div>
     </div>
 
+    <div id="deckbuilderBulkActionStatus" class="deckbuilder-bulk-action-status hidden" aria-hidden="true">
+        <div class="deckbuilder-bulk-action-status-icon">
+            <div class="deckbuilder-bulk-action-spinner"></div>
+        </div>
+
+        <div class="deckbuilder-bulk-action-status-copy">
+            <div id="deckbuilderBulkActionStatusTitle" class="deckbuilder-bulk-action-status-title">
+                Updating Deck
+            </div>
+            <div id="deckbuilderBulkActionStatusMessage" class="deckbuilder-bulk-action-status-message">
+                Preparing selected cards...
+            </div>
+        </div>
+    </div>
+
     <div id="deckbuilderLoadDeckModal" class="campaign-add-pack-modal hidden" aria-hidden="true">
         <div id="deckbuilderLoadDeckBackdrop" class="campaign-add-pack-backdrop"></div>
 
@@ -798,11 +1001,29 @@
     const sideboardFilterManaOperator = document.getElementById("deckbuilderSideboardFilterManaOperator");
     const sideboardFilterManaValue = document.getElementById("deckbuilderSideboardFilterManaValue");
     const sideboardFilterType = document.getElementById("deckbuilderSideboardFilterType");
+    const sideboardFilterAlternateImage = document.getElementById("deckbuilderSideboardFilterAlternateImage");
     const sideboardClearFiltersButton = document.getElementById("deckbuilderSideboardClearFiltersButton");
     const sideboardFilterStatus = document.getElementById("deckbuilderSideboardFilterStatus");
+
+    const deckSelectAllButton = document.getElementById("deckbuilderDeckSelectAllButton");
+    const deckClearSelectionButton = document.getElementById("deckbuilderDeckClearSelectionButton");
+    const deckFilterButton = document.getElementById("deckbuilderDeckFilterButton");
+    const deckFilterPanel = document.getElementById("deckbuilderDeckFilterPanel");
+    const deckFilterText = document.getElementById("deckbuilderDeckFilterText");
+    const deckFilterRarity = document.getElementById("deckbuilderDeckFilterRarity");
+    const deckFilterColor = document.getElementById("deckbuilderDeckFilterColor");
+    const deckFilterManaOperator = document.getElementById("deckbuilderDeckFilterManaOperator");
+    const deckFilterManaValue = document.getElementById("deckbuilderDeckFilterManaValue");
+    const deckFilterType = document.getElementById("deckbuilderDeckFilterType");
+    const deckFilterAlternateImage = document.getElementById("deckbuilderDeckFilterAlternateImage");
+    const deckClearFiltersButton = document.getElementById("deckbuilderDeckClearFiltersButton");
+    const deckFilterStatus = document.getElementById("deckbuilderDeckFilterStatus");
+
     const listViewButton = document.getElementById("deckbuilderListViewButton");
     const gridViewButton = document.getElementById("deckbuilderGridViewButton");
     const stackViewButton = document.getElementById("deckbuilderStackViewButton");
+    const selectAllButton = document.getElementById("deckbuilderSelectAllButton");
+    const clearSelectionButton = document.getElementById("deckbuilderClearSelectionButton");
     const statsButton = document.getElementById("deckbuilderStatsButton");
     const deckNameInput = document.getElementById("deckbuilderDeckNameInput");
     const saveDeckButton = document.getElementById("deckbuilderSaveDeckButton");
@@ -835,6 +1056,9 @@
     const sideboardCount = document.getElementById("deckbuilderSideboardCount");
     const hoverPreview = document.getElementById("deckbuilderHoverPreview");
     const hoverPreviewImage = document.getElementById("deckbuilderHoverPreviewImage");
+    const bulkActionStatus = document.getElementById("deckbuilderBulkActionStatus");
+    const bulkActionStatusTitle = document.getElementById("deckbuilderBulkActionStatusTitle");
+    const bulkActionStatusMessage = document.getElementById("deckbuilderBulkActionStatusMessage");
 
     if (!workspace) {
         return;
@@ -851,21 +1075,26 @@
     let activeChangePrintingTarget = null;
     let deckbuilderCardSearchModal = null;
     let deckbuilderBasicLandCounts = {};
+    let selectedDeckbuilderZone = "";
 
     workspace.style.setProperty("--deckbuilder-sideboard-flex", workspace.dataset.sideboardFlex || "0.40");
     workspace.style.setProperty("--deckbuilder-deck-flex", workspace.dataset.deckFlex || "0.60");
     let sideboardFiltersVisible = false;
+    let deckFiltersVisible = false;
 
     const moveZoneUrl = workspace.dataset.moveZoneUrl || "";
     const basicLandUrl = workspace.dataset.basicLandUrl || "";
     const saveDeckUrl = workspace.dataset.saveUrl || "";
     const deleteDeckUrl = workspace.dataset.deleteUrl || "";
     const cardActionUrl = workspace.dataset.cardActionUrl || "";
+    const bulkCardActionUrl = workspace.dataset.bulkCardActionUrl || "";
     const stackLayoutUrl = workspace.dataset.stackLayoutUrl || "";
     const changePrintingOptionsUrl = workspace.dataset.changePrintingOptionsUrl || "";
     const changePrintingUrl = workspace.dataset.changePrintingUrl || "";
     const addCardSearchUrl = workspace.dataset.addCardSearchUrl || "";
     const addCardUrl = workspace.dataset.addCardUrl || "";
+    const bulkImportUrl = workspace.dataset.bulkImportUrl || "";
+    const bulkImportAddMostRecentUrl = workspace.dataset.bulkImportAddMostRecentUrl || "";
     const loadDecksUrl = workspace.dataset.loadDecksUrl || "";
     const printUrl = workspace.dataset.printUrl || "";
     const exportZipUrl = workspace.dataset.exportZipUrl || "";
@@ -928,14 +1157,38 @@
             .replace(/'/g, "&#039;");
     }
 
-    function showDeckbuilderError(error) {
-        console.error(error);
-
-        if (window.iMomirToast) {
-            window.iMomirToast.error(error.message || "Deck update failed.");
-        } else {
-            window.alert(error.message || "Deck update failed.");
+    function setDeckbuilderBulkActionStatus(isVisible, titleText, messageText, isComplete) {
+        if (!bulkActionStatus) {
+            return;
         }
+
+        bulkActionStatus.classList.toggle("hidden", !isVisible);
+        bulkActionStatus.classList.toggle("deckbuilder-bulk-action-status-complete", Boolean(isComplete));
+        bulkActionStatus.setAttribute("aria-hidden", isVisible ? "false" : "true");
+
+        if (bulkActionStatusTitle) {
+            bulkActionStatusTitle.textContent = titleText || "Updating Deck";
+        }
+
+        if (bulkActionStatusMessage) {
+            bulkActionStatusMessage.textContent = messageText || "";
+        }
+    }
+
+    function showDeckbuilderBulkActionStatus(titleText, messageText) {
+        setDeckbuilderBulkActionStatus(true, titleText, messageText, false);
+    }
+
+    function completeDeckbuilderBulkActionStatus(messageText) {
+        setDeckbuilderBulkActionStatus(true, "Deck Updated", messageText || "Done.", true);
+
+        window.setTimeout(function () {
+            setDeckbuilderBulkActionStatus(false, "", "", false);
+        }, 1400);
+    }
+
+    function hideDeckbuilderBulkActionStatus() {
+        setDeckbuilderBulkActionStatus(false, "", "", false);
     }
 
     function getDeckbuilderCards(listElement) {
@@ -1019,6 +1272,9 @@
 
         if (deckbuilderViewMode === "stack") {
             buildStackColumnsForZone(deckList);
+            if (deckList) {
+                deckList.scrollLeft = Math.max(0, deckList.scrollLeft || 0);
+            }
         }
     }
 
@@ -1085,6 +1341,7 @@
         sortDeckbuilderZone(deckList);
         sortDeckbuilderZone(sideboardList);
         applySideboardFilters();
+        applyDeckFilters();
         moveSideboardPaletteCardsToEnd();
     }
 
@@ -1097,7 +1354,8 @@
             manaValue: sideboardFilterManaValue && sideboardFilterManaValue.value !== ""
                 ? parseFloat(sideboardFilterManaValue.value)
                 : null,
-            type: String(sideboardFilterType ? sideboardFilterType.value : "").trim().toLowerCase()
+            type: String(sideboardFilterType ? sideboardFilterType.value : "").trim().toLowerCase(),
+            alternateImage: String(sideboardFilterAlternateImage ? sideboardFilterAlternateImage.value : "").trim().toLowerCase()
         };
     }
 
@@ -1110,7 +1368,8 @@
             filters.color ||
             filters.manaOperator ||
             Number.isFinite(filters.manaValue) ||
-            filters.type
+            filters.type ||
+            filters.alternateImage
         );
     }
 
@@ -1156,6 +1415,33 @@
         }
 
         return colorIdentity.indexOf(colorFilter) !== -1;
+    }
+
+    function deckbuilderCardMatchesAlternateImageFilter(cardElement, alternateImageFilter) {
+        if (!alternateImageFilter) {
+            return true;
+        }
+
+        const hasAlternateImage = cardElement.dataset.hasAlternateImage === "1";
+        const removeBleed = cardElement.dataset.alternateImageRemoveBleed === "1";
+
+        if (alternateImageFilter === "yes") {
+            return hasAlternateImage;
+        }
+
+        if (alternateImageFilter === "no") {
+            return !hasAlternateImage;
+        }
+
+        if (alternateImageFilter === "remove_bleed") {
+            return hasAlternateImage && removeBleed;
+        }
+
+        if (alternateImageFilter === "no_remove_bleed") {
+            return hasAlternateImage && !removeBleed;
+        }
+
+        return true;
     }
 
     function deckbuilderCardMatchesManaFilter(cardElement, manaOperator, manaValue) {
@@ -1212,6 +1498,10 @@
         }
 
         if (filters.type && String(cardElement.dataset.cardTypeLine || "").toLowerCase().indexOf(filters.type) === -1) {
+            return false;
+        }
+
+        if (!deckbuilderCardMatchesAlternateImageFilter(cardElement, filters.alternateImage)) {
             return false;
         }
 
@@ -1290,7 +1580,145 @@
             sideboardFilterType.value = "";
         }
 
+        if (sideboardFilterAlternateImage) {
+            sideboardFilterAlternateImage.value = "";
+        }
+
         applySideboardFilters();
+        applyDeckFilters();
+    }
+
+    function getDeckFilterValues() {
+        return {
+            searchText: String(deckFilterText ? deckFilterText.value : "").trim().toLowerCase(),
+            rarity: String(deckFilterRarity ? deckFilterRarity.value : "").trim().toLowerCase(),
+            color: String(deckFilterColor ? deckFilterColor.value : "").trim(),
+            manaOperator: String(deckFilterManaOperator ? deckFilterManaOperator.value : "").trim(),
+            manaValue: deckFilterManaValue && deckFilterManaValue.value !== ""
+                ? parseFloat(deckFilterManaValue.value)
+                : null,
+            type: String(deckFilterType ? deckFilterType.value : "").trim().toLowerCase(),
+            alternateImage: String(deckFilterAlternateImage ? deckFilterAlternateImage.value : "").trim().toLowerCase()
+        };
+    }
+
+    function hasActiveDeckFilters() {
+        const filters = getDeckFilterValues();
+
+        return Boolean(
+            filters.searchText ||
+            filters.rarity ||
+            filters.color ||
+            filters.manaOperator ||
+            Number.isFinite(filters.manaValue) ||
+            filters.type ||
+            filters.alternateImage
+        );
+    }
+
+    function deckbuilderCardMatchesDeckFilters(cardElement) {
+        const filters = getDeckFilterValues();
+
+        if (filters.searchText && getDeckbuilderFilterSearchBlob(cardElement).indexOf(filters.searchText) === -1) {
+            return false;
+        }
+
+        if (filters.rarity && String(cardElement.dataset.cardRarity || "").toLowerCase() !== filters.rarity) {
+            return false;
+        }
+
+        if (!deckbuilderCardMatchesColorFilter(cardElement, filters.color)) {
+            return false;
+        }
+
+        if (!deckbuilderCardMatchesManaFilter(cardElement, filters.manaOperator, filters.manaValue)) {
+            return false;
+        }
+
+        if (filters.type && String(cardElement.dataset.cardTypeLine || "").toLowerCase().indexOf(filters.type) === -1) {
+            return false;
+        }
+
+        if (!deckbuilderCardMatchesAlternateImageFilter(cardElement, filters.alternateImage)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function applyDeckFilters() {
+        if (!deckList) {
+            return;
+        }
+
+        const deckCards = getDeckbuilderCards(deckList);
+        let visibleCount = 0;
+        let normalCardCount = 0;
+
+        deckCards.forEach(function (cardElement) {
+            const matchesFilter = deckbuilderCardMatchesDeckFilters(cardElement);
+
+            normalCardCount += 1;
+            cardElement.classList.toggle("hidden", !matchesFilter);
+
+            if (matchesFilter) {
+                visibleCount += 1;
+            }
+        });
+
+        if (deckFilterStatus) {
+            if (hasActiveDeckFilters()) {
+                deckFilterStatus.textContent = "Showing " + visibleCount + " of " + normalCardCount + " deck card(s).";
+            } else {
+                deckFilterStatus.textContent = "Showing all deck cards.";
+            }
+        }
+    }
+
+    function setDeckFilterPanelVisible(isVisible) {
+        deckFiltersVisible = Boolean(isVisible);
+
+        if (deckFilterPanel) {
+            deckFilterPanel.classList.toggle("hidden", !deckFiltersVisible);
+            deckFilterPanel.setAttribute("aria-hidden", deckFiltersVisible ? "false" : "true");
+        }
+
+        if (deckFilterButton) {
+            deckFilterButton.classList.toggle("campaign-test-draft-zone-view-button-active", deckFiltersVisible);
+            deckFilterButton.setAttribute("aria-expanded", deckFiltersVisible ? "true" : "false");
+        }
+    }
+
+    function clearDeckFilters() {
+        if (deckFilterText) {
+            deckFilterText.value = "";
+        }
+
+        if (deckFilterRarity) {
+            deckFilterRarity.value = "";
+        }
+
+        if (deckFilterColor) {
+            deckFilterColor.value = "";
+        }
+
+        if (deckFilterManaOperator) {
+            deckFilterManaOperator.value = "";
+        }
+
+        if (deckFilterManaValue) {
+            deckFilterManaValue.value = "";
+        }
+
+        if (deckFilterType) {
+            deckFilterType.value = "";
+        }
+
+        if (deckFilterAlternateImage) {
+            deckFilterAlternateImage.value = "";
+        }
+
+        applyDeckFilters();
     }
 
     function updateCounts() {
@@ -1484,11 +1912,6 @@
             formEntries: formEntries
         });
 
-        console.log("DECKBUILDER AJAX START", {
-            actionUrl: actionUrl,
-            formEntries: formEntries
-        });
-
         const response = await fetch(actionUrl, {
             method: "POST",
             headers: {
@@ -1531,17 +1954,6 @@
             humanDeckCardCount: payload && payload.human_deck_cards ? payload.human_deck_cards.length : null
         });
 
-        console.log("DECKBUILDER AJAX RESPONSE", {
-            actionUrl: actionUrl,
-            status: response.status,
-            ok: response.ok,
-            payloadOk: payload ? payload.ok : null,
-            debug: payload ? payload.debug : null,
-            basicLandCounts: payload ? payload.basic_land_counts : null,
-            humanDeckCardCount: payload && payload.human_deck_cards ? payload.human_deck_cards.length : null,
-            payload: payload
-        });
-
         if (!response.ok || !payload.ok) {
             throw new Error(payload.message || "Deck update failed.");
         }
@@ -1550,6 +1962,10 @@
     }
 
     async function movePickedCardToZone(pickId, targetZone) {
+        if (!moveZoneUrl) {
+            throw new Error("Draft move URL was not configured for this deck.");
+        }
+
         const formData = new FormData();
         formData.append("draft_test_pick_id", pickId || "");
         formData.append("deck_zone", targetZone || "deck");
@@ -1595,9 +2011,11 @@
         loadDeckList.innerHTML = decks.map(function (deck) {
             const deckName = deck.deck_name || "Untitled Deck";
             const deckFormat = deck.deck_format || "Deck";
-            const sourceText = deck.source_type === "draft_test"
-                ? "Draft Test #" + escapeHtml(deck.source_id || "")
-                : escapeHtml(deck.source_type || "Deck");
+            const sourceText = deck.source_label || (
+                deck.source_type === "draft_test"
+                    ? "Draft Test #" + escapeHtml(deck.source_id || "")
+                    : escapeHtml(deck.source_type || "Deck")
+            );
             const updatedText = deck.updated_at_utc || "";
 
             return (
@@ -2048,7 +2466,7 @@
         const safeSyntheticId = "basic-land-" + String(cardName || "").toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + String(landIndex || 0);
 
         return (
-            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="basic_land" data-deck-card-id="" data-draft-test-pick-id="' + escapeHtml(safeSyntheticId) + '" data-current-zone="deck" data-card-name="' + escapeHtml(cardName) + '" data-card-uuid="' + escapeHtml(cardUuid) + '" data-card-rarity="' + escapeHtml(rarity) + '" data-card-mana-value="' + escapeHtml(manaValue) + '" data-card-type-line="' + escapeHtml(typeLine) + '" data-is-basic-land="1">' +
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="basic_land" data-deck-card-id="" data-draft-test-pick-id="' + escapeHtml(safeSyntheticId) + '" data-current-zone="deck" data-card-name="' + escapeHtml(cardName) + '" data-card-uuid="' + escapeHtml(cardUuid) + '" data-card-rarity="' + escapeHtml(rarity) + '" data-card-mana-value="' + escapeHtml(manaValue) + '" data-card-type-line="' + escapeHtml(typeLine) + '" data-is-basic-land="1" data-is-foil="0" data-has-alternate-image="0" data-alternate-image-remove-bleed="0">' +
                 (
                     imageSrc
                         ? '<img src="' + escapeHtml(imageSrc) + '?v=' + Date.now() + '" alt="' + escapeHtml(cardName) + '" class="campaign-test-draft-picked-thumb">'
@@ -2056,7 +2474,6 @@
                 ) +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(cardName) + '</div>' +
-                    '<div class="campaign-test-draft-picked-meta">Basic Land</div>' +
                 '</div>' +
             '</div>'
         );
@@ -2070,13 +2487,6 @@
             deckCardCountBefore: getDeckbuilderCards(deckList).length
         });
 
-        console.log("DECKBUILDER RECONCILE BASIC LANDS ENTER", {
-            hasDeckList: Boolean(deckList),
-            hasPayload: Boolean(payload),
-            basicLandCounts: payload ? payload.basic_land_counts : null,
-            deckCardCountBefore: getDeckbuilderCards(deckList).length
-        });
-
         if (!deckList || !payload || !payload.basic_land_counts) {
             writeDeckbuilderClientDebug("RECONCILE BASIC LANDS EXIT EARLY", {
                 hasDeckList: Boolean(deckList),
@@ -2084,11 +2494,6 @@
                 hasBasicLandCounts: Boolean(payload && payload.basic_land_counts)
             });
 
-            console.log("DECKBUILDER RECONCILE BASIC LANDS EXIT EARLY", {
-                hasDeckList: Boolean(deckList),
-                hasPayload: Boolean(payload),
-                hasBasicLandCounts: Boolean(payload && payload.basic_land_counts)
-            });
             return;
         }
 
@@ -2126,23 +2531,132 @@
             deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
         });
 
-        console.log("DECKBUILDER RECONCILE BASIC LANDS EXIT", {
-            deckCardCountAfter: getDeckbuilderCards(deckList).length,
-            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
+    }
+
+    function isDeckbuilderTruthyFlag(value) {
+        return value === true
+            || value === 1
+            || value === "1"
+            || String(value || "").toLowerCase() === "true";
+    }
+
+    function isDeckbuilderMissingFilterValue(value) {
+        return value === undefined
+            || value === null
+            || value === ""
+            || String(value).toLowerCase() === "null"
+            || String(value).toLowerCase() === "undefined";
+    }
+
+    function getDeckbuilderExistingFilterMetadata() {
+        const lookup = {
+            byDeckCardId: {},
+            byCardUuid: {}
+        };
+
+        Array.from(document.querySelectorAll(".deckbuilder-card:not([data-is-land-palette='1'])")).forEach(function (cardElement) {
+            const deckCardId = String(cardElement.dataset.deckCardId || "").trim();
+            const cardUuid = String(cardElement.dataset.cardUuid || "").trim();
+
+            const metadata = {
+                rarity: cardElement.dataset.cardRarity || "",
+                manaValue: cardElement.dataset.cardManaValue || "",
+                typeLine: cardElement.dataset.cardTypeLine || "",
+                colorIdentityJson: cardElement.dataset.cardColorIdentity || "[]",
+                setCode: cardElement.dataset.cardSetCode || "",
+                collectorNumber: cardElement.dataset.cardCollectorNumber || "",
+                hasAlternateImage: cardElement.dataset.hasAlternateImage || "0",
+                alternateImageRemoveBleed: cardElement.dataset.alternateImageRemoveBleed || "0"
+            };
+
+            if (deckCardId) {
+                lookup.byDeckCardId[deckCardId] = metadata;
+            }
+
+            if (cardUuid) {
+                lookup.byCardUuid[cardUuid] = metadata;
+            }
+        });
+
+        return lookup;
+    }
+
+    function normalizeDeckbuilderPayloadCardFilterData(card, existingFilterMetadata) {
+        const normalizedCard = Object.assign({}, card || {});
+        const deckCardId = String(normalizedCard.deck_card_id || "").trim();
+        const cardUuid = String(normalizedCard.card_uuid || "").trim();
+
+        const existingMetadata = (
+            deckCardId && existingFilterMetadata.byDeckCardId[deckCardId]
+        )
+            ? existingFilterMetadata.byDeckCardId[deckCardId]
+            : (
+                cardUuid && existingFilterMetadata.byCardUuid[cardUuid]
+                    ? existingFilterMetadata.byCardUuid[cardUuid]
+                    : null
+            );
+
+        if (!existingMetadata) {
+            return normalizedCard;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.rarity)) {
+            normalizedCard.rarity = existingMetadata.rarity;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.mana_value)) {
+            normalizedCard.mana_value = existingMetadata.manaValue;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.type_line)) {
+            normalizedCard.type_line = existingMetadata.typeLine;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.color_identity_json)) {
+            normalizedCard.color_identity_json = existingMetadata.colorIdentityJson;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.set_code)) {
+            normalizedCard.set_code = existingMetadata.setCode;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.collector_number)) {
+            normalizedCard.collector_number = existingMetadata.collectorNumber;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.has_alternate_image)) {
+            normalizedCard.has_alternate_image = existingMetadata.hasAlternateImage;
+        }
+
+        if (isDeckbuilderMissingFilterValue(normalizedCard.alternate_image_remove_bleed)) {
+            normalizedCard.alternate_image_remove_bleed = existingMetadata.alternateImageRemoveBleed;
+        }
+
+        return normalizedCard;
+    }
+
+    function normalizeDeckbuilderPayloadCardsForFilters(cards, existingFilterMetadata) {
+        return (cards || []).map(function (card) {
+            return normalizeDeckbuilderPayloadCardFilterData(card, existingFilterMetadata);
         });
     }
 
     function renderDeckbuilderCard(card, targetZone) {
-        const pickedMeta = card.is_basic_land
-            ? "Basic Land"
-            : "Pack " + escapeHtml(card.pack_number) + " • Pick " + escapeHtml(card.pick_number);
+        const safeCard = card || {};
+        const isBasicLand = isDeckbuilderTruthyFlag(safeCard.is_basic_land);
+        const isFoil = isDeckbuilderTruthyFlag(safeCard.sheet_is_foil);
+        const hasAlternateImage = isDeckbuilderTruthyFlag(safeCard.has_alternate_image);
+        const alternateImageRemoveBleed = isDeckbuilderTruthyFlag(safeCard.alternate_image_remove_bleed);
+        const sourceKind = safeCard.source_kind || (isBasicLand ? "basic_land" : "deck_card");
 
         return (
-            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(card.source_kind || (card.is_basic_land ? "basic_land" : "deck_card")) + '" data-deck-card-id="' + escapeHtml(card.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(card.draft_test_pick_id) + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(card.card_name || "") + '" data-card-uuid="' + escapeHtml(card.card_uuid || "") + '" data-card-rarity="' + escapeHtml(card.rarity || "") + '" data-card-mana-value="' + escapeHtml(card.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(card.type_line || "") + '" data-card-color-identity="' + escapeHtml(card.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(card.set_code || "") + '" data-card-collector-number="' + escapeHtml(card.collector_number || "") + '" data-is-basic-land="' + escapeHtml(card.is_basic_land ? "1" : "0") + '" data-stack-column="' + escapeHtml(card.stack_column || "") + '" data-stack-order="' + escapeHtml(card.stack_order ?? "") + '">' +
-                '<img src="' + escapeHtml(card.image_src) + '" alt="' + escapeHtml(card.card_name) + '" class="campaign-test-draft-picked-thumb">' +
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(sourceKind) + '" data-deck-card-id="' + escapeHtml(safeCard.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(safeCard.draft_test_pick_id || "") + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(safeCard.card_name || "") + '" data-card-uuid="' + escapeHtml(safeCard.card_uuid || "") + '" data-card-rarity="' + escapeHtml(safeCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(safeCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(safeCard.type_line || "") + '" data-card-color-identity="' + escapeHtml(safeCard.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(safeCard.set_code || "") + '" data-card-collector-number="' + escapeHtml(safeCard.collector_number || "") + '" data-is-basic-land="' + escapeHtml(isBasicLand ? "1" : "0") + '" data-is-foil="' + escapeHtml(isFoil ? "1" : "0") + '" data-has-alternate-image="' + escapeHtml(hasAlternateImage ? "1" : "0") + '" data-alternate-image-remove-bleed="' + escapeHtml(alternateImageRemoveBleed ? "1" : "0") + '" data-stack-column="' + escapeHtml(safeCard.stack_column || "") + '" data-stack-order="' + escapeHtml(safeCard.stack_order ?? "") + '">' +
+                '<div class="deckbuilder-card-image-wrap">' +
+                    '<img src="' + escapeHtml(safeCard.image_src || "") + '" alt="' + escapeHtml(safeCard.card_name || "") + '" class="campaign-test-draft-picked-thumb">' +
+                '</div>' +
                 '<div class="campaign-test-draft-picked-main">' +
-                    '<div class="campaign-test-draft-picked-name">' + escapeHtml(card.card_name) + '</div>' +
-                    '<div class="campaign-test-draft-picked-meta">' + pickedMeta + '</div>' +
+                    '<div class="campaign-test-draft-picked-name">' + escapeHtml(safeCard.card_name || "") + '</div>' +
+                    (isFoil ? '<div class="deckbuilder-card-meta-badge">Foil</div>' : '') +
                 '</div>' +
             '</div>'
         );
@@ -2210,6 +2724,17 @@
         }
 
         const safePayload = getSafeDeckbuilderPayload(payload);
+        const existingFilterMetadata = getDeckbuilderExistingFilterMetadata();
+
+        const normalizedDeckCards = normalizeDeckbuilderPayloadCardsForFilters(
+            safePayload.human_deck_cards || [],
+            existingFilterMetadata
+        );
+
+        const normalizedSideboardCards = normalizeDeckbuilderPayloadCardsForFilters(
+            safePayload.human_sideboard_cards || [],
+            existingFilterMetadata
+        );
 
         if (safePayload.basic_land_cards && sideboardList) {
             sideboardList.dataset.basicLandCards = JSON.stringify(safePayload.basic_land_cards);
@@ -2217,14 +2742,14 @@
 
         renderDeckbuilderZone(
             deckList,
-            safePayload.human_deck_cards || [],
+            normalizedDeckCards,
             "Drag cards here to build your deck.",
             "deck"
         );
 
         renderDeckbuilderZone(
             sideboardList,
-            safePayload.human_sideboard_cards || [],
+            normalizedSideboardCards,
             "Sideboard cards will appear here.",
             "sideboard"
         );
@@ -2233,12 +2758,172 @@
         reconcileDeckBasicLandsFromPayload(safePayload);
         moveSideboardPaletteCardsToEnd();
         updateCounts();
+        clearDeckbuilderSelection();
         bindDragSources();
         bindHoverPreviews();
         bindCardContextMenus();
+        bindDeckbuilderSelectionHandlers();
         updateDeckbuilderCardSize(deckbuilderCardSize);
         setViewMode(deckbuilderViewMode);
         applySideboardFilters();
+        applyDeckFilters();
+    }
+
+
+    function getDeckbuilderSelectionKey(cardElement) {
+        if (!cardElement) {
+            return "";
+        }
+
+        if (!cardElement.dataset.selectionKey) {
+            const deckCardId = String(cardElement.dataset.deckCardId || "").trim();
+            const pickId = String(cardElement.dataset.draftTestPickId || "").trim();
+            const cardUuid = String(cardElement.dataset.cardUuid || "").trim();
+            const cardName = String(cardElement.dataset.cardName || "").trim();
+            const zone = String(cardElement.dataset.currentZone || "").trim();
+
+            if (deckCardId) {
+                cardElement.dataset.selectionKey = "deck_card:" + deckCardId;
+            } else if (pickId) {
+                cardElement.dataset.selectionKey = "pick:" + pickId;
+            } else {
+                cardElement.dataset.selectionKey = "card:" + zone + ":" + cardUuid + ":" + cardName;
+            }
+        }
+
+        return cardElement.dataset.selectionKey || "";
+    }
+
+    function isDeckbuilderSelectableCard(cardElement) {
+        return Boolean(
+            cardElement
+            && cardElement.classList
+            && cardElement.classList.contains("deckbuilder-card")
+            && cardElement.dataset.isLandPalette !== "1"
+        );
+    }
+
+    function getDeckbuilderSelectedCards(zone) {
+        return Array.from(document.querySelectorAll(".deckbuilder-card.deckbuilder-card-selected")).filter(function (cardElement) {
+            if (!isDeckbuilderSelectableCard(cardElement)) {
+                return false;
+            }
+
+            if (!zone) {
+                return true;
+            }
+
+            return String(cardElement.dataset.currentZone || "") === zone;
+        });
+    }
+
+    function clearDeckbuilderSelection() {
+        Array.from(document.querySelectorAll(".deckbuilder-card-selected")).forEach(function (cardElement) {
+            cardElement.classList.remove("deckbuilder-card-selected");
+            cardElement.setAttribute("aria-selected", "false");
+        });
+
+        selectedDeckbuilderZone = "";
+    }
+
+    function setDeckbuilderCardSelected(cardElement, isSelected) {
+        if (!isDeckbuilderSelectableCard(cardElement)) {
+            return;
+        }
+
+        getDeckbuilderSelectionKey(cardElement);
+
+        cardElement.classList.toggle("deckbuilder-card-selected", Boolean(isSelected));
+        cardElement.setAttribute("aria-selected", isSelected ? "true" : "false");
+
+        if (isSelected) {
+            selectedDeckbuilderZone = cardElement.dataset.currentZone || "";
+        }
+    }
+
+    function toggleDeckbuilderCardSelection(cardElement) {
+        if (!isDeckbuilderSelectableCard(cardElement)) {
+            return;
+        }
+
+        const cardZone = cardElement.dataset.currentZone || "";
+
+        if (selectedDeckbuilderZone && selectedDeckbuilderZone !== cardZone) {
+            clearDeckbuilderSelection();
+        }
+
+        const isAlreadySelected = cardElement.classList.contains("deckbuilder-card-selected");
+        setDeckbuilderCardSelected(cardElement, !isAlreadySelected);
+
+        if (!getDeckbuilderSelectedCards(cardZone).length) {
+            selectedDeckbuilderZone = "";
+        }
+    }
+
+    function getDefaultDeckbuilderSelectionZone() {
+        if (selectedDeckbuilderZone) {
+            return selectedDeckbuilderZone;
+        }
+
+        const visibleSideboardCards = getSelectableDeckbuilderCardsInZone("sideboard");
+
+        if (visibleSideboardCards.length) {
+            return "sideboard";
+        }
+
+        return "deck";
+    }
+
+    function getSelectableDeckbuilderCardsInZone(zone) {
+        return Array.from(document.querySelectorAll(".deckbuilder-card:not([data-is-land-palette='1'])")).filter(function (cardElement) {
+            if (!isDeckbuilderSelectableCard(cardElement)) {
+                return false;
+            }
+
+            if (String(cardElement.dataset.currentZone || "") !== zone) {
+                return false;
+            }
+
+            if (cardElement.classList.contains("hidden")) {
+                return false;
+            }
+
+            return true;
+        });
+    }
+
+    function selectAllDeckbuilderCardsInCurrentZone() {
+        const targetZone = getDefaultDeckbuilderSelectionZone();
+        const cards = getSelectableDeckbuilderCardsInZone(targetZone);
+
+        clearDeckbuilderSelection();
+
+        cards.forEach(function (cardElement) {
+            setDeckbuilderCardSelected(cardElement, true);
+        });
+    }
+
+    function bindDeckbuilderSelectionHandlers() {
+        Array.from(document.querySelectorAll(".deckbuilder-card:not([data-is-land-palette='1'])")).forEach(function (cardElement) {
+            if (cardElement.dataset.selectionBound === "1") {
+                return;
+            }
+
+            cardElement.dataset.selectionBound = "1";
+            cardElement.setAttribute("aria-selected", cardElement.classList.contains("deckbuilder-card-selected") ? "true" : "false");
+
+            cardElement.addEventListener("click", function (event) {
+                if (
+                    event.target
+                    && event.target.closest
+                    && event.target.closest("button, a, input, select, textarea, .deckbuilder-card-context-menu")
+                ) {
+                    return;
+                }
+
+                toggleDeckbuilderCardSelection(cardElement);
+            });
+        });
     }
 
     function clearDropZoneState() {
@@ -2280,13 +2965,32 @@
             cardElement.dataset.dragBound = "1";
 
             cardElement.addEventListener("dragstart", function (event) {
+                const currentZone = cardElement.dataset.currentZone || "";
+                const selectedCards = getDeckbuilderSelectedCards(currentZone);
+                const shouldDragSelection = (
+                    selectedCards.length > 1
+                    && cardElement.classList.contains("deckbuilder-card-selected")
+                    && cardElement.dataset.sourceKind !== "basic_land"
+                    && cardElement.dataset.isBasicLand !== "1"
+                );
+
+                const selectedDeckCardIds = shouldDragSelection
+                    ? selectedCards
+                        .map(function (selectedCard) {
+                            return selectedCard.dataset.deckCardId || "";
+                        })
+                        .filter(Boolean)
+                    : [];
+
                 draggedDeckbuilderItem = {
                     type: "picked-card",
                     sourceKind: cardElement.dataset.sourceKind || (cardElement.dataset.isBasicLand === "1" ? "basic_land" : "deck_card"),
                     pickId: cardElement.dataset.draftTestPickId || "",
                     deckCardId: cardElement.dataset.deckCardId || "",
+                    selectedDeckCardIds: selectedDeckCardIds,
+                    isMultiCardDrag: selectedDeckCardIds.length > 1 ? "1" : "0",
                     cardUuid: cardElement.dataset.cardUuid || "",
-                    currentZone: cardElement.dataset.currentZone || "",
+                    currentZone: currentZone,
                     cardName: cardElement.dataset.cardName || "",
                     isBasicLand: cardElement.dataset.isBasicLand || "0"
                 };
@@ -2331,14 +3035,6 @@
                 };
 
                 writeDeckbuilderClientDebug("BASIC LAND DRAGSTART", {
-                    draggedDeckbuilderItem: draggedDeckbuilderItem,
-                    cardName: landElement.dataset.cardName || "",
-                    basicLandName: landElement.dataset.basicLandName || "",
-                    isLandPalette: landElement.dataset.isLandPalette || "",
-                    currentZone: landElement.dataset.currentZone || ""
-                });
-
-                console.log("DECKBUILDER BASIC LAND DRAGSTART", {
                     draggedDeckbuilderItem: draggedDeckbuilderItem,
                     cardName: landElement.dataset.cardName || "",
                     basicLandName: landElement.dataset.basicLandName || "",
@@ -2434,14 +3130,6 @@
                 clearDropZoneState();
 
                 try {
-                    console.log("DECKBUILDER DROP", {
-                        targetZone: targetZone,
-                        droppedItem: droppedItem,
-                        basicLandUrl: basicLandUrl,
-                        moveZoneUrl: moveZoneUrl,
-                        deckCardCountBefore: getDeckbuilderCards(deckList).length,
-                        sideboardCardCountBefore: getDeckbuilderCards(sideboardList).length
-                    });
 
                     dropZone.classList.add("deckbuilder-drop-zone-working");
 
@@ -2502,13 +3190,42 @@
                                     : 0;
                             }
                         } else if (droppedItem.sourceKind === "deck_card") {
-                            payload = await submitDeckbuilderCardAction("move", {
-                                sourceKind: droppedItem.sourceKind || "deck_card",
-                                deckCardId: droppedItem.deckCardId || "",
-                                cardUuid: droppedItem.cardUuid || "",
-                                cardName: droppedItem.cardName || "",
-                                currentZone: droppedItem.currentZone || "deck"
-                            }, targetZone);
+                            if (
+                                droppedItem.isMultiCardDrag === "1"
+                                && droppedItem.selectedDeckCardIds
+                                && droppedItem.selectedDeckCardIds.length > 1
+                            ) {
+                                const bulkPayloads = droppedItem.selectedDeckCardIds.map(function (deckCardId) {
+                                    return {
+                                        sourceKind: "deck_card",
+                                        deckCardId: deckCardId,
+                                        currentZone: droppedItem.currentZone || "deck"
+                                    };
+                                });
+
+                                showDeckbuilderBulkActionStatus(
+                                    targetZone === "deck" ? "Moving to Deck" : "Moving to Sideboard",
+                                    "Updating " + String(bulkPayloads.length) + " selected card(s)..."
+                                );
+
+                                payload = await submitDeckbuilderBulkCardAction(
+                                    "move",
+                                    bulkPayloads,
+                                    targetZone
+                                );
+
+                                completeDeckbuilderBulkActionStatus(
+                                    payload.message || "Moved selected card(s)."
+                                );
+                            } else {
+                                payload = await submitDeckbuilderCardAction("move", {
+                                    sourceKind: droppedItem.sourceKind || "deck_card",
+                                    deckCardId: droppedItem.deckCardId || "",
+                                    cardUuid: droppedItem.cardUuid || "",
+                                    cardName: droppedItem.cardName || "",
+                                    currentZone: droppedItem.currentZone || "deck"
+                                }, targetZone);
+                            }
                         } else if (
                             String(droppedItem.pickId || "").indexOf("basic-land-") === 0
                             || String(droppedItem.pickId || "").indexOf("deckcard_") === 0
@@ -2534,15 +3251,6 @@
                             humanSideboardCardCount: payload.human_sideboard_cards ? payload.human_sideboard_cards.length : null
                         });
 
-                        console.log("DECKBUILDER DROP PAYLOAD BEFORE APPLY", {
-                            payloadOk: payload.ok,
-                            debug: payload.debug || null,
-                            basicLandCounts: payload.basic_land_counts || null,
-                            humanDeckCardCount: payload.human_deck_cards ? payload.human_deck_cards.length : null,
-                            humanSideboardCardCount: payload.human_sideboard_cards ? payload.human_sideboard_cards.length : null,
-                            payload: payload
-                        });
-
                         applyDeckbuilderPayload(payload);
 
                         writeDeckbuilderClientDebug("DROP AFTER APPLY", {
@@ -2551,11 +3259,6 @@
                             deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
                         });
 
-                        console.log("DECKBUILDER DROP AFTER APPLY", {
-                            deckCardCountAfter: getDeckbuilderCards(deckList).length,
-                            sideboardCardCountAfter: getDeckbuilderCards(sideboardList).length,
-                            deckHtmlAfter: deckList ? deckList.innerHTML.slice(0, 1200) : ""
-                        });
                     }
                 } catch (error) {
                     showDeckbuilderError(error);
@@ -2598,6 +3301,7 @@
         }
 
         hoverPreview.classList.add("hidden");
+        hoverPreview.classList.remove("campaign-test-draft-hover-preview-foil");
         hoverPreview.setAttribute("aria-hidden", "true");
         hoverPreviewImage.src = "";
         hoverPreviewImage.alt = "";
@@ -2646,6 +3350,12 @@
 
                 hoverPreviewImage.src = imageElement.src;
                 hoverPreviewImage.alt = imageElement.alt || cardElement.dataset.cardName || "Card";
+
+                hoverPreview.classList.toggle(
+                    "campaign-test-draft-hover-preview-foil",
+                    cardElement.dataset.isFoil === "1"
+                );
+
                 hoverPreview.classList.remove("hidden");
                 hoverPreview.setAttribute("aria-hidden", "false");
                 positionHoverPreview(event);
@@ -3019,6 +3729,7 @@
         bindDragSources();
         bindHoverPreviews();
         bindCardContextMenus();
+        bindDeckbuilderSelectionHandlers();
     }
 
     function restoreFlatZoneFromStack(listElement) {
@@ -3477,8 +4188,33 @@
             cardUuid: cardElement.dataset.cardUuid || "",
             cardName: cardElement.dataset.cardName || "",
             currentZone: cardElement.dataset.currentZone || "deck",
-            isBasicLand: cardElement.dataset.isBasicLand || "0"
+            isBasicLand: cardElement.dataset.isBasicLand || "0",
+            isFoil: cardElement.dataset.isFoil || "0"
         };
+    }
+
+    function setDeckbuilderContextActionVisible(actionName, isVisible) {
+        if (!cardContextMenu) {
+            return;
+        }
+
+        const menuItem = cardContextMenu.querySelector('[data-context-action="' + actionName + '"]');
+
+        if (menuItem) {
+            menuItem.classList.toggle("hidden", !isVisible);
+        }
+    }
+
+    function setDeckbuilderContextActionText(actionName, textValue) {
+        if (!cardContextMenu) {
+            return;
+        }
+
+        const menuItem = cardContextMenu.querySelector('[data-context-action="' + actionName + '"]');
+
+        if (menuItem) {
+            menuItem.textContent = textValue;
+        }
     }
 
     function updateCardContextMenuLabels(cardElement) {
@@ -3488,9 +4224,31 @@
             return;
         }
 
+        const selectedCards = getDeckbuilderSelectedCards(payload.currentZone);
+        const isMultiSelection = selectedCards.length > 1 && cardElement.classList.contains("deckbuilder-card-selected");
+        const targetZone = payload.currentZone === "deck" ? "sideboard" : "deck";
+
+        setDeckbuilderContextActionVisible("duplicate", !isMultiSelection);
+        setDeckbuilderContextActionVisible("change-printing", !isMultiSelection);
+        setDeckbuilderContextActionVisible("alternate-image", !isMultiSelection);
+
+        setDeckbuilderContextActionText("remove", isMultiSelection ? "Remove Cards" : "Remove card");
+
         if (contextMoveButton) {
-            const targetZone = payload.currentZone === "deck" ? "sideboard" : "deck";
             contextMoveButton.textContent = targetZone === "deck" ? "Move to Deck" : "Move to Sideboard";
+        }
+
+        const foilAction = payload.isFoil === "1" ? "remove_foil" : "set_foil";
+        const foilText = payload.isFoil === "1" ? "Remove Foil" : "Set Foil";
+
+        setDeckbuilderContextActionText("foil", isMultiSelection ? foilText + " on Cards" : foilText);
+
+        const foilMenuItem = cardContextMenu
+            ? cardContextMenu.querySelector('[data-context-action="foil"]')
+            : null;
+
+        if (foilMenuItem) {
+            foilMenuItem.dataset.resolvedContextAction = foilAction;
         }
     }
 
@@ -3502,12 +4260,49 @@
             return;
         }
 
+        const cardZone = cardElement.dataset.currentZone || "";
+
+        if (
+            !cardElement.classList.contains("deckbuilder-card-selected")
+            || (selectedDeckbuilderZone && selectedDeckbuilderZone !== cardZone)
+        ) {
+            clearDeckbuilderSelection();
+            setDeckbuilderCardSelected(cardElement, true);
+        }
+
         activeContextCard = cardElement;
         updateCardContextMenuLabels(cardElement);
         hideHoverPreview();
         setDeckbuilderCopyMenuOpen(false);
         setLandPaletteContextMenuOpen(false);
         setDeckbuilderContextMenuOpen(true, event.clientX, event.clientY);
+    }
+
+    async function submitDeckbuilderBulkCardAction(actionName, cardPayloads, targetZoneOverride) {
+        if (!bulkCardActionUrl) {
+            throw new Error("Deck Builder bulk card action URL was not configured.");
+        }
+
+        const cleanPayloads = (cardPayloads || []).filter(function (cardPayload) {
+            return Boolean(cardPayload && cardPayload.deckCardId);
+        });
+
+        if (!cleanPayloads.length) {
+            throw new Error("No saved Deck Builder cards were selected.");
+        }
+
+        const sourceZone = cleanPayloads[0].currentZone || "deck";
+        const targetZone = targetZoneOverride || (sourceZone === "deck" ? "sideboard" : "deck");
+        const formData = new FormData();
+
+        formData.append("action", actionName || "");
+        formData.append("target_zone", targetZone);
+
+        cleanPayloads.forEach(function (cardPayload) {
+            formData.append("deck_card_ids", cardPayload.deckCardId || "");
+        });
+
+        return submitDeckbuilderAjax(bulkCardActionUrl, formData);
     }
 
     async function submitDeckbuilderCardAction(actionName, cardPayload, targetZoneOverride) {
@@ -3526,12 +4321,96 @@
         return submitDeckbuilderAjax(cardActionUrl, formData);
     }
 
+    async function handleDeckbuilderMultiCardAction(actionName, selectedCards, sourceZone) {
+        if (!selectedCards || !selectedCards.length) {
+            return;
+        }
+
+        if (
+            actionName !== "move"
+            && actionName !== "remove"
+            && actionName !== "set_foil"
+            && actionName !== "remove_foil"
+        ) {
+            return;
+        }
+
+        const targetZone = sourceZone === "deck" ? "sideboard" : "deck";
+        const cardPayloads = selectedCards.map(getCardContextPayload).filter(Boolean);
+
+        let actionLabel = "Updating Cards";
+
+        if (actionName === "move") {
+            actionLabel = targetZone === "deck" ? "Moving to Deck" : "Moving to Sideboard";
+        } else if (actionName === "remove") {
+            actionLabel = "Removing Cards";
+        } else if (actionName === "set_foil") {
+            actionLabel = "Setting Foil";
+        } else if (actionName === "remove_foil") {
+            actionLabel = "Removing Foil";
+        }
+
+        showDeckbuilderBulkActionStatus(
+            actionLabel,
+            "Updating " + String(cardPayloads.length) + " selected card(s)..."
+        );
+
+        try {
+            const payload = await submitDeckbuilderBulkCardAction(
+                actionName,
+                cardPayloads,
+                targetZone
+            );
+
+            clearDeckbuilderSelection();
+            applyDeckbuilderPayload(payload);
+
+            completeDeckbuilderBulkActionStatus(
+                payload.message || "Updated " + String(cardPayloads.length) + " selected card(s)."
+            );
+        } catch (error) {
+            hideDeckbuilderBulkActionStatus();
+            throw error;
+        }
+    }
+
     async function handleDeckbuilderContextAction(actionName) {
-        const cardPayload = getCardContextPayload(activeContextCard);
+        const contextCard = activeContextCard;
+        const cardPayload = getCardContextPayload(contextCard);
+
+        if (!cardPayload) {
+            setDeckbuilderContextMenuOpen(false);
+            return;
+        }
+
+        const selectedCards = getDeckbuilderSelectedCards(cardPayload.currentZone);
+        const isMultiSelection = (
+            selectedCards.length > 1
+            && contextCard
+            && contextCard.classList.contains("deckbuilder-card-selected")
+        );
 
         setDeckbuilderContextMenuOpen(false);
 
-        if (!cardPayload) {
+        if (
+            isMultiSelection
+            && (
+                actionName === "move"
+                || actionName === "remove"
+                || actionName === "set_foil"
+                || actionName === "remove_foil"
+            )
+        ) {
+            try {
+                await handleDeckbuilderMultiCardAction(
+                    actionName,
+                    selectedCards,
+                    cardPayload.currentZone
+                );
+            } catch (error) {
+                showDeckbuilderError(error);
+            }
+
             return;
         }
 
@@ -3608,13 +4487,20 @@
         });
     }
 
+    if (deckFilterButton) {
+        deckFilterButton.addEventListener("click", function () {
+            setDeckFilterPanelVisible(!deckFiltersVisible);
+        });
+    }
+
     [
         sideboardFilterText,
         sideboardFilterRarity,
         sideboardFilterColor,
         sideboardFilterManaOperator,
         sideboardFilterManaValue,
-        sideboardFilterType
+        sideboardFilterType,
+        sideboardFilterAlternateImage
     ].forEach(function (filterElement) {
         if (!filterElement) {
             return;
@@ -3624,8 +4510,29 @@
         filterElement.addEventListener("change", applySideboardFilters);
     });
 
+    [
+        deckFilterText,
+        deckFilterRarity,
+        deckFilterColor,
+        deckFilterManaOperator,
+        deckFilterManaValue,
+        deckFilterType,
+        deckFilterAlternateImage
+    ].forEach(function (filterElement) {
+        if (!filterElement) {
+            return;
+        }
+
+        filterElement.addEventListener("input", applyDeckFilters);
+        filterElement.addEventListener("change", applyDeckFilters);
+    });
+
     if (sideboardClearFiltersButton) {
         sideboardClearFiltersButton.addEventListener("click", clearSideboardFilters);
+    }
+
+    if (deckClearFiltersButton) {
+        deckClearFiltersButton.addEventListener("click", clearDeckFilters);
     }
 
     if (cardSizeSelect) {
@@ -3649,6 +4556,40 @@
     if (stackViewButton) {
         stackViewButton.addEventListener("click", function () {
             setViewMode("stack");
+        });
+    }
+
+    if (selectAllButton) {
+        selectAllButton.addEventListener("click", function () {
+            selectAllDeckbuilderCardsInCurrentZone();
+        });
+    }
+
+    if (clearSelectionButton) {
+        clearSelectionButton.addEventListener("click", function () {
+            clearDeckbuilderSelection();
+        });
+    }
+
+    if (deckSelectAllButton) {
+        deckSelectAllButton.addEventListener("click", function () {
+            clearDeckbuilderSelection();
+
+            getSelectableDeckbuilderCardsInZone("deck").forEach(function (cardElement) {
+                setDeckbuilderCardSelected(cardElement, true);
+            });
+        });
+    }
+
+    if (deckClearSelectionButton) {
+        deckClearSelectionButton.addEventListener("click", function () {
+            getDeckbuilderSelectedCards("deck").forEach(function (cardElement) {
+                setDeckbuilderCardSelected(cardElement, false);
+            });
+
+            if (!getDeckbuilderSelectedCards().length) {
+                selectedDeckbuilderZone = "";
+            }
         });
     }
 
@@ -3722,6 +4663,10 @@
     deckbuilderCardSearchModal = window.iMomirCardSearchModal.init({
         searchUrl: addCardSearchUrl || changePrintingOptionsUrl,
         addUrl: addCardUrl,
+        bulkImportUrl: bulkImportUrl,
+        bulkImportAddMostRecentUrl: bulkImportAddMostRecentUrl,
+        bulkImportAddMostRecentText: "Add Most Recent to Deck",
+        bulkImportAddMostRecentConfirmMessage: "This will add the most recent matching printing for each parsed card name directly to this deck's sideboard.",
 
         showMessage: function (messageText, isError) {
             if (!messageText) {
@@ -3915,7 +4860,11 @@
                 return;
             }
 
-            handleDeckbuilderContextAction(menuItem.dataset.contextAction || "");
+            handleDeckbuilderContextAction(
+                menuItem.dataset.resolvedContextAction || menuItem.dataset.contextAction || ""
+            );
+
+            menuItem.dataset.resolvedContextAction = "";
         });
     });
 
@@ -4029,6 +4978,32 @@
         });
     }
 
+    function updateDeckbuilderCardAlternateImageState(cardUuid, hasAlternateSource, removeBleed) {
+        if (!cardUuid) {
+            return;
+        }
+
+        const hasAlternateValue = hasAlternateSource === null || hasAlternateSource === undefined
+            ? null
+            : (hasAlternateSource ? "1" : "0");
+
+        const removeBleedValue = removeBleed === null || removeBleed === undefined
+            ? null
+            : (removeBleed ? "1" : "0");
+
+        document.querySelectorAll(
+            '.deckbuilder-card[data-card-uuid="' + CSS.escape(cardUuid) + '"]'
+        ).forEach(function (cardElement) {
+            if (hasAlternateValue !== null) {
+                cardElement.dataset.hasAlternateImage = hasAlternateValue;
+            }
+
+            if (removeBleedValue !== null) {
+                cardElement.dataset.alternateImageRemoveBleed = removeBleedValue;
+            }
+        });
+    }
+
     document.addEventListener("imomir:card-image-refreshed", function (event) {
         const detail = event.detail || {};
         const cardUuid = detail.cardUuid || "";
@@ -4037,6 +5012,12 @@
         if (!cardUuid) {
             return;
         }
+
+        updateDeckbuilderCardAlternateImageState(
+            cardUuid,
+            detail.hasAlternateSource,
+            detail.removeBleed
+        );
 
         if (imageUrl) {
             document.querySelectorAll(
@@ -4054,27 +5035,64 @@
 
         hideHoverPreview();
         bindHoverPreviews();
+        applySideboardFilters();
+        applyDeckFilters();
     });
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape") {
+            let handledEscape = false;
+
             hideHoverPreview();
-            closeDeleteDeckModal();
-            closeLoadDeckModal();
+
+            if (deleteDeckModal && !deleteDeckModal.classList.contains("hidden")) {
+                closeDeleteDeckModal();
+                handledEscape = true;
+            }
+
+            if (loadDeckModal && !loadDeckModal.classList.contains("hidden")) {
+                closeLoadDeckModal();
+                handledEscape = true;
+            }
 
             if (deckbuilderStatsModal && deckbuilderStatsModal.isOpen()) {
                 deckbuilderStatsModal.close();
+                handledEscape = true;
             }
 
-            setDeckbuilderCopyMenuOpen(false);
+            if (copyDecklistMenu && !copyDecklistMenu.classList.contains("hidden")) {
+                setDeckbuilderCopyMenuOpen(false);
+                handledEscape = true;
+            }
+
             if (deckbuilderPrintExportModal && deckbuilderPrintExportModal.isOpen()) {
                 deckbuilderPrintExportModal.close();
+                handledEscape = true;
             }
-            setDeckbuilderContextMenuOpen(false);
-            setLandPaletteContextMenuOpen(false);
+
+            if (cardContextMenu && !cardContextMenu.classList.contains("hidden")) {
+                setDeckbuilderContextMenuOpen(false);
+                handledEscape = true;
+            }
+
+            if (landPaletteContextMenu && !landPaletteContextMenu.classList.contains("hidden")) {
+                setLandPaletteContextMenuOpen(false);
+                handledEscape = true;
+            }
 
             if (deckbuilderCardSearchModal && deckbuilderCardSearchModal.isOpen()) {
                 deckbuilderCardSearchModal.close();
+                handledEscape = true;
+            }
+
+            if (!handledEscape && getDeckbuilderSelectedCards().length) {
+                clearDeckbuilderSelection();
+                handledEscape = true;
+            }
+
+            if (handledEscape) {
+                event.preventDefault();
+                event.stopPropagation();
             }
         }
     });
@@ -4084,13 +5102,16 @@
     setViewMode(deckbuilderViewMode);
     //sortDeckbuilderZones();
     setSideboardFilterPanelVisible(false);
+    setDeckFilterPanelVisible(false);
     setDeckbuilderCopyFormat("simple");
     moveSideboardPaletteCardsToEnd();
     applySideboardFilters();
+    applyDeckFilters();
     bindDragSources();
     bindDropZones();
     bindHoverPreviews();
     bindCardContextMenus();
+    bindDeckbuilderSelectionHandlers();
     updateCounts();
 })();
 </script>

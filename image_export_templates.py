@@ -350,7 +350,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # This is basically the old behavior. Small lower-left black footer label.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.929,
+            "y1": 0.932,
             "x2": 0.650,
             "y2": 1.000,
         },
@@ -373,7 +373,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # This is basically the old behavior. Small lower-left black footer label.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.929,
+            "y1": 0.932,
             "x2": 1.000,
             "y2": 1.000,
         },

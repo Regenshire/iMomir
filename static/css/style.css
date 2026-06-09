@@ -5559,6 +5559,83 @@ input {
     border-color: transparent;
 }
 
+.deckbuilder-bulk-action-status {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 10060;
+    width: min(360px, calc(100vw - 36px));
+    min-height: 78px;
+    border: 1px solid rgba(59, 130, 246, 0.55);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.94);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.52);
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 14px;
+    backdrop-filter: blur(5px);
+}
+
+.deckbuilder-bulk-action-status.hidden {
+    display: none !important;
+}
+
+.deckbuilder-bulk-action-status-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: rgba(59, 130, 246, 0.16);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.deckbuilder-bulk-action-spinner {
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    border: 3px solid rgba(191, 219, 254, 0.35);
+    border-top-color: #bfdbfe;
+    animation: deckbuilder-bulk-action-spin 0.85s linear infinite;
+}
+
+.deckbuilder-bulk-action-status-complete {
+    border-color: rgba(34, 197, 94, 0.62);
+}
+
+.deckbuilder-bulk-action-status-complete .deckbuilder-bulk-action-status-icon {
+    background: rgba(34, 197, 94, 0.16);
+}
+
+.deckbuilder-bulk-action-status-complete .deckbuilder-bulk-action-spinner {
+    animation: none;
+    border-color: rgba(34, 197, 94, 0.88);
+    border-top-color: rgba(34, 197, 94, 0.88);
+}
+
+.deckbuilder-bulk-action-status-title {
+    color: #ffffff;
+    font-size: 0.98rem;
+    line-height: 1.2;
+    font-weight: 900;
+}
+
+.deckbuilder-bulk-action-status-message {
+    margin-top: 3px;
+    color: #cbd5e1;
+    font-size: 0.84rem;
+    line-height: 1.35;
+    font-weight: 700;
+}
+
+@keyframes deckbuilder-bulk-action-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .deckbuilder-card-context-submenu-wrap {
     position: relative;
 }
@@ -6027,6 +6104,124 @@ input {
     gap: 6px;
 }
 
+.deckbuilder-card {
+    position: relative;
+}
+
+.deckbuilder-card-image-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 10px;
+    isolation: isolate;
+}
+
+.deckbuilder-card-image-wrap .campaign-test-draft-picked-thumb {
+    position: relative;
+    z-index: 0;
+}
+
+.deckbuilder-card[data-is-foil="1"] .deckbuilder-card-image-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(255, 0, 90, 0.54) 0%,
+            rgba(255, 130, 0, 0.43) 15%,
+            rgba(255, 245, 0, 0.38) 30%,
+            rgba(0, 230, 140, 0.43) 45%,
+            rgba(0, 170, 255, 0.49) 62%,
+            rgba(120, 80, 255, 0.49) 78%,
+            rgba(255, 0, 210, 0.43) 100%
+        );
+    mix-blend-mode: color;
+    opacity: 0.61;
+}
+
+.deckbuilder-card[data-is-foil="1"] .deckbuilder-card-image-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+        linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.00) 0%,
+            rgba(255, 255, 255, 0.10) 24%,
+            rgba(255, 255, 255, 0.30) 48%,
+            rgba(255, 255, 255, 0.12) 64%,
+            rgba(255, 255, 255, 0.00) 100%
+        ),
+        linear-gradient(
+            160deg,
+            rgba(255, 0, 160, 0.20) 0%,
+            rgba(0, 210, 255, 0.18) 45%,
+            rgba(255, 245, 0, 0.16) 100%
+        );
+    mix-blend-mode: soft-light;
+    opacity: 0.90;
+}
+
+.deckbuilder-card[data-is-foil="1"] .campaign-test-draft-picked-thumb {
+    filter: saturate(1.18) contrast(1.04) brightness(1.03);
+}
+
+.deckbuilder-card-meta-badge {
+    display: inline-flex;
+    width: fit-content;
+    margin-top: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: rgba(212, 170, 32, 0.16);
+    border: 1px solid rgba(212, 170, 32, 0.58);
+    color: #ffe8a3;
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.deckbuilder-card-selected {
+    outline: 3px solid rgba(59, 130, 246, 0.95);
+    outline-offset: 2px;
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.55),
+        0 0 18px rgba(59, 130, 246, 0.55);
+}
+
+.deckbuilder-card-selected .campaign-test-draft-picked-thumb {
+    filter: brightness(1.10) saturate(1.08);
+}
+
+.deckbuilder-card-selected::after {
+    content: "✓";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 25;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(37, 99, 235, 0.92);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.80);
+    font-size: 0.82rem;
+    font-weight: 900;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
 .deckbuilder-main {
     min-height: 0;
     display: flex;
@@ -6416,6 +6611,26 @@ input {
     border-radius: 14px;
     background: rgba(255, 255, 255, 0.035);
     padding: 8px;
+    flex: 0 0 var(--deckbuilder-stack-column-width);
+}
+
+@media (min-width: 781px) {
+    .deckbuilder-stack-active .deckbuilder-zone-deck .deckbuilder-card-list {
+        display: flex;
+        flex-wrap: nowrap;
+        align-content: flex-start;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: 12px;
+        overflow-x: auto;
+        overflow-y: visible;
+        padding-bottom: 12px;
+        scrollbar-gutter: stable;
+    }
+
+    .deckbuilder-stack-active .deckbuilder-zone-deck .deckbuilder-stack-column {
+        flex: 0 0 var(--deckbuilder-stack-column-width);
+    }
 }
 
 .deckbuilder-stack-column-title {
@@ -7866,10 +8081,11 @@ input {
 .campaign-test-draft-hover-preview {
     position: fixed;
     z-index: 10050;
-    width: min(340px, 30vw);
+    width: auto;
+    max-width: min(340px, 30vw);
     pointer-events: none;
     border-radius: 16px;
-    background: rgba(0, 0, 0, 0.32);
+    background: transparent;
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.62);
 }
 
@@ -7877,13 +8093,79 @@ input {
     display: none !important;
 }
 
+.campaign-test-draft-hover-preview-image-wrap {
+    position: relative;
+    display: inline-block;
+    width: fit-content;
+    height: fit-content;
+    overflow: hidden;
+    border-radius: 16px;
+    isolation: isolate;
+    line-height: 0;
+}
+
 .campaign-test-draft-hover-preview-image {
+    position: relative;
+    z-index: 0;
     display: block;
-    width: 100%;
+    width: auto;
+    max-width: min(340px, 30vw);
     height: auto;
     max-height: min(78vh, 420px);
     object-fit: contain;
     border-radius: 16px;
+}
+
+.campaign-test-draft-hover-preview-foil .campaign-test-draft-hover-preview-image-wrap::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+        linear-gradient(
+            135deg,
+            rgba(255, 0, 90, 0.54) 0%,
+            rgba(255, 130, 0, 0.43) 15%,
+            rgba(255, 245, 0, 0.38) 30%,
+            rgba(0, 230, 140, 0.43) 45%,
+            rgba(0, 170, 255, 0.49) 62%,
+            rgba(120, 80, 255, 0.49) 78%,
+            rgba(255, 0, 210, 0.43) 100%
+        );
+    mix-blend-mode: color;
+    opacity: 0.61;
+}
+
+.campaign-test-draft-hover-preview-foil .campaign-test-draft-hover-preview-image-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: inherit;
+    background:
+        linear-gradient(
+            45deg,
+            rgba(255, 255, 255, 0.00) 0%,
+            rgba(255, 255, 255, 0.12) 24%,
+            rgba(255, 255, 255, 0.34) 48%,
+            rgba(255, 255, 255, 0.14) 64%,
+            rgba(255, 255, 255, 0.00) 100%
+        ),
+        linear-gradient(
+            160deg,
+            rgba(255, 0, 160, 0.23) 0%,
+            rgba(0, 210, 255, 0.20) 45%,
+            rgba(255, 245, 0, 0.18) 100%
+        );
+    mix-blend-mode: soft-light;
+    opacity: 0.95;
+}
+
+.campaign-test-draft-hover-preview-foil .campaign-test-draft-hover-preview-image {
+    filter: saturate(1.18) contrast(1.04) brightness(1.03);
 }
 
 .campaign-test-draft-picked-main {
