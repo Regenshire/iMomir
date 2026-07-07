@@ -533,7 +533,7 @@
                 <div>
                     <h2 id="campaignCustomTitleSheetTitle" class="campaign-add-pack-title">Print Custom Title Sheet</h2>
                     <p class="campaign-add-pack-subtitle">
-                        Generate a full sheet of custom pack title cards using the current print template.
+                        Generate a full sheet of custom pack title cards using the current print template, or export one title card as a JPG.
                     </p>
                 </div>
 
@@ -601,9 +601,148 @@
                     >
                 </label>
 
-                <div class="campaign-add-pack-custom-actions">
+                <div class="campaign-custom-title-options-grid">
+                    <label class="toggle-row" for="campaignCustomTitleDisablePackTypeCheckbox">
+                        <span>Disable Pack Type</span>
+                        <input
+                            type="checkbox"
+                            id="campaignCustomTitleDisablePackTypeCheckbox"
+                            name="disable_pack_type"
+                            value="1"
+                        >
+                    </label>
+
+                    <label class="toggle-row" for="campaignCustomTitleDisableSignatureCheckbox">
+                        <span>Disable iMomir Signature</span>
+                        <input
+                            type="checkbox"
+                            id="campaignCustomTitleDisableSignatureCheckbox"
+                            name="disable_signature"
+                            value="1"
+                        >
+                    </label>
+
+                    <label class="toggle-row" for="campaignCustomTitleDisableSetCodeCheckbox">
+                        <span>Disable Set Code</span>
+                        <input
+                            type="checkbox"
+                            id="campaignCustomTitleDisableSetCodeCheckbox"
+                            name="disable_set_code"
+                            value="1"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleColorInput">
+                        <span>Theme Color</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleColorInput"
+                            name="theme_color"
+                            class="campaign-custom-title-color-input"
+                            value="#b48a00"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleBackgroundTopColorInput">
+                        <span>Background Top</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleBackgroundTopColorInput"
+                            name="background_top_color"
+                            class="campaign-custom-title-color-input"
+                            value="#281f08"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleBackgroundMidColorInput">
+                        <span>Background Middle</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleBackgroundMidColorInput"
+                            name="background_mid_color"
+                            class="campaign-custom-title-color-input"
+                            value="#483708"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleBackgroundBottomColorInput">
+                        <span>Background Bottom</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleBackgroundBottomColorInput"
+                            name="background_bottom_color"
+                            class="campaign-custom-title-color-input"
+                            value="#120d03"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleAccentColorInput">
+                        <span>Accent</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleAccentColorInput"
+                            name="accent_color"
+                            class="campaign-custom-title-color-input"
+                            value="#b48a00"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleBorderColorInput">
+                        <span>Border</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleBorderColorInput"
+                            name="border_color"
+                            class="campaign-custom-title-color-input"
+                            value="#483700"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleTextColorInput">
+                        <span>Title Text</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleTextColorInput"
+                            name="title_text_color"
+                            class="campaign-custom-title-color-input"
+                            value="#ffffff"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleSubtitleColorInput">
+                        <span>Subtitle Text</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleSubtitleColorInput"
+                            name="subtitle_text_color"
+                            class="campaign-custom-title-color-input"
+                            value="#f2e4b0"
+                        >
+                    </label>
+
+                    <label class="campaign-add-pack-custom-field campaign-custom-title-color-field" for="campaignCustomTitleFooterColorInput">
+                        <span>Footer</span>
+                        <input
+                            type="color"
+                            id="campaignCustomTitleFooterColorInput"
+                            name="footer_color"
+                            class="campaign-custom-title-color-input"
+                            value="#2b2100"
+                        >
+                    </label>
+                </div>
+
+                <div class="campaign-add-pack-custom-actions campaign-custom-title-actions">
                     <button type="submit" class="action-button">
                         Generate Title Sheet
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="action-button secondary-button"
+                        formaction="{{ url_for('campaign_chaos_export_custom_title_card_jpg') }}"
+                    >
+                        Export JPG
                     </button>
                 </div>
             </form>
@@ -1036,6 +1175,18 @@
     const customTitleSheetCloseButton = document.getElementById("campaignCustomTitleSheetCloseButton");
     const customTitleSetCodeInput = document.getElementById("campaignCustomTitleSetCodeInput");
     const customTitlePackNameInput = document.getElementById("campaignCustomTitlePackNameInput");
+    const customTitleDisablePackTypeCheckbox = document.getElementById("campaignCustomTitleDisablePackTypeCheckbox");
+    const customTitleDisableSignatureCheckbox = document.getElementById("campaignCustomTitleDisableSignatureCheckbox");
+    const customTitleDisableSetCodeCheckbox = document.getElementById("campaignCustomTitleDisableSetCodeCheckbox");
+    const customTitleColorInput = document.getElementById("campaignCustomTitleColorInput");
+    const customTitleBackgroundTopColorInput = document.getElementById("campaignCustomTitleBackgroundTopColorInput");
+    const customTitleBackgroundMidColorInput = document.getElementById("campaignCustomTitleBackgroundMidColorInput");
+    const customTitleBackgroundBottomColorInput = document.getElementById("campaignCustomTitleBackgroundBottomColorInput");
+    const customTitleAccentColorInput = document.getElementById("campaignCustomTitleAccentColorInput");
+    const customTitleBorderColorInput = document.getElementById("campaignCustomTitleBorderColorInput");
+    const customTitleTextColorInput = document.getElementById("campaignCustomTitleTextColorInput");
+    const customTitleSubtitleColorInput = document.getElementById("campaignCustomTitleSubtitleColorInput");
+    const customTitleFooterColorInput = document.getElementById("campaignCustomTitleFooterColorInput");
     const testDraftButton = document.getElementById("campaignTestDraftButton");
     const testDraftModal = document.getElementById("campaignTestDraftModal");
     const testDraftBackdrop = document.getElementById("campaignTestDraftBackdrop");
@@ -1659,6 +1810,54 @@
 
         if (customTitlePackNameInput) {
             customTitlePackNameInput.value = "";
+        }
+
+        if (customTitleDisablePackTypeCheckbox) {
+            customTitleDisablePackTypeCheckbox.checked = false;
+        }
+
+        if (customTitleDisableSignatureCheckbox) {
+            customTitleDisableSignatureCheckbox.checked = false;
+        }
+
+        if (customTitleDisableSetCodeCheckbox) {
+            customTitleDisableSetCodeCheckbox.checked = false;
+        }
+
+        if (customTitleColorInput) {
+            customTitleColorInput.value = "#b48a00";
+        }
+
+        if (customTitleBackgroundTopColorInput) {
+            customTitleBackgroundTopColorInput.value = "#281f08";
+        }
+
+        if (customTitleBackgroundMidColorInput) {
+            customTitleBackgroundMidColorInput.value = "#483708";
+        }
+
+        if (customTitleBackgroundBottomColorInput) {
+            customTitleBackgroundBottomColorInput.value = "#120d03";
+        }
+
+        if (customTitleAccentColorInput) {
+            customTitleAccentColorInput.value = "#b48a00";
+        }
+
+        if (customTitleBorderColorInput) {
+            customTitleBorderColorInput.value = "#483700";
+        }
+
+        if (customTitleTextColorInput) {
+            customTitleTextColorInput.value = "#ffffff";
+        }
+
+        if (customTitleSubtitleColorInput) {
+            customTitleSubtitleColorInput.value = "#f2e4b0";
+        }
+
+        if (customTitleFooterColorInput) {
+            customTitleFooterColorInput.value = "#2b2100";
         }
 
         customTitleSheetModal.classList.remove("hidden");

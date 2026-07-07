@@ -4483,9 +4483,51 @@ input {
     gap: 12px;
 }
 
+.campaign-custom-title-options-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.campaign-custom-title-color-field {
+    min-height: 56px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel-2);
+    padding: 12px 14px;
+    display: grid;
+    grid-template-columns: auto 74px;
+    gap: 12px;
+    align-items: center;
+}
+
+.campaign-custom-title-color-input {
+    width: 74px;
+    height: 38px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--button);
+    padding: 4px;
+    cursor: pointer;
+}
+
+.campaign-custom-title-actions {
+    gap: 12px;
+}
+
 @media (max-width: 760px) {
-    .campaign-custom-title-grid {
+    .campaign-custom-title-grid,
+    .campaign-custom-title-options-grid {
         grid-template-columns: 1fr;
+    }
+
+    .campaign-custom-title-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .campaign-custom-title-actions .action-button {
+        width: 100%;
     }
 }
 
@@ -6181,13 +6223,19 @@ input {
     margin-top: 4px;
     padding: 3px 8px;
     border-radius: 999px;
-    background: rgba(212, 170, 32, 0.16);
-    border: 1px solid rgba(212, 170, 32, 0.58);
-    color: #ffe8a3;
+    background: rgba(190, 198, 210, 0.16);
+    border: 1px solid rgba(210, 218, 230, 0.58);
+    color: #e7edf7;
     font-size: 0.72rem;
     font-weight: 900;
     line-height: 1.1;
     text-transform: uppercase;
+}
+
+.deckbuilder-card-role-badge {
+    background: rgba(123, 92, 255, 0.18);
+    border-color: rgba(156, 132, 255, 0.72);
+    color: #d9ceff;
 }
 
 .deckbuilder-card-selected {
@@ -9053,6 +9101,26 @@ input {
     font-weight: 700;
     color: var(--text);
     line-height: 1.25;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.custom-draft-card-search-alt-image-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(66, 205, 111, 0.15);
+    border: 1px solid rgba(66, 205, 111, 0.55);
+    color: #a8ffbd;
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
 }
 
 .custom-draft-card-search-meta {

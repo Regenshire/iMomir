@@ -9,6 +9,34 @@ DECK_SOURCE_TYPE_STANDALONE = "standalone"
 DECK_STATUS_ACTIVE = "active"
 DECK_STATUS_ARCHIVED = "archived"
 
+DECK_ROLE_MAIN = "main"
+DECK_ROLE_COMMANDER = "commander"
+DECK_ROLE_PARTNER = "partner"
+
+DECK_ROLE_OPTIONS = {
+    DECK_ROLE_MAIN,
+    DECK_ROLE_COMMANDER,
+    DECK_ROLE_PARTNER,
+}
+
+DECK_FORMAT_LIMITED = "Limited"
+DECK_FORMAT_STANDARD = "Standard"
+DECK_FORMAT_COMMANDER = "Commander"
+DECK_FORMAT_MODERN = "Modern"
+DECK_FORMAT_PIONEER = "Pioneer"
+DECK_FORMAT_ETERNAL = "Eternal"
+DECK_FORMAT_PAUPER = "Pauper"
+
+DECK_FORMAT_OPTIONS = [
+    DECK_FORMAT_LIMITED,
+    DECK_FORMAT_STANDARD,
+    DECK_FORMAT_COMMANDER,
+    DECK_FORMAT_MODERN,
+    DECK_FORMAT_PIONEER,
+    DECK_FORMAT_ETERNAL,
+    DECK_FORMAT_PAUPER,
+]
+
 DECK_BUILDER_BASIC_LANDS = [
     "Plains",
     "Island",
@@ -45,6 +73,33 @@ def normalize_deck_source_type(value):
     return DECK_SOURCE_TYPE_STANDALONE
 
 
+def normalize_deck_format(value, fallback=DECK_FORMAT_STANDARD):
+    clean_value = str(value or "").strip().lower()
+
+    if clean_value in {"limited", "draft"}:
+        return DECK_FORMAT_LIMITED
+
+    if clean_value == "standard":
+        return DECK_FORMAT_STANDARD
+
+    if clean_value in {"commander", "edh"}:
+        return DECK_FORMAT_COMMANDER
+
+    if clean_value == "modern":
+        return DECK_FORMAT_MODERN
+
+    if clean_value == "pioneer":
+        return DECK_FORMAT_PIONEER
+
+    if clean_value in {"eternal", "legacy", "vintage"}:
+        return DECK_FORMAT_ETERNAL
+
+    if clean_value == "pauper":
+        return DECK_FORMAT_PAUPER
+
+    return fallback if fallback in DECK_FORMAT_OPTIONS else DECK_FORMAT_STANDARD
+
+
 def normalize_deck_zone(value):
     clean_value = str(value or "deck").strip().lower()
 
@@ -52,6 +107,14 @@ def normalize_deck_zone(value):
         return clean_value
 
     return "deck"
+
+def normalize_deck_role(value):
+    clean_value = str(value or DECK_ROLE_MAIN).strip().lower()
+
+    if clean_value in DECK_ROLE_OPTIONS:
+        return clean_value
+
+    return DECK_ROLE_MAIN
 
 
 def ensure_deck_schema():
@@ -92,6 +155,7 @@ def ensure_deck_schema():
             source_item_id INTEGER,
             is_basic_land INTEGER NOT NULL DEFAULT 0,
             sheet_is_foil INTEGER NOT NULL DEFAULT 0,
+            deck_role TEXT NOT NULL DEFAULT 'main',
             stack_column TEXT,
             stack_order INTEGER,
             display_order INTEGER NOT NULL DEFAULT 0,
@@ -180,6 +244,14 @@ def ensure_deck_schema():
             """
             ALTER TABLE deck_cards
             ADD COLUMN sheet_is_foil INTEGER NOT NULL DEFAULT 0
+            """
+        )
+
+    if "deck_role" not in deck_card_columns:
+        cursor.execute(
+            """
+            ALTER TABLE deck_cards
+            ADD COLUMN deck_role TEXT NOT NULL DEFAULT 'main'
             """
         )
 
@@ -487,13 +559,14 @@ def import_draft_cards_into_deck(deck_id, draft_cards, default_zone):
                 source_item_id,
                 is_basic_land,
                 sheet_is_foil,
+                deck_role,
                 stack_column,
                 stack_order,
                 display_order,
                 created_at_utc,
                 updated_at_utc
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 parsed_deck_id,
@@ -506,6 +579,7 @@ def import_draft_cards_into_deck(deck_id, draft_cards, default_zone):
                 draft_test_pick_id,
                 0,
                 0,
+                DECK_ROLE_MAIN,
                 None,
                 None,
                 0,
@@ -618,6 +692,7 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
             dc.source_item_id,
             dc.is_basic_land,
             dc.sheet_is_foil,
+            dc.deck_role,
             dc.stack_column,
             dc.stack_order,
             dc.display_order,
@@ -657,6 +732,11 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
         WHERE {" AND ".join(where_clauses)}
         ORDER BY
             dc.deck_zone ASC,
+            CASE COALESCE(dc.deck_role, 'main')
+                WHEN 'commander' THEN 0
+                WHEN 'partner' THEN 1
+                ELSE 2
+            END ASC,
             dc.display_order ASC,
             dc.deck_card_id ASC
         """,
@@ -689,6 +769,7 @@ def get_saved_deckbuilder_cards_for_deck(deck_id, deck_zone=None, include_basic_
                 "pick_reason": "Basic land" if is_basic_land else (row["source_type"] or "Deck Builder"),
                 "is_basic_land": 1 if is_basic_land else 0,
                 "sheet_is_foil": int(row["sheet_is_foil"] or 0),
+                "deck_role": normalize_deck_role(row["deck_role"] if "deck_role" in row.keys() else DECK_ROLE_MAIN),
                 "stack_column": row["stack_column"] or "",
                 "stack_order": row["stack_order"],
                 "display_order": row["display_order"],
@@ -785,13 +866,14 @@ def add_card_to_deckbuilder_sideboard(deck_id, card_uuid):
             source_item_id,
             is_basic_land,
             sheet_is_foil,
+            deck_role,
             stack_column,
             stack_order,
             display_order,
             created_at_utc,
             updated_at_utc
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             parsed_deck_id,
@@ -804,6 +886,7 @@ def add_card_to_deckbuilder_sideboard(deck_id, card_uuid):
             None,
             0,
             0,
+            DECK_ROLE_MAIN,
             None,
             None,
             0,
@@ -899,13 +982,14 @@ def duplicate_deckbuilder_card(deck_id, deck_card_id):
             source_item_id,
             is_basic_land,
             sheet_is_foil,
+            deck_role,
             stack_column,
             stack_order,
             display_order,
             created_at_utc,
             updated_at_utc
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             parsed_deck_id,
@@ -918,6 +1002,7 @@ def duplicate_deckbuilder_card(deck_id, deck_card_id):
             parsed_deck_card_id,
             0,
             int(source_row["sheet_is_foil"] or 0),
+            DECK_ROLE_MAIN,
             source_row["stack_column"],
             source_row["stack_order"],
             source_row["display_order"] or 0,
@@ -1009,6 +1094,7 @@ def move_deckbuilder_card(deck_id, deck_card_id, deck_zone):
             """
             UPDATE deck_cards
             SET deck_zone = ?,
+                deck_role = ?,
                 stack_column = NULL,
                 stack_order = NULL,
                 updated_at_utc = ?
@@ -1017,6 +1103,7 @@ def move_deckbuilder_card(deck_id, deck_card_id, deck_zone):
             """,
             (
                 clean_deck_zone,
+                DECK_ROLE_MAIN,
                 now_utc,
                 parsed_deck_id,
                 parsed_deck_card_id,
@@ -1487,6 +1574,128 @@ def update_deckbuilder_basic_land_printing(deck_id, land_name, new_card_uuid):
         "action": "change_basic_land_printing",
     }
 
+def update_deckbuilder_card_role(deck_id, deck_card_id, deck_role):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(deck_id)
+    parsed_deck_card_id = normalize_deck_optional_int(deck_card_id)
+    clean_deck_role = normalize_deck_role(deck_role)
+
+    if parsed_deck_id is None or parsed_deck_card_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck card.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM deck_cards
+        WHERE deck_id = ?
+          AND deck_card_id = ?
+          AND is_basic_land = 0
+        """,
+        (
+            parsed_deck_id,
+            parsed_deck_card_id,
+        ),
+    )
+
+    deck_card_row = cursor.fetchone()
+
+    if not deck_card_row:
+        conn.close()
+        return {
+            "ok": False,
+            "message": "Deck card was not found.",
+        }
+
+    if clean_deck_role in {DECK_ROLE_COMMANDER, DECK_ROLE_PARTNER}:
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_role = ?,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_role = ?
+              AND deck_card_id <> ?
+            """,
+            (
+                DECK_ROLE_MAIN,
+                now_utc,
+                parsed_deck_id,
+                clean_deck_role,
+                parsed_deck_card_id,
+            ),
+        )
+
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_zone = 'deck',
+                deck_role = ?,
+                stack_column = ?,
+                stack_order = NULL,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                clean_deck_role,
+                clean_deck_role,
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE deck_cards
+            SET deck_role = ?,
+                stack_column = NULL,
+                stack_order = NULL,
+                updated_at_utc = ?
+            WHERE deck_id = ?
+              AND deck_card_id = ?
+            """,
+            (
+                DECK_ROLE_MAIN,
+                now_utc,
+                parsed_deck_id,
+                parsed_deck_card_id,
+            ),
+        )
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Deck role updated.",
+        "deck_id": parsed_deck_id,
+        "deck_card_id": parsed_deck_card_id,
+        "deck_role": clean_deck_role,
+        "action": "set_deck_role",
+    }
+
 def update_deckbuilder_card_foil(deck_id, deck_card_id, is_foil):
     ensure_deck_schema()
 
@@ -1757,13 +1966,14 @@ def bulk_deckbuilder_card_action(deck_id, deck_card_ids, action, target_zone="")
                     f"""
                     UPDATE deck_cards
                     SET deck_zone = ?,
+                        deck_role = ?,
                         stack_column = NULL,
                         stack_order = NULL,
                         updated_at_utc = ?
                     WHERE deck_id = ?
                       AND deck_card_id IN ({normal_placeholders})
                     """,
-                    [clean_target_zone, now_utc, parsed_deck_id] + normal_card_ids,
+                    [clean_target_zone, DECK_ROLE_MAIN, now_utc, parsed_deck_id] + normal_card_ids,
                 )
             else:
                 cursor.execute(
@@ -2199,13 +2409,14 @@ def add_basic_land_to_deck(deck_id, land_name):
                 source_item_id,
                 is_basic_land,
                 sheet_is_foil,
+                deck_role,
                 stack_column,
                 stack_order,
                 display_order,
                 created_at_utc,
                 updated_at_utc
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 parsed_deck_id,
@@ -2218,6 +2429,7 @@ def add_basic_land_to_deck(deck_id, land_name):
                 None,
                 1,
                 0,
+                DECK_ROLE_MAIN,
                 "land",
                 None,
                 0,
@@ -2459,6 +2671,7 @@ def get_deck_builder_layout_json(layout_row):
 def update_deck_settings(
     deck_id,
     deck_name,
+    deck_format=DECK_FORMAT_STANDARD,
     view_mode="grid",
     sort_mode="rarity-desc",
     card_size=100,
@@ -2483,6 +2696,7 @@ def update_deck_settings(
             "message": "Deck Name is required.",
         }
 
+    clean_deck_format = normalize_deck_format(deck_format)
     clean_view_mode = normalize_deck_view_mode(view_mode)
     clean_sort_mode = normalize_deck_sort_mode(sort_mode)
     clean_card_size = normalize_deck_card_size(card_size)
@@ -2529,6 +2743,7 @@ def update_deck_settings(
         """
         UPDATE decks
         SET deck_name = ?,
+            deck_format = ?,
             default_view_mode = ?,
             default_sort_mode = ?,
             updated_at_utc = ?
@@ -2536,6 +2751,7 @@ def update_deck_settings(
         """,
         (
             clean_deck_name,
+            clean_deck_format,
             clean_view_mode,
             clean_sort_mode,
             now_utc,
@@ -2590,6 +2806,7 @@ def update_deck_settings(
         "message": "Deck saved.",
         "deck_id": parsed_deck_id,
         "deck_name": clean_deck_name,
+        "deck_format": clean_deck_format,
         "view_mode": clean_view_mode,
         "sort_mode": clean_sort_mode,
         "card_size": clean_card_size,
@@ -2692,11 +2909,11 @@ def get_deck_by_source(source_type, source_id):
 
     return row
 
-def create_standalone_deck(deck_name="Untitled Deck", deck_format="Constructed"):
+def create_standalone_deck(deck_name="Untitled Deck", deck_format=DECK_FORMAT_STANDARD):
     ensure_deck_schema()
 
     clean_deck_name = str(deck_name or "").strip() or "Untitled Deck"
-    clean_deck_format = str(deck_format or "").strip() or "Constructed"
+    clean_deck_format = normalize_deck_format(deck_format, fallback=DECK_FORMAT_STANDARD)
     now_utc = deck_utc_now()
 
     conn = get_db_connection()
@@ -2827,7 +3044,7 @@ def duplicate_deck(deck_id):
             source_deck["campaign_id"],
             source_deck["player_id"],
             copy_name,
-            source_deck["deck_format"] or "Constructed",
+            normalize_deck_format(source_deck["deck_format"], fallback=DECK_FORMAT_STANDARD),
             DECK_STATUS_ACTIVE,
             source_deck["default_view_mode"] or "grid",
             source_deck["default_sort_mode"] or "rarity-desc",
@@ -2852,6 +3069,7 @@ def duplicate_deck(deck_id):
             source_item_id,
             is_basic_land,
             sheet_is_foil,
+            deck_role,
             stack_column,
             stack_order,
             display_order,
@@ -2869,6 +3087,7 @@ def duplicate_deck(deck_id):
             deck_card_id,
             is_basic_land,
             sheet_is_foil,
+            COALESCE(deck_role, 'main'),
             stack_column,
             stack_order,
             display_order,
@@ -3183,7 +3402,7 @@ def build_deckbuilder_context_for_deck(deck_id):
         "subtitle": subtitle,
         "mode_label": mode_label,
         "deck_name": deck_name,
-        "deck_format": deck_row["deck_format"] or "Constructed",
+        "deck_format": normalize_deck_format(deck_row["deck_format"], fallback=DECK_FORMAT_STANDARD),
         "human_player": None,
         "deck_cards": get_saved_deckbuilder_cards_for_deck(
             parsed_deck_id,
@@ -3292,7 +3511,10 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
         ),
         "mode_label": "Draft Test",
         "deck_name": deck_result["deck"]["deck_name"] if deck_result.get("deck") else "",
-        "deck_format": deck_result["deck"]["deck_format"] if deck_result.get("deck") else "Limited",
+        "deck_format": normalize_deck_format(
+            deck_result["deck"]["deck_format"] if deck_result.get("deck") else DECK_FORMAT_LIMITED,
+            fallback=DECK_FORMAT_LIMITED,
+        ),
         "human_player": human_player,
         "deck_cards": get_saved_deckbuilder_cards_for_deck(
             deck_result["deck_id"],

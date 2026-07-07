@@ -1071,6 +1071,21 @@
             row.dataset.edhrecSaltiness = card.edhrec_saltiness === null || card.edhrec_saltiness === undefined ? "" : String(card.edhrec_saltiness);
             row.dataset.sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
 
+            const hasAlternateSource = (
+                card.has_alternate_source === true
+                || card.has_alternate_source === 1
+                || card.has_alternate_source === "1"
+            );
+
+            const alternateRemoveBleed = (
+                card.alternate_remove_bleed === true
+                || card.alternate_remove_bleed === 1
+                || card.alternate_remove_bleed === "1"
+            );
+
+            row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+            row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
+
             const alreadyAdded = isSearchCardAlreadyAdded(card);
 
             if (alreadyAdded) {
@@ -1097,6 +1112,23 @@
             const title = document.createElement("div");
             title.className = "custom-draft-card-search-title";
             title.textContent = card.card_name || "Unknown Card";
+
+            if (hasAlternateSource) {
+                const alternateBadge = document.createElement("span");
+                alternateBadge.className = "custom-draft-card-search-alt-image-badge";
+                alternateBadge.title = alternateRemoveBleed
+                    ? "Alternate image available - Remove Bleed"
+                    : "Alternate image available - No Bleed";
+                alternateBadge.setAttribute(
+                    "aria-label",
+                    alternateRemoveBleed
+                        ? "Alternate image available - Remove Bleed"
+                        : "Alternate image available - No Bleed"
+                );
+                alternateBadge.textContent = "ALT IMG";
+
+                title.appendChild(alternateBadge);
+            }
 
             const meta = document.createElement("div");
             meta.className = "custom-draft-card-search-meta";

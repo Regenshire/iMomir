@@ -40,6 +40,8 @@
         </div>
 
         <div class="deckbuilder-actions">
+            {% set selected_deck_format = (deckbuilder.deck_format or 'Standard')|lower %}
+
             <label class="deckbuilder-name-wrap" for="deckbuilderDeckNameInput">
                 <span>Deck Name</span>
                 <input
@@ -49,6 +51,22 @@
                     value="{{ deckbuilder.deck_name or '' }}"
                     autocomplete="off"
                 >
+            </label>
+
+            <label class="deckbuilder-name-wrap" for="deckbuilderDeckTypeSelect">
+                <span>Format</span>
+                <select
+                    id="deckbuilderDeckTypeSelect"
+                    class="campaign-test-draft-picked-sort-select"
+                >
+                    <option value="Limited"{% if selected_deck_format == 'limited' %} selected{% endif %}>Limited / Draft</option>
+                    <option value="Standard"{% if selected_deck_format == 'standard' %} selected{% endif %}>Standard</option>
+                    <option value="Commander"{% if selected_deck_format == 'commander' %} selected{% endif %}>Commander</option>
+                    <option value="Modern"{% if selected_deck_format == 'modern' %} selected{% endif %}>Modern</option>
+                    <option value="Pioneer"{% if selected_deck_format == 'pioneer' %} selected{% endif %}>Pioneer</option>
+                    <option value="Eternal"{% if selected_deck_format == 'eternal' %} selected{% endif %}>Eternal</option>
+                    <option value="Pauper"{% if selected_deck_format == 'pauper' %} selected{% endif %}>Pauper</option>
+                </select>
             </label>
 
             <button
@@ -182,8 +200,8 @@
             </div>
 
             <div>
-                <span>Minimum</span>
-                <strong>40</strong>
+                <span>Type</span>
+                <strong id="deckbuilderDeckTypeSummary">{{ deckbuilder.deck_format or 'Constructed' }}</strong>
             </div>
         </div>
     </section>
@@ -527,6 +545,7 @@
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
                         data-is-foil="{{ picked_card.sheet_is_foil or 0 }}"
+                        data-deck-role="{{ picked_card.deck_role or 'main' }}"
                         data-has-alternate-image="{{ picked_card.has_alternate_image or 0 }}"
                         data-alternate-image-remove-bleed="{{ picked_card.alternate_image_remove_bleed or 0 }}"
                         data-stack-column="{{ picked_card.stack_column or '' }}"
@@ -542,6 +561,12 @@
 
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+
+                            {% if picked_card.deck_role == 'commander' %}
+                            <div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Commander</div>
+                            {% elif picked_card.deck_role == 'partner' %}
+                            <div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Partner</div>
+                            {% endif %}
 
                             {% if picked_card.sheet_is_foil %}
                             <div class="deckbuilder-card-meta-badge">Foil</div>
@@ -732,6 +757,7 @@
                         data-card-collector-number="{{ picked_card.collector_number or '' }}"
                         data-is-basic-land="{% if picked_card.pick_reason == 'Basic land' %}1{% else %}0{% endif %}"
                         data-is-foil="{{ picked_card.sheet_is_foil or 0 }}"
+                        data-deck-role="{{ picked_card.deck_role or 'main' }}"
                         data-has-alternate-image="{{ picked_card.has_alternate_image or 0 }}"
                         data-alternate-image-remove-bleed="{{ picked_card.alternate_image_remove_bleed or 0 }}"
                         data-stack-column="{{ picked_card.stack_column or '' }}"
@@ -747,6 +773,12 @@
 
                         <div class="campaign-test-draft-picked-main">
                             <div class="campaign-test-draft-picked-name">{{ picked_card.card_name }}</div>
+
+                            {% if picked_card.deck_role == 'commander' %}
+                            <div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Commander</div>
+                            {% elif picked_card.deck_role == 'partner' %}
+                            <div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Partner</div>
+                            {% endif %}
 
                             {% if picked_card.sheet_is_foil %}
                             <div class="deckbuilder-card-meta-badge">Foil</div>
@@ -783,6 +815,18 @@
 
         <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="foil">
             Set Foil
+        </button>
+
+        <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="set_commander">
+            Set as Commander
+        </button>
+
+        <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="set_partner">
+            Set as Partner
+        </button>
+
+        <button type="button" class="deckbuilder-card-context-menu-item hidden" data-context-action="clear_deck_role">
+            Clear Commander Slot
         </button>
 
         <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="alternate-image">
@@ -1026,6 +1070,7 @@
     const clearSelectionButton = document.getElementById("deckbuilderClearSelectionButton");
     const statsButton = document.getElementById("deckbuilderStatsButton");
     const deckNameInput = document.getElementById("deckbuilderDeckNameInput");
+    const deckTypeSelect = document.getElementById("deckbuilderDeckTypeSelect");
     const saveDeckButton = document.getElementById("deckbuilderSaveDeckButton");
     const loadDeckButton = document.getElementById("deckbuilderLoadDeckButton");
     const deleteDeckButton = document.getElementById("deckbuilderDeleteDeckButton");
@@ -1054,6 +1099,7 @@
     const loadDeckList = document.getElementById("deckbuilderLoadDeckList");
     const deckCount = document.getElementById("deckbuilderDeckCount");
     const sideboardCount = document.getElementById("deckbuilderSideboardCount");
+    const deckTypeSummary = document.getElementById("deckbuilderDeckTypeSummary");
     const hoverPreview = document.getElementById("deckbuilderHoverPreview");
     const hoverPreviewImage = document.getElementById("deckbuilderHoverPreviewImage");
     const bulkActionStatus = document.getElementById("deckbuilderBulkActionStatus");
@@ -1155,6 +1201,44 @@
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    function getDeckbuilderDeckTypeLabel(deckFormat) {
+        const cleanDeckFormat = String(deckFormat || "").trim().toLowerCase();
+
+        if (cleanDeckFormat === "limited") {
+            return "Limited";
+        }
+
+        if (cleanDeckFormat === "commander") {
+            return "Commander";
+        }
+
+        if (cleanDeckFormat === "modern") {
+            return "Modern";
+        }
+
+        if (cleanDeckFormat === "pioneer") {
+            return "Pioneer";
+        }
+
+        if (cleanDeckFormat === "eternal") {
+            return "Eternal";
+        }
+
+        if (cleanDeckFormat === "pauper") {
+            return "Pauper";
+        }
+
+        return "Standard";
+    }
+
+    function updateDeckbuilderDeckTypeSummary(deckFormat) {
+        if (!deckTypeSummary) {
+            return;
+        }
+
+        deckTypeSummary.textContent = getDeckbuilderDeckTypeLabel(deckFormat);
     }
 
     function setDeckbuilderBulkActionStatus(isVisible, titleText, messageText, isComplete) {
@@ -1278,7 +1362,27 @@
         }
     }
 
+    function getDeckbuilderRoleSortValue(cardElement) {
+        const deckRole = String(cardElement?.dataset?.deckRole || "main").trim().toLowerCase();
+
+        if (deckRole === "commander") {
+            return 0;
+        }
+
+        if (deckRole === "partner") {
+            return 1;
+        }
+
+        return 2;
+    }
+
     function compareDeckbuilderCards(a, b) {
+        const roleCompare = getDeckbuilderRoleSortValue(a) - getDeckbuilderRoleSortValue(b);
+
+        if (roleCompare !== 0) {
+            return roleCompare;
+        }
+
         if (pickedSortMode === "name-asc") {
             return getCardNameValue(a).localeCompare(getCardNameValue(b));
         }
@@ -2133,6 +2237,7 @@
         }
 
         const cleanDeckName = String(deckNameInput ? deckNameInput.value : "").trim();
+        const cleanDeckFormat = deckTypeSelect ? deckTypeSelect.value : "Standard";
 
         if (!cleanDeckName) {
             showDeckbuilderError(new Error("Deck Name is required."));
@@ -2142,6 +2247,7 @@
         const formData = new FormData();
 
         formData.append("deck_name", cleanDeckName);
+        formData.append("deck_format", cleanDeckFormat);
         formData.append("view_mode", deckbuilderViewMode || "grid");
         formData.append("sort_mode", pickedSortMode || "rarity-desc");
         formData.append("card_size", String(deckbuilderCardSize || 100));
@@ -2158,6 +2264,13 @@
 
             if (deckNameInput && payload.deck_name) {
                 deckNameInput.value = payload.deck_name;
+            }
+
+            if (deckTypeSelect && payload.deck_format) {
+                deckTypeSelect.value = payload.deck_format;
+                updateDeckbuilderDeckTypeSummary(payload.deck_format);
+            } else {
+                updateDeckbuilderDeckTypeSummary(cleanDeckFormat);
             }
 
             if (window.iMomirToast) {
@@ -2648,14 +2761,17 @@
         const hasAlternateImage = isDeckbuilderTruthyFlag(safeCard.has_alternate_image);
         const alternateImageRemoveBleed = isDeckbuilderTruthyFlag(safeCard.alternate_image_remove_bleed);
         const sourceKind = safeCard.source_kind || (isBasicLand ? "basic_land" : "deck_card");
+        const deckRole = String(safeCard.deck_role || "main").trim().toLowerCase();
 
         return (
-            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(sourceKind) + '" data-deck-card-id="' + escapeHtml(safeCard.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(safeCard.draft_test_pick_id || "") + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(safeCard.card_name || "") + '" data-card-uuid="' + escapeHtml(safeCard.card_uuid || "") + '" data-card-rarity="' + escapeHtml(safeCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(safeCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(safeCard.type_line || "") + '" data-card-color-identity="' + escapeHtml(safeCard.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(safeCard.set_code || "") + '" data-card-collector-number="' + escapeHtml(safeCard.collector_number || "") + '" data-is-basic-land="' + escapeHtml(isBasicLand ? "1" : "0") + '" data-is-foil="' + escapeHtml(isFoil ? "1" : "0") + '" data-has-alternate-image="' + escapeHtml(hasAlternateImage ? "1" : "0") + '" data-alternate-image-remove-bleed="' + escapeHtml(alternateImageRemoveBleed ? "1" : "0") + '" data-stack-column="' + escapeHtml(safeCard.stack_column || "") + '" data-stack-order="' + escapeHtml(safeCard.stack_order ?? "") + '">' +
+            '<div class="deckbuilder-card campaign-test-draft-picked-row" draggable="true" data-drag-type="picked-card" data-source-kind="' + escapeHtml(sourceKind) + '" data-deck-card-id="' + escapeHtml(safeCard.deck_card_id || "") + '" data-draft-test-pick-id="' + escapeHtml(safeCard.draft_test_pick_id || "") + '" data-current-zone="' + escapeHtml(targetZone) + '" data-card-name="' + escapeHtml(safeCard.card_name || "") + '" data-card-uuid="' + escapeHtml(safeCard.card_uuid || "") + '" data-card-rarity="' + escapeHtml(safeCard.rarity || "") + '" data-card-mana-value="' + escapeHtml(safeCard.mana_value ?? "") + '" data-card-type-line="' + escapeHtml(safeCard.type_line || "") + '" data-card-color-identity="' + escapeHtml(safeCard.color_identity_json || "[]") + '" data-card-set-code="' + escapeHtml(safeCard.set_code || "") + '" data-card-collector-number="' + escapeHtml(safeCard.collector_number || "") + '" data-is-basic-land="' + escapeHtml(isBasicLand ? "1" : "0") + '" data-is-foil="' + escapeHtml(isFoil ? "1" : "0") + '" data-deck-role="' + escapeHtml(deckRole || "main") + '" data-has-alternate-image="' + escapeHtml(hasAlternateImage ? "1" : "0") + '" data-alternate-image-remove-bleed="' + escapeHtml(alternateImageRemoveBleed ? "1" : "0") + '" data-stack-column="' + escapeHtml(safeCard.stack_column || "") + '" data-stack-order="' + escapeHtml(safeCard.stack_order ?? "") + '">' +
                 '<div class="deckbuilder-card-image-wrap">' +
                     '<img src="' + escapeHtml(safeCard.image_src || "") + '" alt="' + escapeHtml(safeCard.card_name || "") + '" class="campaign-test-draft-picked-thumb">' +
                 '</div>' +
                 '<div class="campaign-test-draft-picked-main">' +
                     '<div class="campaign-test-draft-picked-name">' + escapeHtml(safeCard.card_name || "") + '</div>' +
+                    (deckRole === "commander" ? '<div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Commander</div>' : '') +
+                    (deckRole === "partner" ? '<div class="deckbuilder-card-meta-badge deckbuilder-card-role-badge">Partner</div>' : '') +
                     (isFoil ? '<div class="deckbuilder-card-meta-badge">Foil</div>' : '') +
                 '</div>' +
             '</div>'
@@ -3369,6 +3485,8 @@
 
     function getDeckbuilderStackColumnDefs() {
         return [
+            { key: "commander", label: "Commander" },
+            { key: "partner", label: "Partner" },
             { key: "0", label: "0" },
             { key: "1", label: "1" },
             { key: "2", label: "2" },
@@ -3383,7 +3501,7 @@
     function normalizeDeckbuilderStackColumnKey(rawValue) {
         const cleanValue = String(rawValue || "").trim().toLowerCase();
 
-        if (["0", "1", "2", "3", "4", "5", "6", "land"].indexOf(cleanValue) !== -1) {
+        if (["commander", "partner", "0", "1", "2", "3", "4", "5", "6", "land"].indexOf(cleanValue) !== -1) {
             return cleanValue;
         }
 
@@ -3415,6 +3533,16 @@
     }
 
     function getDeckbuilderStackColumnKey(cardElement) {
+        const deckRole = String(cardElement?.dataset?.deckRole || "main").trim().toLowerCase();
+
+        if (deckRole === "commander") {
+            return "commander";
+        }
+
+        if (deckRole === "partner") {
+            return "partner";
+        }
+
         const inferredColumn = inferDeckbuilderStackColumnKey(cardElement);
 
         if (inferredColumn === "land") {
@@ -3584,6 +3712,10 @@
                     return;
                 }
 
+                if (columnKey === "commander" || columnKey === "partner") {
+                    return;
+                }
+
                 event.preventDefault();
                 event.stopPropagation();
 
@@ -3627,6 +3759,10 @@
                 const columnElement = stackBody.closest(".deckbuilder-stack-column");
                 const rawColumnKey = columnElement ? columnElement.dataset.stackColumn || "0" : "0";
                 const droppedItem = getDeckbuilderDragTransfer(event);
+
+                if (rawColumnKey === "commander" || rawColumnKey === "partner") {
+                    return;
+                }
 
                 draggedDeckbuilderItem = null;
                 clearDropZoneState();
@@ -4188,6 +4324,7 @@
             cardUuid: cardElement.dataset.cardUuid || "",
             cardName: cardElement.dataset.cardName || "",
             currentZone: cardElement.dataset.currentZone || "deck",
+            deckRole: cardElement.dataset.deckRole || "main",
             isBasicLand: cardElement.dataset.isBasicLand || "0",
             isFoil: cardElement.dataset.isFoil || "0"
         };
@@ -4228,9 +4365,15 @@
         const isMultiSelection = selectedCards.length > 1 && cardElement.classList.contains("deckbuilder-card-selected");
         const targetZone = payload.currentZone === "deck" ? "sideboard" : "deck";
 
+        const isSpecialDeckRole = payload.deckRole === "commander" || payload.deckRole === "partner";
+        const isBasicLand = payload.isBasicLand === "1";
+
         setDeckbuilderContextActionVisible("duplicate", !isMultiSelection);
         setDeckbuilderContextActionVisible("change-printing", !isMultiSelection);
         setDeckbuilderContextActionVisible("alternate-image", !isMultiSelection);
+        setDeckbuilderContextActionVisible("set_commander", !isMultiSelection && !isBasicLand && payload.deckRole !== "commander");
+        setDeckbuilderContextActionVisible("set_partner", !isMultiSelection && !isBasicLand && payload.deckRole !== "partner");
+        setDeckbuilderContextActionVisible("clear_deck_role", !isMultiSelection && isSpecialDeckRole);
 
         setDeckbuilderContextActionText("remove", isMultiSelection ? "Remove Cards" : "Remove card");
 
@@ -4242,6 +4385,12 @@
         const foilText = payload.isFoil === "1" ? "Remove Foil" : "Set Foil";
 
         setDeckbuilderContextActionText("foil", isMultiSelection ? foilText + " on Cards" : foilText);
+
+        if (payload.deckRole === "commander") {
+            setDeckbuilderContextActionText("clear_deck_role", "Clear Commander Slot");
+        } else if (payload.deckRole === "partner") {
+            setDeckbuilderContextActionText("clear_deck_role", "Clear Partner Slot");
+        }
 
         const foilMenuItem = cardContextMenu
             ? cardContextMenu.querySelector('[data-context-action="foil"]')
@@ -4760,6 +4909,12 @@
                 event.preventDefault();
                 saveDeckSettings();
             }
+        });
+    }
+
+    if (deckTypeSelect) {
+        deckTypeSelect.addEventListener("change", function () {
+            updateDeckbuilderDeckTypeSummary(deckTypeSelect.value);
         });
     }
 

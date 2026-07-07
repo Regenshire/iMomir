@@ -199,6 +199,7 @@ from db.deckdb import (
     update_deckbuilder_basic_land_printing,
     update_deckbuilder_card_foil,
     update_deckbuilder_card_printing,
+    update_deckbuilder_card_role,
     ensure_deck_schema,
 )
 
@@ -4051,6 +4052,165 @@ def get_custom_title_sheet_pack_type_label(pack_type_value):
 
     return "Custom Booster"
 
+def parse_request_checkbox_bool(field_name, default_value=False):
+    raw_value = (request.args.get(field_name) or "").strip().lower()
+
+    if raw_value in {"1", "true", "yes", "on"}:
+        return True
+
+    if raw_value in {"0", "false", "no", "off"}:
+        return False
+
+    return bool(default_value)
+
+
+def parse_hex_color_rgb(value, fallback_rgb=(180, 138, 0)):
+    clean_value = str(value or "").strip()
+
+    if not clean_value:
+        return tuple(fallback_rgb)
+
+    if clean_value.startswith("#"):
+        clean_value = clean_value[1:]
+
+    if len(clean_value) != 6:
+        return tuple(fallback_rgb)
+
+    try:
+        return (
+            int(clean_value[0:2], 16),
+            int(clean_value[2:4], 16),
+            int(clean_value[4:6], 16),
+        )
+    except ValueError:
+        return tuple(fallback_rgb)
+
+
+def lighten_rgb(rgb_value, amount=0.22):
+    red, green, blue = tuple(rgb_value or (180, 138, 0))
+
+    return (
+        min(255, int(red + ((255 - red) * amount))),
+        min(255, int(green + ((255 - green) * amount))),
+        min(255, int(blue + ((255 - blue) * amount))),
+    )
+
+
+def darken_rgb(rgb_value, amount=0.58):
+    red, green, blue = tuple(rgb_value or (180, 138, 0))
+
+    return (
+        max(0, int(red * amount)),
+        max(0, int(green * amount)),
+        max(0, int(blue * amount)),
+    )
+
+def get_custom_title_color_overrides_from_request():
+    theme_rgb = parse_hex_color_rgb(
+        request.args.get("theme_color"),
+        fallback_rgb=(180, 138, 0),
+    )
+
+    background_top_rgb = parse_hex_color_rgb(
+        request.args.get("background_top_color"),
+        fallback_rgb=darken_rgb(theme_rgb, 0.22),
+    )
+
+    background_mid_rgb = parse_hex_color_rgb(
+        request.args.get("background_mid_color"),
+        fallback_rgb=darken_rgb(theme_rgb, 0.34),
+    )
+
+    background_bottom_rgb = parse_hex_color_rgb(
+        request.args.get("background_bottom_color"),
+        fallback_rgb=darken_rgb(theme_rgb, 0.14),
+    )
+
+    accent_rgb = parse_hex_color_rgb(
+        request.args.get("accent_color"),
+        fallback_rgb=theme_rgb,
+    )
+
+    border_rgb = parse_hex_color_rgb(
+        request.args.get("border_color"),
+        fallback_rgb=darken_rgb(accent_rgb, 0.40),
+    )
+
+    title_rgb = parse_hex_color_rgb(
+        request.args.get("title_text_color"),
+        fallback_rgb=(255, 255, 255),
+    )
+
+    subtitle_rgb = parse_hex_color_rgb(
+        request.args.get("subtitle_text_color"),
+        fallback_rgb=lighten_rgb(accent_rgb, 0.48),
+    )
+
+    footer_rgb = parse_hex_color_rgb(
+        request.args.get("footer_color"),
+        fallback_rgb=darken_rgb(accent_rgb, 0.24),
+    )
+
+    return build_custom_title_color_overrides(
+        theme_rgb=theme_rgb,
+        background_top_rgb=background_top_rgb,
+        background_mid_rgb=background_mid_rgb,
+        background_bottom_rgb=background_bottom_rgb,
+        accent_rgb=accent_rgb,
+        border_rgb=border_rgb,
+        title_rgb=title_rgb,
+        subtitle_rgb=subtitle_rgb,
+        footer_rgb=footer_rgb,
+    )
+
+
+def build_custom_title_color_overrides(
+    theme_rgb=None,
+    background_top_rgb=None,
+    background_mid_rgb=None,
+    background_bottom_rgb=None,
+    accent_rgb=None,
+    border_rgb=None,
+    title_rgb=None,
+    subtitle_rgb=None,
+    footer_rgb=None,
+):
+    clean_theme_rgb = tuple(theme_rgb or (180, 138, 0))
+
+    clean_background_top_rgb = tuple(background_top_rgb or darken_rgb(clean_theme_rgb, 0.22))
+    clean_background_mid_rgb = tuple(background_mid_rgb or darken_rgb(clean_theme_rgb, 0.34))
+    clean_background_bottom_rgb = tuple(background_bottom_rgb or darken_rgb(clean_theme_rgb, 0.14))
+
+    clean_accent_rgb = tuple(accent_rgb or clean_theme_rgb)
+    clean_border_rgb = tuple(border_rgb or darken_rgb(clean_accent_rgb, 0.40))
+    clean_title_rgb = tuple(title_rgb or (255, 255, 255))
+    clean_subtitle_rgb = tuple(subtitle_rgb or lighten_rgb(clean_accent_rgb, 0.48))
+    clean_footer_rgb = tuple(footer_rgb or darken_rgb(clean_accent_rgb, 0.24))
+
+    accent_highlight_rgb = lighten_rgb(clean_accent_rgb, 0.26)
+
+    return {
+        "background_top_rgb": clean_background_top_rgb,
+        "background_mid_rgb": clean_background_mid_rgb,
+        "background_bottom_rgb": clean_background_bottom_rgb,
+
+        "accent_rgb": clean_accent_rgb,
+        "accent_highlight_rgb": accent_highlight_rgb,
+        "border_rgb": clean_border_rgb,
+        "inner_border_rgb": lighten_rgb(clean_border_rgb, 0.36),
+
+        "title_rgb": clean_title_rgb,
+        "subtitle_rgb": clean_subtitle_rgb,
+        "pack_code_rgb": clean_title_rgb,
+
+        "set_icon_rgb": clean_accent_rgb,
+        "footer_outline_rgb": clean_accent_rgb,
+        "footer_fill_rgb": clean_footer_rgb,
+
+        "card_glow_rgb": clean_accent_rgb,
+        "border_shimmer_rgb": accent_highlight_rgb,
+        "set_icon_shimmer_rgb": accent_highlight_rgb,
+    }
 
 def get_custom_title_sheet_default_footer_text(set_code, pack_type_value):
     clean_set_code = (set_code or "").strip().upper() or "CUSTOM"
@@ -4072,7 +4232,16 @@ def get_custom_title_sheet_default_footer_text(set_code, pack_type_value):
     return f"{clean_set_code}.{type_code}.TITLE"
 
 
-def build_custom_title_sheet_pdf(set_code, pack_name, pack_type_value, custom_text):
+def build_custom_title_sheet_pdf(
+    set_code,
+    pack_name,
+    pack_type_value,
+    custom_text,
+    show_pack_type=True,
+    show_signature=True,
+    show_set_code=True,
+    theme_color="#b48a00",
+):
     clean_set_code = (set_code or "").strip().upper()
     clean_pack_name = (pack_name or "").strip()
     clean_custom_text = (custom_text or "").strip()
@@ -4086,9 +4255,16 @@ def build_custom_title_sheet_pdf(set_code, pack_name, pack_type_value, custom_te
     pack_type_label = get_custom_title_sheet_pack_type_label(pack_type_value)
     footer_text = clean_custom_text
 
-    pack_display_name = normalize_chaos_pack_display_name(
-        f"{clean_pack_name} - {pack_type_label} ({clean_set_code})"
-    )
+    if show_set_code:
+        pack_display_name = normalize_chaos_pack_display_name(
+            f"{clean_pack_name} - {pack_type_label} ({clean_set_code})"
+        )
+    else:
+        pack_display_name = normalize_chaos_pack_display_name(
+            f"{clean_pack_name} - {pack_type_label}"
+        )
+
+    color_overrides = get_custom_title_color_overrides_from_request()
 
     pdf_settings = resolve_pdf_print_settings()
     pdf_template_layout = resolve_pdf_template_layout()
@@ -4122,6 +4298,9 @@ def build_custom_title_sheet_pdf(set_code, pack_name, pack_type_value, custom_te
                 booster_name=pack_type_label,
                 pack_tracking_code=footer_text,
                 icon_fallback_set_code="P16",
+                show_pack_type=show_pack_type,
+                show_signature=show_signature,
+                color_overrides=color_overrides,
             )
 
             title_temp_filename = (
@@ -4175,6 +4354,63 @@ def build_custom_title_sheet_pdf(set_code, pack_name, pack_type_value, custom_te
                     os.remove(temp_path)
             except Exception:
                 pass
+
+def build_custom_title_card_jpg_buffer(
+    set_code,
+    pack_name,
+    pack_type_value,
+    custom_text,
+    show_pack_type=True,
+    show_signature=True,
+    show_set_code=True,
+    theme_color="#b48a00",
+):
+    clean_set_code = (set_code or "").strip().upper()
+    clean_pack_name = (pack_name or "").strip()
+    clean_custom_text = (custom_text or "").strip()
+
+    if not clean_set_code:
+        raise ValueError("Set Code is required.")
+
+    if not clean_pack_name:
+        clean_pack_name = get_set_name_for_custom_title_sheet(clean_set_code) or clean_set_code
+
+    pack_type_label = get_custom_title_sheet_pack_type_label(pack_type_value)
+
+    if show_set_code:
+        pack_display_name = normalize_chaos_pack_display_name(
+            f"{clean_pack_name} - {pack_type_label} ({clean_set_code})"
+        )
+    else:
+        pack_display_name = normalize_chaos_pack_display_name(
+            f"{clean_pack_name} - {pack_type_label}"
+        )
+
+    color_overrides = get_custom_title_color_overrides_from_request()
+
+    title_card_bytes = build_chaos_pack_title_card_image_bytes(
+        pack_display_name,
+        set_code=clean_set_code,
+        booster_name=pack_type_label,
+        pack_tracking_code=clean_custom_text,
+        icon_fallback_set_code="P16",
+        show_pack_type=show_pack_type,
+        show_signature=show_signature,
+        color_overrides=color_overrides,
+    )
+
+    output_buffer = BytesIO()
+
+    with Image.open(BytesIO(title_card_bytes)) as title_image:
+        title_image.convert("RGB").save(
+            output_buffer,
+            format="JPEG",
+            quality=95,
+            optimize=True,
+        )
+
+    output_buffer.seek(0)
+    return output_buffer
 
 def build_inline_pdf_response(pdf_buffer, filename):
     safe_name = (filename or "document.pdf").strip()
@@ -5049,6 +5285,9 @@ def build_chaos_pack_title_card_image_bytes(
     card_width_mm=63.5,
     card_height_mm=88.9,
     icon_fallback_set_code=None,
+    show_pack_type=True,
+    show_signature=True,
+    color_overrides=None,
 ):
     normalized_pack_display_name = normalize_chaos_pack_display_name(pack_display_name)
     title_set_name, title_booster_name = split_chaos_pack_display_name_for_title(normalized_pack_display_name)
@@ -5062,6 +5301,9 @@ def build_chaos_pack_title_card_image_bytes(
 
     clean_booster_name = (booster_name or title_booster_name or "").strip()
     template_config = get_pack_label_template(clean_booster_name)
+
+    if color_overrides:
+        template_config.update(color_overrides)
 
     pixels_per_mm = 12
     image_width_px = int(round(card_width_mm * pixels_per_mm))
@@ -5170,6 +5412,9 @@ def build_chaos_pack_title_card_image_bytes(
         )[:2]
 
     subtitle_text = title_booster_name or clean_booster_name or "Booster Pack"
+
+    if not show_pack_type:
+        subtitle_text = ""
     subtitle_lines = wrap_text_for_pixel_width(
         draw,
         subtitle_text,
@@ -5303,7 +5548,7 @@ def build_chaos_pack_title_card_image_bytes(
     )
 
     # iMomir gold signature.
-    signature_path = get_pack_label_signature_path(template_config)
+    signature_path = get_pack_label_signature_path(template_config) if show_signature else ""
 
     if signature_path:
         try:
@@ -11083,12 +11328,21 @@ def campaign_chaos_print_custom_title_sheet():
     pack_type = (request.args.get("pack_type") or "").strip().lower()
     custom_text = (request.args.get("custom_text") or "").strip()
 
+    disable_pack_type = parse_request_checkbox_bool("disable_pack_type", default_value=False)
+    disable_signature = parse_request_checkbox_bool("disable_signature", default_value=False)
+    disable_set_code = parse_request_checkbox_bool("disable_set_code", default_value=False)
+    theme_color = (request.args.get("theme_color") or "#b48a00").strip()
+
     try:
         pdf_buffer = build_custom_title_sheet_pdf(
             set_code=set_code,
             pack_name=pack_name,
             pack_type_value=pack_type,
             custom_text=custom_text,
+            show_pack_type=not disable_pack_type,
+            show_signature=not disable_signature,
+            show_set_code=not disable_set_code,
+            theme_color=theme_color,
         )
     except Exception as exc:
         return str(exc), 400
@@ -11104,6 +11358,44 @@ def campaign_chaos_print_custom_title_sheet():
             "Content-Disposition": f'inline; filename="{filename_base}.pdf"',
             "Cache-Control": "no-store",
         },
+    )
+
+@app.route("/campaign-chaos/packs/export-custom-title-card-jpg", methods=["GET"])
+def campaign_chaos_export_custom_title_card_jpg():
+    set_code = (request.args.get("set_code") or "").strip().upper()
+    pack_name = (request.args.get("pack_name") or "").strip()
+    pack_type = (request.args.get("pack_type") or "").strip().lower()
+    custom_text = (request.args.get("custom_text") or "").strip()
+
+    disable_pack_type = parse_request_checkbox_bool("disable_pack_type", default_value=False)
+    disable_signature = parse_request_checkbox_bool("disable_signature", default_value=False)
+    disable_set_code = parse_request_checkbox_bool("disable_set_code", default_value=False)
+    theme_color = (request.args.get("theme_color") or "#b48a00").strip()
+
+    try:
+        jpg_buffer = build_custom_title_card_jpg_buffer(
+            set_code=set_code,
+            pack_name=pack_name,
+            pack_type_value=pack_type,
+            custom_text=custom_text,
+            show_pack_type=not disable_pack_type,
+            show_signature=not disable_signature,
+            show_set_code=not disable_set_code,
+            theme_color=theme_color,
+        )
+    except Exception as exc:
+        return str(exc), 400
+
+    filename_base = safe_filename(
+        f"custom_title_card_{set_code or 'custom'}_{pack_type or 'custom'}"
+    )
+
+    return send_file(
+        jpg_buffer,
+        mimetype="image/jpeg",
+        as_attachment=True,
+        download_name=f"{filename_base}.jpg",
+        max_age=0,
     )
 
 @app.route("/campaign-chaos/packs/<int:tracked_pack_id>/print", methods=["GET"])
@@ -11971,6 +12263,7 @@ def serialize_deckbuilder_card(card):
         "pick_reason": pick_reason,
         "is_basic_land": 1 if int(is_basic_land or 0) == 1 else 0,
         "sheet_is_foil": 1 if int(deckbuilder_row_get(card, "sheet_is_foil", 0) or 0) == 1 else 0,
+        "deck_role": deckbuilder_row_get(card, "deck_role", "main") or "main",
         "stack_column": deckbuilder_row_get(card, "stack_column", "") or "",
         "stack_order": deckbuilder_row_get(card, "stack_order", None),
         "display_order": deckbuilder_row_get(card, "display_order", None),
@@ -13662,6 +13955,24 @@ def deckbuilder_card_action(deck_id):
             deck_card_id=deck_card_id,
             is_foil=False,
         )
+    elif action == "set_commander":
+        result = update_deckbuilder_card_role(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            deck_role="commander",
+        )
+    elif action == "set_partner":
+        result = update_deckbuilder_card_role(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            deck_role="partner",
+        )
+    elif action == "clear_deck_role":
+        result = update_deckbuilder_card_role(
+            deck_id=deck_id,
+            deck_card_id=deck_card_id,
+            deck_role="main",
+        )
     else:
         result = {
             "ok": False,
@@ -13699,6 +14010,7 @@ def deckbuilder_card_action(deck_id):
 @app.route("/deck-builder/<int:deck_id>/save", methods=["POST"])
 def deckbuilder_save(deck_id):
     deck_name = request.form.get("deck_name")
+    deck_format = request.form.get("deck_format")
     view_mode = request.form.get("view_mode")
     sort_mode = request.form.get("sort_mode")
     card_size = request.form.get("card_size")
@@ -13708,6 +14020,7 @@ def deckbuilder_save(deck_id):
     save_result = update_deck_settings(
         deck_id=deck_id,
         deck_name=deck_name,
+        deck_format=deck_format,
         view_mode=view_mode,
         sort_mode=sort_mode,
         card_size=card_size,
@@ -16018,6 +16331,20 @@ def parse_custom_draft_bulk_import_text(raw_text):
 
 
 def serialize_custom_draft_card_search_result(row):
+    row_keys = set(row.keys()) if hasattr(row, "keys") else set()
+
+    has_alternate_source = (
+        int(row["has_alternate_source"] or 0) == 1
+        if "has_alternate_source" in row_keys
+        else False
+    )
+
+    alternate_remove_bleed = (
+        int(row["alternate_remove_bleed"] or 0) == 1
+        if "alternate_remove_bleed" in row_keys
+        else False
+    )
+
     return {
         "card_uuid": row["card_uuid"],
         "card_name": row["card_name"],
@@ -16035,6 +16362,8 @@ def serialize_custom_draft_card_search_result(row):
         "edhrec_saltiness": row["edhrec_saltiness"],
         "sort_price": row["sort_price"],
         "already_in_set": int(row["already_in_set"] or 0) == 1,
+        "has_alternate_source": has_alternate_source,
+        "alternate_remove_bleed": alternate_remove_bleed,
         "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
     }
 

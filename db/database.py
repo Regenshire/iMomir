@@ -2741,7 +2741,48 @@ def search_chaos_cards_for_custom_draft_set(
             CASE
                 WHEN cdsc.custom_set_card_id IS NULL THEN 0
                 ELSE 1
-            END AS already_in_set
+            END AS already_in_set,
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND alt.card_uuid = cc.card_uuid
+                )
+                OR EXISTS (
+                    SELECT 1
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND UPPER(COALESCE(alt.set_code, '')) = UPPER(COALESCE(cc.set_code, ''))
+                      AND LOWER(COALESCE(alt.collector_number, '')) = LOWER(COALESCE(cc.collector_number, ''))
+                )
+                THEN 1
+                ELSE 0
+            END AS has_alternate_source,
+            COALESCE(
+                (
+                    SELECT alt.remove_bleed
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND alt.card_uuid = cc.card_uuid
+                    ORDER BY
+                        alt.priority ASC,
+                        alt.alternate_source_id DESC
+                    LIMIT 1
+                ),
+                (
+                    SELECT alt.remove_bleed
+                    FROM alternate_sources alt
+                    WHERE alt.is_enabled = 1
+                      AND UPPER(COALESCE(alt.set_code, '')) = UPPER(COALESCE(cc.set_code, ''))
+                      AND LOWER(COALESCE(alt.collector_number, '')) = LOWER(COALESCE(cc.collector_number, ''))
+                    ORDER BY
+                        alt.priority ASC,
+                        alt.alternate_source_id DESC
+                    LIMIT 1
+                ),
+                0
+            ) AS alternate_remove_bleed
         FROM chaos_cards cc
         LEFT JOIN sets s
             ON s.set_code = cc.set_code
