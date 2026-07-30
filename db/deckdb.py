@@ -2814,6 +2814,197 @@ def update_deck_settings(
         "deck_flex": clean_deck_flex,
     }
 
+def get_deck_management_rows(
+    search_text="",
+    deck_format="",
+    sort_option="created_desc",
+    page=1,
+    page_size=20,
+):
+    ensure_deck_schema()
+
+    clean_search_text = str(search_text or "").strip().lower()
+    clean_deck_format = str(deck_format or "").strip()
+
+    try:
+        parsed_page = int(page or 1)
+    except (TypeError, ValueError):
+        parsed_page = 1
+
+    if parsed_page < 1:
+        parsed_page = 1
+
+    try:
+        parsed_page_size = int(page_size or 20)
+    except (TypeError, ValueError):
+        parsed_page_size = 20
+
+    if parsed_page_size < 10:
+        parsed_page_size = 10
+
+    if parsed_page_size > 100:
+        parsed_page_size = 100
+
+    clean_sort_option = str(sort_option or "created_desc").strip().lower()
+
+    sort_sql_options = {
+        "created_desc": """
+            d.created_at_utc DESC,
+            d.deck_id DESC
+        """,
+        "created_asc": """
+            d.created_at_utc ASC,
+            d.deck_id ASC
+        """,
+        "name_asc": """
+            d.deck_name COLLATE NOCASE ASC,
+            d.deck_id ASC
+        """,
+        "name_desc": """
+            d.deck_name COLLATE NOCASE DESC,
+            d.deck_id DESC
+        """,
+        "format_asc": """
+            COALESCE(d.deck_format, '') COLLATE NOCASE ASC,
+            d.deck_name COLLATE NOCASE ASC,
+            d.deck_id ASC
+        """,
+        "format_desc": """
+            COALESCE(d.deck_format, '') COLLATE NOCASE DESC,
+            d.deck_name COLLATE NOCASE ASC,
+            d.deck_id ASC
+        """,
+    }
+
+    order_by_sql = sort_sql_options.get(
+        clean_sort_option,
+        sort_sql_options["created_desc"],
+    )
+
+    where_clauses = [
+        "d.status = ?",
+    ]
+
+    params = [
+        DECK_STATUS_ACTIVE,
+    ]
+
+    if clean_search_text:
+        where_clauses.append(
+            """
+            (
+                LOWER(d.deck_name) LIKE ?
+                OR LOWER(COALESCE(d.deck_format, '')) LIKE ?
+                OR LOWER(COALESCE(d.source_type, '')) LIKE ?
+                OR CAST(COALESCE(d.source_id, '') AS TEXT) LIKE ?
+            )
+            """
+        )
+
+        like_value = f"%{clean_search_text}%"
+
+        params.extend([
+            like_value,
+            like_value,
+            like_value,
+            like_value,
+        ])
+
+    if clean_deck_format:
+        where_clauses.append(
+            "LOWER(COALESCE(d.deck_format, '')) = LOWER(?)"
+        )
+
+        params.append(clean_deck_format)
+
+    where_sql = " AND ".join(where_clauses)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) AS total_count
+        FROM decks d
+        WHERE {where_sql}
+        """,
+        params,
+    )
+
+    count_row = cursor.fetchone()
+    total_count = int(count_row["total_count"] or 0) if count_row else 0
+
+    total_pages = max(
+        1,
+        (total_count + parsed_page_size - 1) // parsed_page_size,
+    )
+
+    if parsed_page > total_pages:
+        parsed_page = total_pages
+
+    offset = (parsed_page - 1) * parsed_page_size
+
+    query_params = list(params)
+    query_params.extend([
+        parsed_page_size,
+        offset,
+    ])
+
+    cursor.execute(
+        f"""
+        SELECT
+            d.*,
+
+            (
+                SELECT cc.image_url
+                FROM deck_cards preview_dc
+                LEFT JOIN chaos_cards cc
+                    ON cc.card_uuid = preview_dc.card_uuid
+                WHERE preview_dc.deck_id = d.deck_id
+                  AND preview_dc.deck_zone = 'deck'
+                  AND COALESCE(cc.image_url, '') <> ''
+                ORDER BY
+                    CASE LOWER(COALESCE(preview_dc.deck_role, 'main'))
+                        WHEN 'commander' THEN 0
+                        WHEN 'partner' THEN 1
+                        ELSE 2
+                    END ASC,
+                    preview_dc.display_order ASC,
+                    preview_dc.deck_card_id ASC
+                LIMIT 1
+            ) AS preview_image_url,
+
+            (
+                SELECT COALESCE(SUM(card_count_dc.quantity), 0)
+                FROM deck_cards card_count_dc
+                WHERE card_count_dc.deck_id = d.deck_id
+                  AND card_count_dc.deck_zone IN ('deck', 'sideboard')
+            ) AS total_card_count
+
+        FROM decks d
+        WHERE {where_sql}
+        ORDER BY {order_by_sql}
+        LIMIT ?
+        OFFSET ?
+        """,
+        query_params,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        "rows": rows,
+        "total_count": total_count,
+        "page": parsed_page,
+        "page_size": parsed_page_size,
+        "total_pages": total_pages,
+        "has_previous": parsed_page > 1,
+        "has_next": parsed_page < total_pages,
+        "previous_page": parsed_page - 1 if parsed_page > 1 else None,
+        "next_page": parsed_page + 1 if parsed_page < total_pages else None,
+    }
+
 def get_loadable_deck_rows(search_text="", limit=100):
     ensure_deck_schema()
 

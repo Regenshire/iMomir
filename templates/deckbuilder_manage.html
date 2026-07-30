@@ -5,12 +5,12 @@
 {% block content %}
 <div class="deckbuilder-manage-page">
     <header class="deckbuilder-manage-header">
-        <div>
+        <div class="deckbuilder-manage-header-copy">
             <h1>Decks</h1>
             <p>Open, create, duplicate, or delete saved Deck Builder decks.</p>
         </div>
 
-        <form method="post" action="{{ new_deck_url }}">
+        <form method="post" action="{{ new_deck_url }}" class="deckbuilder-manage-new-form">
             <button type="submit" class="action-button deckbuilder-manage-new-button">
                 <i class="fa-solid fa-plus"></i>
                 New Deck
@@ -19,55 +19,194 @@
     </header>
 
     <section class="deckbuilder-manage-toolbar">
-        <form method="get" action="{{ url_for('deckbuilder_index') }}" class="deckbuilder-manage-search-form">
-            <input
-                type="text"
-                name="search_text"
-                class="campaign-add-pack-custom-input deckbuilder-manage-search-input"
-                value="{{ search_text or '' }}"
-                placeholder="Search decks..."
-                autocomplete="off"
-            >
+        <form
+            method="get"
+            action="{{ url_for('deckbuilder_index') }}"
+            class="deckbuilder-manage-filter-form"
+        >
+            <label class="deckbuilder-manage-filter-field deckbuilder-manage-search-field">
+                <span>Search</span>
 
-            <button type="submit" class="action-button secondary-button">
-                Search
-            </button>
+                <input
+                    type="text"
+                    name="search_text"
+                    class="campaign-add-pack-custom-input deckbuilder-manage-search-input"
+                    value="{{ search_text or '' }}"
+                    placeholder="Search deck name, type, or source..."
+                    autocomplete="off"
+                >
+            </label>
 
-            {% if search_text %}
-            <a href="{{ url_for('deckbuilder_index') }}" class="action-button secondary-button">
-                Clear
-            </a>
-            {% endif %}
+            <label class="deckbuilder-manage-filter-field">
+                <span>Deck Type</span>
+
+                <select
+                    name="deck_format"
+                    class="campaign-add-pack-custom-input deckbuilder-manage-select"
+                >
+                    <option value="">All Deck Types</option>
+
+                    {% for format_option in deck_format_options %}
+                    <option
+                        value="{{ format_option }}"
+                        {% if selected_deck_format == format_option %}selected{% endif %}
+                    >
+                        {{ format_option }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <label class="deckbuilder-manage-filter-field">
+                <span>Sort</span>
+
+                <select
+                    name="sort"
+                    class="campaign-add-pack-custom-input deckbuilder-manage-select"
+                >
+                    <option value="created_desc" {% if selected_sort_option == "created_desc" %}selected{% endif %}>
+                        Create Date: Newest
+                    </option>
+
+                    <option value="created_asc" {% if selected_sort_option == "created_asc" %}selected{% endif %}>
+                        Create Date: Oldest
+                    </option>
+
+                    <option value="name_asc" {% if selected_sort_option == "name_asc" %}selected{% endif %}>
+                        Name: A to Z
+                    </option>
+
+                    <option value="name_desc" {% if selected_sort_option == "name_desc" %}selected{% endif %}>
+                        Name: Z to A
+                    </option>
+
+                    <option value="format_asc" {% if selected_sort_option == "format_asc" %}selected{% endif %}>
+                        Deck Type: A to Z
+                    </option>
+
+                    <option value="format_desc" {% if selected_sort_option == "format_desc" %}selected{% endif %}>
+                        Deck Type: Z to A
+                    </option>
+                </select>
+            </label>
+
+            <label class="deckbuilder-manage-filter-field deckbuilder-manage-page-size-field">
+                <span>Per Page</span>
+
+                <select
+                    name="page_size"
+                    class="campaign-add-pack-custom-input deckbuilder-manage-select"
+                >
+                    {% for page_size_option in [10, 20, 50, 100] %}
+                    <option
+                        value="{{ page_size_option }}"
+                        {% if pagination.page_size == page_size_option %}selected{% endif %}
+                    >
+                        {{ page_size_option }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </label>
+
+            <div class="deckbuilder-manage-filter-actions">
+                <button type="submit" class="action-button deckbuilder-manage-apply-button">
+                    Apply
+                </button>
+
+                {% if search_text or selected_deck_format or selected_sort_option != "created_desc" or pagination.page_size != 20 %}
+                <a
+                    href="{{ url_for('deckbuilder_index') }}"
+                    class="action-button secondary-button deckbuilder-manage-clear-button"
+                >
+                    Clear
+                </a>
+                {% endif %}
+            </div>
         </form>
     </section>
+
+    <div class="deckbuilder-manage-results-summary">
+        {% if pagination.total_count == 1 %}
+            1 deck found
+        {% else %}
+            {{ pagination.total_count }} decks found
+        {% endif %}
+
+        {% if pagination.total_pages > 1 %}
+            <span>•</span>
+            Page {{ pagination.page }} of {{ pagination.total_pages }}
+        {% endif %}
+    </div>
 
     <section class="deckbuilder-manage-list">
         {% if decks %}
             {% for deck in decks %}
             <article class="deckbuilder-manage-card">
+                <div class="deckbuilder-manage-card-image-column">
+                    {% if deck.preview_image_url %}
+                    <img
+                        src="{{ deck.preview_image_url }}"
+                        alt="{{ deck.deck_name }}"
+                        class="deckbuilder-manage-card-image"
+                        loading="lazy"
+                    >
+                    {% else %}
+                    <div class="deckbuilder-manage-card-image-placeholder" aria-hidden="true">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    {% endif %}
+                </div>
+
                 <div class="deckbuilder-manage-card-main">
                     <div class="deckbuilder-manage-card-title">
                         {{ deck.deck_name }}
                     </div>
 
                     <div class="deckbuilder-manage-card-meta">
-                        {{ deck.deck_format or "Deck" }}
+                        <span class="deckbuilder-manage-format-badge">
+                            {{ deck.deck_format or "Deck" }}
+                        </span>
+
+                        <span>{{ deck.source_label }}</span>
+
                         <span>•</span>
-                        {{ deck.source_label }}
+
+                        <span>
+                            {{ deck.total_card_count }}
+                            {% if deck.total_card_count == 1 %}card{% else %}cards{% endif %}
+                        </span>
+                    </div>
+
+                    <div class="deckbuilder-manage-card-date-row">
+                        {% if deck.created_at_utc %}
+                        <span>
+                            <strong>Created:</strong>
+                            {{ deck.created_at_utc }}
+                        </span>
+                        {% endif %}
+
                         {% if deck.updated_at_utc %}
-                        <span>•</span>
-                        Updated {{ deck.updated_at_utc }}
+                        <span>
+                            <strong>Updated:</strong>
+                            {{ deck.updated_at_utc }}
+                        </span>
                         {% endif %}
                     </div>
                 </div>
 
                 <div class="deckbuilder-manage-card-actions">
-                    <a href="{{ deck.open_url }}" class="action-button deckbuilder-manage-open-button">
+                    <a
+                        href="{{ deck.open_url }}"
+                        class="action-button deckbuilder-manage-row-button deckbuilder-manage-open-button"
+                    >
                         Open
                     </a>
 
                     <form method="post" action="{{ deck.duplicate_url }}">
-                        <button type="submit" class="action-button secondary-button">
+                        <button
+                            type="submit"
+                            class="action-button secondary-button deckbuilder-manage-row-button"
+                        >
                             Duplicate
                         </button>
                     </form>
@@ -78,7 +217,10 @@
                         class="deckbuilder-manage-delete-form"
                         data-deck-name="{{ deck.deck_name }}"
                     >
-                        <button type="submit" class="action-button campaign-danger-button">
+                        <button
+                            type="submit"
+                            class="action-button campaign-danger-button deckbuilder-manage-row-button"
+                        >
                             Delete
                         </button>
                     </form>
@@ -88,17 +230,82 @@
         {% else %}
             <div class="deckbuilder-manage-empty">
                 <h2>No decks found</h2>
+
+                {% if search_text or selected_deck_format %}
+                <p>No decks match the current search and filter settings.</p>
+
+                <a
+                    href="{{ url_for('deckbuilder_index') }}"
+                    class="action-button secondary-button deckbuilder-manage-empty-button"
+                >
+                    Clear Filters
+                </a>
+                {% else %}
                 <p>Create a new standalone deck to get started.</p>
 
                 <form method="post" action="{{ new_deck_url }}">
-                    <button type="submit" class="action-button">
+                    <button type="submit" class="action-button deckbuilder-manage-empty-button">
                         <i class="fa-solid fa-plus"></i>
                         New Deck
                     </button>
                 </form>
+                {% endif %}
             </div>
         {% endif %}
     </section>
+
+    {% if pagination.total_pages > 1 %}
+    <nav class="deckbuilder-manage-pagination" aria-label="Deck pages">
+        {% if pagination.has_previous %}
+        <a
+            href="{{ url_for(
+                'deckbuilder_index',
+                search_text=search_text,
+                deck_format=selected_deck_format,
+                sort=selected_sort_option,
+                page_size=pagination.page_size,
+                page=pagination.previous_page
+            ) }}"
+            class="action-button secondary-button deckbuilder-manage-page-button"
+        >
+            <i class="fa-solid fa-chevron-left"></i>
+            Previous
+        </a>
+        {% else %}
+        <span class="action-button secondary-button deckbuilder-manage-page-button deckbuilder-manage-page-button-disabled">
+            <i class="fa-solid fa-chevron-left"></i>
+            Previous
+        </span>
+        {% endif %}
+
+        <div class="deckbuilder-manage-page-status">
+            <strong>Page {{ pagination.page }} of {{ pagination.total_pages }}</strong>
+            <span>{{ pagination.total_count }} total decks</span>
+        </div>
+
+        {% if pagination.has_next %}
+        <a
+            href="{{ url_for(
+                'deckbuilder_index',
+                search_text=search_text,
+                deck_format=selected_deck_format,
+                sort=selected_sort_option,
+                page_size=pagination.page_size,
+                page=pagination.next_page
+            ) }}"
+            class="action-button secondary-button deckbuilder-manage-page-button"
+        >
+            Next
+            <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <span class="action-button secondary-button deckbuilder-manage-page-button deckbuilder-manage-page-button-disabled">
+            Next
+            <i class="fa-solid fa-chevron-right"></i>
+        </span>
+        {% endif %}
+    </nav>
+    {% endif %}
 </div>
 
 <style>
@@ -119,6 +326,10 @@
     border: 1px solid rgba(148, 163, 184, 0.20);
 }
 
+.deckbuilder-manage-header-copy {
+    min-width: 0;
+}
+
 .deckbuilder-manage-header h1 {
     margin: 0;
 }
@@ -128,6 +339,15 @@
     color: rgba(226, 232, 240, 0.78);
 }
 
+.deckbuilder-manage-new-form {
+    margin: 0;
+}
+
+.deckbuilder-manage-new-button {
+    width: auto;
+    min-width: 150px;
+}
+
 .deckbuilder-manage-toolbar {
     padding: 1rem;
     border-radius: 16px;
@@ -135,14 +355,66 @@
     border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.deckbuilder-manage-search-form {
-    display: flex;
+.deckbuilder-manage-filter-form {
+    display: grid;
+    grid-template-columns:
+        minmax(240px, 1.6fr)
+        minmax(170px, 0.8fr)
+        minmax(190px, 0.9fr)
+        110px
+        auto;
     gap: 0.75rem;
-    align-items: center;
+    align-items: end;
 }
 
-.deckbuilder-manage-search-input {
-    min-width: min(480px, 100%);
+.deckbuilder-manage-filter-field {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.deckbuilder-manage-filter-field > span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.deckbuilder-manage-search-input,
+.deckbuilder-manage-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 46px;
+    padding: 9px 11px;
+    border-radius: 12px;
+}
+
+.deckbuilder-manage-filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.deckbuilder-manage-apply-button,
+.deckbuilder-manage-clear-button {
+    width: auto;
+    min-width: 92px;
+    min-height: 46px;
+    border-radius: 12px;
+    font-size: 0.94rem;
+}
+
+.deckbuilder-manage-results-summary {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0 0.25rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 800;
 }
 
 .deckbuilder-manage-list {
@@ -152,40 +424,123 @@
 }
 
 .deckbuilder-manage-card {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr) 326px;
     gap: 1rem;
     align-items: center;
-    padding: 1rem;
+    padding: 0.85rem 1rem;
     border-radius: 16px;
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+.deckbuilder-manage-card:hover {
+    border-color: rgba(110, 156, 255, 0.42);
+    background: rgba(20, 31, 54, 0.78);
+}
+
+.deckbuilder-manage-card-image-column {
+    width: 78px;
+    height: 108px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.deckbuilder-manage-card-image {
+    display: block;
+    width: 78px;
+    height: 108px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.36);
+}
+
+.deckbuilder-manage-card-image-placeholder {
+    width: 78px;
+    height: 108px;
+    border: 1px dashed rgba(148, 163, 184, 0.38);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.035);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+}
+
+.deckbuilder-manage-card-main {
+    min-width: 0;
+}
+
 .deckbuilder-manage-card-title {
-    font-size: 1.08rem;
-    font-weight: 800;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 1.12rem;
+    font-weight: 900;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .deckbuilder-manage-card-meta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 0.45rem;
-    margin-top: 0.25rem;
+    margin-top: 0.45rem;
     color: rgba(226, 232, 240, 0.72);
     font-size: 0.9rem;
 }
 
-.deckbuilder-manage-card-actions {
-    display: flex;
-    gap: 0.5rem;
+.deckbuilder-manage-format-badge {
+    display: inline-flex;
     align-items: center;
+    min-height: 25px;
+    padding: 3px 9px;
+    border: 1px solid rgba(110, 156, 255, 0.46);
+    border-radius: 999px;
+    background: rgba(72, 127, 255, 0.14);
+    color: #dbe7ff;
+    font-size: 0.78rem;
+    font-weight: 900;
+}
+
+.deckbuilder-manage-card-date-row {
+    display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    gap: 0.5rem 1rem;
+    margin-top: 0.55rem;
+    color: rgba(226, 232, 240, 0.62);
+    font-size: 0.8rem;
+    line-height: 1.3;
+}
+
+.deckbuilder-manage-card-date-row strong {
+    color: rgba(226, 232, 240, 0.82);
+}
+
+.deckbuilder-manage-card-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(96px, 1fr));
+    gap: 0.5rem;
+    align-items: stretch;
 }
 
 .deckbuilder-manage-card-actions form {
+    display: flex;
+    width: 100%;
     margin: 0;
+}
+
+.deckbuilder-manage-row-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    border-radius: 12px;
+    font-size: 0.92rem;
+    padding: 8px 10px;
 }
 
 .deckbuilder-manage-empty {
@@ -193,6 +548,7 @@
     place-items: center;
     gap: 0.75rem;
     min-height: 260px;
+    padding: 1.5rem;
     border-radius: 18px;
     background: rgba(15, 23, 42, 0.54);
     border: 1px dashed rgba(148, 163, 184, 0.30);
@@ -204,16 +560,129 @@
     margin: 0;
 }
 
-@media (max-width: 780px) {
-    .deckbuilder-manage-header,
-    .deckbuilder-manage-card,
-    .deckbuilder-manage-search-form {
+.deckbuilder-manage-empty-button {
+    width: auto;
+    min-width: 170px;
+}
+
+.deckbuilder-manage-pagination {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr) 150px;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.54);
+}
+
+.deckbuilder-manage-page-button {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 12px;
+    gap: 0.5rem;
+    font-size: 0.92rem;
+}
+
+.deckbuilder-manage-page-button-disabled {
+    opacity: 0.42;
+    cursor: default;
+    pointer-events: none;
+}
+
+.deckbuilder-manage-page-status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    text-align: center;
+}
+
+.deckbuilder-manage-page-status strong {
+    color: var(--text);
+}
+
+.deckbuilder-manage-page-status span {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+@media (max-width: 1100px) {
+    .deckbuilder-manage-filter-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .deckbuilder-manage-search-field {
+        grid-column: 1 / -1;
+    }
+
+    .deckbuilder-manage-filter-actions {
+        align-self: end;
+    }
+
+    .deckbuilder-manage-card {
+        grid-template-columns: 88px minmax(0, 1fr);
+    }
+
+    .deckbuilder-manage-card-actions {
+        grid-column: 1 / -1;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .deckbuilder-manage-header {
         align-items: stretch;
         flex-direction: column;
     }
 
+    .deckbuilder-manage-new-button {
+        width: 100%;
+    }
+
+    .deckbuilder-manage-filter-form {
+        grid-template-columns: 1fr;
+    }
+
+    .deckbuilder-manage-search-field {
+        grid-column: auto;
+    }
+
+    .deckbuilder-manage-filter-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .deckbuilder-manage-filter-actions > * {
+        width: 100%;
+    }
+
+    .deckbuilder-manage-card {
+        grid-template-columns: 68px minmax(0, 1fr);
+        gap: 0.8rem;
+        padding: 0.8rem;
+    }
+
+    .deckbuilder-manage-card-image-column,
+    .deckbuilder-manage-card-image,
+    .deckbuilder-manage-card-image-placeholder {
+        width: 62px;
+        height: 87px;
+    }
+
+    .deckbuilder-manage-card-title {
+        white-space: normal;
+    }
+
     .deckbuilder-manage-card-actions {
-        justify-content: flex-start;
+        grid-template-columns: 1fr;
+    }
+
+    .deckbuilder-manage-pagination {
+        grid-template-columns: 1fr;
+    }
+
+    .deckbuilder-manage-page-status {
+        grid-row: 1;
     }
 }
 </style>

@@ -1246,6 +1246,10 @@ def get_custom_draft_pack_slot_options():
                 "value": "colorless_multi_land",
                 "label": "Colorless/Multi/Land",
             },
+            {
+                "value": "colorless_multi_land_rare",
+                "label": "Colorless/Multi + Land (Rare)",
+            },
         ],
         "rarity_options": [
             {
@@ -1555,7 +1559,7 @@ def custom_draft_card_matches_color_rule(card_row, color_rule):
     if clean_color_rule == "colorless_multi":
         return is_colorless or is_multi
 
-    if clean_color_rule == "colorless_multi_land":
+    if clean_color_rule in {"colorless_multi_land", "colorless_multi_land_rare"}:
         return is_colorless or is_multi or is_land
 
     return True
@@ -1756,6 +1760,58 @@ def get_custom_draft_pack_candidates_with_fallback(card_pool, slot_rule):
         "fallback_label": "none",
         "effective_rule": None,
     }
+
+def get_custom_draft_color_bucket(card_row):
+    colors = get_custom_draft_card_color_identity(card_row)
+    type_line = ((card_row["type_line"] if "type_line" in card_row.keys() else "") or "").lower()
+
+    is_land = "land" in type_line
+    is_colorless = len(colors) == 0
+    is_multi = len(colors) >= 2
+
+    if is_land:
+        return "land"
+
+    if is_multi:
+        return "multi"
+
+    if is_colorless:
+        return "colorless"
+
+    return ""
+
+
+def choose_custom_draft_weighted_color_target(color_rule):
+    clean_color_rule = str(color_rule or "any").strip().lower()
+
+    if clean_color_rule != "colorless_multi_land_rare":
+        return ""
+
+    random_module = __import__("random")
+    roll_value = random_module.random()
+
+    if roll_value < 0.37:
+        return "colorless"
+
+    if roll_value < 0.74:
+        return "multi"
+
+    return "land"
+
+
+def apply_custom_draft_weighted_color_choice(candidate_cards, color_rule):
+    target_color_bucket = choose_custom_draft_weighted_color_target(color_rule)
+
+    if not target_color_bucket:
+        return candidate_cards
+
+    preferred_cards = [
+        card_row
+        for card_row in candidate_cards or []
+        if get_custom_draft_color_bucket(card_row) == target_color_bucket
+    ]
+
+    return preferred_cards or candidate_cards
 
 def choose_custom_draft_weighted_rarity_target(rarity_rule):
     clean_rarity_rule = str(rarity_rule or "any").strip().lower()
@@ -1967,6 +2023,11 @@ def generate_custom_draft_set_pack_cards(set_code, booster_name, batch_card_name
         candidates = apply_custom_draft_weighted_rarity_choice(
             candidates,
             effective_rule["rarity_rule"] if effective_rule else slot["rarity_rule"],
+        )
+
+        candidates = apply_custom_draft_weighted_color_choice(
+            candidates,
+            effective_rule["color_rule"] if effective_rule else slot["color_rule"],
         )
 
         candidates = filter_custom_draft_candidates_for_exact_special_category(

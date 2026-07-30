@@ -2730,3 +2730,124 @@ function initializeChaosDraftPage() {
         show: showConfirm
     };
 })();
+
+(function () {
+    const appTabs = document.querySelector(".app-tabs");
+    const menuToggleButton = document.getElementById("appMenuToggleButton");
+
+    if (!appTabs || !menuToggleButton) {
+        return;
+    }
+
+    const menuStorageKey = "imomir-main-menu-collapsed";
+
+    function isMenuCollapsed() {
+        return appTabs.classList.contains("app-tabs-collapsed");
+    }
+
+    function updateWorkspaceNavigationOffset() {
+        /*
+         * A collapsed navigation floats over the upper-left corner rather
+         * than reserving vertical space for the complete navigation bar.
+         */
+        if (isMenuCollapsed()) {
+            document.documentElement.style.setProperty(
+                "--imomir-workspace-nav-offset",
+                "0px"
+            );
+
+            return;
+        }
+
+        const tabsRect = appTabs.getBoundingClientRect();
+        const navigationBottom = Math.ceil(tabsRect.bottom + 8);
+
+        document.documentElement.style.setProperty(
+            "--imomir-workspace-nav-offset",
+            navigationBottom + "px"
+        );
+    }
+
+    function updateMenuAccessibilityState() {
+        const collapsed = isMenuCollapsed();
+
+        menuToggleButton.setAttribute(
+            "aria-expanded",
+            collapsed ? "false" : "true"
+        );
+
+        menuToggleButton.setAttribute(
+            "aria-label",
+            collapsed ? "Expand navigation" : "Minimize navigation"
+        );
+
+        menuToggleButton.title = collapsed
+            ? "Expand Navigation"
+            : "Minimize Navigation";
+    }
+
+    function setMenuCollapsed(collapsed, savePreference) {
+        appTabs.classList.toggle(
+            "app-tabs-collapsed",
+            Boolean(collapsed)
+        );
+
+        document.body.classList.toggle(
+            "app-menu-is-collapsed",
+            Boolean(collapsed)
+        );
+
+        updateMenuAccessibilityState();
+
+        /*
+         * Wait for the class change to be applied before measuring the
+         * expanded menu's size.
+         */
+        window.requestAnimationFrame(function () {
+            updateWorkspaceNavigationOffset();
+        });
+
+        if (savePreference) {
+            try {
+                window.localStorage.setItem(
+                    menuStorageKey,
+                    collapsed ? "1" : "0"
+                );
+            } catch (error) {
+                /*
+                 * The menu still works when localStorage is unavailable.
+                 */
+            }
+        }
+    }
+
+    function loadSavedMenuState() {
+        let savedValue = "0";
+
+        try {
+            savedValue = window.localStorage.getItem(menuStorageKey) || "0";
+        } catch (error) {
+            savedValue = "0";
+        }
+
+        setMenuCollapsed(savedValue === "1", false);
+    }
+
+    menuToggleButton.addEventListener("click", function () {
+        setMenuCollapsed(!isMenuCollapsed(), true);
+    });
+
+    window.addEventListener("resize", function () {
+        updateWorkspaceNavigationOffset();
+    });
+
+    if (window.ResizeObserver) {
+        const navigationResizeObserver = new ResizeObserver(function () {
+            updateWorkspaceNavigationOffset();
+        });
+
+        navigationResizeObserver.observe(appTabs);
+    }
+
+    loadSavedMenuState();
+})();

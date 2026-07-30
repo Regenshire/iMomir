@@ -174,6 +174,36 @@ input {
     background: rgba(72, 127, 255, 0.14);
 }
 
+.app-logo-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    transition:
+        transform 0.15s ease,
+        background 0.15s ease,
+        box-shadow 0.15s ease;
+}
+
+.app-logo-link:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-1px);
+}
+
+.app-logo-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.app-menu-toggle-button {
+    flex: 0 0 auto;
+}
+
 .app-logo {
   width: 55px;
   height: 55px;
@@ -211,6 +241,146 @@ input {
   background: var(--menu);
   border: 2px solid var(--menuborder);
   color: #ffffff;
+}
+
+/* ==========================================
+   Collapsible Main Navigation
+   ========================================== */
+
+.app-tabs {
+    transition:
+        padding 0.18s ease,
+        width 0.18s ease,
+        min-height 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease,
+        box-shadow 0.18s ease;
+}
+
+.app-menu-expandable {
+    transition:
+        opacity 0.12s ease,
+        transform 0.18s ease;
+}
+
+/*
+ * Collapsed menu:
+ * The full navigation leaves the normal page layout and becomes
+ * a small floating logo in the upper-left corner.
+ */
+.app-tabs-collapsed {
+    position: fixed;
+    top: 0;
+    left: 10px;
+    z-index: 1600;
+    width: 50px;
+    min-width: 50px;
+    max-width: 50px;
+    min-height: 50px;
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.app-tabs-collapsed .app-tabs-left {
+    width: 100%;
+    height: 100%;
+    justify-content: center;
+}
+
+.app-tabs-collapsed .app-menu-toggle-button {
+    width: 50px;
+    min-width: 50px;
+    height: 50px;
+    min-height: 50px;
+    border-radius: 0;
+}
+
+.app-tabs-collapsed .app-logo {
+    width: 50px;
+    height: 50px;
+}
+
+.app-tabs-collapsed .app-menu-expandable {
+    display: none;
+}
+
+.app-tabs-collapsed .app-logo-link:hover {
+    background: transparent;
+    transform: scale(1.06);
+}
+
+/*
+ * Remove the vertical gap that formerly separated the menu from
+ * the page content.
+ */
+.app-menu-is-collapsed .app-frame {
+    gap: 0;
+}
+
+/*
+ * Ordinary pages reclaim the menu's former vertical space.
+ */
+.app-menu-is-collapsed .screen,
+.app-menu-is-collapsed .deckbuilder-manage-page {
+    padding-top: 0;
+}
+
+/*
+ * Full-screen workspaces reclaim the complete vertical space.
+ * Leave a narrow area at the upper-left so their controls are not
+ * covered by the floating logo.
+ */
+.app-menu-is-collapsed .deckbuilder-workspace {
+    padding-left: 70px;
+}
+
+.app-menu-is-collapsed .campaign-test-draft-main-panel {
+    padding-left: 70px;
+}
+
+/*
+ * Smaller floating menu and safe area on phones and narrow screens.
+ */
+@media (max-width: 760px) {
+    .app-tabs-collapsed {
+        top: 8px;
+        left: 8px;
+        width: 48px;
+        min-width: 48px;
+        max-width: 48px;
+        min-height: 48px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    .app-tabs-collapsed .app-menu-toggle-button {
+        width: 48px;
+        min-width: 48px;
+        height: 48px;
+        min-height: 48px;
+    }
+
+    .app-tabs-collapsed .app-logo {
+        width: 44px;
+        height: 44px;
+    }
+
+    .app-menu-is-collapsed .deckbuilder-workspace {
+        padding-left: 66px;
+    }
+
+    .app-menu-is-collapsed .campaign-test-draft-main-panel {
+        padding-left: 66px;
+    }
 }
 
 .app-footer {
@@ -2913,13 +3083,29 @@ input {
 
 .campaign-pack-row {
     display: grid;
-    grid-template-columns: 34px 78px minmax(0, 1fr) auto;
+    grid-template-columns: 34px 42px 78px minmax(0, 1fr) auto;
     gap: 14px;
     align-items: center;
     border: 1px solid var(--border);
     border-radius: 16px;
     background: var(--panel-2);
     padding: 12px;
+}
+
+.campaign-pack-row-number {
+    width: 42px;
+    min-height: 34px;
+    border: 1px solid rgba(110, 156, 255, 0.38);
+    border-radius: 12px;
+    background: rgba(72, 127, 255, 0.14);
+    color: #dbe7ff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.92rem;
+    font-weight: 900;
+    line-height: 1;
+    tabular-nums: lining-nums;
 }
 
 .campaign-pack-row-disabled {
@@ -3088,7 +3274,7 @@ input {
     }
 
     .campaign-pack-row {
-        grid-template-columns: 34px 68px minmax(0, 1fr);
+        grid-template-columns: 34px 42px 68px minmax(0, 1fr);
     }
 
     .campaign-pack-row-actions {
@@ -5156,13 +5342,17 @@ input {
     --deckbuilder-stack-column-width: 176px;
     --deckbuilder-stack-overlap: -208px;
     position: fixed;
-    inset: 0;
+    top: var(--imomir-workspace-nav-offset, 96px);
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 1400;
     background: var(--bg);
     color: var(--text);
     display: grid;
     grid-template-rows: auto auto auto minmax(0, 1fr);
-    min-height: 100vh;
+    min-height: 0;
+    height: calc(100vh - var(--imomir-workspace-nav-offset, 96px));
     overflow: hidden;
     padding: 10px 12px 14px 12px;
 }
@@ -7165,15 +7355,18 @@ input {
     --campaign-test-draft-card-width: 184px;
     --campaign-test-draft-stack-column-width: 184px;
     --campaign-test-draft-stack-overlap: -220px;
-    --campaign-test-draft-card-width: 184px;
     position: fixed;
-    inset: 0;
+    top: var(--imomir-workspace-nav-offset, 96px);
+    right: 0;
+    bottom: 0;
+    left: 0;
     z-index: 1400;
     background: var(--bg);
     color: var(--text);
     display: grid;
     grid-template-columns: minmax(0, 1fr) 7px var(--campaign-test-draft-side-width);
-    min-height: 100vh;
+    min-height: 0;
+    height: calc(100vh - var(--imomir-workspace-nav-offset, 96px));
     overflow: hidden;
 }
 

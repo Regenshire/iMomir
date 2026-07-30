@@ -187,7 +187,9 @@ from db.deckdb import (
     create_standalone_deck,
     duplicate_deck,
     get_basic_land_counts_for_deck,
+    DECK_FORMAT_OPTIONS,
     get_deck_by_id,
+    get_deck_management_rows,
     get_loadable_deck_rows,
     get_or_create_deck_for_draft_test,
     get_saved_deckbuilder_cards_for_deck,
@@ -12835,15 +12837,49 @@ def build_deckbuilder_image_export_rows(deck_id):
 
 @app.route("/deck-builder", methods=["GET"])
 def deckbuilder_index():
-    search_text = request.args.get("search_text") or ""
-    deck_rows = get_loadable_deck_rows(
+    search_text = (request.args.get("search_text") or "").strip()
+    deck_format = (request.args.get("deck_format") or "").strip()
+    sort_option = (request.args.get("sort") or "created_desc").strip().lower()
+
+    allowed_sort_options = {
+        "created_desc",
+        "created_asc",
+        "name_asc",
+        "name_desc",
+        "format_asc",
+        "format_desc",
+    }
+
+    if sort_option not in allowed_sort_options:
+        sort_option = "created_desc"
+
+    try:
+        page = int(request.args.get("page") or 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    if page < 1:
+        page = 1
+
+    try:
+        page_size = int(request.args.get("page_size") or 20)
+    except (TypeError, ValueError):
+        page_size = 20
+
+    if page_size not in {10, 20, 50, 100}:
+        page_size = 20
+
+    management_result = get_deck_management_rows(
         search_text=search_text,
-        limit=250,
+        deck_format=deck_format,
+        sort_option=sort_option,
+        page=page,
+        page_size=page_size,
     )
 
     decks = []
 
-    for deck_row in deck_rows:
+    for deck_row in management_result["rows"]:
         source_type = (deck_row["source_type"] or "").strip().lower()
 
         if source_type == "draft_test":
@@ -12860,20 +12896,49 @@ def deckbuilder_index():
             "source_type": source_type,
             "source_label": source_label,
             "source_id": deck_row["source_id"],
+            "preview_image_url": deck_row["preview_image_url"] or "",
+            "total_card_count": int(deck_row["total_card_count"] or 0),
             "created_at_utc": deck_row["created_at_utc"] or "",
-            "updated_at_utc": deck_row["updated_at_utc"] or deck_row["created_at_utc"] or "",
-            "open_url": url_for("deckbuilder_open", deck_id=deck_row["deck_id"]),
-            "duplicate_url": url_for("deckbuilder_duplicate", deck_id=deck_row["deck_id"]),
-            "delete_url": url_for("deckbuilder_delete", deck_id=deck_row["deck_id"]),
+            "updated_at_utc": (
+                deck_row["updated_at_utc"]
+                or deck_row["created_at_utc"]
+                or ""
+            ),
+            "open_url": url_for(
+                "deckbuilder_open",
+                deck_id=deck_row["deck_id"],
+            ),
+            "duplicate_url": url_for(
+                "deckbuilder_duplicate",
+                deck_id=deck_row["deck_id"],
+            ),
+            "delete_url": url_for(
+                "deckbuilder_delete",
+                deck_id=deck_row["deck_id"],
+            ),
         })
+
+    pagination = {
+        "page": management_result["page"],
+        "page_size": management_result["page_size"],
+        "total_count": management_result["total_count"],
+        "total_pages": management_result["total_pages"],
+        "has_previous": management_result["has_previous"],
+        "has_next": management_result["has_next"],
+        "previous_page": management_result["previous_page"],
+        "next_page": management_result["next_page"],
+    }
 
     return render_template(
         "deckbuilder_manage.html",
         decks=decks,
         search_text=search_text,
+        selected_deck_format=deck_format,
+        selected_sort_option=sort_option,
+        deck_format_options=DECK_FORMAT_OPTIONS,
+        pagination=pagination,
         new_deck_url=url_for("deckbuilder_new"),
     )
-
 
 @app.route("/deck-builder/new", methods=["GET", "POST"])
 def deckbuilder_new():
@@ -12920,6 +12985,11 @@ def deckbuilder_open(deck_id):
     source_type = (deck_row["source_type"] or "").strip().lower()
     source_id = deck_row["source_id"]
 
+    # The general Deck Management route should return to Deck Management
+    # unless the caller explicitly identifies a Test Draft return target.
+    return_to = (request.args.get("return_to") or "").strip().lower()
+    return_draft_test_id = request.args.get("draft_test_id")
+
     if source_type == "draft_test" and source_id:
         draft_state = get_draft_test_detail_state(source_id)
 
@@ -12931,18 +13001,26 @@ def deckbuilder_open(deck_id):
             draft_state,
             preferred_deck_id=deck_id,
         )
-
-        back_url = url_for(
-            "campaign_chaos_test_draft",
-            draft_test_id=source_id,
-        )
     else:
         deckbuilder_context = build_deckbuilder_context_for_deck(deck_id)
-        back_url = url_for("deckbuilder_index")
 
     if not deckbuilder_context.get("ok"):
         flash(deckbuilder_context.get("message") or "Deck Builder could not be loaded.")
         return redirect(url_for("deckbuilder_index"))
+
+    back_url = url_for("deckbuilder_index")
+
+    if return_to == "test_draft":
+        try:
+            parsed_return_draft_test_id = int(return_draft_test_id or source_id or 0)
+        except (TypeError, ValueError):
+            parsed_return_draft_test_id = 0
+
+        if parsed_return_draft_test_id > 0:
+            back_url = url_for(
+                "campaign_chaos_test_draft",
+                draft_test_id=parsed_return_draft_test_id,
+            )
 
     attach_deckbuilder_common_context(
         deckbuilder_context,

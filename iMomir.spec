@@ -1,12 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
+
+hiddenimports = ['paths', 'settings', 'image_export_templates', 'pack_label_templates']
+hiddenimports += collect_submodules('db')
+hiddenimports += collect_submodules('modes')
 
 
 a = Analysis(
     ['app.py'],
-    pathex=[],
+    pathex=['.'],
     binaries=[],
-    datas=[('templates', 'templates'), ('static', 'static')],
-    hiddenimports=[],
+    datas=[('templates', 'templates'), ('static', 'static'), ('db', 'db'), ('modes', 'modes')],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

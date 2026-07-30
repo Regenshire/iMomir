@@ -15,15 +15,28 @@
       <div class="app-frame">
         <nav class="app-tabs" aria-label="Primary">
           <div class="app-tabs-left">
-            <img
-              src="{{ url_for('static', filename='img/iMomirLogo_1.png') }}"
-              alt="iMomir"
-              class="app-logo"
+            <button
+              type="button"
+              id="appMenuToggleButton"
+              class="app-logo-link app-menu-toggle-button"
+              aria-label="Minimize navigation"
+              aria-expanded="true"
+              title="Minimize Navigation"
             >
+              <img
+                src="{{ url_for('static', filename='img/iMomirLogo_1.png') }}"
+                alt="iMomir"
+                class="app-logo"
+              >
+            </button>
           </div>
-          <div class="app-tabs-nav">
+          <div class="app-tabs-nav app-menu-expandable">
             <a
-              class="app-tab {% if request.endpoint in ['index', 'result'] %}app-tab-active{% endif %}"
+              class="app-tab {% if request.endpoint in [
+                'index',
+                'result',
+                'campaign_chaos_test_draft'
+              ] %}app-tab-active{% endif %}"
               href="{% if nav_current_game_mode in ['chaos_draft', 'chaos_draft_campaign', 'preprint_chaos_draft'] %}{{ url_for('result') }}{% else %}{{ url_for('index') }}{% endif %}"
             >
               {% if nav_current_game_mode in ['chaos_draft', 'chaos_draft_campaign', 'preprint_chaos_draft'] %}Draft{% else %}Result{% endif %}
@@ -37,7 +50,12 @@
             </a>
 
             <a
-              class="app-tab {% if request.endpoint in ['deckbuilder_index', 'deckbuilder_open', 'deckbuilder_new'] %}app-tab-active{% endif %}"
+              class="app-tab {% if request.endpoint in [
+                'deckbuilder_index',
+                'deckbuilder_open',
+                'deckbuilder_new',
+                'campaign_chaos_test_draft_deck_builder'
+              ] %}app-tab-active{% endif %}"
               href="{{ url_for('deckbuilder_index') }}"
             >
               Decks
@@ -57,7 +75,7 @@
               Card Search
             </a>
           </div>
-          <div class="app-tabs-right">
+          <div class="app-tabs-right app-menu-expandable">
             <a
               class="app-gear-button {% if global_reminder_state and global_reminder_state.has_reminders %}app-gear-button-has-reminders{% endif %}"
               href="{% if global_reminder_state and global_reminder_state.has_reminders %}{{ url_for('config') }}?open=reminders,card_database&scroll=reminders{% else %}{{ url_for('config') }}?open=print_defaults,card_database,qr_code_print&scroll=qr_code_print{% endif %}"
