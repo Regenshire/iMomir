@@ -266,7 +266,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # This is basically the old behavior. Small lower-left black footer label.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.929,
+            "y1": 0.932,
             "x2": 0.490,
             "y2": 1.000,
         },
@@ -291,7 +291,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
             {
                 "shape": "ellipse",
                 "cx": 0.500,
-                "cy": 0.929,
+                "cy": 0.932,
                 "rx": 0.055,
                 "ry": 0.021,
             },
@@ -327,7 +327,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # This is basically the old behavior. Small lower-left black footer label.
         "overlay_box": {
             "x1": 0.000,
-            "y1": 0.929,
+            "y1": 0.932,
             "x2": 0.450,
             "y2": 1.000,
         },
@@ -556,7 +556,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # Explicit text styling for this template.
         "text_fill_rgb_override": (255, 255, 255),
         "text_font_family": "Plantin MT Pro",
-        "text_font_size_pt": 10.0,
+        "text_font_size_pt": 5.0,
         "text_font_bold": False,
         "text_shadow_enabled": True,
 

@@ -8295,7 +8295,13 @@ def apply_overlay_with_cutouts(image, box, radius_px, corners, fill_rgb, cutouts
 
     return image
 
-def load_image_export_label_font(template_config, fallback_font_size, allow_template_point_size=True):
+def load_image_export_label_font(
+    template_config,
+    fallback_font_size,
+    allow_template_point_size=True,
+    image_width=None,
+    image_height=None,
+):
     template_config = template_config or {}
 
     requested_family = str(template_config.get("text_font_family") or "").strip()
@@ -8306,9 +8312,30 @@ def load_image_export_label_font(template_config, fallback_font_size, allow_temp
 
     if allow_template_point_size and requested_point_size not in {None, ""}:
         try:
-            # Image export card images are effectively treated like 300 DPI print assets.
-            # 4 pt ≈ 17 px at 300 DPI.
-            font_size = max(1, int(round(float(requested_point_size) * 300.0 / 72.0)))
+            requested_point_size = float(requested_point_size)
+
+            # Template point sizes are defined against a standard 63 x 88 mm
+            # Magic card rendered at 300 DPI.
+            reference_width_px = 744.094
+            reference_height_px = 1039.370
+
+            if image_width and image_height:
+                width_scale = float(image_width) / reference_width_px
+                height_scale = float(image_height) / reference_height_px
+
+                # Use the smaller scale so the text remains proportional even
+                # if a source image has a slightly unusual aspect ratio.
+                image_scale = min(width_scale, height_scale)
+            else:
+                image_scale = 1.0
+
+            base_font_size_px = requested_point_size * 300.0 / 72.0
+
+            font_size = max(
+                1,
+                int(round(base_font_size_px * image_scale)),
+            )
+
         except (TypeError, ValueError):
             pass
 
@@ -8506,6 +8533,8 @@ def draw_image_export_template_text(
             font_template_config,
             fallback_font_size=font_size,
             allow_template_point_size=True,
+            image_width=image_width,
+            image_height=image_height,
         )
 
         try:
@@ -8522,6 +8551,8 @@ def draw_image_export_template_text(
                 font_template_config,
                 fallback_font_size=font_size,
                 allow_template_point_size=False,
+                image_width=image_width,
+                image_height=image_height,
             )
 
             try:
