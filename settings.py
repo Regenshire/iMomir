@@ -33,6 +33,19 @@ SILHOUETTE_RENDER_TARGET_HEIGHT_PX = 1067
 SILHOUETTE_CORNER_RADIUS_MM = 3.25
 SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE = True
 
+# Silhouette A4 - Vertical - 9 Card
+SILHOUETTE_A4_PAGE_WIDTH_MM = 210.0
+SILHOUETTE_A4_PAGE_HEIGHT_MM = 297.0
+
+SILHOUETTE_A4_CARD_WIDTH_MM = 63.0
+SILHOUETTE_A4_CARD_HEIGHT_MM = 88.0
+
+SILHOUETTE_A4_BLEED_MM = 0.5925
+SILHOUETTE_A4_CARD_SPACING_MM = 1.185
+
+SILHOUETTE_A4_COLUMNS = 3
+SILHOUETTE_A4_ROWS = 3
+
 PDF_CUTTING_GUIDE_CARD_WIDTH_MM = 63.0
 PDF_CUTTING_GUIDE_CARD_HEIGHT_MM = 88.0
 PDF_CUTTING_GUIDE_SIZE_MM = 2.0
@@ -90,6 +103,7 @@ DEFAULT_CONFIG = {
     "print_bleed_size_mm": "3.0",
     "pdf_crop_border": "1",
     "pdf_cutting_guides": "1",
+    "print_card_backs": "0",
 
     # Print / Export Labels
     "print_labels_enabled": "1",
@@ -164,6 +178,7 @@ PRINT_TEMPLATE_OPTIONS = [
     ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
     ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
     ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
+    ("silhouette-a4-vertical-9", "Silhouette A4 - Vertical - 9 Card"),
 ]
 
 PRINT_TEMPLATE_METADATA = {
@@ -187,6 +202,14 @@ PRINT_TEMPLATE_METADATA = {
             {
                 "label": "Download Silhouette Template",
                 "filename": "sil/Silhouette_Legal_Vertical_8_Card.studio3",
+            }
+        ],
+    },
+    "silhouette-a4-vertical-9": {
+        "download_links": [
+            {
+                "label": "Download Silhouette Template",
+                "filename": "sil/Silhouette_A4_Horizontal_9_Card.studio3",
             }
         ],
     },

@@ -543,9 +543,9 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         },
         "text_box": {
             "x1": 0.220,
-            "y1": 0.971,
+            "y1": 0.972,
             "x2": 0.780,
-            "y2": 0.994,
+            "y2": 0.990,
         },
         "text_align": "center",
 
@@ -556,7 +556,7 @@ CARD_EXPORT_FRAME_TEMPLATES = {
         # Explicit text styling for this template.
         "text_fill_rgb_override": (255, 255, 255),
         "text_font_family": "Plantin MT Pro",
-        "text_font_size_pt": 18.0,
+        "text_font_size_pt": 10.0,
         "text_font_bold": False,
         "text_shadow_enabled": True,
 

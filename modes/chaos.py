@@ -5955,7 +5955,15 @@ def build_tracked_packs_combined_pdf(
     merger = PdfWriter()
     appended_count = 0
     pack_label_states = []
-    print_pack_labels = (get_config().get("print_pack_labels") or "0").strip() == "1"
+
+    config = get_config()
+    print_pack_labels = (config.get("print_pack_labels") or "0").strip() == "1"
+    print_template = (config.get("print_template") or "").strip().lower()
+
+    is_silhouette_layout = print_template in {
+        "silhouette-letter-horizontal-8",
+        "silhouette-a4-vertical-9",
+    }
 
     for tracked_pack_id in pack_ids:
         pack_state = get_tracked_pack_state_by_id(tracked_pack_id)
@@ -5993,7 +6001,7 @@ def build_tracked_packs_combined_pdf(
         merger.close()
         raise ValueError("No selected packs could be printed.")
 
-    if print_pack_labels and pack_label_states:
+    if print_pack_labels and pack_label_states and not is_silhouette_layout:
         label_pdf_buffer = build_chaos_pack_pdf_fn(
             [],
             "Pack Labels",
@@ -6284,7 +6292,15 @@ def build_preprint_chaos_draft_pdf(
     merger = PdfWriter()
     generated_pack_count = 0
     pack_label_states = []
-    print_pack_labels = (get_config().get("print_pack_labels") or "0").strip() == "1"
+
+    config = get_config()
+    print_pack_labels = (config.get("print_pack_labels") or "0").strip() == "1"
+    print_template = (config.get("print_template") or "").strip().lower()
+
+    is_silhouette_layout = print_template in {
+        "silhouette-letter-horizontal-8",
+        "silhouette-a4-vertical-9",
+    }
 
     for player_number in range(1, parsed_player_count + 1):
         for pack_number in range(1, parsed_packs_per_player + 1):
@@ -6328,7 +6344,7 @@ def build_preprint_chaos_draft_pdf(
                 f"booster_index={chosen_variant['booster_index']}"
             )
 
-    if print_pack_labels and pack_label_states:
+    if print_pack_labels and pack_label_states and not is_silhouette_layout:
         label_pdf_buffer = build_chaos_pack_pdf_fn(
             [],
             "Pack Labels",

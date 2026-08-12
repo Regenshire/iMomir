@@ -570,6 +570,15 @@
                         >
                     </label>
 
+                    <label class="toggle-row settings-field">
+                        <span>Print Card Backs</span>
+                        <input
+                            type="checkbox"
+                            name="print_card_backs"
+                            {% if config.get("print_card_backs", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
                     <div class="metadata-row">
                         <span>Print / Export Labels</span>
                         <strong class="metadata-value-wrap">
