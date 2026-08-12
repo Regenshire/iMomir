@@ -12,6 +12,7 @@ import time
 import traceback
 import zipfile
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
@@ -3253,8 +3254,25 @@ def download_chaos_image_to_cache(card_uuid, page_kind, face_name, image_url):
             response = requests.get(candidate_url, headers=headers, timeout=120)
             response.raise_for_status()
 
-            with open(abs_path, "wb") as file_handle:
-                file_handle.write(response.content)
+            temp_abs_path = (
+                f"{abs_path}.{threading.get_ident()}.tmp"
+            )
+
+            try:
+                with open(temp_abs_path, "wb") as file_handle:
+                    file_handle.write(response.content)
+
+                os.replace(
+                    temp_abs_path,
+                    abs_path,
+                )
+
+            finally:
+                if os.path.exists(temp_abs_path):
+                    try:
+                        os.remove(temp_abs_path)
+                    except OSError:
+                        pass
 
             elapsed_ms = (
                 time.perf_counter() - download_started_at
@@ -6905,6 +6923,230 @@ def get_chaos_pdf_card_back_source(card_row):
         "is_default_back": True,
     }
 
+def prefetch_chaos_pdf_remote_images(
+    cards,
+    print_card_backs=False,
+    max_workers=6,
+):
+    prefetch_started_at = time.perf_counter()
+
+    download_jobs = {}
+
+    for card in cards:
+        card_uuid = (card.get("card_uuid") or "").strip()
+
+        if not card_uuid:
+            continue
+
+        card_row = get_chaos_card_by_uuid(card_uuid)
+
+        if not card_row:
+            continue
+
+        page_entries = build_chaos_print_pages_for_card(card_row)
+
+        if print_card_backs:
+            front_page_entries = [
+                page_entry
+                for page_entry in page_entries
+                if (
+                    page_entry.get("page_kind") or ""
+                ).strip().lower() != "back"
+            ]
+
+            if front_page_entries:
+                page_entries = [
+                    front_page_entries[0]
+                ]
+
+        for page_entry in page_entries:
+            page_image_url = (
+                page_entry.get("image_url") or ""
+            ).strip()
+
+            page_kind = (
+                page_entry.get("page_kind") or ""
+            ).strip().lower()
+
+            image_source = resolve_card_image_source_for_page(
+                card_row,
+                page_kind,
+                page_image_url,
+            )
+
+            if image_source.get("source_type") == "alternate_source":
+                continue
+
+            if not page_image_url:
+                continue
+
+            job_key = (
+                card_uuid,
+                page_kind,
+                page_entry.get("face_name") or "",
+                page_image_url,
+            )
+
+            download_jobs[job_key] = {
+                "card_uuid": card_uuid,
+                "page_kind": page_kind,
+                "face_name": page_entry.get("face_name") or "",
+                "image_url": page_image_url,
+            }
+
+        if print_card_backs:
+            back_source = get_chaos_pdf_card_back_source(
+                card_row
+            )
+
+            if back_source.get("source_type") == "remote":
+                back_image_url = (
+                    back_source.get("image_url") or ""
+                ).strip()
+
+                if back_image_url:
+                    job_key = (
+                        card_uuid,
+                        "back",
+                        back_source.get("face_name") or "Back",
+                        back_image_url,
+                    )
+
+                    download_jobs[job_key] = {
+                        "card_uuid": card_uuid,
+                        "page_kind": "back",
+                        "face_name": back_source.get("face_name") or "Back",
+                        "image_url": back_image_url,
+                    }
+
+    uncached_download_jobs = {}
+
+    for job_key, job in download_jobs.items():
+        candidate_urls = build_scryfall_candidate_image_urls(
+            job["image_url"]
+        )
+
+        already_cached = False
+
+        for candidate_url in candidate_urls:
+            cache_paths = get_chaos_cached_image_paths(
+                job["card_uuid"],
+                job["page_kind"],
+                job["face_name"],
+                candidate_url,
+            )
+
+            if os.path.exists(
+                cache_paths["absolute_path"]
+            ):
+                already_cached = True
+                break
+
+        if not already_cached:
+            uncached_download_jobs[job_key] = job
+
+    cached_job_count = (
+        len(download_jobs)
+        - len(uncached_download_jobs)
+    )
+
+    download_jobs = uncached_download_jobs
+
+    if not download_jobs:
+        elapsed_ms = (
+            time.perf_counter() - prefetch_started_at
+        ) * 1000.0
+
+        write_debug_log(
+            f"CHAOS PDF PREFETCH COMPLETE | "
+            f"jobs=0 | "
+            f"already_cached={cached_job_count} | "
+            f"elapsed_ms={elapsed_ms:.1f}"
+        )
+
+        return {
+            "job_count": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "cached_count": cached_job_count,
+            "elapsed_ms": elapsed_ms,
+        }
+
+    worker_count = max(
+        1,
+        min(
+            int(max_workers),
+            len(download_jobs),
+        ),
+    )
+
+    success_count = 0
+    failure_count = 0
+
+    write_debug_log(
+        f"CHAOS PDF PREFETCH START | "
+        f"jobs={len(download_jobs)} | "
+        f"workers={worker_count}"
+    )
+
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="chaos-image",
+    ) as executor:
+        future_map = {}
+
+        for job in download_jobs.values():
+            future = executor.submit(
+                download_chaos_image_to_cache,
+                job["card_uuid"],
+                job["page_kind"],
+                job["face_name"],
+                job["image_url"],
+            )
+
+            future_map[future] = job
+
+        for future in as_completed(future_map):
+            job = future_map[future]
+
+            try:
+                future.result()
+                success_count += 1
+
+            except Exception as exc:
+                failure_count += 1
+
+                write_debug_log(
+                    f"CHAOS PDF PREFETCH ERROR | "
+                    f"card_uuid={job['card_uuid']} | "
+                    f"page_kind={job['page_kind']} | "
+                    f"face_name={job['face_name']} | "
+                    f"error={str(exc)}"
+                )
+
+    elapsed_ms = (
+        time.perf_counter() - prefetch_started_at
+    ) * 1000.0
+
+    write_debug_log(
+        f"CHAOS PDF PREFETCH COMPLETE | "
+        f"jobs={len(download_jobs)} | "
+        f"already_cached={cached_job_count} | "
+        f"success={success_count} | "
+        f"failure={failure_count} | "
+        f"workers={worker_count} | "
+        f"elapsed_ms={elapsed_ms:.1f}"
+    )
+
+    return {
+        "job_count": len(download_jobs),
+        "success_count": success_count,
+        "failure_count": failure_count,
+        "cached_count": cached_job_count,
+        "elapsed_ms": elapsed_ms,
+    }
+
+
 def build_chaos_pdf_card_back_rendered_entry(
     card_row,
     card_uuid="",
@@ -7211,6 +7453,13 @@ def build_chaos_pack_pdf(
                     )
             except Exception as exc:
                 write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
+
+        # Prefetch all remote card images concurrently before rendering.
+        prefetch_chaos_pdf_remote_images(
+            cards,
+            print_card_backs=print_card_backs,
+            max_workers=6,
+        )
 
         # Normal card image entries.
         for card in cards:
