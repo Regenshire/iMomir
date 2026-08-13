@@ -84,6 +84,7 @@ from settings import (
     MTGJSON_SET_BOOSTER_SHEETS_URL,
     MTGJSON_SET_LIST_URL,
     OTHER_FILTER_KEYS,
+    PACK_PRICE_SOURCE_OPTIONS,
     PRIMARY_TYPE_KEYS,
     PDF_CUTTING_GUIDE_CARD_HEIGHT_MM,
     PDF_CUTTING_GUIDE_CARD_WIDTH_MM,
@@ -119,6 +120,7 @@ from settings import (
     TYPE_FLAG_MAP,
     resolve_chaos_draft_mode_value,
     resolve_momir_mode_value,
+    resolve_scoped_print_config,
 )
 
 from db.pricing import (
@@ -433,7 +435,37 @@ def get_request_print_export_label_text(default_label_text=""):
     return str(label_text or "").strip()
 
 
+def get_request_print_scope():
+    if not has_request_context():
+        return "momir"
+
+    endpoint = (request.endpoint or "").strip().lower()
+
+    if (
+        endpoint == "play_draft"
+        or endpoint.startswith("deckbuilder_")
+        or endpoint.startswith("chaos_")
+        or endpoint.startswith("campaign_chaos_")
+        or endpoint.startswith("custom_draft_")
+    ):
+        return "chaos"
+
+    return "momir"
+
+
+def get_effective_print_config(config=None, scope=None):
+    if config is None:
+        if has_request_context():
+            config = get_request_config()
+        else:
+            config = get_config()
+
+    effective_scope = scope or get_request_print_scope()
+    return resolve_scoped_print_config(config, effective_scope)
+
+
 def get_effective_print_label_settings(config):
+    config = get_effective_print_config(config)
     labels_enabled = get_config_bool(config, "print_labels_enabled", "1")
 
     if has_request_context() and hasattr(g, "print_export_labels_enabled_override"):
@@ -504,6 +536,7 @@ def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
 
 
 def _build_pdf_print_settings(config, print_labels_enabled_override=None):
+    config = get_effective_print_config(config)
     use_pdf_print = (config.get("use_pdf_print") or "1").strip() == "1"
     crop_border = (config.get("pdf_crop_border") or "1").strip() == "1"
     label_settings = apply_pack_print_label_override(
@@ -550,6 +583,7 @@ def get_request_pdf_print_settings():
 
 
 def _build_pdf_template_layout(config):
+    config = get_effective_print_config(config)
     print_template = (config.get("print_template") or "dk-1234").strip().lower()
 
     if print_template not in {
@@ -588,6 +622,7 @@ def get_request_pdf_template_layout():
 
 
 def _build_print_settings(config):
+    config = get_effective_print_config(config)
     print_template = (request.args.get("template") or config.get("print_template") or "dk-1234").strip().lower()
     if print_template not in {
         "dk-1234",
@@ -1139,6 +1174,7 @@ def get_image_download_status_copy():
 
 def update_config_from_form(form_data):
     updated_config = {}
+    current_config = get_config()
 
     checkbox_keys = {
         "type_creature",
@@ -1159,37 +1195,69 @@ def update_config_from_form(form_data):
         "allow_legendary",
         "allow_unsets",
         "allow_arena",
-        "use_pdf_print",
-        "pdf_crop_border",
-        "pdf_cutting_guides",
-        "print_card_backs",
-        "print_labels_enabled",
-        "print_label_tracking_code",
-        "print_label_front_back",
-        "print_pack_label_cards",
         "enable_track_packs",
         "enable_chaos_card_image_export",
         "export_add_bleed",
         "export_separate_special_slots",
         "chaos_replace_basic_lands",
         "use_pack_image_for_title",
-        "open_print_in_new_tab",
         "sound_enabled",
         "debug_log",
         "display_pack_prices",
         "check_new_releases",
     }
 
+    momir_print_checkbox_keys = {
+        "momir_use_pdf_print",
+        "momir_pdf_crop_border",
+        "momir_pdf_cutting_guides",
+        "momir_print_labels_enabled",
+        "momir_print_label_front_back",
+        "momir_open_print_in_new_tab",
+    }
+
+    chaos_print_checkbox_keys = {
+        "chaos_use_pdf_print",
+        "chaos_pdf_crop_border",
+        "chaos_pdf_cutting_guides",
+        "chaos_print_card_backs",
+        "chaos_print_labels_enabled",
+        "chaos_print_label_tracking_code",
+        "chaos_print_label_front_back",
+        "chaos_print_pack_label_cards",
+        "chaos_open_print_in_new_tab",
+    }
+
+    checkbox_keys.update(momir_print_checkbox_keys)
+    checkbox_keys.update(chaos_print_checkbox_keys)
+
     select_defaults = {
         "momir_mode": "momir_basic",
         "chaos_draft_mode": "chaos_draft",
         "allow_repeats": "1",
-        "print_template": "dk-1234",
-        "print_color_mode": "grayscale",
         "chaos_draft_export_format": "none",
         "chaos_scryfall_image_quality": "png",
         "auto_clear_exports": "7",
         "card_database_reminder_frequency": "monthly",
+    }
+
+    valid_print_templates = {
+        "dk-1234",
+        "standard",
+        "borderless-3p5x5-two-card",
+        "silhouette-letter-horizontal-8",
+        "silhouette-a4-vertical-9",
+        "perf-63x94",
+        "perf-69x94",
+        "landscape-3p5x5-centered",
+        "portrait-3p5x5-top-aligned",
+    }
+
+    valid_print_color_modes = {
+        "grayscale",
+        "color",
+        "monochrome",
+        "optimal",
     }
 
     for key in checkbox_keys:
@@ -1210,15 +1278,60 @@ def update_config_from_form(form_data):
         submitted_allow_repeats = select_defaults["allow_repeats"]
     updated_config["allow_repeats"] = submitted_allow_repeats
 
-    submitted_template = (form_data.get("print_template") or "").strip().lower()
-    if submitted_template not in {"dk-1234", "standard", "borderless-3p5x5-two-card", "silhouette-letter-horizontal-8", "silhouette-a4-vertical-9", "perf-63x94", "perf-69x94", "landscape-3p5x5-centered", "portrait-3p5x5-top-aligned"}:
-        submitted_template = select_defaults["print_template"]
-    updated_config["print_template"] = submitted_template
+    def parse_positive_float(field_name, default_value, allow_zero=False, maximum=None):
+        raw_value = (form_data.get(field_name) or "").strip()
 
-    submitted_color_mode = (form_data.get("print_color_mode") or "").strip().lower()
-    if submitted_color_mode not in {"grayscale", "color", "monochrome", "optimal"}:
-        submitted_color_mode = select_defaults["print_color_mode"]
-    updated_config["print_color_mode"] = submitted_color_mode
+        try:
+            parsed_value = float(raw_value)
+
+            if allow_zero:
+                if parsed_value < 0:
+                    raise ValueError()
+            elif parsed_value <= 0:
+                raise ValueError()
+        except ValueError:
+            parsed_value = float(default_value)
+
+        if maximum is not None and parsed_value > maximum:
+            parsed_value = float(maximum)
+
+        return str(parsed_value)
+
+    for print_scope in ("momir", "chaos"):
+        existing_print_config = resolve_scoped_print_config(current_config, print_scope)
+
+        default_template = (existing_print_config.get("print_template") or "dk-1234").strip().lower()
+        if default_template not in valid_print_templates:
+            default_template = "dk-1234"
+
+        submitted_template = (form_data.get(f"{print_scope}_print_template") or "").strip().lower()
+        if submitted_template not in valid_print_templates:
+            submitted_template = default_template
+        updated_config[f"{print_scope}_print_template"] = submitted_template
+
+        default_color_mode = (existing_print_config.get("print_color_mode") or "grayscale").strip().lower()
+        if default_color_mode not in valid_print_color_modes:
+            default_color_mode = "grayscale"
+
+        submitted_color_mode = (form_data.get(f"{print_scope}_print_color_mode") or "").strip().lower()
+        if submitted_color_mode not in valid_print_color_modes:
+            submitted_color_mode = default_color_mode
+        updated_config[f"{print_scope}_print_color_mode"] = submitted_color_mode
+
+        updated_config[f"{print_scope}_pdf_width_mm"] = parse_positive_float(
+            f"{print_scope}_pdf_width_mm",
+            existing_print_config.get("pdf_width_mm") or "57.5",
+        )
+        updated_config[f"{print_scope}_pdf_height_mm"] = parse_positive_float(
+            f"{print_scope}_pdf_height_mm",
+            existing_print_config.get("pdf_height_mm") or "85.25",
+        )
+        updated_config[f"{print_scope}_print_bleed_size_mm"] = parse_positive_float(
+            f"{print_scope}_print_bleed_size_mm",
+            existing_print_config.get("print_bleed_size_mm") or "3.0",
+            allow_zero=True,
+            maximum=10.0,
+        )
 
     submitted_pack_price_source = (form_data.get("pack_price_source") or "").strip().lower()
     if submitted_pack_price_source not in {"tcgplayer-retail"}:
@@ -1249,37 +1362,6 @@ def update_config_from_form(form_data):
     if submitted_card_database_reminder_frequency not in {"weekly", "monthly", "quarterly", "yearly", "never"}:
         submitted_card_database_reminder_frequency = select_defaults["card_database_reminder_frequency"]
     updated_config["card_database_reminder_frequency"] = submitted_card_database_reminder_frequency
-
-    submitted_pdf_width_mm = (form_data.get("pdf_width_mm") or "").strip()
-    try:
-        parsed_pdf_width_mm = float(submitted_pdf_width_mm)
-        if parsed_pdf_width_mm <= 0:
-            raise ValueError()
-    except ValueError:
-        parsed_pdf_width_mm = 57.5
-    updated_config["pdf_width_mm"] = str(parsed_pdf_width_mm)
-
-    submitted_pdf_height_mm = (form_data.get("pdf_height_mm") or "").strip()
-    try:
-        parsed_pdf_height_mm = float(submitted_pdf_height_mm)
-        if parsed_pdf_height_mm <= 0:
-            raise ValueError()
-    except ValueError:
-        parsed_pdf_height_mm = 85.25
-    updated_config["pdf_height_mm"] = str(parsed_pdf_height_mm)
-
-    submitted_print_bleed_size_mm = (form_data.get("print_bleed_size_mm") or "").strip()
-    try:
-        parsed_print_bleed_size_mm = float(submitted_print_bleed_size_mm)
-        if parsed_print_bleed_size_mm < 0:
-            raise ValueError()
-    except ValueError:
-        parsed_print_bleed_size_mm = 3.0
-
-    if parsed_print_bleed_size_mm > 10:
-        parsed_print_bleed_size_mm = 10.0
-
-    updated_config["print_bleed_size_mm"] = str(parsed_print_bleed_size_mm)
 
     if submitted_momir_mode == "tower_of_power":
         any_primary_selected = any(updated_config.get(key) == "1" for key, _ in PRIMARY_TYPE_KEYS)
@@ -1956,7 +2038,7 @@ def resolve_pdf_template_layout():
     return get_request_pdf_template_layout()
 
 def get_active_print_template_metadata():
-    config = get_request_config()
+    config = get_effective_print_config(get_request_config())
     selected_template_value = (config.get("print_template") or "dk-1234").strip().lower()
 
     if selected_template_value not in PRINT_TEMPLATE_METADATA:
@@ -2397,6 +2479,32 @@ def remove_file_if_exists(file_path):
         pass
 
 
+def normalize_http_url(value):
+    url = str(value or "").strip()
+
+    if not url:
+        return ""
+
+    parsed = urlparse(url)
+
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    return url
+
+
+def require_http_url(value, label="Download"):
+    url = normalize_http_url(value)
+
+    if not url:
+        raise ValueError(
+            f"{label} URL is missing or invalid: {value!r}"
+        )
+
+    return url
+
+
+
 def download_file_with_retries(
     url,
     destination_path,
@@ -2409,6 +2517,7 @@ def download_file_with_retries(
     read_timeout=120,
     chunk_size=1024 * 1024,
 ):
+    url = require_http_url(url, label)
     ensure_download_directories()
 
     destination_path = os.path.abspath(destination_path)
@@ -2463,14 +2572,27 @@ def download_file_with_retries(
                 response.raise_for_status()
 
                 raw_content_length = response.headers.get("Content-Length")
+                content_encoding = (
+                    response.headers.get("Content-Encoding") or ""
+                ).strip().lower()
+
                 try:
                     content_length = int(raw_content_length) if raw_content_length else None
                 except (TypeError, ValueError):
                     content_length = None
 
-                append_refresh_detail_line(f"=== {label}: HTTP STATUS === {response.status_code}")
-                append_refresh_detail_line(f"=== {label}: CONTENT-TYPE === {response.headers.get('Content-Type')}")
-                append_refresh_detail_line(f"=== {label}: CONTENT-LENGTH === {raw_content_length or 'Unknown'}")
+                append_refresh_detail_line(
+                    f"=== {label}: HTTP STATUS === {response.status_code}"
+                )
+                append_refresh_detail_line(
+                    f"=== {label}: CONTENT-TYPE === {response.headers.get('Content-Type')}"
+                )
+                append_refresh_detail_line(
+                    f"=== {label}: CONTENT-ENCODING === {content_encoding or 'None'}"
+                )
+                append_refresh_detail_line(
+                    f"=== {label}: CONTENT-LENGTH === {raw_content_length or 'Unknown'}"
+                )
 
                 if content_length is not None and content_length < int(expected_min_bytes or 1):
                     raise ValueError(
@@ -2513,9 +2635,14 @@ def download_file_with_retries(
                         f"{label} downloaded only {downloaded_bytes} bytes; expected at least {expected_min_bytes} bytes."
                     )
 
-                if content_length is not None and downloaded_bytes != content_length:
+                if (
+                    content_length is not None
+                    and "gzip" not in content_encoding
+                    and downloaded_bytes != content_length
+                ):
                     raise ValueError(
-                        f"{label} download size mismatch. Expected {content_length} bytes, got {downloaded_bytes} bytes."
+                        f"{label} download size mismatch. "
+                        f"Expected {content_length} bytes, got {downloaded_bytes} bytes."
                     )
 
                 os.replace(temp_path, destination_path)
@@ -3689,6 +3816,7 @@ def is_pdf_cutting_guides_enabled():
 
     try:
         config = get_request_config() if has_request_context() else get_config()
+        config = get_effective_print_config(config)
     except Exception:
         config = {}
 
@@ -6418,6 +6546,8 @@ def get_configured_print_bleed_size_mm():
             config = get_request_config()
         else:
             config = get_config()
+
+        config = get_effective_print_config(config)
     except Exception:
         config = {}
 
@@ -9570,8 +9700,13 @@ def get_scryfall_bulk_default_cards_download_uri():
         "Accept": "application/json;q=0.9,*/*;q=0.8",
     }
 
-    response = requests.get(
+    bulk_api_url = require_http_url(
         SCRYFALL_BULK_DATA_URL,
+        "Scryfall bulk-data API",
+    )
+
+    response = requests.get(
+        bulk_api_url,
         headers=headers,
         timeout=60,
     )
@@ -9580,130 +9715,526 @@ def get_scryfall_bulk_default_cards_download_uri():
     payload = response.json()
     bulk_items = safe_list(payload.get("data"))
 
-    for item in bulk_items:
-        if item.get("type") == "default_cards":
-            return {
-                "download_uri": item.get("download_uri"),
-                "updated_at": item.get("updated_at"),
-            }
+    if not bulk_items:
+        raise ValueError(
+            "Scryfall bulk-data response did not contain a valid data list."
+        )
 
-    raise ValueError("Could not find Scryfall default_cards bulk entry.")
+    for item in bulk_items:
+        if not isinstance(item, dict):
+            continue
+
+        if item.get("type") != "default_cards":
+            continue
+
+        jsonl_download_uri = normalize_http_url(
+            item.get("jsonl_download_uri")
+        )
+
+        legacy_download_uri = normalize_http_url(
+            item.get("download_uri")
+        )
+
+        download_uri = (
+            jsonl_download_uri
+            or legacy_download_uri
+        )
+
+        if not download_uri:
+            available_fields = ", ".join(
+                sorted(str(key) for key in item.keys())
+            )
+
+            raise ValueError(
+                "Scryfall default_cards bulk entry did not provide "
+                "a usable download URL. "
+                "Expected jsonl_download_uri or download_uri. "
+                f"Available fields: {available_fields}"
+            )
+
+        bulk_format = (
+            "jsonl"
+            if jsonl_download_uri
+            else "json"
+        )
+
+        append_refresh_detail_line(
+            f"=== SCRYFALL DEFAULT CARDS FORMAT === "
+            f"{bulk_format.upper()}"
+        )
+
+        append_refresh_detail_line(
+            f"=== SCRYFALL DEFAULT CARDS URL === "
+            f"{download_uri}"
+        )
+
+        return {
+            "download_uri": download_uri,
+            "updated_at": item.get("updated_at"),
+            "format": bulk_format,
+            "compressed_size": (
+                item.get("compressed_size")
+                or item.get("size")
+                or 0
+            ),
+        }
+
+    raise ValueError(
+        "Could not find Scryfall default_cards bulk entry."
+    )
+
+
+def validate_scryfall_bulk_file(file_path):
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(
+            f"Scryfall bulk file was not found after download: "
+            f"{file_path}"
+        )
+
+    file_size = os.path.getsize(file_path)
+
+    if file_size < 1024:
+        raise ValueError(
+            f"Scryfall bulk file is suspiciously small: "
+            f"{file_size} bytes."
+        )
+
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8-sig",
+    ) as file_handle:
+        first_nonempty_line = ""
+
+        for line in file_handle:
+            if line.strip():
+                first_nonempty_line = line.strip()
+                break
+
+    if not first_nonempty_line:
+        raise ValueError(
+            "Scryfall bulk file was empty after download."
+        )
+
+    if first_nonempty_line.startswith("["):
+        return "json"
+
+    try:
+        first_record = json.loads(first_nonempty_line)
+
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "Scryfall bulk file did not contain valid JSONL. "
+            f"First record error: {exc}"
+        ) from exc
+
+    if not isinstance(first_record, dict):
+        raise ValueError(
+            "Scryfall JSONL first record was not a JSON object."
+        )
+
+    return "jsonl"
 
 
 def download_scryfall_default_cards_json(force_download=False):
     ensure_download_directories()
 
     bulk_info = get_scryfall_bulk_default_cards_download_uri()
+
     remote_updated_at = bulk_info["updated_at"]
+
     local_metadata = get_import_metadata()
-    local_updated_at = local_metadata.get("scryfall_default_cards_updated_at")
+    local_updated_at = local_metadata.get(
+        "scryfall_default_cards_updated_at"
+    )
 
     if (
         not force_download
         and os.path.exists(SCRYFALL_DEFAULT_CARDS_PATH)
+        and os.path.getsize(SCRYFALL_DEFAULT_CARDS_PATH) > 1024
         and local_updated_at
         and local_updated_at == remote_updated_at
     ):
+        local_format = validate_scryfall_bulk_file(
+            SCRYFALL_DEFAULT_CARDS_PATH
+        )
+
         return {
             "downloaded": False,
             "updated_at": remote_updated_at,
-            "message": "Local Scryfall default-cards file is already current.",
+            "format": local_format,
+            "message": (
+                "Local Scryfall default-cards "
+                f"{local_format.upper()} file is already current."
+            ),
         }
 
     headers = {
         "User-Agent": "iMomir/1.0",
-        "Accept": "application/json;q=0.9,*/*;q=0.8",
+        "Accept": (
+            "application/jsonl,"
+            "application/json,"
+            "application/gzip,"
+            "*/*;q=0.8"
+        ),
     }
 
-    response = requests.get(
-        bulk_info["download_uri"],
-        headers=headers,
-        timeout=300,
+    download_path = (
+        f"{SCRYFALL_DEFAULT_CARDS_PATH}.download"
     )
-    response.raise_for_status()
 
-    with open(SCRYFALL_DEFAULT_CARDS_PATH, "wb") as file_handle:
-        file_handle.write(response.content)
+    remove_file_if_exists(download_path)
 
-    set_import_metadata("scryfall_default_cards_updated_at", remote_updated_at)
-    set_import_metadata("scryfall_default_cards_path", SCRYFALL_DEFAULT_CARDS_PATH)
+    set_refresh_status(
+        stage="Downloading Scryfall Paper Printings",
+        message=(
+            "Downloading Scryfall default-cards "
+            f"{bulk_info['format'].upper()} data..."
+        ),
+    )
+
+    download_file_with_retries(
+        bulk_info["download_uri"],
+        download_path,
+        headers=headers,
+        label="Scryfall default-cards bulk data",
+        force_download=True,
+        expected_min_bytes=1024 * 1024,
+        attempts=3,
+        connect_timeout=60,
+        read_timeout=300,
+        chunk_size=1024 * 1024,
+    )
+
+    with open(download_path, "rb") as file_handle:
+        gzip_magic = (
+            file_handle.read(2)
+            == b"\x1f\x8b"
+        )
+
+    if gzip_magic:
+        set_refresh_status(
+            stage="Extracting Scryfall Paper Printings",
+            message=(
+                "Extracting Scryfall "
+                "default-cards JSONL data..."
+            ),
+        )
+
+        extract_gzip_file_with_progress(
+            download_path,
+            SCRYFALL_DEFAULT_CARDS_PATH,
+            label="Scryfall default-cards bulk data",
+            expected_min_bytes=1024 * 1024,
+            chunk_size=1024 * 1024,
+        )
+
+        remove_file_if_exists(download_path)
+
+    else:
+        os.replace(
+            download_path,
+            SCRYFALL_DEFAULT_CARDS_PATH,
+        )
+
+    detected_format = validate_scryfall_bulk_file(
+        SCRYFALL_DEFAULT_CARDS_PATH
+    )
+
+    set_import_metadata(
+        "scryfall_default_cards_updated_at",
+        remote_updated_at or "",
+    )
+
+    set_import_metadata(
+        "scryfall_default_cards_path",
+        SCRYFALL_DEFAULT_CARDS_PATH,
+    )
+
+    set_import_metadata(
+        "scryfall_default_cards_format",
+        detected_format,
+    )
+
+    append_refresh_detail_line(
+        "=== SCRYFALL DEFAULT CARDS READY === "
+        f"format={detected_format} "
+        f"size={format_download_size(os.path.getsize(SCRYFALL_DEFAULT_CARDS_PATH))}"
+    )
 
     return {
         "downloaded": True,
         "updated_at": remote_updated_at,
-        "message": "Downloaded Scryfall default-cards bulk file.",
+        "format": detected_format,
+        "message": (
+            "Downloaded Scryfall default-cards "
+            f"{detected_format.upper()} bulk file."
+        ),
     }
+
+def iter_scryfall_default_card_objects(file_path):
+    with open(
+        file_path,
+        "r",
+        encoding="utf-8-sig",
+    ) as file_handle:
+        first_nonempty = ""
+
+        while True:
+            line = file_handle.readline()
+
+            if not line:
+                break
+
+            if line.strip():
+                first_nonempty = line.lstrip()
+                break
+
+        file_handle.seek(0)
+
+        # Backward compatibility for the old JSON-array format.
+        if first_nonempty.startswith("["):
+            raw_json = json.load(file_handle)
+
+            if not isinstance(raw_json, list):
+                raise ValueError(
+                    "Legacy Scryfall default-cards JSON "
+                    "was not a list."
+                )
+
+            for card_obj in raw_json:
+                yield card_obj
+
+            return
+
+        # Current Scryfall JSONL format.
+        for line_number, line in enumerate(
+            file_handle,
+            start=1,
+        ):
+            stripped = line.strip()
+
+            if not stripped:
+                continue
+
+            try:
+                yield json.loads(stripped)
+
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    "Malformed Scryfall JSONL record "
+                    f"at line {line_number}: {exc}"
+                ) from exc
 
 
 def import_scryfall_default_cards_into_database():
     if not os.path.exists(SCRYFALL_DEFAULT_CARDS_PATH):
-        raise FileNotFoundError("Scryfall default-cards bulk file was not found.")
-    
-    write_debug_log("SCRYFALL IMPORT | Starting import_scryfall_default_cards_into_database()")
+        raise FileNotFoundError(
+            "Scryfall default-cards bulk file was not found."
+        )
 
-    with open(SCRYFALL_DEFAULT_CARDS_PATH, "r", encoding="utf-8") as file_handle:
-        raw_json = json.load(file_handle)
+    detected_format = validate_scryfall_bulk_file(
+        SCRYFALL_DEFAULT_CARDS_PATH
+    )
 
-    write_debug_log(f"SCRYFALL IMPORT | Loaded JSON file | records={len(raw_json) if isinstance(raw_json, list) else 'invalid'}")
+    write_debug_log(
+        "SCRYFALL IMPORT | "
+        "Starting import_scryfall_default_cards_into_database() "
+        f"| format={detected_format} "
+        f"| path={SCRYFALL_DEFAULT_CARDS_PATH}"
+    )
 
-    if not isinstance(raw_json, list):
-        raise ValueError("Scryfall default-cards JSON was not a list.")
+    append_refresh_detail_line(
+        "=== SCRYFALL IMPORT BEGIN === "
+        f"format={detected_format.upper()}"
+    )
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("DELETE FROM scryfall_default_cards")
+    cursor.execute(
+        "DROP TABLE IF EXISTS temp.scryfall_default_cards_stage"
+    )
+
+    cursor.execute(
+        """
+        CREATE TEMP TABLE scryfall_default_cards_stage (
+            scryfall_id TEXT PRIMARY KEY,
+            oracle_id TEXT,
+            card_name TEXT,
+            set_code TEXT,
+            collector_number TEXT,
+            released_at TEXT,
+            image_url TEXT,
+            normal_image_url TEXT,
+            large_image_url TEXT,
+            rarity TEXT,
+            games TEXT,
+            lang TEXT
+        )
+        """
+    )
 
     inserted_count = 0
+    scanned_count = 0
 
     skipped_multiface_count = 0
     skipped_no_image_count = 0
     skipped_invalid_count = 0
 
-    seen_scryfall_ids = set()
     duplicate_scryfall_ids = 0
+    seen_scryfall_ids = set()
 
-    for card_index, card_obj in enumerate(raw_json, start=1):
-        if not isinstance(card_obj, dict):
-            skipped_invalid_count += 1
-            continue
+    try:
+        for card_index, card_obj in enumerate(
+            iter_scryfall_default_card_objects(
+                SCRYFALL_DEFAULT_CARDS_PATH
+            ),
+            start=1,
+        ):
+            scanned_count = card_index
 
-        # Skip multi-face cards (we only want clean single-face printings)
-        if card_obj.get("card_faces"):
-            skipped_multiface_count += 1
-            continue
+            if not isinstance(card_obj, dict):
+                skipped_invalid_count += 1
+                continue
 
-        image_uris = safe_dict(card_obj.get("image_uris"))
-        games = json.dumps(card_obj.get("games", []))
-        rarity = (card_obj.get("rarity") or "").strip().lower()
-        lang = (card_obj.get("lang") or "").strip().lower()
+            if card_obj.get("card_faces"):
+                skipped_multiface_count += 1
+                continue
 
-        if not image_uris:
-            skipped_no_image_count += 1
-            continue
+            image_uris = safe_dict(
+                card_obj.get("image_uris")
+            )
 
-        scryfall_id = card_obj.get("id")
-        oracle_id = card_obj.get("oracle_id")
-        card_name = card_obj.get("name")
-        set_code = card_obj.get("set")
-        collector_number = card_obj.get("collector_number")
-        released_at = card_obj.get("released_at")
+            games = json.dumps(
+                card_obj.get("games", [])
+            )
 
-        normal_image_url = image_uris.get("normal")
-        large_image_url = image_uris.get("large")
-        image_url = normal_image_url or large_image_url
+            rarity = (
+                card_obj.get("rarity") or ""
+            ).strip().lower()
 
-        if not scryfall_id or not card_name or not set_code or not image_url:
-            continue
+            lang = (
+                card_obj.get("lang") or ""
+            ).strip().lower()
 
-        if scryfall_id in seen_scryfall_ids:
-            duplicate_scryfall_ids += 1
-        else:
-            seen_scryfall_ids.add(scryfall_id)
+            if not image_uris:
+                skipped_no_image_count += 1
+                continue
+
+            scryfall_id = card_obj.get("id")
+            oracle_id = card_obj.get("oracle_id")
+            card_name = card_obj.get("name")
+            set_code = card_obj.get("set")
+            collector_number = card_obj.get(
+                "collector_number"
+            )
+            released_at = card_obj.get(
+                "released_at"
+            )
+
+            normal_image_url = image_uris.get(
+                "normal"
+            )
+
+            large_image_url = image_uris.get(
+                "large"
+            )
+
+            image_url = (
+                normal_image_url
+                or large_image_url
+            )
+
+            if (
+                not scryfall_id
+                or not card_name
+                or not set_code
+                or not image_url
+            ):
+                skipped_invalid_count += 1
+                continue
+
+            if scryfall_id in seen_scryfall_ids:
+                duplicate_scryfall_ids += 1
+            else:
+                seen_scryfall_ids.add(
+                    scryfall_id
+                )
+
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO
+                    scryfall_default_cards_stage (
+                        scryfall_id,
+                        oracle_id,
+                        card_name,
+                        set_code,
+                        collector_number,
+                        released_at,
+                        image_url,
+                        normal_image_url,
+                        large_image_url,
+                        rarity,
+                        games,
+                        lang
+                    )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scryfall_id,
+                    oracle_id,
+                    card_name,
+                    set_code.lower(),
+                    collector_number,
+                    released_at,
+                    image_url,
+                    normal_image_url,
+                    large_image_url,
+                    rarity,
+                    games,
+                    lang,
+                ),
+            )
+
+            inserted_count += 1
+
+            if inserted_count % 5000 == 0:
+                conn.commit()
+
+                set_refresh_status(
+                    stage="Indexing Paper Printings",
+                    message=(
+                        f"Indexed {inserted_count} "
+                        "Scryfall paper-printing rows..."
+                    ),
+                )
+
+                write_debug_log(
+                    "SCRYFALL IMPORT | "
+                    f"progress inserted={inserted_count} "
+                    f"scanned={card_index} "
+                    f"skipped_multiface={skipped_multiface_count} "
+                    f"skipped_no_image={skipped_no_image_count} "
+                    f"skipped_invalid={skipped_invalid_count}"
+                )
+
+        conn.commit()
+
+        if inserted_count <= 0:
+            raise ValueError(
+                "Scryfall bulk import produced zero usable rows. "
+                "Existing paper-printing data was preserved."
+            )
+        cursor.execute("BEGIN IMMEDIATE")
+
+        cursor.execute(
+            "DELETE FROM scryfall_default_cards"
+        )
 
         cursor.execute(
             """
-            INSERT OR REPLACE INTO scryfall_default_cards (
+            INSERT INTO scryfall_default_cards (
                 scryfall_id,
                 oracle_id,
                 card_name,
@@ -9717,13 +10248,11 @@ def import_scryfall_default_cards_into_database():
                 games,
                 lang
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
+            SELECT
                 scryfall_id,
                 oracle_id,
                 card_name,
-                set_code.lower(),
+                set_code,
                 collector_number,
                 released_at,
                 image_url,
@@ -9731,45 +10260,116 @@ def import_scryfall_default_cards_into_database():
                 large_image_url,
                 rarity,
                 games,
-                lang,
-            ),
+                lang
+            FROM scryfall_default_cards_stage
+            """
         )
 
-        inserted_count += 1
+        conn.commit()
 
-        if inserted_count % 2000 == 0:
-            conn.commit()
-            write_debug_log(
-                f"SCRYFALL IMPORT | progress inserted={inserted_count} scanned={card_index} "
-                f"skipped_multiface={skipped_multiface_count} skipped_no_image={skipped_no_image_count} "
-                f"skipped_invalid={skipped_invalid_count}"
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+        raise
+
+    finally:
+        try:
+            cursor.execute(
+                "DROP TABLE IF EXISTS "
+                "temp.scryfall_default_cards_stage"
             )
 
-    conn.commit()
-    conn.close()
+            conn.commit()
+
+        except Exception:
+            pass
+
+        conn.close()
 
     refresh_cards_has_paper_printing()
     refresh_cards_rarity_from_scryfall()
 
-    print("=== SCRYFALL IMPORT COMPLETE ===")
-    print("Inserted rows:", inserted_count)
-    print("Duplicate scryfall_ids seen during import:", duplicate_scryfall_ids)
+    append_refresh_detail_line(
+        "=== SCRYFALL IMPORT COMPLETE ==="
+    )
 
-    append_refresh_detail_line("=== SCRYFALL IMPORT COMPLETE ===")
-    append_refresh_detail_line(f"Inserted rows: {inserted_count}")
-    append_refresh_detail_line(f"Duplicate scryfall_ids seen during import: {duplicate_scryfall_ids}")
+    append_refresh_detail_line(
+        f"Scanned records: {scanned_count}"
+    )
+
+    append_refresh_detail_line(
+        f"Inserted rows: {inserted_count}"
+    )
+
+    append_refresh_detail_line(
+        f"Duplicate scryfall_ids: "
+        f"{duplicate_scryfall_ids}"
+    )
+
+    append_refresh_detail_line(
+        f"Skipped multi-face: "
+        f"{skipped_multiface_count}"
+    )
+
+    append_refresh_detail_line(
+        f"Skipped no image: "
+        f"{skipped_no_image_count}"
+    )
+
+    append_refresh_detail_line(
+        f"Skipped invalid: "
+        f"{skipped_invalid_count}"
+    )
 
     write_debug_log(
-        f"SCRYFALL IMPORT COMPLETE | inserted={inserted_count} "
+        "SCRYFALL IMPORT COMPLETE | "
+        f"format={detected_format} "
+        f"scanned={scanned_count} "
+        f"inserted={inserted_count} "
         f"duplicates={duplicate_scryfall_ids} "
         f"skipped_multiface={skipped_multiface_count} "
         f"skipped_no_image={skipped_no_image_count} "
         f"skipped_invalid={skipped_invalid_count}"
     )
 
-    set_import_metadata("scryfall_default_cards_rows", inserted_count)
+    set_import_metadata(
+        "scryfall_default_cards_rows",
+        inserted_count,
+    )
 
     return inserted_count
+
+def get_scryfall_default_cards_row_count():
+    conn = get_db_connection()
+
+    try:
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS row_count
+            FROM scryfall_default_cards
+            """
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return 0
+
+        try:
+            return int(row["row_count"] or 0)
+
+        except Exception:
+            return int(row[0] or 0)
+
+    finally:
+        conn.close()
+
+
 
 def refresh_cards_has_paper_printing():
     conn = get_db_connection()
@@ -10641,17 +11241,84 @@ def run_refresh_job(force_download=False):
 
         summary = import_atomic_cards_into_database()
 
-        scryfall_bulk_result = download_scryfall_default_cards_json(force_download=False)
+        try:
+            scryfall_bulk_result = (
+                download_scryfall_default_cards_json(
+                    force_download=False
+                )
+            )
 
-        set_refresh_status(
-            stage="Indexing Paper Printings",
-            message=scryfall_bulk_result["message"],
-            cards_processed=summary["cards_imported"],
-            cards_imported=summary["cards_imported"],
-            sets_represented=summary["sets_represented"],
-        )
+            set_refresh_status(
+                stage="Indexing Paper Printings",
+                message=scryfall_bulk_result["message"],
+                cards_processed=summary["cards_imported"],
+                cards_imported=summary["cards_imported"],
+                sets_represented=summary["sets_represented"],
+            )
 
-        scryfall_rows_imported = import_scryfall_default_cards_into_database()
+            scryfall_rows_imported = (
+                import_scryfall_default_cards_into_database()
+            )
+
+            set_import_metadata(
+                "scryfall_default_cards_last_error",
+                "",
+            )
+
+        except Exception as scryfall_exc:
+            existing_scryfall_rows = (
+                get_scryfall_default_cards_row_count()
+            )
+
+            scryfall_error_text = (
+                f"{type(scryfall_exc).__name__}: "
+                f"{scryfall_exc}"
+            )
+
+            append_refresh_detail_line(
+                "=== SCRYFALL PAPER-PRINTING "
+                "SYNC FAILED === "
+                f"{scryfall_error_text}"
+            )
+
+            set_import_metadata(
+                "scryfall_default_cards_last_error",
+                scryfall_error_text,
+            )
+
+            if existing_scryfall_rows <= 0:
+                raise RuntimeError(
+                    "Scryfall paper-printing sync failed "
+                    "and no previous paper-printing index "
+                    "is available. "
+                    f"Cause: {scryfall_error_text}"
+                ) from scryfall_exc
+
+            scryfall_rows_imported = (
+                existing_scryfall_rows
+            )
+
+            append_refresh_detail_line(
+                "=== USING EXISTING SCRYFALL INDEX === "
+                f"rows={existing_scryfall_rows}"
+            )
+
+            set_refresh_status(
+                stage=(
+                    "Scryfall Warning - "
+                    "Using Existing Index"
+                ),
+                message=(
+                    "Scryfall paper-printing sync failed, "
+                    "but the existing local index contains "
+                    f"{existing_scryfall_rows} rows. "
+                    "Continuing refresh with existing data."
+                ),
+                cards_processed=summary["cards_imported"],
+                cards_imported=summary["cards_imported"],
+                sets_represented=summary["sets_represented"],
+                error="",
+            )
 
         print("=== CHAOS DRAFT: BEGIN ALLPRINTINGS DOWNLOAD ===")
 
@@ -10746,13 +11413,52 @@ def run_refresh_job(force_download=False):
             source_last_updated=download_result.get("remote_timestamp", ""),
         )
     except Exception as exc:
-        print("=== REFRESH FAILED ===", repr(exc))
+        previous_status = get_refresh_status_copy()
+
+        failed_stage = (
+            previous_status.get("stage")
+            or "Unknown stage"
+        ).strip()
+
+        error_type = type(exc).__name__
+        error_text = str(exc)
+
+        print(
+            "=== REFRESH FAILED ===",
+            repr(exc),
+        )
+
+        append_refresh_detail_line(
+            "=== REFRESH FAILED DURING === "
+            f"{failed_stage}"
+        )
+
+        append_refresh_detail_line(
+            "=== REFRESH FAILURE CAUSE === "
+            f"{error_type}: {error_text}"
+        )
+
+        write_error_log(
+            "CARD DATABASE REFRESH FAILED "
+            f"| stage={failed_stage}",
+            exc=exc,
+        )
+
         set_refresh_status(
             is_running=False,
             stage="Failed",
-            message="Refresh failed.",
-            finished_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            error=str(exc),
+            message=(
+                "Refresh failed during: "
+                f"{failed_stage}"
+            ),
+            finished_at=(
+                datetime.now(timezone.utc)
+                .strftime("%Y-%m-%d %H:%M:%S UTC")
+            ),
+            error=(
+                f"{error_type}: "
+                f"{error_text}"
+            ),
         )
 
 @app.route("/")
@@ -10763,6 +11469,7 @@ def index():
 @app.route("/play/draft")
 def play_draft():
     config = get_request_config()
+    chaos_print_config = resolve_scoped_print_config(config, "chaos")
     card_database_ready = is_card_database_ready()
     print_settings = resolve_print_settings()
     current_game_mode = resolve_chaos_draft_mode_value(config)
@@ -10780,7 +11487,7 @@ def play_draft():
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
             enable_track_packs=(config.get("enable_track_packs") or "0").strip() == "1",
-            print_card_backs=(config.get("print_card_backs") or "0").strip() == "1",
+            print_card_backs=(chaos_print_config.get("print_card_backs") or "0").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
         )
 
@@ -10811,7 +11518,7 @@ def play_draft():
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
-            print_card_backs=(config.get("print_card_backs") or "0").strip() == "1",
+            print_card_backs=(chaos_print_config.get("print_card_backs") or "0").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
             campaign_players=campaign_players,
             selected_campaign_player_id=selected_campaign_player_id,
@@ -11189,8 +11896,34 @@ def config_check_new_releases():
 @app.route("/config", methods=["GET", "POST"])
 def config():
     if request.method == "POST":
+        return_section = (request.form.get("return_section") or "").strip()
+
         update_config_from_form(request.form)
         flash("Configuration saved.")
+
+        allowed_return_sections = {
+            "reminders",
+            "card_database",
+            "draft_modes",
+            "chaos_print_settings",
+            "momir_modes",
+            "other_modes",
+            "card_repeats",
+            "primary_types",
+            "supplemental_types",
+            "other_filters",
+            "momir_print_settings",
+            "exports",
+            "backup",
+            "danger_zone",
+        }
+
+        if return_section in allowed_return_sections:
+            return redirect(
+                url_for("config")
+                + f"?open={return_section}&scroll={return_section}"
+            )
+
         return redirect(url_for("config"))
 
     config_values = get_request_config()
@@ -11285,22 +12018,30 @@ def config():
 
     section_defaults = {
         "card_database": "0" if source_file_present else "1",
-        "qr_code_print": "1",
-        "print_defaults": "0",
         "card_repeats": "0",
-        "game_modes": "1",
+        "draft_modes": "1",
+        "momir_modes": "0",
+        "other_modes": "0",
+        "chaos_print_settings": "0",
+        "momir_print_settings": "0",
         "primary_types": "0",
         "supplemental_types": "0",
         "other_filters": "0",
+        "exports": "0",
+        "backup": "0",
+        "danger_zone": "0",
     }
 
-    access_url = build_access_url()
+    momir_print_config = resolve_scoped_print_config(config_values, "momir")
+    chaos_print_config = resolve_scoped_print_config(config_values, "chaos")
 
     return render_template(
         "config.html",
         config=config_values,
         momir_mode=resolved_momir_mode,
         chaos_draft_mode=resolved_chaos_draft_mode,
+        momir_print_config=momir_print_config,
+        chaos_print_config=chaos_print_config,
         primary_type_keys=PRIMARY_TYPE_KEYS,
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
@@ -11312,13 +12053,12 @@ def config():
         chaos_draft_export_format_options=CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
         scryfall_image_quality_options=SCRYFALL_IMAGE_QUALITY_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
+        pack_price_source_options=PACK_PRICE_SOURCE_OPTIONS,
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
         image_download_status=current_image_status,
         section_defaults=section_defaults,
         history_count=get_recent_history_count(),
-        qr_access_url=access_url,
-        qr_image_url=build_qr_code_image_url(access_url),
     )
 
 @app.route("/maintenance/clear-exports", methods=["POST"])
@@ -16240,6 +16980,86 @@ def chaos_card_image(card_uuid):
 
     return redirect(image_url)
 
+@app.route("/chaos-card-image-preview/<card_uuid>", methods=["GET"])
+def chaos_card_image_preview(card_uuid):
+    requested_face = (request.args.get("face") or "front").strip().lower()
+
+    if requested_face not in {"front", "back"}:
+        requested_face = "front"
+
+    card_row = get_chaos_card_by_uuid(card_uuid)
+
+    if not card_row:
+        return ("Not found", 404)
+
+    face_data = get_chaos_card_front_back_face_data(card_row)
+
+    if requested_face == "back":
+        if not face_data:
+            return ("Not found", 404)
+
+        image_url = face_data["back_image_url"]
+        page_kind = "back"
+        face_name = face_data["back_face_name"] or card_row["card_name"] or ""
+    else:
+        if face_data:
+            image_url = face_data["front_image_url"]
+            page_kind = "front"
+            face_name = face_data["front_face_name"] or card_row["card_name"] or ""
+        else:
+            image_url = (card_row["image_url"] or "").strip()
+            page_kind = "single"
+            face_name = (card_row["card_name"] or "").strip()
+
+    image_source = resolve_card_image_source_for_page(
+        card_row,
+        page_kind,
+        image_url,
+    )
+
+    if image_source.get("source_type") == "alternate_source":
+        alternate_path = os.path.abspath(image_source["absolute_path"])
+
+        if os.path.exists(alternate_path):
+            return send_file(
+                alternate_path,
+                conditional=True,
+                max_age=86400,
+            )
+
+    if not image_url:
+        return ("Not found", 404)
+
+    candidate_urls = build_scryfall_candidate_image_urls(image_url)
+
+    for candidate_url in candidate_urls:
+        cache_paths = get_chaos_cached_image_paths(
+            card_row["card_uuid"],
+            page_kind,
+            face_name,
+            candidate_url,
+        )
+
+        absolute_path = os.path.abspath(cache_paths["absolute_path"])
+
+        if os.path.exists(absolute_path):
+            return send_file(
+                absolute_path,
+                conditional=True,
+                max_age=86400,
+            )
+
+    preview_url = (
+        candidate_urls[0]
+        if candidate_urls
+        else normalize_http_url(image_url)
+    )
+
+    if not preview_url:
+        return ("Not found", 404)
+
+    return redirect(preview_url, code=302)
+
 @app.route("/chaos-draft/open-file", methods=["GET"])
 def chaos_draft_open_file():
     pdf_state = get_chaos_session_state("pending_opened_pack_pdf", default_value=None)
@@ -17358,7 +18178,7 @@ def serialize_custom_draft_card_search_result(row):
         "already_in_set": int(row["already_in_set"] or 0) == 1,
         "has_alternate_source": has_alternate_source,
         "alternate_remove_bleed": alternate_remove_bleed,
-        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+        "image_src": url_for("chaos_card_image_preview", card_uuid=row["card_uuid"]),
     }
 
 def serialize_custom_draft_current_card_result(row):
@@ -17379,7 +18199,7 @@ def serialize_custom_draft_current_card_result(row):
         "special_category_index": int(row["special_category_index"] or 0),
         "has_alternate_source": int(row["has_alternate_source"] or 0) == 1,
         "alternate_remove_bleed": int(row["alternate_remove_bleed"] or 0) == 1,
-        "image_src": url_for("chaos_card_image", card_uuid=row["card_uuid"]),
+        "image_src": url_for("chaos_card_image_preview", card_uuid=row["card_uuid"]),
     }
 
 @app.route("/custom-draft-sets/<path:set_code>/cards/import-list", methods=["POST"])

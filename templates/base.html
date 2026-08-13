@@ -27,6 +27,9 @@
                 src="{{ url_for('static', filename='img/iMomirLogo_1.png') }}"
                 alt="iMomir"
                 class="app-logo"
+                loading="eager"
+                decoding="async"
+                fetchpriority="high"
               >
             </button>
           </div>
@@ -218,7 +221,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    href="{{ url_for('config') }}?open=draft_modes&scroll=draft_modes"
                     role="menuitem"
                   >
                     Draft Modes
@@ -226,7 +229,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('config') }}?open=print_defaults&scroll=print_defaults"
+                    href="{{ url_for('config') }}?open=chaos_print_settings&scroll=chaos_print_settings"
                     role="menuitem"
                   >
                     Print Settings
@@ -240,7 +243,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    href="{{ url_for('config') }}?open=momir_modes&scroll=momir_modes"
                     role="menuitem"
                   >
                     Momir Modes
@@ -248,7 +251,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    href="{{ url_for('config') }}?open=other_modes&scroll=other_modes"
                     role="menuitem"
                   >
                     Other Modes
@@ -288,7 +291,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('config') }}?open=print_defaults&scroll=print_defaults"
+                    href="{{ url_for('config') }}?open=momir_print_settings&scroll=momir_print_settings"
                     role="menuitem"
                   >
                     Momir Print Settings
@@ -303,7 +306,7 @@
 
                 <a
                   class="app-nav-dropdown-item"
-                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  href="{{ url_for('config') }}?open=exports&scroll=exports"
                   role="menuitem"
                 >
                   Exports
@@ -311,7 +314,7 @@
 
                 <a
                   class="app-nav-dropdown-item"
-                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  href="{{ url_for('config') }}?open=backup&scroll=backup"
                   role="menuitem"
                 >
                   Backup
@@ -319,7 +322,7 @@
 
                 <a
                   class="app-nav-dropdown-item app-nav-dropdown-item-danger"
-                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  href="{{ url_for('config') }}?open=danger_zone&scroll=danger_zone"
                   role="menuitem"
                 >
                   Danger Zone
@@ -338,6 +341,9 @@
                 src="{{ global_qr_image_url }}"
                 alt=""
                 class="app-nav-qr-thumbnail"
+                loading="eager"
+                decoding="async"
+                fetchpriority="high"
               >
             </button>
           </div>

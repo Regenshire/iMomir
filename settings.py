@@ -1,4 +1,4 @@
-APP_VERSION = "1.9.2"
+APP_VERSION = "1.9.4"
 GITHUB_RELEASE_OWNER = "Regenshire"
 GITHUB_RELEASE_REPO = "iMomir"
 GITHUB_LATEST_RELEASE_API_URL = (
@@ -120,6 +120,47 @@ def resolve_chaos_draft_mode_value(config):
     return "chaos_draft"
 
 
+SCOPED_PRINT_SETTING_KEYS = (
+    "print_template",
+    "print_color_mode",
+    "use_pdf_print",
+    "pdf_width_mm",
+    "pdf_height_mm",
+    "print_bleed_size_mm",
+    "pdf_crop_border",
+    "pdf_cutting_guides",
+    "print_card_backs",
+    "print_labels_enabled",
+    "print_label_tracking_code",
+    "print_label_front_back",
+    "print_pack_label_cards",
+    "open_print_in_new_tab",
+)
+
+
+def resolve_scoped_print_config(config, scope):
+    resolved = dict(config or {})
+    normalized_scope = (scope or "momir").strip().lower()
+
+    if normalized_scope not in {"momir", "chaos"}:
+        normalized_scope = "momir"
+
+    prefix = f"{normalized_scope}_"
+
+    for key in SCOPED_PRINT_SETTING_KEYS:
+        scoped_value = resolved.get(f"{prefix}{key}")
+
+        if scoped_value is None:
+            continue
+
+        if isinstance(scoped_value, str) and not scoped_value.strip():
+            continue
+
+        resolved[key] = scoped_value
+
+    return resolved
+
+
 DEFAULT_CONFIG = {
     "type_creature": "1",
     "type_artifact": "0",
@@ -153,6 +194,38 @@ DEFAULT_CONFIG = {
     "pdf_crop_border": "1",
     "pdf_cutting_guides": "1",
     "print_card_backs": "0",
+
+    # Mode-specific print settings. Blank values intentionally fall back to
+    # the legacy shared print settings until each scope is saved once.
+    "momir_print_template": "",
+    "momir_print_color_mode": "",
+    "momir_use_pdf_print": "",
+    "momir_pdf_width_mm": "",
+    "momir_pdf_height_mm": "",
+    "momir_print_bleed_size_mm": "",
+    "momir_pdf_crop_border": "",
+    "momir_pdf_cutting_guides": "",
+    "momir_print_card_backs": "",
+    "momir_print_labels_enabled": "",
+    "momir_print_label_tracking_code": "",
+    "momir_print_label_front_back": "",
+    "momir_print_pack_label_cards": "",
+    "momir_open_print_in_new_tab": "",
+
+    "chaos_print_template": "",
+    "chaos_print_color_mode": "",
+    "chaos_use_pdf_print": "",
+    "chaos_pdf_width_mm": "",
+    "chaos_pdf_height_mm": "",
+    "chaos_print_bleed_size_mm": "",
+    "chaos_pdf_crop_border": "",
+    "chaos_pdf_cutting_guides": "",
+    "chaos_print_card_backs": "",
+    "chaos_print_labels_enabled": "",
+    "chaos_print_label_tracking_code": "",
+    "chaos_print_label_front_back": "",
+    "chaos_print_pack_label_cards": "",
+    "chaos_open_print_in_new_tab": "",
 
     # Print / Export Labels
     "print_labels_enabled": "1",

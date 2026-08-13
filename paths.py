@@ -35,7 +35,7 @@ SET_LIST_PATH = os.path.join(DATA_DOWNLOAD_DIR, "SetList.json")
 ALL_PRINTINGS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json")
 ALL_PRINTINGS_GZ_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPrintings.json.gz")
 
-SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.json")
+SCRYFALL_DEFAULT_CARDS_PATH = os.path.join(SCRYFALL_DOWNLOAD_DIR, "default-cards.jsonl")
 ALL_PRICES_TODAY_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPricesToday.json")
 ALL_PRICES_TODAY_ZIP_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AllPricesToday.json.zip")
 

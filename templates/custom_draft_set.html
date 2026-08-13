@@ -726,7 +726,7 @@
                 <div id="customDraftCurrentCardList" class="custom-draft-current-card-list">
                     {% for card in custom_set_cards %}
                     <div
-                        class="custom-draft-current-card-row"
+                        class="custom-draft-current-card-row hidden"
                         data-custom-set-card-id="{{ card.custom_set_card_id }}"
                         data-card-uuid="{{ card.card_uuid }}"
                         data-card-search="{{ (card.card_name ~ ' ' ~ card.card_set_code ~ ' ' ~ (card.collector_number or '') ~ ' ' ~ (card.rarity or '') ~ ' ' ~ (card.type_line or '') ~ ' ' ~ (card.color_identity_json or '') ~ ' ' ~ (card.mana_value|string if card.mana_value is not none else ''))|lower }}"
@@ -748,13 +748,18 @@
                     >
                         <div class="custom-draft-current-card-image-wrap">
                             <img
-                                src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                                src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
                                 alt="{{ card.card_name }}"
                                 class="custom-draft-current-card-image custom-draft-card-zoomable"
                                 role="button"
                                 tabindex="0"
-                                data-zoom-src="{{ url_for('chaos_card_image', card_uuid=card.card_uuid) }}"
+                                data-card-image-src="{{ url_for('chaos_card_image_preview', card_uuid=card.card_uuid) }}"
+                                data-card-image-state="idle"
+                                data-zoom-src="{{ url_for('chaos_card_image_preview', card_uuid=card.card_uuid) }}"
                                 data-zoom-alt="{{ card.card_name }}"
+                                loading="lazy"
+                                decoding="async"
+                                fetchpriority="low"
                                 aria-label="Zoom {{ card.card_name }}"
                             >
                         </div>
@@ -990,6 +995,228 @@
     const currentCardsViewModeStorageKey = "iMomir.customDraftSet.currentCards.viewMode";
 
     let currentCardViewMode = "list";
+
+    const deferredCardImagePlaceholder =
+        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+
+    const cardImageLoadQueue = [];
+    const queuedCardImageElements = new WeakSet();
+
+    const maxConcurrentCardImageLoads = 4;
+
+    let activeCardImageLoads = 0;
+    let cardImageLoadingEnabled = false;
+
+    function isCardImageElementEligible(imageElement) {
+        if (!imageElement || !imageElement.isConnected) {
+            return false;
+        }
+
+        const listRow = imageElement.closest(
+            ".custom-draft-current-card-row"
+        );
+
+        if (
+            listRow
+            && listRow.classList.contains("hidden")
+        ) {
+            return false;
+        }
+
+        const gridCard = imageElement.closest(
+            ".custom-draft-current-grid-card"
+        );
+
+        if (
+            gridCard
+            && currentCardGrid
+            && currentCardGrid.classList.contains("hidden")
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function pumpDeferredCardImageQueue() {
+        if (!cardImageLoadingEnabled) {
+            return;
+        }
+
+        while (
+            activeCardImageLoads < maxConcurrentCardImageLoads
+            && cardImageLoadQueue.length
+        ) {
+            const imageElement = cardImageLoadQueue.shift();
+
+            queuedCardImageElements.delete(imageElement);
+
+            if (!isCardImageElementEligible(imageElement)) {
+                continue;
+            }
+
+            const imageSrc = String(
+                imageElement.dataset.cardImageSrc || ""
+            ).trim();
+
+            if (
+                !imageSrc
+                || imageElement.dataset.cardImageState === "loaded"
+                || imageElement.dataset.cardImageState === "loading"
+            ) {
+                continue;
+            }
+
+            activeCardImageLoads += 1;
+
+            imageElement.dataset.cardImageState = "loading";
+            imageElement.loading = "lazy";
+            imageElement.decoding = "async";
+            imageElement.fetchPriority = "low";
+
+            const finishLoad = function (stateValue) {
+                imageElement.dataset.cardImageState = stateValue;
+
+                imageElement.removeEventListener(
+                    "load",
+                    handleLoad
+                );
+
+                imageElement.removeEventListener(
+                    "error",
+                    handleError
+                );
+
+                activeCardImageLoads = Math.max(
+                    0,
+                    activeCardImageLoads - 1
+                );
+
+                pumpDeferredCardImageQueue();
+            };
+
+            const handleLoad = function () {
+                finishLoad("loaded");
+            };
+
+            const handleError = function () {
+                finishLoad("error");
+            };
+
+            imageElement.addEventListener(
+                "load",
+                handleLoad,
+                { once: true }
+            );
+
+            imageElement.addEventListener(
+                "error",
+                handleError,
+                { once: true }
+            );
+
+            imageElement.src = imageSrc;
+        }
+    }
+
+    function queueDeferredCardImage(imageElement) {
+        if (
+            !cardImageLoadingEnabled
+            || !isCardImageElementEligible(imageElement)
+        ) {
+            return;
+        }
+
+        if (!imageElement.dataset.cardImageSrc) {
+            return;
+        }
+
+        if (
+            imageElement.dataset.cardImageState === "loaded"
+            || imageElement.dataset.cardImageState === "loading"
+        ) {
+            return;
+        }
+
+        if (queuedCardImageElements.has(imageElement)) {
+            return;
+        }
+
+        queuedCardImageElements.add(imageElement);
+        cardImageLoadQueue.push(imageElement);
+
+        pumpDeferredCardImageQueue();
+    }
+
+    function prepareDeferredCardImage(
+        imageElement,
+        imageSrc
+    ) {
+        if (!imageElement) {
+            return;
+        }
+
+        const cleanImageSrc = String(
+            imageSrc || ""
+        ).trim();
+
+        imageElement.src = deferredCardImagePlaceholder;
+        imageElement.dataset.cardImageSrc = cleanImageSrc;
+        imageElement.dataset.cardImageState = "idle";
+        imageElement.loading = "lazy";
+        imageElement.decoding = "async";
+        imageElement.fetchPriority = "low";
+    }
+
+    function scheduleVisibleCurrentCardImages() {
+        if (!cardImageLoadingEnabled) {
+            return;
+        }
+
+        if (currentCardViewMode === "grid") {
+            if (
+                !currentCardGrid
+                || currentCardGrid.classList.contains("hidden")
+            ) {
+                return;
+            }
+
+            currentCardGrid
+                .querySelectorAll(
+                    ".custom-draft-card-zoomable[data-card-image-src]"
+                )
+                .forEach(queueDeferredCardImage);
+
+            return;
+        }
+
+        getVisibleCurrentCardRows().forEach(
+            function (row) {
+                const imageElement = row.querySelector(
+                    ".custom-draft-current-card-image[data-card-image-src]"
+                );
+
+                queueDeferredCardImage(imageElement);
+            }
+        );
+    }
+
+    function enableDeferredCardImageLoading() {
+        if (cardImageLoadingEnabled) {
+            return;
+        }
+
+        cardImageLoadingEnabled = true;
+
+        window.requestAnimationFrame(function () {
+            window.requestAnimationFrame(function () {
+                window.setTimeout(
+                    scheduleVisibleCurrentCardImages,
+                    50
+                );
+            });
+        });
+    }
 
     function getClientSetting(settingKey, fallbackValue) {
         try {
@@ -1696,7 +1923,10 @@
         const hasAlternateSource = Boolean(card.has_alternate_source);
         const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
         const isFoil = Boolean(card.sheet_is_foil);
-        const imageSrc = card.image_src || ("/chaos-card-image/" + encodeURIComponent(cardUuid));
+        const imageSrc = card.image_src || (
+            "/chaos-card-image-preview/"
+            + encodeURIComponent(cardUuid)
+        );
         const cacheBustedImageSrc = imageSrc + "?v=" + Date.now();
 
         const row = document.createElement("div");
@@ -1724,12 +1954,17 @@
         row.innerHTML = [
             '<div class="custom-draft-current-card-image-wrap">',
                 '<img',
-                    ' src="' + escapeHtml(cacheBustedImageSrc) + '"',
+                    ' src="' + escapeHtml(deferredCardImagePlaceholder) + '"',
                     ' alt="' + escapeHtml(cardName) + '"',
                     ' class="custom-draft-current-card-image custom-draft-card-zoomable"',
                     ' role="button"',
                     ' tabindex="0"',
+                    ' data-card-image-src="' + escapeHtml(cacheBustedImageSrc) + '"',
+                    ' data-card-image-state="idle"',
                     ' data-zoom-src="' + escapeHtml(cacheBustedImageSrc) + '"',
+                    ' loading="lazy"',
+                    ' decoding="async"',
+                    ' fetchpriority="low"',
                     ' data-zoom-alt="' + escapeHtml(cardName) + '"',
                     ' aria-label="Zoom ' + escapeHtml(cardName) + '"',
                 '>',
@@ -2017,7 +2252,10 @@
         const manaValue = card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value);
         const hasAlternateSource = Boolean(card.has_alternate_source);
         const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
-        const imageSrc = card.image_src || ("/chaos-card-image/" + encodeURIComponent(cardUuid));
+        const imageSrc = card.image_src || (
+            "/chaos-card-image-preview/"
+            + encodeURIComponent(cardUuid)
+        );
         const cacheBustedImageSrc = imageSrc + "?v=" + Date.now();
 
         row.dataset.cardUuid = cardUuid;
@@ -2042,13 +2280,25 @@
             checkbox.setAttribute("aria-label", "Select " + cardName);
         }
 
-        const image = row.querySelector(".custom-draft-current-card-image");
+        const image = row.querySelector(
+            ".custom-draft-current-card-image"
+        );
+
         if (image) {
-            image.src = cacheBustedImageSrc;
+            prepareDeferredCardImage(
+                image,
+                cacheBustedImageSrc
+            );
+
             image.alt = cardName;
             image.dataset.zoomSrc = cacheBustedImageSrc;
             image.dataset.zoomAlt = cardName;
-            image.setAttribute("aria-label", "Zoom " + cardName);
+            image.setAttribute(
+                "aria-label",
+                "Zoom " + cardName
+            );
+
+            queueDeferredCardImage(image);
         }
 
         const title = row.querySelector(".custom-draft-current-card-title");
@@ -2822,7 +3072,13 @@
         const imageElement = row.querySelector(".custom-draft-current-card-image");
         const sourceGearButton = row.querySelector(".alternate-image-button");
         const sourceChangePrintingButton = row.querySelector(".custom-draft-change-printing-button");
-        const imageSrc = imageElement ? (imageElement.getAttribute("src") || "") : "";
+        const imageSrc = imageElement
+            ? (
+                imageElement.dataset.cardImageSrc
+                || imageElement.getAttribute("src")
+                || ""
+            )
+            : "";
         const zoomSrc = imageElement ? (imageElement.getAttribute("data-zoom-src") || imageSrc) : imageSrc;
         const priceText = getCurrentCardMetaText(row, "Price");
         const isFoil = row.dataset.isFoil === "1";
@@ -2839,8 +3095,16 @@
         imageWrap.className = "chaos-pack-view-image-wrap";
 
         const image = document.createElement("img");
-        image.className = "chaos-pack-view-image custom-draft-card-zoomable";
-        image.src = imageSrc;
+
+        image.className =
+            "chaos-pack-view-image custom-draft-card-zoomable";
+
+        image.src = deferredCardImagePlaceholder;
+        image.dataset.cardImageSrc = imageSrc;
+        image.dataset.cardImageState = "idle";
+        image.loading = "lazy";
+        image.decoding = "async";
+        image.fetchPriority = "low";
         image.alt = cardName;
         image.setAttribute("role", "button");
         image.setAttribute("tabindex", "0");
@@ -2969,6 +3233,7 @@
         });
 
         bindZoomableImages();
+        scheduleVisibleCurrentCardImages();
     }
 
     function updateCurrentCardViewContainers() {
@@ -3065,20 +3330,32 @@
     function applyCurrentCardPagination() {
         const pageSize = getCurrentCardPageSize();
         const filteredRows = getCurrentFilteredCardRows();
-        const startIndex = (currentCardPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
 
-        updateCurrentCardPaginationControls(filteredRows.length, pageSize);
+        updateCurrentCardPaginationControls(
+            filteredRows.length,
+            pageSize
+        );
 
-        getCurrentCardRows().forEach(function (row) {
-            const isFilterVisible = row.dataset.currentFilterVisible === "1";
-            const filteredIndex = filteredRows.indexOf(row);
-            const isPageVisible = filteredIndex >= startIndex && filteredIndex < endIndex;
+        const startIndex =
+            (currentCardPage - 1) * pageSize;
 
-            row.classList.toggle("hidden", !(isFilterVisible && isPageVisible));
+        const endIndex =
+            startIndex + pageSize;
+
+        const allRows = getCurrentCardRows();
+
+        allRows.forEach(function (row) {
+            row.classList.add("hidden");
         });
 
+        filteredRows
+            .slice(startIndex, endIndex)
+            .forEach(function (row) {
+                row.classList.remove("hidden");
+            });
+
         updateCurrentCardViewContainers();
+        scheduleVisibleCurrentCardImages();
     }
 
     function goToCurrentCardPage(pageNumber) {
@@ -3866,6 +4143,16 @@
     updateCurrentSelectionState();
     filterCurrentCards();
     bindZoomableImages();
+
+    if (document.readyState === "complete") {
+        enableDeferredCardImageLoading();
+    } else {
+        window.addEventListener(
+            "load",
+            enableDeferredCardImageLoading,
+            { once: true }
+        );
+    }
 })();
 </script>
 {% endblock %}

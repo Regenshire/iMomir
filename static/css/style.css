@@ -10157,6 +10157,20 @@ input {
     object-fit: cover;
 }
 
+.custom-draft-card-zoomable[data-card-image-state="idle"],
+.custom-draft-card-zoomable[data-card-image-state="loading"] {
+    opacity: 0;
+}
+
+.custom-draft-card-zoomable[data-card-image-state="loaded"] {
+    opacity: 1;
+    transition: opacity 0.14s ease;
+}
+
+.custom-draft-card-zoomable[data-card-image-state="error"] {
+    opacity: 0;
+}
+
 .custom-draft-current-card-main {
     min-width: 0;
     display: flex;
@@ -12681,5 +12695,401 @@ body.modal-open {
 @media (max-width: 560px) {
     .campaign-draft-testing-player-grid {
         grid-template-columns: 1fr;
+    }
+}
+
+/* ==========================================
+   Modern Settings Console
+   ========================================== */
+
+.settings-console-screen {
+    gap: 22px;
+}
+
+.settings-console-screen .config-form {
+    gap: 22px;
+}
+
+/* ------------------------------------------
+   Top-Level Settings Categories
+   ------------------------------------------ */
+
+.settings-category {
+    --settings-category-accent: #9aa7bd;
+    --settings-category-accent-soft: rgba(154, 167, 189, 0.11);
+
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+
+    padding: 16px;
+
+    border: 1px solid rgba(130, 143, 164, 0.24);
+    border-radius: 20px;
+
+    background:
+        linear-gradient(
+            180deg,
+            rgba(31, 34, 41, 0.92),
+            rgba(24, 27, 33, 0.94)
+        );
+
+    box-shadow:
+        0 14px 38px rgba(0, 0, 0, 0.24),
+        inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.settings-category-system {
+    --settings-category-accent: #a7b2c8;
+    --settings-category-accent-soft: rgba(167, 178, 200, 0.10);
+}
+
+.settings-category-chaos {
+    --settings-category-accent: #d0a55e;
+    --settings-category-accent-soft: rgba(208, 165, 94, 0.10);
+}
+
+.settings-category-momir {
+    --settings-category-accent: #7895d1;
+    --settings-category-accent-soft: rgba(120, 149, 209, 0.11);
+}
+
+.settings-category-database {
+    --settings-category-accent: #7fa8a0;
+    --settings-category-accent-soft: rgba(127, 168, 160, 0.10);
+}
+
+.settings-category-advanced {
+    --settings-category-accent: #bd7373;
+    --settings-category-accent-soft: rgba(189, 115, 115, 0.10);
+}
+
+/* ------------------------------------------
+   Category Header
+   ------------------------------------------ */
+
+.settings-category-header {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+
+    padding: 3px 4px 12px 4px;
+}
+
+.settings-category-icon {
+    width: 46px;
+    height: 46px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid rgba(150, 160, 180, 0.24);
+
+    border-radius: 13px;
+
+    background: var(--settings-category-accent-soft);
+    color: var(--settings-category-accent);
+
+    font-size: 1.15rem;
+}
+
+.settings-category-copy {
+    min-width: 0;
+}
+
+.settings-category-eyebrow {
+    margin-bottom: 2px;
+
+    color: var(--settings-category-accent);
+
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+}
+
+.settings-category-title {
+    margin: 0;
+
+    color: var(--text);
+
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.settings-category-description {
+    max-width: 820px;
+
+    margin: 4px 0 0 0;
+
+    color: var(--muted);
+
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+/* ------------------------------------------
+   Panels Within Categories
+   ------------------------------------------ */
+
+.settings-category-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.settings-category .settings-console-panel {
+    margin: 0;
+    padding: 0;
+
+    overflow: hidden;
+
+    border: 1px solid rgba(130, 143, 164, 0.20);
+    border-radius: 14px;
+
+    background:
+        linear-gradient(
+            180deg,
+            rgba(35, 38, 46, 0.88),
+            rgba(29, 32, 39, 0.88)
+        );
+
+    box-shadow: none;
+}
+
+.settings-category .settings-console-panel:hover {
+    border-color: rgba(147, 159, 179, 0.32);
+}
+
+/* ------------------------------------------
+   Section Headers
+   ------------------------------------------ */
+
+.settings-category .collapsible-header {
+    min-height: 72px;
+
+    padding: 14px 16px;
+
+    gap: 18px;
+
+    background: transparent;
+}
+
+.settings-category .collapsible-header:hover {
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.settings-section-header-copy {
+    min-width: 0;
+
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+}
+
+.settings-section-title {
+    color: var(--text);
+
+    font-size: 1.05rem;
+    font-weight: 750;
+    line-height: 1.25;
+}
+
+.settings-section-description {
+    color: var(--muted);
+
+    font-size: 0.80rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.settings-category .collapsible-chevron {
+    flex: 0 0 auto;
+
+    color: rgba(185, 194, 209, 0.72);
+
+    font-size: 1rem;
+}
+
+/* Open section gets a very subtle category tint. */
+
+.settings-category .settings-console-panel.is-open {
+    border-color: rgba(150, 160, 180, 0.32);
+}
+
+.settings-category .settings-console-panel.is-open > .collapsible-header {
+    background: var(--settings-category-accent-soft);
+}
+
+/* ------------------------------------------
+   Section Contents
+   ------------------------------------------ */
+
+.settings-category .settings-console-panel .collapsible-body {
+    padding: 16px;
+
+    border-top: 1px solid rgba(130, 143, 164, 0.14);
+}
+
+.settings-category .settings-console-panel .collapsible-body > * {
+    margin-top: 0;
+}
+
+.settings-category .settings-console-panel .collapsible-body > * + * {
+    margin-top: 14px;
+}
+
+.settings-category .settings-grid {
+    margin-top: 0;
+    gap: 9px;
+}
+
+.settings-category .toggle-row {
+    min-height: 54px;
+
+    border-color: rgba(130, 143, 164, 0.18);
+
+    background: rgba(255, 255, 255, 0.025);
+
+    box-shadow: none;
+}
+
+.settings-category .toggle-row:hover {
+    border-color: rgba(147, 159, 179, 0.30);
+    background: rgba(255, 255, 255, 0.036);
+}
+
+.settings-category .metadata-list {
+    border-color: rgba(130, 143, 164, 0.18);
+    background: rgba(255, 255, 255, 0.018);
+}
+
+/* ------------------------------------------
+   Section Save Area
+   ------------------------------------------ */
+
+.settings-section-save-row {
+    margin-top: 18px;
+    padding-top: 14px;
+
+    border-top: 1px solid rgba(130, 143, 164, 0.16);
+
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.settings-section-save-button {
+    width: auto;
+    min-width: 0;
+    min-height: 38px;
+
+    padding: 8px 14px;
+
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+
+    border-radius: 9px;
+
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.settings-section-save-button i {
+    font-size: 0.78rem;
+}
+
+/* ------------------------------------------
+   Category-Specific Details
+   ------------------------------------------ */
+
+.settings-category-advanced .settings-console-panel[data-section="danger_zone"] {
+    border-color: rgba(189, 92, 92, 0.30);
+}
+
+.settings-category-advanced
+.settings-console-panel[data-section="danger_zone"].is-open
+> .collapsible-header {
+    background: rgba(156, 66, 66, 0.11);
+}
+
+.settings-category-advanced
+.settings-console-panel[data-section="danger_zone"]
+.settings-section-save-button {
+    background: rgba(126, 69, 69, 0.75);
+}
+
+.settings-category-advanced
+.settings-console-panel[data-section="danger_zone"]
+.settings-section-save-button:hover {
+    background: rgba(148, 77, 77, 0.85);
+}
+
+/* ------------------------------------------
+   Responsive Settings Console
+   ------------------------------------------ */
+
+@media (max-width: 760px) {
+    .settings-category {
+        padding: 12px;
+        border-radius: 16px;
+    }
+
+    .settings-category-header {
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 11px;
+
+        padding: 2px 2px 10px 2px;
+    }
+
+    .settings-category-icon {
+        width: 40px;
+        height: 40px;
+
+        border-radius: 11px;
+
+        font-size: 1rem;
+    }
+
+    .settings-category-title {
+        font-size: 1.18rem;
+    }
+
+    .settings-category-description {
+        font-size: 0.82rem;
+    }
+
+    .settings-category .collapsible-header {
+        min-height: 66px;
+        padding: 12px 13px;
+    }
+
+    .settings-section-title {
+        font-size: 1rem;
+    }
+
+    .settings-section-description {
+        font-size: 0.76rem;
+    }
+
+    .settings-category .settings-console-panel .collapsible-body {
+        padding: 2px 13px 13px 13px;
+    }
+
+    .settings-section-save-row {
+        align-items: center;
+        justify-content: flex-end;
+    }
+
+    .settings-section-save-button {
+        width: auto;
     }
 }

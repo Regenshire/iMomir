@@ -1,0 +1,146 @@
+{% macro render_scoped_print_settings(scope, values, print_template_options, print_color_mode_options, include_chaos_options=false) %}
+<div class="settings-grid">
+    <label class="toggle-row" for="{{ scope }}_print_template">
+        <span>Default Print Template</span>
+        <select id="{{ scope }}_print_template" name="{{ scope }}_print_template">
+            {% for value, label in print_template_options %}
+                <option value="{{ value }}" {% if values.get("print_template") == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+            {% endfor %}
+        </select>
+    </label>
+
+    <label class="toggle-row" for="{{ scope }}_print_color_mode">
+        <span>Default Print Color</span>
+        <select id="{{ scope }}_print_color_mode" name="{{ scope }}_print_color_mode">
+            {% for value, label in print_color_mode_options %}
+                <option value="{{ value }}" {% if values.get("print_color_mode") == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+            {% endfor %}
+        </select>
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>Use PDF Printing</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_use_pdf_print"
+            {% if values.get("use_pdf_print", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>PDF Width (mm)</span>
+        <input
+            type="number"
+            name="{{ scope }}_pdf_width_mm"
+            step="0.01"
+            min="1"
+            value="{{ values.get('pdf_width_mm', '57.5') }}"
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>PDF Height (mm)</span>
+        <input
+            type="number"
+            name="{{ scope }}_pdf_height_mm"
+            step="0.01"
+            min="1"
+            value="{{ values.get('pdf_height_mm', '85.25') }}"
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>Print Bleed Size (mm)</span>
+        <input
+            type="number"
+            name="{{ scope }}_print_bleed_size_mm"
+            step="0.01"
+            min="0"
+            max="10"
+            value="{{ values.get('print_bleed_size_mm', '3.0') }}"
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>Crop Border</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_pdf_crop_border"
+            {% if values.get("pdf_crop_border", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>PDF Cutting Guides</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_pdf_cutting_guides"
+            {% if values.get("pdf_cutting_guides", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+
+    {% if include_chaos_options %}
+    <label class="toggle-row settings-field">
+        <span>Print Card Backs</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_print_card_backs"
+            {% if values.get("print_card_backs", "0") == "1" %}checked{% endif %}
+        >
+    </label>
+    {% endif %}
+
+    <label class="toggle-row settings-field">
+        <span>Enable Print/Export Labels</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_print_labels_enabled"
+            {% if values.get("print_labels_enabled", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+
+    {% if include_chaos_options %}
+    <label class="toggle-row settings-field">
+        <span>Show Pack Tracking Code on Labels</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_print_label_tracking_code"
+            {% if values.get("print_label_tracking_code", "0") == "1" %}checked{% endif %}
+        >
+    </label>
+    {% endif %}
+
+    <label class="toggle-row settings-field">
+        <span>Show FRONT/BACK on Dual-Faced Cards</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_print_label_front_back"
+            {% if values.get("print_label_front_back", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+
+    {% if include_chaos_options %}
+    <label class="toggle-row settings-field">
+        <span>Include Pack Label Cards</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_print_pack_label_cards"
+            {% if values.get("print_pack_label_cards", "0") == "1" %}checked{% endif %}
+        >
+    </label>
+    {% endif %}
+
+    <label class="toggle-row settings-field">
+        <span>Open Print in New Tab</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_open_print_in_new_tab"
+            {% if values.get("open_print_in_new_tab", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+</div>
+{% endmacro %}

@@ -168,6 +168,7 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeManaKeypad();
     initializeSetsPage();
     initializeRefreshCards();
+    initializeSettingsConsole();
     initializeConfigPanels();
     initializeGameModeCards();
     initializeConfigShortcutNavigation();
@@ -647,6 +648,294 @@ function initializeRefreshCards() {
     pollRefreshStatus();
 }
 
+function initializeSettingsConsole() {
+    const configForm = document.getElementById("configForm");
+
+    if (!configForm) {
+        return;
+    }
+
+    const screen = configForm.closest(".screen");
+
+    if (!screen) {
+        return;
+    }
+
+    if (screen.dataset.settingsConsoleInitialized === "1") {
+        return;
+    }
+
+    screen.dataset.settingsConsoleInitialized = "1";
+    screen.classList.add("settings-console-screen");
+
+    const sectionMetadata = {
+        reminders: {
+            description: "Release checks, reminder status, and notification preferences."
+        },
+        card_database: {
+            description: "Card database status, refresh controls, and source information."
+        },
+        draft_modes: {
+            description: "Choose the Chaos Draft experience used when opening Play → Draft."
+        },
+        chaos_print_settings: {
+            description: "Printing, PDF output, labels, exports, pack tracking, and draft output."
+        },
+        momir_modes: {
+            description: "Choose the active Momir-style random card mode."
+        },
+        other_modes: {
+            description: "Configure related modes that use the Momir play interface."
+        },
+        card_repeats: {
+            description: "Control duplicate card draws and recent-card history."
+        },
+        primary_types: {
+            description: "Choose the primary card types available to Momir draws."
+        },
+        supplemental_types: {
+            description: "Enable supplemental and specialty card types."
+        },
+        other_filters: {
+            description: "Fine-tune additional filters applied to Momir card selection."
+        },
+        momir_print_settings: {
+            description: "Printer and output defaults for Momir and Other Modes."
+        },
+        exports: {
+            description: "Manage generated files and automatic export cleanup."
+        },
+        backup: {
+            description: "Create, download, import, and restore iMomir backups."
+        },
+        danger_zone: {
+            description: "Diagnostics and destructive maintenance operations."
+        }
+    };
+
+    const categoryDefinitions = [
+        {
+            key: "system",
+            eyebrow: "APPLICATION",
+            title: "System Settings",
+            description: "Application-wide reminders, release information, and notification preferences.",
+            iconClass: "fa-solid fa-sliders",
+            sections: [
+                "reminders"
+            ],
+            parent: "form"
+        },
+        {
+            key: "chaos",
+            eyebrow: "GAME MODE",
+            title: "Chaos Draft Settings",
+            description: "Configure the Draft play experience and all Chaos Draft-specific output.",
+            iconClass: "fa-solid fa-shuffle",
+            sections: [
+                "draft_modes",
+                "chaos_print_settings"
+            ],
+            parent: "form"
+        },
+        {
+            key: "momir",
+            eyebrow: "GAME MODE",
+            title: "Momir Settings",
+            description: "Configure Momir modes, card selection rules, repeat behavior, filters, and printing.",
+            iconClass: "fa-solid fa-wand-magic-sparkles",
+            sections: [
+                "momir_modes",
+                "other_modes",
+                "card_repeats",
+                "primary_types",
+                "supplemental_types",
+                "other_filters",
+                "momir_print_settings"
+            ],
+            parent: "form"
+        },
+        {
+            key: "database",
+            eyebrow: "CARD DATA",
+            title: "Database Settings",
+            description: "Manage the local card database, refresh status, and card data source.",
+            iconClass: "fa-solid fa-database",
+            sections: [
+                "card_database"
+            ],
+            parent: "form"
+        },
+        {
+            key: "advanced",
+            eyebrow: "ADMINISTRATION",
+            title: "Advanced",
+            description: "Export retention, backups, diagnostics, and destructive maintenance tools.",
+            iconClass: "fa-solid fa-toolbox",
+            sections: [
+                "exports",
+                "backup",
+                "danger_zone"
+            ],
+            parent: "screen"
+        }
+    ];
+
+    function decorateSection(panel, sectionName) {
+        const metadata = sectionMetadata[sectionName] || {};
+        const header = panel.querySelector(".collapsible-header");
+        const body = panel.querySelector(".collapsible-body");
+
+        if (!header || !body) {
+            return;
+        }
+
+        panel.classList.add("settings-console-panel");
+
+        if (!header.querySelector(".settings-section-header-copy")) {
+            const currentTitle = header.firstElementChild;
+
+            if (currentTitle) {
+                const headerCopy = document.createElement("span");
+                headerCopy.className = "settings-section-header-copy";
+
+                header.insertBefore(headerCopy, currentTitle);
+                headerCopy.appendChild(currentTitle);
+
+                currentTitle.classList.add("settings-section-title");
+
+                if (metadata.description) {
+                    const description = document.createElement("span");
+                    description.className = "settings-section-description";
+                    description.textContent = metadata.description;
+
+                    headerCopy.appendChild(description);
+                }
+            }
+        }
+
+        if (!body.querySelector(".settings-section-save-row")) {
+            const saveRow = document.createElement("div");
+            saveRow.className = "settings-section-save-row";
+
+            const saveButton = document.createElement("button");
+            saveButton.type = "submit";
+            saveButton.setAttribute("form", "configForm");
+            saveButton.name = "return_section";
+            saveButton.value = sectionName;
+            saveButton.className = "action-button settings-section-save-button";
+
+            const saveIcon = document.createElement("i");
+            saveIcon.className = "fa-solid fa-floppy-disk";
+
+            const saveText = document.createElement("span");
+            saveText.textContent = "Save Settings";
+
+            saveButton.appendChild(saveIcon);
+            saveButton.appendChild(saveText);
+
+            saveRow.appendChild(saveButton);
+
+            body.appendChild(saveRow);
+        }
+    }
+
+    function createCategory(definition, panels) {
+        const category = document.createElement("section");
+        category.className =
+            "settings-category settings-category-" + definition.key;
+
+        const categoryHeader = document.createElement("div");
+        categoryHeader.className = "settings-category-header";
+
+        const icon = document.createElement("div");
+        icon.className = "settings-category-icon";
+
+        const iconElement = document.createElement("i");
+        iconElement.className = definition.iconClass;
+
+        icon.appendChild(iconElement);
+
+        const copy = document.createElement("div");
+        copy.className = "settings-category-copy";
+
+        const eyebrow = document.createElement("div");
+        eyebrow.className = "settings-category-eyebrow";
+        eyebrow.textContent = definition.eyebrow;
+
+        const title = document.createElement("h2");
+        title.className = "settings-category-title";
+        title.textContent = definition.title;
+
+        const description = document.createElement("p");
+        description.className = "settings-category-description";
+        description.textContent = definition.description;
+
+        copy.appendChild(eyebrow);
+        copy.appendChild(title);
+        copy.appendChild(description);
+
+        categoryHeader.appendChild(icon);
+        categoryHeader.appendChild(copy);
+
+        const panelContainer = document.createElement("div");
+        panelContainer.className = "settings-category-panels";
+
+        panels.forEach(function (panel) {
+            panelContainer.appendChild(panel);
+        });
+
+        category.appendChild(categoryHeader);
+        category.appendChild(panelContainer);
+
+        return category;
+    }
+
+    /*
+     * Remove the old visual separator that previously divided
+     * the flat settings list.
+     */
+    Array.from(configForm.children).forEach(function (child) {
+        if (child.classList && child.classList.contains("config-section-divider")) {
+            child.remove();
+        }
+    });
+
+    categoryDefinitions.forEach(function (definition) {
+        const panels = [];
+
+        definition.sections.forEach(function (sectionName) {
+            const panel = document.getElementById("section_" + sectionName);
+
+            if (!panel) {
+                return;
+            }
+
+            decorateSection(panel, sectionName);
+            panels.push(panel);
+        });
+
+        if (!panels.length) {
+            return;
+        }
+
+        const category = createCategory(definition, panels);
+
+        if (definition.parent === "form") {
+            configForm.appendChild(category);
+            return;
+        }
+
+        const footer = screen.querySelector(".app-footer");
+
+        if (footer) {
+            screen.insertBefore(category, footer);
+        } else {
+            screen.appendChild(category);
+        }
+    });
+}
+
+
 function initializeConfigPanels() {
     const panels = document.querySelectorAll(".collapsible-panel");
 
@@ -669,12 +958,12 @@ function initializeConfigPanels() {
 }
 
 function initializeGameModeCards() {
-    const gameModeList = document.getElementById("gameModeCardList");
+    const gameModeLists = document.querySelectorAll(".game-mode-card-list");
     const momirInput = document.getElementById("momir_mode");
     const chaosDraftInput = document.getElementById("chaos_draft_mode");
-    const printButton = document.getElementById("printSelectedTokenButton");
+    const printButtons = document.querySelectorAll(".print-selected-token-button");
 
-    if (!gameModeList || !momirInput || !chaosDraftInput) {
+    if (!gameModeLists.length || !momirInput || !chaosDraftInput) {
         return;
     }
 
@@ -686,41 +975,35 @@ function initializeGameModeCards() {
         const hiddenInput = getScopeInput(scope);
         hiddenInput.value = selectedValue;
 
-        gameModeList.querySelectorAll('.game-mode-card[data-mode-scope="' + scope + '"]').forEach(function (button) {
+        document.querySelectorAll('.game-mode-card[data-mode-scope="' + scope + '"]').forEach(function (button) {
             const isSelected = button.getAttribute("data-mode-value") === selectedValue;
             button.classList.toggle("game-mode-card-selected", isSelected);
         });
 
-        if (printButton && selectedPrintHref) {
-            printButton.setAttribute("href", selectedPrintHref);
+        if (scope === "momir" && selectedPrintHref) {
+            printButtons.forEach(function (printButton) {
+                printButton.setAttribute("href", selectedPrintHref);
+            });
         }
     }
 
-    gameModeList.addEventListener("click", function (event) {
-        const groupHeader = event.target.closest(".game-mode-group-header");
-
-        if (groupHeader) {
-            const group = groupHeader.closest(".game-mode-group");
-            if (group) {
-                group.classList.toggle("is-open");
+    gameModeLists.forEach(function (gameModeList) {
+        gameModeList.addEventListener("click", function (event) {
+            const modeButton = event.target.closest(".game-mode-card");
+            if (!modeButton) {
+                return;
             }
-            return;
-        }
 
-        const modeButton = event.target.closest(".game-mode-card");
-        if (!modeButton) {
-            return;
-        }
+            const selectedValue = modeButton.getAttribute("data-mode-value") || "";
+            const selectedScope = modeButton.getAttribute("data-mode-scope") || "momir";
+            const selectedPrintHref = modeButton.getAttribute("data-mode-print-href") || "";
 
-        const selectedValue = modeButton.getAttribute("data-mode-value") || "";
-        const selectedScope = modeButton.getAttribute("data-mode-scope") || "momir";
-        const selectedPrintHref = modeButton.getAttribute("data-mode-print-href") || "";
+            if (!selectedValue) {
+                return;
+            }
 
-        if (!selectedValue) {
-            return;
-        }
-
-        applySelection(selectedScope, selectedValue, selectedPrintHref);
+            applySelection(selectedScope, selectedValue, selectedPrintHref);
+        });
     });
 }
 

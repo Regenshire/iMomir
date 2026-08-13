@@ -3,12 +3,13 @@
 {% block title %}iMomir - Config{% endblock %}
 
 {% block content %}
+{% from "_scoped_print_settings_fields.html" import render_scoped_print_settings %}
 <div class="screen screen-wide">
     <div class="top-bar">
         <a class="icon-button" href="{{ url_for('index') }}">Back</a>
-        <div class="app-title">Game Modes</div>
+        <div class="app-title">Settings</div>
         <button type="submit" form="configForm" class="icon-button icon-button-submit">
-            Save
+            Save All
         </button>
     </div>
 
@@ -243,78 +244,153 @@
             </div>
         </div>
 
-        <div id="section_game_modes" class="page-panel collapsible-panel {% if section_defaults.get('game_modes') == '1' %}is-open{% endif %}" data-section="game_modes">
+        <input type="hidden" name="momir_mode" id="momir_mode" value="{{ momir_mode }}">
+        <input type="hidden" name="chaos_draft_mode" id="chaos_draft_mode" value="{{ chaos_draft_mode }}">
+
+        <div id="section_draft_modes" class="page-panel collapsible-panel {% if section_defaults.get('draft_modes') == '1' %}is-open{% endif %}" data-section="draft_modes">
             <button type="button" class="collapsible-header">
-                <span>Game Modes</span>
+                <span>Draft Modes</span>
                 <span class="collapsible-chevron">▾</span>
             </button>
 
             <div class="collapsible-body">
-                <input type="hidden" name="momir_mode" id="momir_mode" value="{{ momir_mode }}">
-                <input type="hidden" name="chaos_draft_mode" id="chaos_draft_mode" value="{{ chaos_draft_mode }}">
+                <div class="game-mode-group-list game-mode-card-list" data-mode-list="chaos">
+                    {% for group in grouped_game_modes %}
+                        {% if group.key == "chaos" %}
+                            <div class="game-mode-group is-open">
+                                <div class="game-mode-group-body">
+                                    {% for mode in group.modes %}
+                                        <button
+                                            type="button"
+                                            class="game-mode-card {% if chaos_draft_mode == mode.value %}game-mode-card-selected{% endif %}"
+                                            data-mode-value="{{ mode.value }}"
+                                            data-mode-scope="chaos"
+                                            data-mode-print-href="{{ mode.print_href }}"
+                                        >
+                                            <div class="game-mode-card-image-wrap">
+                                                <img
+                                                    src="{{ mode.image_src }}"
+                                                    alt="{{ mode.label }}"
+                                                    class="game-mode-card-image"
+                                                >
+                                            </div>
 
+                                            <div class="game-mode-card-content">
+                                                <div class="game-mode-card-title">{{ mode.label }}</div>
+                                                <div class="game-mode-card-description">{{ mode.description | safe }}</div>
+                                            </div>
+                                        </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div id="section_momir_modes" class="page-panel collapsible-panel {% if section_defaults.get('momir_modes') == '1' %}is-open{% endif %}" data-section="momir_modes">
+            <button type="button" class="collapsible-header">
+                <span>Momir Modes</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
                 <div class="game-modes-toolbar">
                     <a
-                        id="printSelectedTokenButton"
-                        class="action-button"
+                        class="action-button print-selected-token-button"
                         href="{% for mode in game_mode_options %}{% if mode.value == momir_mode %}{{ mode.print_href }}{% endif %}{% endfor %}"
                     >
                         Print Selected Token
                     </a>
                 </div>
 
-                <div class="game-mode-group-list" id="gameModeCardList">
+                <div class="game-mode-group-list game-mode-card-list" data-mode-list="momir">
                     {% for group in grouped_game_modes %}
-                        {% if group.key == "chaos" %}
-                            {% set selected_mode_value = chaos_draft_mode %}
-                            {% set mode_scope = "chaos" %}
-                        {% else %}
-                            {% set selected_mode_value = momir_mode %}
-                            {% set mode_scope = "momir" %}
-                        {% endif %}
+                        {% if group.key == "momir" %}
+                            <div class="game-mode-group is-open">
+                                <div class="game-mode-group-body">
+                                    {% for mode in group.modes %}
+                                        <button
+                                            type="button"
+                                            class="game-mode-card {% if momir_mode == mode.value %}game-mode-card-selected{% endif %}"
+                                            data-mode-value="{{ mode.value }}"
+                                            data-mode-scope="momir"
+                                            data-mode-print-href="{{ mode.print_href }}"
+                                        >
+                                            <div class="game-mode-card-image-wrap">
+                                                <img
+                                                    src="{{ mode.image_src }}"
+                                                    alt="{{ mode.label }}"
+                                                    class="game-mode-card-image"
+                                                >
+                                            </div>
 
-                        {% set selected_group = namespace(value=false) %}
-                        {% for mode in group.modes %}
-                            {% if selected_mode_value == mode.value %}
-                                {% set selected_group.value = true %}
-                            {% endif %}
-                        {% endfor %}
-
-                        <div class="game-mode-group {% if selected_group.value %}is-open{% endif %}" data-mode-group="{{ group.key }}">
-                            <button type="button" class="game-mode-group-header">
-                                <span>{{ group.label }}</span>
-                                <span class="game-mode-group-chevron">▾</span>
-                            </button>
-
-                            <div class="game-mode-group-body">
-                                {% for mode in group.modes %}
-                                    <button
-                                        type="button"
-                                        class="game-mode-card {% if selected_mode_value == mode.value %}game-mode-card-selected{% endif %}"
-                                        data-mode-value="{{ mode.value }}"
-                                        data-mode-scope="{{ mode_scope }}"
-                                        data-mode-print-href="{{ mode.print_href }}"
-                                    >
-                                        <div class="game-mode-card-image-wrap">
-                                            <img
-                                                src="{{ mode.image_src }}"
-                                                alt="{{ mode.label }}"
-                                                class="game-mode-card-image"
-                                            >
-                                        </div>
-
-                                        <div class="game-mode-card-content">
-                                            <div class="game-mode-card-title">{{ mode.label }}</div>
-                                            <div class="game-mode-card-description">{{ mode.description | safe }}</div>
-                                        </div>
-                                    </button>
-                                {% endfor %}
+                                            <div class="game-mode-card-content">
+                                                <div class="game-mode-card-title">{{ mode.label }}</div>
+                                                <div class="game-mode-card-description">{{ mode.description | safe }}</div>
+                                            </div>
+                                        </button>
+                                    {% endfor %}
+                                </div>
                             </div>
-                        </div>
+                        {% endif %}
                     {% endfor %}
                 </div>
             </div>
         </div>
+
+        <div id="section_other_modes" class="page-panel collapsible-panel {% if section_defaults.get('other_modes') == '1' %}is-open{% endif %}" data-section="other_modes">
+            <button type="button" class="collapsible-header">
+                <span>Other Modes</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
+                <div class="game-modes-toolbar">
+                    <a
+                        class="action-button print-selected-token-button"
+                        href="{% for mode in game_mode_options %}{% if mode.value == momir_mode %}{{ mode.print_href }}{% endif %}{% endfor %}"
+                    >
+                        Print Selected Token
+                    </a>
+                </div>
+
+                <div class="game-mode-group-list game-mode-card-list" data-mode-list="other">
+                    {% for group in grouped_game_modes %}
+                        {% if group.key == "other" %}
+                            <div class="game-mode-group is-open">
+                                <div class="game-mode-group-body">
+                                    {% for mode in group.modes %}
+                                        <button
+                                            type="button"
+                                            class="game-mode-card {% if momir_mode == mode.value %}game-mode-card-selected{% endif %}"
+                                            data-mode-value="{{ mode.value }}"
+                                            data-mode-scope="momir"
+                                            data-mode-print-href="{{ mode.print_href }}"
+                                        >
+                                            <div class="game-mode-card-image-wrap">
+                                                <img
+                                                    src="{{ mode.image_src }}"
+                                                    alt="{{ mode.label }}"
+                                                    class="game-mode-card-image"
+                                                >
+                                            </div>
+
+                                            <div class="game-mode-card-content">
+                                                <div class="game-mode-card-title">{{ mode.label }}</div>
+                                                <div class="game-mode-card-description">{{ mode.description | safe }}</div>
+                                            </div>
+                                        </button>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
 
         <div id="section_card_repeats" class="page-panel collapsible-panel {% if section_defaults.get('card_repeats') == '1' %}is-open{% endif %}" data-section="card_repeats">
             <button type="button" class="collapsible-header">
@@ -425,71 +501,28 @@
             </div>
         </div>
 
-        <div class="config-section-divider"></div>
+         <div class="config-section-divider"></div>
 
-        <div id="section_qr_code_print" class="page-panel collapsible-panel {% if section_defaults.get('qr_code_print') == '1' %}is-open{% endif %}" data-section="qr_code_print">
+        <div id="section_chaos_print_settings" class="page-panel collapsible-panel {% if section_defaults.get('chaos_print_settings') == '1' %}is-open{% endif %}" data-section="chaos_print_settings">
             <button type="button" class="collapsible-header">
-                <span>QR Code Scan</span>
+                <span>Chaos Draft Print Settings</span>
                 <span class="collapsible-chevron">▾</span>
             </button>
+
             <div class="collapsible-body">
-                <div class="qr-print-card">
-                    <div class="qr-print-card-image-wrap">
-                        <img
-                            src="{{ qr_image_url }}"
-                            alt="QR Code for iMomir"
-                            class="qr-print-card-image"
-                        >
-                    </div>
+                {{ render_scoped_print_settings(
+                    "chaos",
+                    chaos_print_config,
+                    print_template_options,
+                    print_color_mode_options,
+                    true
+                ) }}
 
-                    <div class="qr-print-card-content">
-                        <div class="qr-print-card-title">Scan to Open iMomir</div>
-                        <div class="qr-print-card-description">
-                            Use your phone camera to open this iMomir server on the current network.
-                        </div>
-                        <div class="qr-print-card-url">{{ qr_access_url }}</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+                <div class="config-section-divider"></div>
 
-        <div class="top-bar">
-            <a class="icon-button" href="{{ url_for('index') }}">Back</a>
-            <div class="app-title">Config</div>
-            <button type="submit" form="configForm" class="icon-button icon-button-submit">
-                Save
-            </button>
-        </div>
+                <h3 class="cleanup-subsection-title">Chaos Draft Output</h3>
 
-
-        <div id="section_print_defaults" class="page-panel collapsible-panel {% if section_defaults.get('print_defaults') == '1' %}is-open{% endif %}" data-section="print_defaults">
-            <button type="button" class="collapsible-header">
-                <span>Print Defaults</span>
-                <span class="collapsible-chevron">▾</span>
-            </button>
-            <div class="collapsible-body">
                 <div class="settings-grid">
-                    <label class="toggle-row" for="print_template">
-                        <span>Default Print Template</span>
-                        <select id="print_template" name="print_template">
-                            {% for value, label in print_template_options %}
-                                <option value="{{ value }}" {% if config.get("print_template") == value %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </label>
-
-                    <label class="toggle-row" for="print_color_mode">
-                        <span>Default Print Color</span>
-                        <select id="print_color_mode" name="print_color_mode">
-                            {% for value, label in print_color_mode_options %}
-                                <option value="{{ value }}" {% if config.get("print_color_mode") == value %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </label>
                     <label class="toggle-row" for="chaos_draft_export_format">
                         <span>Chaos Draft Export</span>
                         <select id="chaos_draft_export_format" name="chaos_draft_export_format">
@@ -500,6 +533,7 @@
                             {% endfor %}
                         </select>
                     </label>
+
                     <label class="toggle-row" for="chaos_scryfall_image_quality">
                         <span>Chaos Scryfall Image Quality</span>
                         <select id="chaos_scryfall_image_quality" name="chaos_scryfall_image_quality">
@@ -510,169 +544,13 @@
                             {% endfor %}
                         </select>
                     </label>
-                    <label class="toggle-row" for="momir_default_token_variant">
-                        <span>Momir Vig Default Token Style</span>
-                        <select id="momir_default_token_variant" name="momir_default_token_variant">
-                            {% for value, label in momir_default_token_variant_options %}
-                                <option value="{{ value }}" {% if config.get("momir_default_token_variant") == value %}selected{% endif %}>
-                                    {{ label }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                    <label  class="toggle-row settings-field">
-                        <span>Use PDF Printing</span>
-                        <input
-                            type="checkbox"
-                            name="use_pdf_print"
-                            {% if config.use_pdf_print == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>PDF Width (mm)</span>
-                        <input
-                            type="number"
-                            name="pdf_width_mm"
-                            step="0.01"
-                            min="1"
-                            value="{{ config.pdf_width_mm }}"
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>PDF Height (mm)</span>
-                        <input
-                            type="number"
-                            name="pdf_height_mm"
-                            step="0.01"
-                            min="1"
-                            value="{{ config.pdf_height_mm }}"
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Print Bleed Size (mm)</span>
-                        <input
-                            type="number"
-                            name="print_bleed_size_mm"
-                            step="0.01"
-                            min="0"
-                            max="10"
-                            value="{{ config.get('print_bleed_size_mm', '3.0') }}"
-                        >
-                    </label>
-                    
-                    <label class="toggle-row settings-field">
-                        <span>Crop Border</span>
-                        <input
-                            type="checkbox"
-                            name="pdf_crop_border"
-                            {% if config.pdf_crop_border == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>PDF Cutting Guides</span>
-                        <input
-                            type="checkbox"
-                            name="pdf_cutting_guides"
-                            {% if config.get("pdf_cutting_guides", "1") == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Print Card Backs</span>
-                        <input
-                            type="checkbox"
-                            name="print_card_backs"
-                            {% if config.get("print_card_backs", "0") == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <div class="metadata-row">
-                        <span>Print / Export Labels</span>
-                        <strong class="metadata-value-wrap">
-                            Controls card corner labels and separate pack label cards/images for PDF printing and image export.
-                        </strong>
-                    </div>
-
-                    <label class="toggle-row settings-field">
-                        <span>Enable Print/Export Labels</span>
-                        <input
-                            type="checkbox"
-                            name="print_labels_enabled"
-                            {% if config.get("print_labels_enabled", "1") == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Show Pack Tracking Code on Labels</span>
-                        <input
-                            type="checkbox"
-                            name="print_label_tracking_code"
-                            {% if config.get("print_label_tracking_code", config.get("print_pack_tracking_code", "0")) == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Show FRONT/BACK on Dual-Faced Cards</span>
-                        <input
-                            type="checkbox"
-                            name="print_label_front_back"
-                            {% if config.get("print_label_front_back", config.get("print_front_back_label", "1")) == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Include Pack Label Cards</span>
-                        <input
-                            type="checkbox"
-                            name="print_pack_label_cards"
-                            {% if config.get("print_pack_label_cards", config.get("print_pack_labels", "0")) == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Open Print in New Tab</span>
-                        <input
-                            type="checkbox"
-                            name="open_print_in_new_tab"
-                            {% if config.open_print_in_new_tab == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Sound On/Off</span>
-                        <input
-                            type="checkbox"
-                            name="sound_enabled"
-                            {% if config.sound_enabled == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>Debug Log</span>
-                        <input
-                            type="checkbox"
-                            name="debug_log"
-                            {% if config.debug_log == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <div class="metadata-row">
-                        <span>Pack Tracking Database</span>
-                        <strong class="metadata-value-wrap">
-                            Controls whether generated Chaos Draft packs can be saved and managed in the pack database.
-                        </strong>
-                    </div>
 
                     <label class="toggle-row settings-field">
                         <span>Enable Pack Tracking Database</span>
                         <input
                             type="checkbox"
                             name="enable_track_packs"
-                            {% if config.enable_track_packs == "1" %}checked{% endif %}
+                            {% if config.get("enable_track_packs", "0") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -690,7 +568,7 @@
                         <input
                             type="checkbox"
                             name="enable_chaos_card_image_export"
-                            {% if config.enable_chaos_card_image_export == "1" %}checked{% endif %}
+                            {% if config.get("enable_chaos_card_image_export", "0") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -702,7 +580,7 @@
                             {% if config.get("export_add_bleed", "0") == "1" %}checked{% endif %}
                         >
                     </label>
-                    
+
                     <label class="toggle-row settings-field">
                         <span>Export - Separate Special Slots</span>
                         <input
@@ -712,13 +590,21 @@
                         >
                     </label>
 
-
                     <label class="toggle-row settings-field">
                         <span>Use Pack Image for Title</span>
                         <input
                             type="checkbox"
                             name="use_pack_image_for_title"
-                            {% if config.use_pack_image_for_title == "1" %}checked{% endif %}
+                            {% if config.get("use_pack_image_for_title", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>Sound On/Off</span>
+                        <input
+                            type="checkbox"
+                            name="sound_enabled"
+                            {% if config.get("sound_enabled", "1") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -727,7 +613,7 @@
                         <input
                             type="checkbox"
                             name="display_pack_prices"
-                            {% if config.display_pack_prices == "1" %}checked{% endif %}
+                            {% if config.get("display_pack_prices", "1") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -743,7 +629,38 @@
                     </label>
                 </div>
             </div>
-            
+        </div>
+
+        <div id="section_momir_print_settings" class="page-panel collapsible-panel {% if section_defaults.get('momir_print_settings') == '1' %}is-open{% endif %}" data-section="momir_print_settings">
+            <button type="button" class="collapsible-header">
+                <span>Momir Print Settings</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
+                {{ render_scoped_print_settings(
+                    "momir",
+                    momir_print_config,
+                    print_template_options,
+                    print_color_mode_options,
+                    false
+                ) }}
+
+                <div class="config-section-divider"></div>
+
+                <div class="settings-grid">
+                    <label class="toggle-row" for="momir_default_token_variant">
+                        <span>Momir Vig Default Token Style</span>
+                        <select id="momir_default_token_variant" name="momir_default_token_variant">
+                            {% for value, label in momir_default_token_variant_options %}
+                                <option value="{{ value }}" {% if config.get("momir_default_token_variant") == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
+            </div>
         </div>
 
 
@@ -878,23 +795,20 @@
         </div>
     </div>
 
-        <div id="section_cleanup" class="page-panel collapsible-panel is-open" data-section="cleanup">
-        <button type="button" class="collapsible-header">
-            <span>Cleanup</span>
-            <span class="collapsible-chevron">▾</span>
-        </button>
+        <div id="section_exports" class="page-panel collapsible-panel {% if section_defaults.get('exports') == '1' %}is-open{% endif %}" data-section="exports">
+            <button type="button" class="collapsible-header">
+                <span>Exports</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
 
-        <div class="collapsible-body cleanup-panel-body">
-            <div class="cleanup-subsection">
-                <h3 class="cleanup-subsection-title">Exports</h3>
-
+            <div class="collapsible-body cleanup-panel-body">
                 <div class="settings-grid">
                     <label class="toggle-row" for="auto_clear_exports">
                         <span>Auto Clear Exports</span>
                         <select id="auto_clear_exports" name="auto_clear_exports" form="configForm">
                             <option value="off" {% if config.get("auto_clear_exports", "7") == "off" %}selected{% endif %}>Off</option>
-                            <option value="7" {% if config.get("auto_clear_exports", "7") == "7" %}selected{% endif %}>7 Days</option>
                             <option value="1" {% if config.get("auto_clear_exports", "7") == "1" %}selected{% endif %}>1 Day</option>
+                            <option value="7" {% if config.get("auto_clear_exports", "7") == "7" %}selected{% endif %}>7 Days</option>
                             <option value="30" {% if config.get("auto_clear_exports", "7") == "30" %}selected{% endif %}>30 Days</option>
                         </select>
                     </label>
@@ -908,12 +822,15 @@
                     </form>
                 </div>
             </div>
+        </div>
 
-            <div class="config-section-divider"></div>
+        <div id="section_backup" class="page-panel collapsible-panel {% if section_defaults.get('backup') == '1' %}is-open{% endif %}" data-section="backup">
+            <button type="button" class="collapsible-header">
+                <span>Backup</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
 
-            <div class="cleanup-subsection">
-                <h3 class="cleanup-subsection-title">iMomir Backup</h3>
-
+            <div class="collapsible-body cleanup-panel-body">
                 <div class="cleanup-action-row">
                     <form method="post" action="{{ url_for('maintenance_backup_imomir') }}" target="_blank">
                         <button type="submit" class="action-button cleanup-action-button">
@@ -938,25 +855,40 @@
                             >
                         </label>
                     </form>
+
+                    <form method="post" action="{{ url_for('maintenance_backup_all_packs') }}" target="_blank">
+                        <button type="submit" class="action-button secondary-button cleanup-action-button">
+                            Backup All Packs
+                        </button>
+                    </form>
                 </div>
             </div>
+        </div>
 
-            <div class="config-section-divider"></div>
+        <div id="section_danger_zone" class="page-panel collapsible-panel {% if section_defaults.get('danger_zone') == '1' %}is-open{% endif %}" data-section="danger_zone">
+            <button type="button" class="collapsible-header">
+                <span>Danger Zone</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
 
-            <div class="cleanup-subsection">
-                <h3 class="cleanup-subsection-title cleanup-danger-title">Danger Zone</h3>
+            <div class="collapsible-body cleanup-panel-body">
+                <div class="settings-grid">
+                    <label class="toggle-row settings-field">
+                        <span>Enable Debug Log</span>
+                        <input
+                            type="checkbox"
+                            name="debug_log"
+                            form="configForm"
+                            {% if config.get("debug_log", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+                </div>
 
                 <div class="cleanup-action-row">
                     <form method="post" action="{{ url_for('maintenance_clear_all_history') }}" id="clearAllHistoryForm">
                         <input type="hidden" name="delete_confirmation" value="">
                         <button type="submit" class="action-button cleanup-danger-button cleanup-action-button">
                             Clear All History
-                        </button>
-                    </form>
-
-                    <form method="post" action="{{ url_for('maintenance_backup_all_packs') }}" target="_blank">
-                        <button type="submit" class="action-button secondary-button cleanup-action-button">
-                            Backup All Packs
                         </button>
                     </form>
 
@@ -969,7 +901,6 @@
                 </div>
             </div>
         </div>
-    </div>
 
     <footer class="app-footer">
         <div class="app-footer-credits">
