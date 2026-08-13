@@ -250,13 +250,14 @@
             </button>
 
             <div class="collapsible-body">
-                <input type="hidden" name="game_mode" id="game_mode" value="{{ config.get('game_mode', 'custom') }}">
+                <input type="hidden" name="momir_mode" id="momir_mode" value="{{ momir_mode }}">
+                <input type="hidden" name="chaos_draft_mode" id="chaos_draft_mode" value="{{ chaos_draft_mode }}">
 
                 <div class="game-modes-toolbar">
                     <a
                         id="printSelectedTokenButton"
                         class="action-button"
-                        href="{% for mode in game_mode_options %}{% if mode.value == config.get('game_mode', 'custom') %}{{ mode.print_href }}{% endif %}{% endfor %}"
+                        href="{% for mode in game_mode_options %}{% if mode.value == momir_mode %}{{ mode.print_href }}{% endif %}{% endfor %}"
                     >
                         Print Selected Token
                     </a>
@@ -264,9 +265,17 @@
 
                 <div class="game-mode-group-list" id="gameModeCardList">
                     {% for group in grouped_game_modes %}
+                        {% if group.key == "chaos" %}
+                            {% set selected_mode_value = chaos_draft_mode %}
+                            {% set mode_scope = "chaos" %}
+                        {% else %}
+                            {% set selected_mode_value = momir_mode %}
+                            {% set mode_scope = "momir" %}
+                        {% endif %}
+
                         {% set selected_group = namespace(value=false) %}
                         {% for mode in group.modes %}
-                            {% if config.get('game_mode', 'custom') == mode.value %}
+                            {% if selected_mode_value == mode.value %}
                                 {% set selected_group.value = true %}
                             {% endif %}
                         {% endfor %}
@@ -281,8 +290,9 @@
                                 {% for mode in group.modes %}
                                     <button
                                         type="button"
-                                        class="game-mode-card {% if config.get('game_mode', 'custom') == mode.value %}game-mode-card-selected{% endif %}"
+                                        class="game-mode-card {% if selected_mode_value == mode.value %}game-mode-card-selected{% endif %}"
                                         data-mode-value="{{ mode.value }}"
+                                        data-mode-scope="{{ mode_scope }}"
                                         data-mode-print-href="{{ mode.print_href }}"
                                     >
                                         <div class="game-mode-card-image-wrap">
@@ -305,6 +315,7 @@
                 </div>
             </div>
         </div>
+
         <div id="section_card_repeats" class="page-panel collapsible-panel {% if section_defaults.get('card_repeats') == '1' %}is-open{% endif %}" data-section="card_repeats">
             <button type="button" class="collapsible-header">
                 <span>Card Repeats</span>
@@ -987,57 +998,6 @@
         </div>
     </footer>
 </div>
-<script>
-(function () {
-    const gameModeList = document.getElementById("gameModeCardList");
-    const gameModeInput = document.getElementById("game_mode");
-    const printSelectedTokenButton = document.getElementById("printSelectedTokenButton");
-
-    if (!gameModeList || !gameModeInput) {
-        return;
-    }
-
-    gameModeList.addEventListener("click", function (event) {
-        const groupHeader = event.target.closest(".game-mode-group-header");
-
-        if (groupHeader) {
-            const group = groupHeader.closest(".game-mode-group");
-
-            if (!group) {
-                return;
-            }
-
-            group.classList.toggle("is-open");
-            return;
-        }
-
-        const modeButton = event.target.closest(".game-mode-card");
-
-        if (!modeButton) {
-            return;
-        }
-
-        const selectedModeValue = modeButton.dataset.modeValue || "";
-        const selectedPrintHref = modeButton.dataset.modePrintHref || "";
-
-        if (!selectedModeValue) {
-            return;
-        }
-
-        gameModeInput.value = selectedModeValue;
-
-        document.querySelectorAll(".game-mode-card").forEach(function (button) {
-            button.classList.remove("game-mode-card-selected");
-        });
-
-        modeButton.classList.add("game-mode-card-selected");
-
-        if (printSelectedTokenButton && selectedPrintHref) {
-            printSelectedTokenButton.href = selectedPrintHref;
-        }
-    });
-})();
-</script>
 <script>
 (function () {
     const clearAllHistoryForm = document.getElementById("clearAllHistoryForm");

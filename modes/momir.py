@@ -1,4 +1,8 @@
-from settings import PRIMARY_TYPE_KEYS, SUPPLEMENTAL_TYPE_KEYS
+from settings import (
+    PRIMARY_TYPE_KEYS,
+    SUPPLEMENTAL_TYPE_KEYS,
+    resolve_momir_mode_value,
+)
 from db.database import get_config, get_db_connection, get_selected_set_codes
 
 
@@ -79,7 +83,7 @@ def build_card_filter_query(mana_value, config, selected_set_codes, selected_typ
     conditions.append("CAST(mana_value AS INTEGER) = ?")
     params.append(int(mana_value))
 
-    game_mode = (config.get("game_mode") or "custom").strip().lower()
+    game_mode = resolve_momir_mode_value(config)
 
     if game_mode == "momir_select":
         selected_type_info = resolve_selected_result_type(config, selected_type_value)

@@ -171,6 +171,7 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeConfigPanels();
     initializeGameModeCards();
     initializeConfigShortcutNavigation();
+    initializeAppNavigationMenus();
     initializeResultCardZoom();
     initializeMomirSelectResultLinks();
     initializeChaosDraftPage();
@@ -668,18 +669,24 @@ function initializeConfigPanels() {
 }
 
 function initializeGameModeCards() {
-    const hiddenInput = document.getElementById("game_mode");
-    const cardButtons = document.querySelectorAll(".game-mode-card");
+    const gameModeList = document.getElementById("gameModeCardList");
+    const momirInput = document.getElementById("momir_mode");
+    const chaosDraftInput = document.getElementById("chaos_draft_mode");
     const printButton = document.getElementById("printSelectedTokenButton");
 
-    if (!hiddenInput || !cardButtons.length) {
+    if (!gameModeList || !momirInput || !chaosDraftInput) {
         return;
     }
 
-    function applySelection(selectedValue, selectedPrintHref) {
+    function getScopeInput(scope) {
+        return scope === "chaos" ? chaosDraftInput : momirInput;
+    }
+
+    function applySelection(scope, selectedValue, selectedPrintHref) {
+        const hiddenInput = getScopeInput(scope);
         hiddenInput.value = selectedValue;
 
-        cardButtons.forEach(function (button) {
+        gameModeList.querySelectorAll('.game-mode-card[data-mode-scope="' + scope + '"]').forEach(function (button) {
             const isSelected = button.getAttribute("data-mode-value") === selectedValue;
             button.classList.toggle("game-mode-card-selected", isSelected);
         });
@@ -689,13 +696,112 @@ function initializeGameModeCards() {
         }
     }
 
-    cardButtons.forEach(function (button) {
-        button.addEventListener("click", function () {
-            const selectedValue = button.getAttribute("data-mode-value") || "custom";
-            const selectedPrintHref = button.getAttribute("data-mode-print-href") || "";
-            applySelection(selectedValue, selectedPrintHref);
+    gameModeList.addEventListener("click", function (event) {
+        const groupHeader = event.target.closest(".game-mode-group-header");
+
+        if (groupHeader) {
+            const group = groupHeader.closest(".game-mode-group");
+            if (group) {
+                group.classList.toggle("is-open");
+            }
+            return;
+        }
+
+        const modeButton = event.target.closest(".game-mode-card");
+        if (!modeButton) {
+            return;
+        }
+
+        const selectedValue = modeButton.getAttribute("data-mode-value") || "";
+        const selectedScope = modeButton.getAttribute("data-mode-scope") || "momir";
+        const selectedPrintHref = modeButton.getAttribute("data-mode-print-href") || "";
+
+        if (!selectedValue) {
+            return;
+        }
+
+        applySelection(selectedScope, selectedValue, selectedPrintHref);
+    });
+}
+
+function initializeAppNavigationMenus() {
+    const menuToggles = document.querySelectorAll("[data-app-menu-toggle]");
+    const qrOpenButton = document.getElementById("appQrButton");
+    const qrModal = document.getElementById("appQrModal");
+    const qrCloseButton = document.getElementById("appQrCloseButton");
+
+    function closeAllMenus(exceptMenu) {
+        document.querySelectorAll(".app-nav-menu.is-open").forEach(function (menu) {
+            if (menu !== exceptMenu) {
+                menu.classList.remove("is-open");
+                const toggle = menu.querySelector("[data-app-menu-toggle]");
+                if (toggle) {
+                    toggle.setAttribute("aria-expanded", "false");
+                }
+            }
+        });
+    }
+
+    function closeQrModal() {
+        if (!qrModal) {
+            return;
+        }
+
+        qrModal.classList.add("hidden");
+        qrModal.setAttribute("aria-hidden", "true");
+        document.body.style.overflow = "";
+    }
+
+    menuToggles.forEach(function (toggle) {
+        toggle.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const menu = toggle.closest(".app-nav-menu");
+            if (!menu) {
+                return;
+            }
+
+            const shouldOpen = !menu.classList.contains("is-open");
+            closeAllMenus(menu);
+            menu.classList.toggle("is-open", shouldOpen);
+            toggle.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
         });
     });
+
+    document.addEventListener("click", function (event) {
+        if (!event.target.closest(".app-nav-menu")) {
+            closeAllMenus(null);
+        }
+    });
+
+    document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+            closeAllMenus(null);
+            closeQrModal();
+        }
+    });
+
+    if (qrOpenButton && qrModal) {
+        qrOpenButton.addEventListener("click", function () {
+            closeAllMenus(null);
+            qrModal.classList.remove("hidden");
+            qrModal.setAttribute("aria-hidden", "false");
+            document.body.style.overflow = "hidden";
+        });
+
+        qrModal.addEventListener("click", function (event) {
+            if (event.target === qrModal) {
+                closeQrModal();
+            }
+        });
+    }
+
+    if (qrCloseButton) {
+        qrCloseButton.addEventListener("click", function () {
+            closeQrModal();
+        });
+    }
 }
 
 function initializeConfigShortcutNavigation() {

@@ -244,6 +244,774 @@ input {
 }
 
 /* ==========================================
+   Hierarchical Main Navigation
+   ========================================== */
+
+.app-tabs {
+    position: relative;
+    z-index: 1200;
+    gap: 8px;
+    min-height: 66px;
+    padding: 7px 14px;
+    border: 1px solid rgba(120, 132, 153, 0.28);
+    border-radius: 16px;
+    background: rgba(26, 28, 33, 0.96);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.22),
+        inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.app-logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 11px;
+}
+
+.app-tabs-nav {
+    min-width: 0;
+    margin-left: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: visible;
+}
+
+.app-nav-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.app-nav-main-control {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    border-radius: 11px;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+    transition:
+        background 0.15s ease,
+        box-shadow 0.15s ease,
+        transform 0.15s ease;
+}
+
+.app-nav-main-control:hover {
+    background: rgba(255, 255, 255, 0.055);
+}
+
+.app-nav-menu.is-open .app-nav-main-control {
+    background: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.app-nav-menu-active .app-nav-main-control {
+    background: rgba(255, 255, 255, 0.075);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+        0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.app-nav-primary-link {
+    height: 40px;
+    padding: 0 6px 0 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 11px 4px 4px 11px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.95rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: color 0.15s ease;
+}
+
+.app-nav-menu-active .app-nav-primary-link,
+.app-nav-main-control:hover .app-nav-primary-link,
+.app-nav-menu.is-open .app-nav-primary-link {
+    color: var(--text);
+}
+
+.app-nav-menu-toggle {
+    width: 29px;
+    min-width: 29px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px 11px 11px 4px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    transition:
+        color 0.15s ease,
+        transform 0.15s ease;
+}
+
+.app-nav-menu-toggle:hover {
+    color: var(--text);
+}
+
+.app-nav-menu-toggle i {
+    transition: transform 0.16s ease;
+}
+
+.app-nav-menu.is-open .app-nav-menu-toggle i {
+    transform: rotate(180deg);
+}
+
+.app-nav-dropdown {
+    position: absolute;
+    top: calc(100% + 9px);
+    left: 0;
+    z-index: 1300;
+    min-width: 190px;
+    padding: 6px;
+    border: 1px solid rgba(120, 132, 153, 0.28);
+    border-radius: 12px;
+    background: rgba(23, 25, 30, 0.985);
+    box-shadow:
+        0 18px 48px rgba(0, 0, 0, 0.48),
+        inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    backdrop-filter: blur(14px);
+    display: none;
+    transform-origin: top left;
+}
+
+.app-nav-menu.is-open > .app-nav-dropdown {
+    display: block;
+    animation: app-nav-dropdown-open 0.12s ease-out;
+}
+
+@keyframes app-nav-dropdown-open {
+    from {
+        opacity: 0;
+        transform: translateY(-4px) scale(0.985);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.app-play-dropdown {
+    min-width: 180px;
+}
+
+.app-cards-dropdown {
+    min-width: 218px;
+}
+
+.app-nav-dropdown-group {
+    padding: 2px 0;
+}
+
+.app-nav-dropdown-group + .app-nav-dropdown-group {
+    margin-top: 4px;
+    padding-top: 7px;
+    border-top: 1px solid rgba(120, 132, 153, 0.16);
+}
+
+.app-nav-dropdown-heading {
+    min-height: 30px;
+    padding: 5px 9px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(242, 244, 248, 0.86);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    text-decoration: none;
+}
+
+.app-nav-dropdown-heading-link {
+    border-radius: 8px;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+.app-nav-dropdown-heading-link:hover {
+    background: rgba(255, 255, 255, 0.045);
+    color: #ffffff;
+}
+
+.app-nav-heading-icon {
+    width: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(169, 176, 190, 0.78);
+    font-size: 0.75rem;
+}
+
+.app-nav-dropdown-item {
+    position: relative;
+    min-height: 35px;
+    padding: 7px 10px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border-radius: 8px;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.2;
+    text-decoration: none;
+    white-space: nowrap;
+    transition:
+        background 0.12s ease,
+        color 0.12s ease,
+        transform 0.12s ease;
+}
+
+.app-nav-dropdown-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+}
+
+.app-nav-dropdown-item-active {
+    background: rgba(66, 205, 111, 0.09);
+    color: #ffffff;
+    box-shadow: inset 2px 0 0 rgba(66, 205, 111, 0.9);
+}
+
+.app-nav-dropdown-item-active:hover {
+    background: rgba(66, 205, 111, 0.13);
+}
+
+.app-nav-item-icon {
+    width: 18px;
+    flex: 0 0 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(169, 176, 190, 0.82);
+    font-size: 0.78rem;
+}
+
+.app-nav-dropdown-item:hover .app-nav-item-icon,
+.app-nav-dropdown-item-active .app-nav-item-icon {
+    color: inherit;
+}
+
+.app-nav-dropdown-item-indented {
+    padding-left: 35px;
+}
+
+.app-nav-dropdown-item-disabled {
+    opacity: 0.36;
+    cursor: default;
+}
+
+.app-nav-dropdown-item-disabled:hover {
+    background: transparent;
+    color: var(--muted);
+    transform: none;
+}
+
+.app-nav-dropdown-item-danger {
+    color: #ee8e8e;
+}
+
+.app-nav-dropdown-item-danger:hover {
+    background: rgba(217, 54, 54, 0.11);
+    color: #ffaaaa;
+}
+
+.app-nav-dropdown-divider {
+    height: 1px;
+    margin: 6px 5px;
+    background: rgba(120, 132, 153, 0.18);
+}
+
+.app-nav-dropdown-section-label {
+    padding: 7px 9px 5px 9px;
+    color: rgba(169, 176, 190, 0.58);
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+}
+
+.app-nav-icon-menu {
+    margin-left: auto;
+    margin-right: 0;
+}
+
+.app-nav-square-button {
+    position: relative;
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    min-height: 38px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        transform 0.15s ease;
+}
+
+.app-nav-square-button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+}
+
+.app-nav-square-button:active {
+    transform: translateY(1px);
+}
+
+.app-nav-icon-menu.is-open > .app-nav-square-button,
+.app-nav-icon-menu.app-nav-menu-active > .app-nav-square-button {
+    background: rgba(66, 205, 111, 0.09);
+    border-color: rgba(66, 205, 111, 0.2);
+    color: #ffffff;
+}
+
+.app-gear-button {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: 19px;
+}
+
+.app-gear-button:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.app-gear-reminder-badge {
+    top: -4px;
+    right: -4px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border: 2px solid var(--panel);
+    font-size: 0.6rem;
+    line-height: 12px;
+}
+
+.app-settings-dropdown {
+    left: 0;
+    right: auto;
+    width: 292px;
+    max-height: min(72vh, 630px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(169, 176, 190, 0.28) transparent;
+}
+
+.app-settings-dropdown::-webkit-scrollbar {
+    width: 7px;
+}
+
+.app-settings-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.app-settings-dropdown::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(169, 176, 190, 0.25);
+}
+
+.app-qr-nav-button {
+    margin-left: 0;
+}
+
+.app-nav-qr-thumbnail {
+    width: 22px;
+    height: 22px;
+    display: block;
+    object-fit: contain;
+    border-radius: 3px;
+    background: #ffffff;
+    image-rendering: auto;
+}
+
+.app-qr-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2200;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.app-qr-modal {
+    width: min(420px, 100%);
+    overflow: hidden;
+    border: 1px solid rgba(120, 132, 153, 0.3);
+    border-radius: 16px;
+    background: #191c22;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+}
+
+.app-qr-modal-header {
+    padding: 17px 19px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid rgba(120, 132, 153, 0.18);
+}
+
+.app-qr-modal-title {
+    color: var(--text);
+    font-size: 1.08rem;
+    font-weight: 800;
+}
+
+.app-qr-modal-subtitle {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+
+.app-qr-modal-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 1.4rem;
+    line-height: 1;
+}
+
+.app-qr-modal-close:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+}
+
+.app-qr-modal-body {
+    padding: 20px;
+    text-align: center;
+}
+
+.app-qr-image {
+    width: min(290px, 100%);
+    height: auto;
+    padding: 8px;
+    border-radius: 12px;
+    background: #ffffff;
+}
+
+.app-qr-address-label {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.app-qr-address {
+    margin-top: 7px;
+    padding: 10px 12px;
+    border: 1px solid rgba(120, 132, 153, 0.22);
+    border-radius: 9px;
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--text);
+    font-family: monospace;
+    font-size: 0.86rem;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+    .app-tabs {
+        min-height: 62px;
+        padding: 6px 10px;
+    }
+
+    .app-logo {
+        width: 46px;
+        height: 46px;
+    }
+
+    .app-tabs-nav {
+        flex-wrap: nowrap;
+        gap: 2px;
+    }
+
+    .app-nav-primary-link {
+        padding-left: 10px;
+        font-size: 0.9rem;
+    }
+
+    .app-nav-menu-toggle {
+        width: 25px;
+        min-width: 25px;
+    }
+
+    .app-nav-square-button,
+    .app-gear-button {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        min-height: 36px;
+    }
+
+    .app-nav-dropdown {
+        position: fixed;
+        top: 72px;
+        left: 12px;
+        right: 12px;
+        width: auto;
+        max-height: calc(100vh - 88px);
+        overflow-y: auto;
+    }
+
+    .app-settings-dropdown {
+        width: auto;
+    }
+}
+
+/* ==========================================
+   Main Navigation Refinements
+   ========================================== */
+
+/*
+ * Let the navigation consume all horizontal space.
+ * Settings uses margin-left:auto below, which pushes
+ * both Settings and QR to the far-right side.
+ */
+.app-tabs-nav {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    margin-left: 10px;
+    gap: 6px;
+}
+
+/*
+ * Main Play / Cards controls.
+ * Slightly larger text and a more substantial click target.
+ */
+.app-nav-main-control {
+    min-height: 44px;
+    border-radius: 11px;
+}
+
+.app-nav-primary-link {
+    height: 44px;
+    padding: 0 8px 0 15px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.app-nav-menu-toggle {
+    width: 31px;
+    min-width: 31px;
+    height: 44px;
+    font-size: 0.68rem;
+}
+
+/*
+ * Active navigation state.
+ *
+ * Remove the green underline/accent completely.
+ * Active items now use a neutral raised-panel treatment
+ * that fits the rest of the dark iMomir interface.
+ */
+.app-nav-menu-active .app-nav-main-control {
+    background: rgba(255, 255, 255, 0.075);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.075),
+        0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.app-nav-menu-active .app-nav-primary-link {
+    color: #ffffff;
+}
+
+/*
+ * Open state should match the active state rather than
+ * introducing a colored highlight.
+ */
+.app-nav-menu.is-open .app-nav-main-control {
+    background: rgba(255, 255, 255, 0.085);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.085),
+        0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+/*
+ * Dropdown text was noticeably undersized.
+ */
+.app-nav-dropdown {
+    padding: 8px;
+}
+
+.app-nav-dropdown-heading {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.045em;
+}
+
+.app-nav-dropdown-item {
+    min-height: 39px;
+    padding: 9px 11px;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.app-nav-dropdown-item-indented {
+    padding-left: 37px;
+}
+
+.app-nav-item-icon {
+    width: 20px;
+    flex: 0 0 20px;
+    font-size: 0.88rem;
+}
+
+.app-nav-heading-icon {
+    width: 20px;
+    font-size: 0.84rem;
+}
+
+.app-nav-dropdown-section-label {
+    padding: 8px 10px 6px 10px;
+    font-size: 0.72rem;
+}
+
+/*
+ * Push Settings and everything following it to the far right.
+ *
+ * QR immediately follows Settings in base.html, so both
+ * utility controls stay grouped together.
+ */
+.app-nav-icon-menu {
+    margin-left: auto;
+    margin-right: 0;
+}
+
+/*
+ * Add a small, deliberate gap between Settings and QR.
+ */
+.app-qr-nav-button {
+    margin-left: 3px;
+}
+
+/*
+ * Settings and QR use matching footprints.
+ */
+.app-nav-square-button,
+.app-gear-button {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    border-radius: 10px;
+}
+
+.app-gear-button {
+    font-size: 21px;
+}
+
+/*
+ * The QR itself remains the actual generated QR image.
+ * Make it large enough to read visually without making
+ * the toolbar button larger than Settings.
+ */
+.app-nav-qr-thumbnail {
+    width: 25px;
+    height: 25px;
+    border-radius: 3px;
+}
+
+/*
+ * Since Settings now lives at the far-right edge,
+ * make its dropdown expand toward the left so it stays
+ * inside the application window.
+ */
+.app-settings-dropdown {
+    left: auto;
+    right: 0;
+    transform-origin: top right;
+}
+
+/*
+ * Keep icon controls visually neutral.
+ * No green active coloring on Settings.
+ */
+.app-nav-icon-menu.app-nav-menu-active > .app-nav-square-button,
+.app-nav-icon-menu.is-open > .app-nav-square-button {
+    background: rgba(255, 255, 255, 0.075);
+    border-color: rgba(255, 255, 255, 0.075);
+    color: #ffffff;
+}
+
+/*
+ * Slightly enlarge the menu chevron without making it
+ * visually dominant.
+ */
+.app-nav-menu-toggle i {
+    font-size: 0.72rem;
+}
+
+/*
+ * Mobile adjustments.
+ */
+@media (max-width: 760px) {
+    .app-tabs-nav {
+        margin-left: 6px;
+        gap: 3px;
+    }
+
+    .app-nav-primary-link {
+        height: 42px;
+        padding-left: 11px;
+        font-size: 0.98rem;
+    }
+
+    .app-nav-menu-toggle {
+        width: 27px;
+        min-width: 27px;
+        height: 42px;
+    }
+
+    .app-nav-square-button,
+    .app-gear-button {
+        width: 38px;
+        min-width: 38px;
+        height: 38px;
+        min-height: 38px;
+    }
+
+    .app-nav-qr-thumbnail {
+        width: 23px;
+        height: 23px;
+    }
+}
+
+/* ==========================================
    Collapsible Main Navigation
    ========================================== */
 

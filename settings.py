@@ -73,6 +73,53 @@ CARD_SEARCH_DEFAULT_VARIANTS = {
 }
 CARD_SEARCH_DEFAULT_VARIANT = "dark"
 
+MOMIR_MODE_VALUES = {
+    "custom",
+    "momir_basic",
+    "momir_select",
+    "momir_planeswalker",
+    "momir_legends",
+    "momir_battleship",
+    "momir_aggro",
+    "momir_odds",
+    "momir_evens",
+    "momir_prime",
+    "tower_of_power",
+    "planechase",
+    "archenemy",
+}
+
+CHAOS_DRAFT_MODE_VALUES = {
+    "chaos_draft",
+    "chaos_draft_campaign",
+    "preprint_chaos_draft",
+}
+
+
+def resolve_momir_mode_value(config):
+    saved_mode = (config.get("momir_mode") or "").strip().lower()
+    if saved_mode in MOMIR_MODE_VALUES:
+        return saved_mode
+
+    legacy_mode = (config.get("game_mode") or "").strip().lower()
+    if legacy_mode in MOMIR_MODE_VALUES:
+        return legacy_mode
+
+    return "momir_basic"
+
+
+def resolve_chaos_draft_mode_value(config):
+    saved_mode = (config.get("chaos_draft_mode") or "").strip().lower()
+    if saved_mode in CHAOS_DRAFT_MODE_VALUES:
+        return saved_mode
+
+    legacy_mode = (config.get("game_mode") or "").strip().lower()
+    if legacy_mode in CHAOS_DRAFT_MODE_VALUES:
+        return legacy_mode
+
+    return "chaos_draft"
+
+
 DEFAULT_CONFIG = {
     "type_creature": "1",
     "type_artifact": "0",
@@ -94,6 +141,8 @@ DEFAULT_CONFIG = {
     "allow_arena": "0",
     "all_sets_enabled": "1",
     "game_mode": "custom",
+    "momir_mode": "",
+    "chaos_draft_mode": "",
     "allow_repeats": "1",
     "print_template": "dk-1234",
     "print_color_mode": "grayscale",

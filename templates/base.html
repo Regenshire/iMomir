@@ -30,68 +30,349 @@
               >
             </button>
           </div>
+
           <div class="app-tabs-nav app-menu-expandable">
-            <a
-              class="app-tab {% if request.endpoint in [
-                'index',
-                'result',
-                'campaign_chaos_test_draft'
-              ] %}app-tab-active{% endif %}"
-              href="{% if nav_current_game_mode in ['chaos_draft', 'chaos_draft_campaign', 'preprint_chaos_draft'] %}{{ url_for('result') }}{% else %}{{ url_for('index') }}{% endif %}"
-            >
-              {% if nav_current_game_mode in ['chaos_draft', 'chaos_draft_campaign', 'preprint_chaos_draft'] %}Draft{% else %}Result{% endif %}
-            </a>
+            <div class="app-nav-menu {% if request.endpoint in ['play_draft', 'play_momir', 'result', 'campaign_chaos_test_draft'] %}app-nav-menu-active{% endif %}">
+              <div class="app-nav-main-control">
+                <a
+                  class="app-nav-primary-link"
+                  href="{{ url_for('play_draft') }}"
+                >
+                  Play
+                </a>
 
-            <a
-              class="app-tab {% if request.endpoint == 'sets' %}app-tab-active{% endif %}"
-              href="{{ url_for('sets') }}"
-            >
-              Sets
-            </a>
+                <button
+                  type="button"
+                  class="app-nav-menu-toggle"
+                  data-app-menu-toggle
+                  aria-label="Open Play menu"
+                  aria-expanded="false"
+                >
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+              </div>
 
-            <a
-              class="app-tab {% if request.endpoint in [
-                'deckbuilder_index',
-                'deckbuilder_open',
-                'deckbuilder_new',
-                'campaign_chaos_test_draft_deck_builder'
-              ] %}app-tab-active{% endif %}"
-              href="{{ url_for('deckbuilder_index') }}"
-            >
-              Decks
-            </a>
+              <div class="app-nav-dropdown app-play-dropdown" role="menu">
+                <a
+                  class="app-nav-dropdown-item {% if request.endpoint == 'play_draft' %}app-nav-dropdown-item-active{% endif %}"
+                  href="{{ url_for('play_draft') }}"
+                  role="menuitem"
+                >
+                  <span class="app-nav-item-icon">
+                    <i class="fa-solid fa-shuffle"></i>
+                  </span>
+                  <span>Draft</span>
+                </a>
 
-            <a
-              class="app-tab {% if request.endpoint == 'config' %}app-tab-active{% endif %}"
-              href="{{ url_for('config') }}"
-            >
-              Modes
-            </a>
+                <a
+                  class="app-nav-dropdown-item {% if request.endpoint in ['play_momir', 'result'] %}app-nav-dropdown-item-active{% endif %}"
+                  href="{{ url_for('play_momir') }}"
+                  role="menuitem"
+                >
+                  <span class="app-nav-item-icon">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                  </span>
+                  <span>Momir</span>
+                </a>
+              </div>
+            </div>
 
-            <a
-              class="app-tab {% if request.endpoint == 'card_search' %}app-tab-active{% endif %}"
-              href="{{ url_for('card_search') }}"
+            <div class="app-nav-menu {% if request.endpoint in ['deckbuilder_index', 'deckbuilder_open', 'deckbuilder_new', 'campaign_chaos_test_draft_deck_builder', 'sets', 'campaign_chaos_packs', 'campaign_chaos_pack_detail'] %}app-nav-menu-active{% endif %}">
+              <div class="app-nav-main-control">
+                <a
+                  class="app-nav-primary-link"
+                  href="{{ url_for('deckbuilder_index') }}"
+                >
+                  Cards
+                </a>
+
+                <button
+                  type="button"
+                  class="app-nav-menu-toggle"
+                  data-app-menu-toggle
+                  aria-label="Open Cards menu"
+                  aria-expanded="false"
+                >
+                  <i class="fa-solid fa-chevron-down"></i>
+                </button>
+              </div>
+
+              <div class="app-nav-dropdown app-cards-dropdown" role="menu">
+                <div class="app-nav-dropdown-group">
+                  <a
+                    class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
+                    href="{{ url_for('deckbuilder_index') }}"
+                  >
+                    <span class="app-nav-heading-icon">
+                      <i class="fa-solid fa-layer-group"></i>
+                    </span>
+                    <span>Decks</span>
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('deckbuilder_index') }}"
+                    role="menuitem"
+                  >
+                    Manage
+                  </a>
+
+                  <span
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented app-nav-dropdown-item-disabled"
+                    aria-disabled="true"
+                  >
+                    Roulette
+                  </span>
+                </div>
+
+                <div class="app-nav-dropdown-group">
+                  <a
+                    class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
+                    href="{{ url_for('sets') }}"
+                  >
+                    <span class="app-nav-heading-icon">
+                      <i class="fa-solid fa-clone"></i>
+                    </span>
+                    <span>Sets</span>
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('sets') }}"
+                    role="menuitem"
+                  >
+                    Manage
+                  </a>
+                </div>
+
+                <div class="app-nav-dropdown-group">
+                  <a
+                    class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
+                    href="{{ url_for('campaign_chaos_packs') }}"
+                  >
+                    <span class="app-nav-heading-icon">
+                      <i class="fa-solid fa-box-open"></i>
+                    </span>
+                    <span>Packs</span>
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('campaign_chaos_packs') }}"
+                    role="menuitem"
+                  >
+                    Manage
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <div class="app-nav-menu app-nav-icon-menu {% if request.endpoint == 'config' %}app-nav-menu-active{% endif %}">
+              <button
+                type="button"
+                id="appSettingsButton"
+                class="app-nav-square-button app-gear-button {% if global_reminder_state and global_reminder_state.has_reminders %}app-gear-button-has-reminders{% endif %}"
+                data-app-menu-toggle
+                aria-label="Open Settings menu{% if global_reminder_state and global_reminder_state.has_reminders %} - {{ global_reminder_state.count }} reminder{% if global_reminder_state.count != 1 %}s{% endif %}{% endif %}"
+                aria-expanded="false"
+                title="Settings"
+              >
+                <i class="fa-solid fa-gear"></i>
+
+                {% if global_reminder_state and global_reminder_state.has_reminders %}
+                <span class="app-gear-reminder-badge">
+                  {{ global_reminder_state.count }}
+                </span>
+                {% endif %}
+              </button>
+
+              <div class="app-nav-dropdown app-settings-dropdown" role="menu">
+                <a
+                  class="app-nav-dropdown-item"
+                  href="{{ url_for('config') }}?open=reminders&scroll=reminders"
+                  role="menuitem"
+                >
+                  <span class="app-nav-item-icon">
+                    <i class="fa-solid fa-bell"></i>
+                  </span>
+                  <span>Reminders</span>
+                </a>
+
+                <a
+                  class="app-nav-dropdown-item"
+                  href="{{ url_for('config') }}?open=card_database&scroll=card_database"
+                  role="menuitem"
+                >
+                  <span class="app-nav-item-icon">
+                    <i class="fa-solid fa-database"></i>
+                  </span>
+                  <span>Card Database</span>
+                </a>
+
+                <div class="app-nav-dropdown-divider"></div>
+
+                <div class="app-nav-dropdown-group">
+                  <div class="app-nav-dropdown-heading">
+                    Chaos Draft Settings
+                  </div>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    role="menuitem"
+                  >
+                    Draft Modes
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=print_defaults&scroll=print_defaults"
+                    role="menuitem"
+                  >
+                    Print Settings
+                  </a>
+                </div>
+
+                <div class="app-nav-dropdown-group">
+                  <div class="app-nav-dropdown-heading">
+                    Momir Settings
+                  </div>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    role="menuitem"
+                  >
+                    Momir Modes
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=game_modes&scroll=game_modes"
+                    role="menuitem"
+                  >
+                    Other Modes
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=card_repeats&scroll=card_repeats"
+                    role="menuitem"
+                  >
+                    Card Repeat Settings
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=primary_types&scroll=primary_types"
+                    role="menuitem"
+                  >
+                    Primary Card Types
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=supplemental_types&scroll=supplemental_types"
+                    role="menuitem"
+                  >
+                    Supplemental Types
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=other_filters&scroll=other_filters"
+                    role="menuitem"
+                  >
+                    Other Filters
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('config') }}?open=print_defaults&scroll=print_defaults"
+                    role="menuitem"
+                  >
+                    Momir Print Settings
+                  </a>
+                </div>
+
+                <div class="app-nav-dropdown-divider"></div>
+
+                <div class="app-nav-dropdown-section-label">
+                  Advanced
+                </div>
+
+                <a
+                  class="app-nav-dropdown-item"
+                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  role="menuitem"
+                >
+                  Exports
+                </a>
+
+                <a
+                  class="app-nav-dropdown-item"
+                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  role="menuitem"
+                >
+                  Backup
+                </a>
+
+                <a
+                  class="app-nav-dropdown-item app-nav-dropdown-item-danger"
+                  href="{{ url_for('config') }}?open=cleanup&scroll=cleanup"
+                  role="menuitem"
+                >
+                  Danger Zone
+                </a>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              id="appQrButton"
+              class="app-nav-square-button app-qr-nav-button"
+              aria-label="Open iMomir QR code"
+              title="Open iMomir on another device"
             >
-              Card Search
-            </a>
-          </div>
-          <div class="app-tabs-right app-menu-expandable">
-            <a
-              class="app-gear-button {% if global_reminder_state and global_reminder_state.has_reminders %}app-gear-button-has-reminders{% endif %}"
-              href="{% if global_reminder_state and global_reminder_state.has_reminders %}{{ url_for('config') }}?open=reminders,card_database&scroll=reminders{% else %}{{ url_for('config') }}?open=print_defaults,card_database,qr_code_print&scroll=qr_code_print{% endif %}"
-              aria-label="Open Config shortcuts{% if global_reminder_state and global_reminder_state.has_reminders %} - {{ global_reminder_state.count }} reminder{% if global_reminder_state.count != 1 %}s{% endif %}{% endif %}"
-              title="{% if global_reminder_state and global_reminder_state.has_reminders %}{{ global_reminder_state.count }} reminder{% if global_reminder_state.count != 1 %}s{% endif %}{% else %}Open Print Defaults and Card Database{% endif %}"
-            >
-              <i class="fa-solid fa-gear"></i>
-              {% if global_reminder_state and global_reminder_state.has_reminders %}
-              <span class="app-gear-reminder-badge">{{ global_reminder_state.count }}</span>
-              {% endif %}
-            </a>
+              <img
+                src="{{ global_qr_image_url }}"
+                alt=""
+                class="app-nav-qr-thumbnail"
+              >
+            </button>
           </div>
         </nav>
-        {% block content %}{% endblock %}
 
-        
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+
+    <div id="appQrModal" class="app-qr-modal-backdrop hidden" aria-hidden="true">
+      <div class="app-qr-modal" role="dialog" aria-modal="true" aria-labelledby="appQrModalTitle">
+        <div class="app-qr-modal-header">
+          <div>
+            <div id="appQrModalTitle" class="app-qr-modal-title">Scan to Open iMomir</div>
+            <div class="app-qr-modal-subtitle">Use a phone or tablet connected to the same network.</div>
+          </div>
+          <button
+            type="button"
+            id="appQrCloseButton"
+            class="app-qr-modal-close"
+            aria-label="Close QR code"
+          >
+            ×
+          </button>
+        </div>
+
+        <div class="app-qr-modal-body">
+          <img
+            src="{{ global_qr_image_url }}"
+            alt="QR code for {{ global_qr_access_url }}"
+            class="app-qr-image"
+          >
+          <div class="app-qr-address-label">Open this address</div>
+          <div class="app-qr-address">{{ global_qr_access_url }}</div>
+        </div>
       </div>
     </div>
 

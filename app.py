@@ -71,8 +71,10 @@ from settings import (
     CHAOS_DUPLICATE_REROLL_CHANCE,
     CHAOS_PACK_TYPE_OPTIONS,
     CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
+    CHAOS_DRAFT_MODE_VALUES,
     GAME_MODE_OPTIONS,
     MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
+    MOMIR_MODE_VALUES,
     MTGJSON_ALL_PRINTINGS_URL,
     MTGJSON_ATOMIC_URL,
     MTGJSON_CSV_BASE_URL,
@@ -115,6 +117,8 @@ from settings import (
     SILHOUETTE_RENDER_TARGET_WIDTH_PX,
     SUPPLEMENTAL_TYPE_KEYS,
     TYPE_FLAG_MAP,
+    resolve_chaos_draft_mode_value,
+    resolve_momir_mode_value,
 )
 
 from db.pricing import (
@@ -970,12 +974,15 @@ def build_global_reminder_state(config=None, import_metadata=None):
 @app.context_processor
 def inject_global_template_state():
     config = get_request_config()
-    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
     global_reminder_state = build_global_reminder_state(config=config)
+    access_url = build_access_url()
 
     return {
-        "nav_current_game_mode": current_game_mode,
+        "nav_momir_mode": resolve_momir_mode_value(config),
+        "nav_chaos_draft_mode": resolve_chaos_draft_mode_value(config),
         "global_reminder_state": global_reminder_state,
+        "global_qr_access_url": access_url,
+        "global_qr_image_url": build_qr_code_image_url(access_url),
     }
 
 PACK_ART_DIR = get_pack_art_dir(app.static_folder)
@@ -1174,7 +1181,8 @@ def update_config_from_form(form_data):
     }
 
     select_defaults = {
-        "game_mode": "custom",
+        "momir_mode": "momir_basic",
+        "chaos_draft_mode": "chaos_draft",
         "allow_repeats": "1",
         "print_template": "dk-1234",
         "print_color_mode": "grayscale",
@@ -1187,27 +1195,15 @@ def update_config_from_form(form_data):
     for key in checkbox_keys:
         updated_config[key] = "1" if form_data.get(key) == "on" else "0"
 
-    submitted_game_mode = (form_data.get("game_mode") or "").strip().lower()
-    if submitted_game_mode not in {
-        "custom",
-        "momir_basic",
-        "momir_select",
-        "momir_planeswalker",
-        "momir_legends",
-        "momir_battleship",
-        "momir_aggro",
-        "momir_odds",
-        "momir_evens",
-        "momir_prime",
-        "tower_of_power",
-        "chaos_draft",
-        "chaos_draft_campaign",
-        "preprint_chaos_draft",
-        "planechase",
-        "archenemy",
-    }:
-        submitted_game_mode = select_defaults["game_mode"]
-    updated_config["game_mode"] = submitted_game_mode
+    submitted_momir_mode = (form_data.get("momir_mode") or "").strip().lower()
+    if submitted_momir_mode not in MOMIR_MODE_VALUES:
+        submitted_momir_mode = select_defaults["momir_mode"]
+    updated_config["momir_mode"] = submitted_momir_mode
+
+    submitted_chaos_draft_mode = (form_data.get("chaos_draft_mode") or "").strip().lower()
+    if submitted_chaos_draft_mode not in CHAOS_DRAFT_MODE_VALUES:
+        submitted_chaos_draft_mode = select_defaults["chaos_draft_mode"]
+    updated_config["chaos_draft_mode"] = submitted_chaos_draft_mode
 
     submitted_allow_repeats = (form_data.get("allow_repeats") or "").strip()
     if submitted_allow_repeats not in {"0", "1"}:
@@ -1285,7 +1281,7 @@ def update_config_from_form(form_data):
 
     updated_config["print_bleed_size_mm"] = str(parsed_print_bleed_size_mm)
 
-    if submitted_game_mode == "tower_of_power":
+    if submitted_momir_mode == "tower_of_power":
         any_primary_selected = any(updated_config.get(key) == "1" for key, _ in PRIMARY_TYPE_KEYS)
         if not any_primary_selected:
             for key, _ in PRIMARY_TYPE_KEYS:
@@ -10759,45 +10755,17 @@ def run_refresh_job(force_download=False):
             error=str(exc),
         )
 
-
 @app.route("/")
 def index():
+    return redirect(url_for("play_draft"))
+
+
+@app.route("/play/draft")
+def play_draft():
     config = get_request_config()
-    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
-
-    if current_game_mode in {
-        "chaos_draft",
-        "chaos_draft_campaign",
-        "preprint_chaos_draft",
-    }:
-        return redirect(url_for("result"))
-
-    selected_type_info = resolve_selected_result_type(
-        config,
-        request.args.get("selected_type", ""),
-    )
-
-    pdf_settings = resolve_pdf_print_settings()
-
-    return render_template(
-        "index.html",
-        card_database_ready=is_card_database_ready(),
-        current_game_mode=current_game_mode,
-        enabled_type_options=selected_type_info["enabled_types"],
-        selected_type_value=selected_type_info["selected_value"],
-        use_pdf_print=pdf_settings["use_pdf_print"],
-        tower_pdf_draw_count=resolve_tower_pdf_draw_count(),
-    )
-
-@app.route("/result")
-def result():
-    mana_value = request.args.get("mana_value", "").strip()
-    selected_type_value = (request.args.get("selected_type") or "").strip().lower()
     card_database_ready = is_card_database_ready()
-    config = get_request_config()
     print_settings = resolve_print_settings()
-    current_game_mode = (config.get("game_mode") or "custom").strip().lower()
-    selected_type_info = resolve_selected_result_type(config, selected_type_value)
+    current_game_mode = resolve_chaos_draft_mode_value(config)
 
     if current_game_mode == "chaos_draft":
         clear_chaos_session_state("pending_spin_result")
@@ -10865,6 +10833,42 @@ def result():
             default_packs_per_player=3,
             template_download_links=active_template_metadata["download_links"],
         )
+
+    return redirect(url_for("play_draft"))
+
+
+@app.route("/play/momir")
+def play_momir():
+    config = get_request_config()
+    current_game_mode = resolve_momir_mode_value(config)
+
+    selected_type_info = resolve_selected_result_type(
+        config,
+        request.args.get("selected_type", ""),
+    )
+
+    pdf_settings = resolve_pdf_print_settings()
+
+    return render_template(
+        "index.html",
+        card_database_ready=is_card_database_ready(),
+        current_game_mode=current_game_mode,
+        enabled_type_options=selected_type_info["enabled_types"],
+        selected_type_value=selected_type_info["selected_value"],
+        use_pdf_print=pdf_settings["use_pdf_print"],
+        tower_pdf_draw_count=resolve_tower_pdf_draw_count(),
+    )
+
+
+@app.route("/result")
+def result():
+    mana_value = request.args.get("mana_value", "").strip()
+    selected_type_value = (request.args.get("selected_type") or "").strip().lower()
+    card_database_ready = is_card_database_ready()
+    config = get_request_config()
+    print_settings = resolve_print_settings()
+    current_game_mode = resolve_momir_mode_value(config)
+    selected_type_info = resolve_selected_result_type(config, selected_type_value)
 
     if current_game_mode == "tower_of_power":
         card = draw_random_tower_of_power_card() if card_database_ready else None
@@ -11190,6 +11194,8 @@ def config():
         return redirect(url_for("config"))
 
     config_values = get_request_config()
+    resolved_momir_mode = resolve_momir_mode_value(config_values)
+    resolved_chaos_draft_mode = resolve_chaos_draft_mode_value(config_values)
     import_metadata = get_import_metadata()
     current_refresh_status = build_config_page_refresh_status(import_metadata)
     current_image_status = build_config_page_image_status()
@@ -11293,6 +11299,8 @@ def config():
     return render_template(
         "config.html",
         config=config_values,
+        momir_mode=resolved_momir_mode,
+        chaos_draft_mode=resolved_chaos_draft_mode,
         primary_type_keys=PRIMARY_TYPE_KEYS,
         supplemental_type_keys=SUPPLEMENTAL_TYPE_KEYS,
         other_filter_keys=OTHER_FILTER_KEYS,
@@ -17821,7 +17829,6 @@ def sets():
         selected_set_codes=selected_set_codes,
         custom_draft_sets=custom_draft_sets,
         current_year=current_year,
-        current_game_mode=(config_values.get("game_mode") or "custom").strip().lower(),
         chaos_pack_type_options=CHAOS_PACK_TYPE_OPTIONS,
         selected_chaos_pack_types=selected_chaos_pack_types,
     )
