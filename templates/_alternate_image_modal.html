@@ -195,7 +195,7 @@
                     </label>
 
                     <label class="toggle-row settings-field alternate-source-field alternate-source-field-upload-file">
-                        <span>Remove Bleed From Upload</span>
+                        <span>MPCFill / 3mm Full-Bleed File</span>
                         <input
                             type="checkbox"
                             name="remove_bleed"
@@ -652,9 +652,17 @@
             let bleedText = "";
 
             if (source.remove_bleed) {
-                bleedText = " • bleed removed";
-                if (source.bleed_size_mm !== null && source.bleed_size_mm !== undefined) {
-                    bleedText += " " + source.bleed_size_mm + "mm";
+                bleedText = " • full bleed";
+
+                if (
+                    source.bleed_size_mm !== null
+                    && source.bleed_size_mm !== undefined
+                ) {
+                    bleedText += (
+                        " "
+                        + source.bleed_size_mm
+                        + "mm"
+                    );
                 }
             }
 

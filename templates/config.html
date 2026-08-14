@@ -865,6 +865,90 @@
             </div>
         </div>
 
+        <div
+            id="section_image_maintenance"
+            class="page-panel collapsible-panel {% if section_defaults.get('image_maintenance') == '1' %}is-open{% endif %}"
+            data-section="image_maintenance"
+        >
+            <button
+                type="button"
+                class="collapsible-header"
+            >
+                <span>Image Maintenance</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body cleanup-panel-body">
+                <div class="metadata-list">
+                    <div class="metadata-row">
+                        <span>Images Remaining</span>
+                        <strong id="alternateBleedRemaining">
+                            {{ alternate_bleed_reprocess_status.get("remaining", 0) }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Processed This Run</span>
+                        <strong id="alternateBleedProcessed">
+                            {{ alternate_bleed_reprocess_status.get("processed", 0) }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Corrected This Run</span>
+                        <strong id="alternateBleedCorrected">
+                            {{ alternate_bleed_reprocess_status.get("corrected", 0) }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Missing Originals</span>
+                        <strong id="alternateBleedMissing">
+                            {{ alternate_bleed_reprocess_status.get("missing_originals", 0) }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Failed</span>
+                        <strong id="alternateBleedFailed">
+                            {{ alternate_bleed_reprocess_status.get("failed", 0) }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Status</span>
+                        <strong
+                            id="alternateBleedStatusMessage"
+                            class="metadata-value-wrap"
+                        >
+                            {{ alternate_bleed_reprocess_status.get("message", "Ready.") }}
+                        </strong>
+                    </div>
+                </div>
+
+                <div
+                    id="alternateBleedFailureList"
+                    class="flash-message hidden"
+                ></div>
+
+                <div class="config-button-row">
+                    <button
+                        type="button"
+                        id="reprocessAlternateBleedButton"
+                        class="action-button secondary-button"
+                        {% if alternate_bleed_reprocess_status.get("is_running") %}disabled{% endif %}
+                    >
+                        {% if alternate_bleed_reprocess_status.get("is_running") %}
+                            Reprocessing Alternate Images...
+                        {% else %}
+                            Reprocess Bleed-Removed Alternate Images
+                        {% endif %}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+
         <div id="section_danger_zone" class="page-panel collapsible-panel {% if section_defaults.get('danger_zone') == '1' %}is-open{% endif %}" data-section="danger_zone">
             <button type="button" class="collapsible-header">
                 <span>Danger Zone</span>

@@ -152,6 +152,8 @@ from db.exports import (
 )
 
 from db.database import (
+    CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT,
+    CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT,
     ensure_column_exists,
     get_all_sets,
     add_card_to_custom_draft_set,
@@ -1116,6 +1118,23 @@ image_download_status = {
 }
 image_download_lock = threading.Lock()
 
+alternate_bleed_reprocess_status = {
+    "is_running": False,
+    "stage": "Idle",
+    "message": "Alternate image bleed reprocessing has not been run.",
+    "started_at": None,
+    "finished_at": None,
+    "total": 0,
+    "processed": 0,
+    "corrected": 0,
+    "missing_originals": 0,
+    "failed": 0,
+    "current_alternate_source_id": None,
+    "error": "",
+    "failure_samples": [],
+}
+
+alternate_bleed_reprocess_lock = threading.Lock()
 
 def set_refresh_status(**kwargs):
     with refresh_lock:
@@ -1171,6 +1190,67 @@ def set_image_download_status(**kwargs):
 def get_image_download_status_copy():
     with image_download_lock:
         return dict(image_download_status)
+
+def set_alternate_bleed_reprocess_status(**kwargs):
+    with alternate_bleed_reprocess_lock:
+        alternate_bleed_reprocess_status.update(kwargs)
+
+
+def get_alternate_bleed_reprocess_status_copy():
+    with alternate_bleed_reprocess_lock:
+        return {
+            **alternate_bleed_reprocess_status,
+            "failure_samples": list(
+                alternate_bleed_reprocess_status.get(
+                    "failure_samples",
+                    []
+                )
+            ),
+        }
+
+
+def get_pending_alternate_bleed_reprocess_count():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS pending_count
+            FROM alternate_sources
+            WHERE remove_bleed = 1
+              AND COALESCE(bleed_processing_version, 1) < ?
+            """,
+            (
+                ALTERNATE_BLEED_PROCESSING_VERSION,
+            ),
+        )
+
+        row = cursor.fetchone()
+
+        if not row:
+            return 0
+
+        try:
+            return int(row["pending_count"] or 0)
+        except Exception:
+            return int(row[0] or 0)
+
+    finally:
+        conn.close()
+
+
+def build_alternate_bleed_reprocess_status():
+    status = get_alternate_bleed_reprocess_status_copy()
+
+    try:
+        status["remaining"] = (
+            get_pending_alternate_bleed_reprocess_count()
+        )
+    except Exception:
+        status["remaining"] = 0
+
+    return status
 
 def update_config_from_form(form_data):
     updated_config = {}
@@ -3556,6 +3636,11 @@ def get_silhouette_a4_vertical_9_slots_mm():
                 "y_mm": start_y_mm + (display_row_index * vertical_step_mm),
                 "width_mm": slot_width_mm,
                 "height_mm": slot_height_mm,
+
+                # Alternate sources with real MPCFill bleed should
+                # retain exactly this much of their existing bleed.
+                "required_source_bleed_mm": SILHOUETTE_A4_BLEED_MM,
+
                 "rotation_degrees": 0,
             })
 
@@ -3954,6 +4039,8 @@ def draw_processed_image_into_slot(
     add_edge_bleed_border=False,
     rounded_corner_radius_mm=0.0,
     blank_white_card=False,
+    preserve_real_source_bleed=False,
+    source_bleed_mm=0.0,
 ):
     slot_width_mm = float(slot_def["width_mm"])
     slot_height_mm = float(slot_def["height_mm"])
@@ -3977,7 +4064,29 @@ def draw_processed_image_into_slot(
             target_height_px,
             bool(add_edge_bleed_border),
             radius_px,
-            int(slot_def.get("rotation_degrees", 0) or 0),
+            int(
+                slot_def.get(
+                    "rotation_degrees",
+                    0,
+                )
+                or 0
+            ),
+
+            bool(
+                preserve_real_source_bleed
+            ),
+
+            float(
+                source_bleed_mm or 0.0
+            ),
+
+            float(
+                slot_def.get(
+                    "required_source_bleed_mm",
+                    0.0,
+                )
+                or 0.0
+            ),
         )
 
         slot_cache = getattr(
@@ -4008,8 +4117,28 @@ def draw_processed_image_into_slot(
             with Image.open(BytesIO(processed_image_bytes)) as source_image:
                 image = source_image.convert("RGB")
 
-                if add_edge_bleed_border:
-                    image = add_duplicated_edge_border(image)
+                if preserve_real_source_bleed:
+                    image = (
+                        crop_real_bleed_to_required_bleed(
+                            image,
+                            source_bleed_mm=(
+                                source_bleed_mm
+                            ),
+                            required_bleed_mm=(
+                                slot_def.get(
+                                    "required_source_bleed_mm",
+                                    0.0,
+                                )
+                            ),
+                        )
+                    )
+
+                elif add_edge_bleed_border:
+                    image = (
+                        add_duplicated_edge_border(
+                            image
+                        )
+                    )
 
                 rotation_degrees = int(
                     slot_def.get("rotation_degrees", 0) or 0
@@ -4033,7 +4162,10 @@ def draw_processed_image_into_slot(
                     Image.LANCZOS,
                 )
 
-                if radius_px > 0:
+                if (
+                    radius_px > 0
+                    and not preserve_real_source_bleed
+                ):
                     image = apply_rounded_corner_mask(
                         image,
                         radius_px,
@@ -4151,12 +4283,36 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
         label_text,
     )
 
+    uses_real_source_bleed = bool(
+        rendered_entry.get(
+            "uses_real_source_bleed"
+        )
+    )
+
     build_chaos_template_rendered_card_image(
         rendered_entry["temp_path"],
         rendered_temp_path,
         label_text,
         card_row,
-        template_key_override=rendered_entry.get("export_frame_template") or "auto",
+        template_key_override=(
+            rendered_entry.get(
+                "export_frame_template"
+            )
+            or "auto"
+        ),
+
+        # The overlay-coordinate system already has a special
+        # 69 x 94 / 3 mm bleed version. Use that while the
+        # original MPCFill canvas is still intact.
+        use_bleed_template=(
+            uses_real_source_bleed
+        ),
+
+        # Never round/cut the outer corners of a real
+        # full-bleed source.
+        skip_card_corner_radius=(
+            uses_real_source_bleed
+        ),
     )
 
     updated_entry = dict(rendered_entry)
@@ -4297,7 +4453,7 @@ def build_default_card_back_sheet_pdf():
         draw_width_mm = width_mm + (crop_left_right_mm * 2)
         draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
 
-    mtg_back_path = os.path.join(app.static_folder, "img", "mtg_back.jpg")
+    mtg_back_path = os.path.join(app.static_folder, "img", "mtg_back_custom_1.jpg")
 
     if not os.path.exists(mtg_back_path):
         raise FileNotFoundError(f"Default MTG back image was not found: {mtg_back_path}")
@@ -5755,13 +5911,38 @@ def draw_chaos_rendered_entries_into_pdf_layout(
             for slot_index, rendered_entry in enumerate(page_entries):
                 slot_def = slot_defs[slot_index]
 
+                use_real_source_bleed = bool(
+                    rendered_entry.get(
+                        "uses_real_source_bleed"
+                    )
+                )
+
                 draw_processed_image_into_slot(
                     pdf_canvas,
                     rendered_entry["temp_path"],
                     print_settings["print_mode"],
                     slot_def,
-                    add_edge_bleed_border=True,
-                    rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+
+                    add_edge_bleed_border=(
+                        not use_real_source_bleed
+                    ),
+
+                    rounded_corner_radius_mm=(
+                        0.0
+                        if use_real_source_bleed
+                        else SILHOUETTE_CORNER_RADIUS_MM
+                    ),
+
+                    preserve_real_source_bleed=(
+                        use_real_source_bleed
+                    ),
+
+                    source_bleed_mm=(
+                        rendered_entry.get(
+                            "source_bleed_mm"
+                        )
+                        or 0.0
+                    ),
                 )
 
             if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
@@ -6425,17 +6606,104 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
                     f"card_uuid={card_row['card_uuid']} | page_kind={normalized_page_kind} | path={cached_alternate['absolute_path']}"
                 )
 
-                fullbleed_absolute_path = get_alternate_source_fullbleed_absolute_path(alternate_source)
+                fullbleed_absolute_path = (
+                    get_alternate_source_fullbleed_absolute_path(
+                        alternate_source
+                    )
+                )
+
+                has_fullbleed_file = bool(
+                    fullbleed_absolute_path
+                    and os.path.exists(
+                        fullbleed_absolute_path
+                    )
+                )
+
+                # Legacy database field name:
+                #
+                # remove_bleed = 1 historically meant that the uploaded
+                # source contained known physical bleed. We retain the
+                # field for compatibility but treat the preserved
+                # fullbleed_image_path as the authoritative print master.
+                has_real_bleed_flag = (
+                    "remove_bleed"
+                    in alternate_source.keys()
+                    and int(
+                        alternate_source[
+                            "remove_bleed"
+                        ]
+                        or 0
+                    )
+                    == 1
+                )
+
+                try:
+                    source_bleed_mm = float(
+                        alternate_source[
+                            "bleed_size_mm"
+                        ]
+                        or 0.0
+                    )
+                except (TypeError, ValueError):
+                    source_bleed_mm = 0.0
+
+                source_has_real_bleed = bool(
+                    has_fullbleed_file
+                    and has_real_bleed_flag
+                    and source_bleed_mm > 0
+                )
 
                 return {
                     "source_type": "alternate_source",
-                    "absolute_path": cached_alternate["absolute_path"],
-                    "fullbleed_absolute_path": fullbleed_absolute_path if fullbleed_absolute_path and os.path.exists(fullbleed_absolute_path) else "",
+
+                    # Existing processed derivative remains useful
+                    # for previews and legacy output paths.
+                    "absolute_path": (
+                        cached_alternate[
+                            "absolute_path"
+                        ]
+                    ),
+
+                    "fullbleed_absolute_path": (
+                        fullbleed_absolute_path
+                        if has_fullbleed_file
+                        else ""
+                    ),
+
+                    # For print layouts that understand real source
+                    # bleed, this is the preferred master image.
+                    "print_master_absolute_path": (
+                        fullbleed_absolute_path
+                        if source_has_real_bleed
+                        else cached_alternate[
+                            "absolute_path"
+                        ]
+                    ),
+
+                    "source_has_real_bleed": (
+                        source_has_real_bleed
+                    ),
+
+                    "source_bleed_mm": (
+                        source_bleed_mm
+                        if source_has_real_bleed
+                        else 0.0
+                    ),
+
                     "image_url": "",
-                    "alternate_source_id": cached_alternate["alternate_source_id"],
+                    "alternate_source_id": (
+                        cached_alternate[
+                            "alternate_source_id"
+                        ]
+                    ),
+
                     "export_frame_template": (
-                        alternate_source["export_frame_template"] or "auto"
-                        if "export_frame_template" in alternate_source.keys()
+                        alternate_source[
+                            "export_frame_template"
+                        ]
+                        or "auto"
+                        if "export_frame_template"
+                        in alternate_source.keys()
                         else "auto"
                     ),
                 }
@@ -6450,6 +6718,9 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
         "source_type": "scryfall",
         "absolute_path": "",
         "fullbleed_absolute_path": "",
+        "print_master_absolute_path": "",
+        "source_has_real_bleed": False,
+        "source_bleed_mm": 0.0,
         "image_url": fallback_image_url,
         "alternate_source_id": None,
         "export_frame_template": "auto",
@@ -6538,6 +6809,13 @@ def get_alternate_source_by_id(alternate_source_id):
 
 CARD_PRINT_WIDTH_MM = 63.0
 CARD_PRINT_HEIGHT_MM = 88.0
+
+# Alternate-source uploads marked "Remove Bleed From Upload"
+# are expected to contain a standard 3 mm bleed on every edge.
+#
+# This is intentionally separate from print/output bleed settings.
+ALTERNATE_UPLOAD_BLEED_MM = 3.0
+ALTERNATE_BLEED_PROCESSING_VERSION = 2
 
 
 def get_configured_print_bleed_size_mm():
@@ -6731,48 +7009,311 @@ def crop_image_to_card_aspect_ratio(image, card_width_mm=CARD_PRINT_WIDTH_MM, ca
 
     return source_image.crop((0, top, source_width, bottom))
 
-def remove_card_bleed(image, bleed_size_mm=None, card_width_mm=CARD_PRINT_WIDTH_MM, card_height_mm=CARD_PRINT_HEIGHT_MM):
-    source_image = image.convert("RGB")
+def crop_real_bleed_to_required_bleed(
+    image,
+    source_bleed_mm,
+    required_bleed_mm,
+    card_width_mm=CARD_PRINT_WIDTH_MM,
+    card_height_mm=CARD_PRINT_HEIGHT_MM,
+):
+    """
+    Crop a real full-bleed card source down to the bleed required by
+    the selected print template.
+
+    This function never generates bleed and never enlarges the
+    finished 63 x 88 mm card region.
+    """
+
+    source_image = ImageOps.exif_transpose(
+        image
+    ).convert("RGB")
 
     try:
-        bleed_mm = float(bleed_size_mm if bleed_size_mm is not None else get_configured_print_bleed_size_mm())
+        source_bleed = float(
+            source_bleed_mm or 0.0
+        )
     except (TypeError, ValueError):
-        bleed_mm = 3.0
+        source_bleed = 0.0
 
-    if bleed_mm <= 0:
-        return crop_image_to_card_aspect_ratio(
-            source_image,
-            card_width_mm=card_width_mm,
-            card_height_mm=card_height_mm,
+    try:
+        required_bleed = float(
+            required_bleed_mm or 0.0
+        )
+    except (TypeError, ValueError):
+        required_bleed = 0.0
+
+    source_bleed = max(
+        0.0,
+        source_bleed,
+    )
+
+    required_bleed = max(
+        0.0,
+        required_bleed,
+    )
+
+    if (
+        required_bleed
+        > source_bleed + 0.000001
+    ):
+        raise ValueError(
+            "Alternate source does not contain enough real bleed "
+            "for this print template. "
+            f"Source bleed={source_bleed:.4f} mm, "
+            f"required bleed={required_bleed:.4f} mm."
         )
 
-    source_width, source_height = source_image.size
+    excess_bleed_mm = (
+        source_bleed
+        - required_bleed
+    )
 
-    full_width_mm = float(card_width_mm) + (bleed_mm * 2.0)
-    full_height_mm = float(card_height_mm) + (bleed_mm * 2.0)
+    if excess_bleed_mm <= 0.000001:
+        return source_image
 
-    crop_x = int(round(source_width * (bleed_mm / full_width_mm)))
-    crop_y = int(round(source_height * (bleed_mm / full_height_mm)))
+    full_source_width_mm = (
+        float(card_width_mm)
+        + (source_bleed * 2.0)
+    )
+
+    full_source_height_mm = (
+        float(card_height_mm)
+        + (source_bleed * 2.0)
+    )
+
+    source_width, source_height = (
+        source_image.size
+    )
+
+    crop_x = int(
+        round(
+            source_width
+            * (
+                excess_bleed_mm
+                / full_source_width_mm
+            )
+        )
+    )
+
+    crop_y = int(
+        round(
+            source_height
+            * (
+                excess_bleed_mm
+                / full_source_height_mm
+            )
+        )
+    )
+
+    crop_x = max(
+        0,
+        min(
+            crop_x,
+            (source_width - 1) // 2,
+        ),
+    )
+
+    crop_y = max(
+        0,
+        min(
+            crop_y,
+            (source_height - 1) // 2,
+        ),
+    )
 
     left = crop_x
     top = crop_y
     right = source_width - crop_x
     bottom = source_height - crop_y
 
-    if right <= left or bottom <= top:
-        return crop_image_to_card_aspect_ratio(
-            source_image,
-            card_width_mm=card_width_mm,
-            card_height_mm=card_height_mm,
+    if (
+        right <= left
+        or bottom <= top
+    ):
+        raise ValueError(
+            "Unable to crop real alternate-source bleed. "
+            f"Source size={source_width}x{source_height}, "
+            f"source bleed={source_bleed:.4f} mm, "
+            f"required bleed={required_bleed:.4f} mm."
         )
 
-    bleed_removed_image = source_image.crop((left, top, right, bottom))
-
-    return crop_image_to_card_aspect_ratio(
-        bleed_removed_image,
-        card_width_mm=card_width_mm,
-        card_height_mm=card_height_mm,
+    cropped_image = source_image.crop(
+        (
+            left,
+            top,
+            right,
+            bottom,
+        )
     )
+
+    write_debug_log(
+        "REAL ALTERNATE BLEED CROP | "
+        f"source_px="
+        f"{source_width}x{source_height} | "
+        f"source_bleed_mm="
+        f"{source_bleed:.4f} | "
+        f"required_bleed_mm="
+        f"{required_bleed:.4f} | "
+        f"crop_mm="
+        f"{excess_bleed_mm:.4f} | "
+        f"crop_px="
+        f"L{crop_x}/R{crop_x}/"
+        f"T{crop_y}/B{crop_y} | "
+        f"result_px="
+        f"{cropped_image.width}x"
+        f"{cropped_image.height}"
+    )
+
+    return cropped_image
+
+def remove_card_bleed(
+    image,
+    bleed_size_mm=None,
+    card_width_mm=CARD_PRINT_WIDTH_MM,
+    card_height_mm=CARD_PRINT_HEIGHT_MM,
+):
+    """
+    Remove a known physical bleed from an uploaded card image.
+
+    Important:
+    This function removes ONLY the requested bleed amount.
+    It must not perform a second aspect-ratio crop afterward,
+    because doing so can remove additional card artwork beyond
+    the configured bleed.
+    """
+
+    source_image = ImageOps.exif_transpose(
+        image
+    ).convert("RGB")
+
+    try:
+        bleed_mm = float(
+            bleed_size_mm
+            if bleed_size_mm is not None
+            else ALTERNATE_UPLOAD_BLEED_MM
+        )
+    except (TypeError, ValueError):
+        bleed_mm = ALTERNATE_UPLOAD_BLEED_MM
+
+    if bleed_mm <= 0:
+        return source_image
+
+    try:
+        card_width_mm = float(card_width_mm)
+    except (TypeError, ValueError):
+        card_width_mm = CARD_PRINT_WIDTH_MM
+
+    try:
+        card_height_mm = float(card_height_mm)
+    except (TypeError, ValueError):
+        card_height_mm = CARD_PRINT_HEIGHT_MM
+
+    if card_width_mm <= 0:
+        card_width_mm = CARD_PRINT_WIDTH_MM
+
+    if card_height_mm <= 0:
+        card_height_mm = CARD_PRINT_HEIGHT_MM
+
+    source_width, source_height = source_image.size
+
+    if source_width <= 0 or source_height <= 0:
+        return source_image
+
+    # A finished 63 x 88 mm card with 3 mm bleed on every edge
+    # represents a 69 x 94 mm source canvas.
+    full_width_mm = (
+        card_width_mm
+        + (bleed_mm * 2.0)
+    )
+
+    full_height_mm = (
+        card_height_mm
+        + (bleed_mm * 2.0)
+    )
+
+    # Convert the physical bleed amount into source-image pixels.
+    #
+    # Example:
+    # horizontal crop fraction for 3 mm bleed:
+    #     3 / 69
+    #
+    # vertical crop fraction:
+    #     3 / 94
+    crop_x = int(
+        round(
+            source_width
+            * (bleed_mm / full_width_mm)
+        )
+    )
+
+    crop_y = int(
+        round(
+            source_height
+            * (bleed_mm / full_height_mm)
+        )
+    )
+
+    crop_x = max(
+        0,
+        min(
+            crop_x,
+            (source_width - 1) // 2,
+        ),
+    )
+
+    crop_y = max(
+        0,
+        min(
+            crop_y,
+            (source_height - 1) // 2,
+        ),
+    )
+
+    left = crop_x
+    top = crop_y
+    right = source_width - crop_x
+    bottom = source_height - crop_y
+
+    if (
+        right <= left
+        or bottom <= top
+    ):
+        raise ValueError(
+            "Unable to remove bleed from alternate image. "
+            f"Source size={source_width}x{source_height}, "
+            f"bleed={bleed_mm:.3f} mm."
+        )
+
+    bleed_removed_image = source_image.crop(
+        (
+            left,
+            top,
+            right,
+            bottom,
+        )
+    )
+
+    write_debug_log(
+        "ALTERNATE IMAGE BLEED REMOVAL | "
+        f"source={source_width}x{source_height} | "
+        f"bleed_mm={bleed_mm:.3f} | "
+        f"crop_left={crop_x}px | "
+        f"crop_right={crop_x}px | "
+        f"crop_top={crop_y}px | "
+        f"crop_bottom={crop_y}px | "
+        f"result="
+        f"{bleed_removed_image.width}x"
+        f"{bleed_removed_image.height}"
+    )
+
+    # DO NOT crop to the card aspect ratio here.
+    #
+    # The requested physical bleed has already been removed.
+    # A second center crop would remove additional artwork.
+    #
+    # The PDF/render pipeline will size this image to the
+    # configured 63 x 88 mm card slot later.
+    return bleed_removed_image
 
 def save_alternate_source_upload_file(uploaded_file, card_uuid, face_kind, remove_bleed=False, bleed_size_mm=None):
     if not uploaded_file or not uploaded_file.filename:
@@ -6839,6 +7380,476 @@ def save_alternate_source_upload_file(uploaded_file, card_uuid, face_kind, remov
         "bleed_size_mm": float(bleed_size_mm) if bleed_size_mm is not None else None,
     }
 
+def save_reprocessed_alternate_image_atomic(
+    processed_image,
+    target_path,
+):
+    target_path = os.path.abspath(target_path)
+
+    alternate_root = os.path.abspath(
+        ALTERNATE_SOURCE_DIR
+    )
+
+    try:
+        common_root = os.path.commonpath(
+            [
+                alternate_root,
+                target_path,
+            ]
+        )
+    except ValueError:
+        common_root = ""
+
+    if common_root != alternate_root:
+        raise ValueError(
+            "Refusing to replace an alternate image "
+            "outside the managed alternate-source directory: "
+            f"{target_path}"
+        )
+
+    os.makedirs(
+        os.path.dirname(target_path),
+        exist_ok=True,
+    )
+
+    file_ext = os.path.splitext(
+        target_path
+    )[1].strip().lower()
+
+    save_format = (
+        get_image_save_format_from_extension(
+            file_ext
+        )
+    )
+
+    temp_path = (
+        target_path
+        + ".reprocess."
+        + str(threading.get_ident())
+        + ".tmp"
+    )
+
+    try:
+        if save_format == "JPEG":
+            output_image = processed_image.convert(
+                "RGB"
+            )
+
+            output_image.save(
+                temp_path,
+                format="JPEG",
+                quality=95,
+                optimize=True,
+            )
+
+        elif save_format == "WEBP":
+            output_image = processed_image.convert(
+                "RGB"
+            )
+
+            output_image.save(
+                temp_path,
+                format="WEBP",
+                quality=95,
+            )
+
+        else:
+            processed_image.save(
+                temp_path,
+                format=save_format,
+            )
+
+        os.replace(
+            temp_path,
+            target_path,
+        )
+
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+
+def run_alternate_bleed_reprocess_job():
+    started_at = datetime.now(
+        timezone.utc
+    ).strftime(
+        "%Y-%m-%d %H:%M:%S UTC"
+    )
+
+    set_alternate_bleed_reprocess_status(
+        is_running=True,
+        stage="Scanning",
+        message=(
+            "Scanning alternate sources that need "
+            "corrected bleed processing..."
+        ),
+        started_at=started_at,
+        finished_at=None,
+        total=0,
+        processed=0,
+        corrected=0,
+        missing_originals=0,
+        failed=0,
+        current_alternate_source_id=None,
+        error="",
+        failure_samples=[],
+    )
+
+    conn = None
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            SELECT *
+            FROM alternate_sources
+            WHERE remove_bleed = 1
+              AND COALESCE(bleed_processing_version, 1) < ?
+            ORDER BY alternate_source_id ASC
+            """,
+            (
+                ALTERNATE_BLEED_PROCESSING_VERSION,
+            ),
+        )
+
+        rows = cursor.fetchall()
+
+        conn.close()
+        conn = None
+
+        total = len(rows)
+
+        set_alternate_bleed_reprocess_status(
+            stage="Reprocessing",
+            message=(
+                f"Found {total} alternate image(s) "
+                "that require corrected bleed processing."
+            ),
+            total=total,
+        )
+
+        if total == 0:
+            finished_at = datetime.now(
+                timezone.utc
+            ).strftime(
+                "%Y-%m-%d %H:%M:%S UTC"
+            )
+
+            set_alternate_bleed_reprocess_status(
+                is_running=False,
+                stage="Complete",
+                message=(
+                    "All bleed-removed alternate images "
+                    "already use the current processing version."
+                ),
+                finished_at=finished_at,
+            )
+
+            return
+
+        processed_count = 0
+        corrected_count = 0
+        missing_original_count = 0
+        failed_count = 0
+        failure_samples = []
+
+        alternate_root = os.path.abspath(
+            ALTERNATE_SOURCE_DIR
+        )
+
+        for row in rows:
+            alternate_source_id = int(
+                row["alternate_source_id"]
+            )
+
+            processed_count += 1
+
+            set_alternate_bleed_reprocess_status(
+                stage="Reprocessing",
+                current_alternate_source_id=(
+                    alternate_source_id
+                ),
+                processed=processed_count,
+                corrected=corrected_count,
+                missing_originals=(
+                    missing_original_count
+                ),
+                failed=failed_count,
+                message=(
+                    f"Processing alternate source "
+                    f"{processed_count} of {total}..."
+                ),
+            )
+
+            try:
+                fullbleed_path = (
+                    get_alternate_source_fullbleed_absolute_path(
+                        row
+                    )
+                )
+
+                if (
+                    not fullbleed_path
+                    or not os.path.exists(
+                        fullbleed_path
+                    )
+                ):
+                    missing_original_count += 1
+
+                    missing_message = (
+                        f"Alternate source "
+                        f"{alternate_source_id}: "
+                        "full-bleed original is missing."
+                    )
+
+                    if (
+                        len(failure_samples)
+                        < 25
+                    ):
+                        failure_samples.append(
+                            missing_message
+                        )
+
+                    write_error_log(
+                        missing_message
+                    )
+
+                    continue
+
+                fullbleed_path = os.path.abspath(
+                    fullbleed_path
+                )
+
+                try:
+                    source_common_root = (
+                        os.path.commonpath(
+                            [
+                                alternate_root,
+                                fullbleed_path,
+                            ]
+                        )
+                    )
+                except ValueError:
+                    source_common_root = ""
+
+                if (
+                    source_common_root
+                    != alternate_root
+                ):
+                    raise ValueError(
+                        "Full-bleed original is outside "
+                        "the managed alternate-source folder: "
+                        f"{fullbleed_path}"
+                    )
+
+                local_path = (
+                    get_alternate_source_local_absolute_path(
+                        row
+                    )
+                )
+
+                if not local_path:
+                    file_ext = os.path.splitext(
+                        fullbleed_path
+                    )[1].strip().lower()
+
+                    if file_ext not in {
+                        ".png",
+                        ".jpg",
+                        ".jpeg",
+                        ".webp",
+                    }:
+                        file_ext = ".png"
+
+                    local_path = os.path.join(
+                        ALTERNATE_SOURCE_DIR,
+                        (
+                            "alternate_reprocessed_"
+                            f"{alternate_source_id}"
+                            f"{file_ext}"
+                        ),
+                    )
+
+                local_path = os.path.abspath(
+                    local_path
+                )
+
+                with Image.open(
+                    fullbleed_path
+                ) as source_image:
+                    corrected_image = (
+                        remove_card_bleed(
+                            source_image,
+                            bleed_size_mm=(
+                                ALTERNATE_UPLOAD_BLEED_MM
+                            ),
+                        )
+                    )
+
+                    save_reprocessed_alternate_image_atomic(
+                        corrected_image,
+                        local_path,
+                    )
+
+                relative_local_path = os.path.relpath(
+                    local_path,
+                    RUNTIME_BASE_DIR,
+                ).replace(
+                    "\\",
+                    "/",
+                )
+
+                update_conn = get_db_connection()
+                update_cursor = (
+                    update_conn.cursor()
+                )
+
+                try:
+                    update_cursor.execute(
+                        """
+                        UPDATE alternate_sources
+                        SET local_image_path = ?,
+                            bleed_size_mm = ?,
+                            bleed_processing_version = ?,
+                            updated_at_utc = ?
+                        WHERE alternate_source_id = ?
+                        """,
+                        (
+                            relative_local_path,
+                            ALTERNATE_UPLOAD_BLEED_MM,
+                            ALTERNATE_BLEED_PROCESSING_VERSION,
+                            datetime.now(
+                                timezone.utc
+                            ).strftime(
+                                "%Y-%m-%d %H:%M:%S UTC"
+                            ),
+                            alternate_source_id,
+                        ),
+                    )
+
+                    update_conn.commit()
+
+                finally:
+                    update_conn.close()
+
+                corrected_count += 1
+
+                write_debug_log(
+                    "ALTERNATE BLEED REPROCESS COMPLETE | "
+                    f"alternate_source_id="
+                    f"{alternate_source_id} | "
+                    f"source={fullbleed_path} | "
+                    f"output={local_path} | "
+                    f"version="
+                    f"{ALTERNATE_BLEED_PROCESSING_VERSION}"
+                )
+
+            except Exception as exc:
+                failed_count += 1
+
+                failure_message = (
+                    f"Alternate source "
+                    f"{alternate_source_id}: "
+                    f"{type(exc).__name__}: "
+                    f"{exc}"
+                )
+
+                if len(failure_samples) < 25:
+                    failure_samples.append(
+                        failure_message
+                    )
+
+                write_error_log(
+                    (
+                        "ALTERNATE BLEED REPROCESS FAILED "
+                        f"| alternate_source_id="
+                        f"{alternate_source_id}"
+                    ),
+                    exc=exc,
+                )
+
+            finally:
+                set_alternate_bleed_reprocess_status(
+                    processed=processed_count,
+                    corrected=corrected_count,
+                    missing_originals=(
+                        missing_original_count
+                    ),
+                    failed=failed_count,
+                    failure_samples=(
+                        failure_samples
+                    ),
+                )
+
+        finished_at = datetime.now(
+            timezone.utc
+        ).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
+
+        remaining_count = (
+            get_pending_alternate_bleed_reprocess_count()
+        )
+
+        set_alternate_bleed_reprocess_status(
+            is_running=False,
+            stage="Complete",
+            message=(
+                f"Reprocessing complete. "
+                f"Corrected {corrected_count} image(s). "
+                f"Missing originals: "
+                f"{missing_original_count}. "
+                f"Failed: {failed_count}. "
+                f"Remaining: {remaining_count}."
+            ),
+            finished_at=finished_at,
+            current_alternate_source_id=None,
+            processed=processed_count,
+            corrected=corrected_count,
+            missing_originals=(
+                missing_original_count
+            ),
+            failed=failed_count,
+            failure_samples=failure_samples,
+        )
+
+    except Exception as exc:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+        finished_at = datetime.now(
+            timezone.utc
+        ).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
+
+        write_error_log(
+            "ALTERNATE BLEED BULK REPROCESS FAILED",
+            exc=exc,
+        )
+
+        set_alternate_bleed_reprocess_status(
+            is_running=False,
+            stage="Failed",
+            message=(
+                "Alternate image bleed reprocessing "
+                "failed."
+            ),
+            finished_at=finished_at,
+            current_alternate_source_id=None,
+            error=(
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            ),
+        )
 
 def create_alternate_source_for_card(
     card_uuid,
@@ -6947,6 +7958,19 @@ def create_alternate_source_for_card(
 
     alternate_source_id = cursor.lastrowid
 
+    if remove_bleed:
+        cursor.execute(
+            """
+            UPDATE alternate_sources
+            SET bleed_processing_version = ?
+            WHERE alternate_source_id = ?
+            """,
+            (
+                ALTERNATE_BLEED_PROCESSING_VERSION,
+                int(alternate_source_id),
+            ),
+        )
+
     conn.commit()
     conn.close()
 
@@ -6984,7 +8008,7 @@ def get_chaos_pdf_card_back_source(card_row):
     default_back_path = os.path.join(
         app.static_folder,
         "img",
-        "mtg_back.jpg",
+        "mtg_back_custom_1.jpg",
     )
 
     if not os.path.exists(default_back_path):
@@ -7651,9 +8675,41 @@ def build_chaos_pack_pdf(
                 )
 
                 try:
-                    if image_source.get("source_type") == "alternate_source":
+                    use_real_source_bleed = bool(
+                        image_source.get(
+                            "source_type"
+                        )
+                        == "alternate_source"
+
+                        and image_source.get(
+                            "source_has_real_bleed"
+                        )
+
+                        and (
+                            pdf_template_layout.get(
+                                "print_template"
+                            )
+                            or ""
+                        ).strip().lower()
+                        == "silhouette-a4-vertical-9"
+                    )
+
+                    if (
+                        image_source.get(
+                            "source_type"
+                        )
+                        == "alternate_source"
+                    ):
                         cached_result = {
-                            "absolute_path": image_source["absolute_path"],
+                            "absolute_path": (
+                                image_source.get(
+                                    "print_master_absolute_path"
+                                )
+                                if use_real_source_bleed
+                                else image_source[
+                                    "absolute_path"
+                                ]
+                            ),
                         }
                     else:
                         if not page_image_url:
@@ -7677,7 +8733,27 @@ def build_chaos_pack_pdf(
                         "is_dual_faced": int(card_row["is_dual_faced"] or 0),
                         "is_persistent_cache_file": True,
                         "is_template_rendered": False,
-                        "export_frame_template": image_source.get("export_frame_template") or "auto",
+                        "export_frame_template": (
+                            image_source.get(
+                                "export_frame_template"
+                            )
+                            or "auto"
+                        ),
+
+                        "uses_real_source_bleed": (
+                            use_real_source_bleed
+                        ),
+
+                        "source_bleed_mm": (
+                            float(
+                                image_source.get(
+                                    "source_bleed_mm"
+                                )
+                                or 0.0
+                            )
+                            if use_real_source_bleed
+                            else 0.0
+                        ),
                     })
 
                 except Exception as exc:
@@ -8042,13 +9118,38 @@ def build_chaos_pack_pdf(
                 for slot_index, rendered_entry in enumerate(page_entries):
                     slot_def = slot_defs[slot_index]
 
+                    use_real_source_bleed = bool(
+                        rendered_entry.get(
+                            "uses_real_source_bleed"
+                        )
+                    )
+
                     draw_processed_image_into_slot(
                         c,
                         rendered_entry["temp_path"],
                         print_settings["print_mode"],
                         slot_def,
-                        add_edge_bleed_border=True,
-                        rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+
+                        add_edge_bleed_border=(
+                            not use_real_source_bleed
+                        ),
+
+                        rounded_corner_radius_mm=(
+                            0.0
+                            if use_real_source_bleed
+                            else SILHOUETTE_CORNER_RADIUS_MM
+                        ),
+
+                        preserve_real_source_bleed=(
+                            use_real_source_bleed
+                        ),
+
+                        source_bleed_mm=(
+                            rendered_entry.get(
+                                "source_bleed_mm"
+                            )
+                            or 0.0
+                        ),
                     )
 
                 if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE and len(page_entries) < len(slot_defs):
@@ -8911,7 +10012,13 @@ def build_export_card_image(
             use_bleed_template=use_bleed_template,
         )
 
-        image = add_duplicated_edge_border(image)
+        # Real full-bleed sources already contain their own edge
+        # artwork. Do not manufacture an additional duplicated
+        # pixel border around them.
+        if not skip_card_corner_radius:
+            image = add_duplicated_edge_border(
+                image
+            )
 
         card_matte_rgb = sample_export_border_rgb(
             image,
@@ -9328,7 +10435,7 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
     os.makedirs(images_foil_dir, exist_ok=True)
     os.makedirs(pack_labels_dir, exist_ok=True)
 
-    mtg_back_source_path = os.path.join(app.static_folder, "img", "mtg_back.jpg")
+    mtg_back_source_path = os.path.join(app.static_folder, "img", "mtg_back_custom_1.jpg")
     if not os.path.exists(mtg_back_source_path):
         raise FileNotFoundError(f"Default MTG back image was not found: {mtg_back_source_path}")
 
@@ -11932,6 +13039,9 @@ def config():
     import_metadata = get_import_metadata()
     current_refresh_status = build_config_page_refresh_status(import_metadata)
     current_image_status = build_config_page_image_status()
+    current_alternate_bleed_status = (
+        build_alternate_bleed_reprocess_status()
+    )
 
     resolved_game_mode_cards = []
     hidden_config_game_modes = {
@@ -12029,6 +13139,7 @@ def config():
         "other_filters": "0",
         "exports": "0",
         "backup": "0",
+        "image_maintenance": "0",
         "danger_zone": "0",
     }
 
@@ -12057,9 +13168,94 @@ def config():
         import_metadata=import_metadata,
         refresh_status=current_refresh_status,
         image_download_status=current_image_status,
+        alternate_bleed_reprocess_status=(
+            current_alternate_bleed_status
+        ),
         section_defaults=section_defaults,
         history_count=get_recent_history_count(),
     )
+@app.route(
+    "/maintenance/alternate-bleed-reprocess/start",
+    methods=["POST"],
+)
+def maintenance_alternate_bleed_reprocess_start():
+    current_status = (
+        get_alternate_bleed_reprocess_status_copy()
+    )
+
+    if current_status["is_running"]:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Alternate image bleed reprocessing "
+                "is already running."
+            ),
+        }), 409
+
+    pending_count = (
+        get_pending_alternate_bleed_reprocess_count()
+    )
+
+    if pending_count <= 0:
+        return jsonify({
+            "ok": True,
+            "started": False,
+            "message": (
+                "No alternate images require "
+                "bleed reprocessing."
+            ),
+        })
+
+    set_alternate_bleed_reprocess_status(
+        is_running=True,
+        stage="Starting",
+        message=(
+            f"Preparing to reprocess "
+            f"{pending_count} alternate image(s)..."
+        ),
+        started_at=datetime.now(
+            timezone.utc
+        ).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        ),
+        finished_at=None,
+        total=pending_count,
+        processed=0,
+        corrected=0,
+        missing_originals=0,
+        failed=0,
+        current_alternate_source_id=None,
+        error="",
+        failure_samples=[],
+    )
+
+    worker = threading.Thread(
+        target=run_alternate_bleed_reprocess_job,
+        daemon=True,
+    )
+
+    worker.start()
+
+    return jsonify({
+        "ok": True,
+        "started": True,
+        "message": (
+            f"Started reprocessing "
+            f"{pending_count} alternate image(s)."
+        ),
+    })
+
+
+@app.route(
+    "/maintenance/alternate-bleed-reprocess/status",
+    methods=["GET"],
+)
+def maintenance_alternate_bleed_reprocess_status():
+    return jsonify(
+        build_alternate_bleed_reprocess_status()
+    )
+
+
 
 @app.route("/maintenance/clear-exports", methods=["POST"])
 def maintenance_clear_exports():
@@ -16421,7 +17617,6 @@ def campaign_chaos_card_alternate_sources(card_uuid):
         "alternate_sources": alternate_sources,
     })
 
-
 @app.route("/chaos/cards/<card_uuid>/alternate-sources/add", methods=["POST"])
 @app.route("/campaign-chaos/cards/<card_uuid>/alternate-sources/add", methods=["POST"])
 def campaign_chaos_card_alternate_sources_add(card_uuid):
@@ -16441,7 +17636,12 @@ def campaign_chaos_card_alternate_sources_add(card_uuid):
     priority = "100"
     notes = (request.form.get("notes") or "").strip()
     remove_bleed = request.form.get("remove_bleed") == "on"
-    bleed_size_mm = get_configured_print_bleed_size_mm()
+
+    bleed_size_mm = (
+        ALTERNATE_UPLOAD_BLEED_MM
+        if remove_bleed
+        else None
+    )
     export_frame_template = (request.form.get("export_frame_template") or "auto").strip().lower()
 
     fullbleed_image_path = ""
@@ -17600,6 +18800,27 @@ def ensure_custom_draft_set_default_pack_art(set_code):
 
     os.makedirs(pack_art_dir, exist_ok=True)
 
+    mystery_slot_count = len(
+        get_custom_draft_pack_slots_for_booster(
+            clean_set_code,
+            "mystery",
+        )
+    ) or CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+
+    play_slot_count = len(
+        get_custom_draft_pack_slots_for_booster(
+            clean_set_code,
+            "play",
+        )
+    ) or CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+
+    collector_slot_count = len(
+        get_custom_draft_pack_slots_for_booster(
+            clean_set_code,
+            "collector",
+        )
+    ) or CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+
     pack_art_targets = [
         {
             "filename": "default.png",
@@ -17607,7 +18828,9 @@ def ensure_custom_draft_set_default_pack_art(set_code):
             "pack_display_name": normalize_chaos_pack_display_name(
                 f"{custom_set['set_name'] or 'Custom Draft Set'} ({clean_set_code})"
             ),
-            "pack_tracking_code": "15 CARDS",
+            "pack_tracking_code": (
+                f"{mystery_slot_count} CARDS"
+            ),
         },
         {
             "filename": "play.png",
@@ -17616,7 +18839,9 @@ def ensure_custom_draft_set_default_pack_art(set_code):
                 custom_set,
                 "play",
             ),
-            "pack_tracking_code": "15 CARDS",
+            "pack_tracking_code": (
+                f"{play_slot_count} CARDS"
+            ),
         },
         {
             "filename": "collector.png",
@@ -17625,7 +18850,9 @@ def ensure_custom_draft_set_default_pack_art(set_code):
                 custom_set,
                 "collector",
             ),
-            "pack_tracking_code": "15 CARDS",
+            "pack_tracking_code": (
+                f"{collector_slot_count} CARDS"
+            ),
         },
         {
             "filename": "mystery.png",
@@ -17634,7 +18861,9 @@ def ensure_custom_draft_set_default_pack_art(set_code):
                 custom_set,
                 "mystery",
             ),
-            "pack_tracking_code": "15 CARDS",
+            "pack_tracking_code": (
+                f"{mystery_slot_count} CARDS"
+            ),
         },
     ]
 
@@ -17818,32 +19047,96 @@ def custom_draft_set_layout_edit(set_code, booster_name):
         return redirect(url_for("sets"))
 
     if request.method == "POST":
+        try:
+            slot_count = int(
+                request.form.get("slot_count")
+                or CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+            )
+        except (TypeError, ValueError):
+            slot_count = (
+                CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+            )
+
+        slot_count = max(
+            1,
+            min(
+                slot_count,
+                CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT,
+            ),
+        )
+
         slot_updates = []
 
-        for slot_number in range(1, 16):
+        for slot_number in range(
+            1,
+            slot_count + 1,
+        ):
             slot_updates.append({
                 "slot_number": slot_number,
-                "color_rule": request.form.get(f"slot_{slot_number}_color_rule") or "any",
-                "rarity_rule": request.form.get(f"slot_{slot_number}_rarity_rule") or "any",
-                "special_category_rule": request.form.get(f"slot_{slot_number}_special_category_rule") or "none",
-                "foil_rule": request.form.get(f"slot_{slot_number}_foil_rule") or "no",
+                "color_rule": (
+                    request.form.get(
+                        f"slot_{slot_number}_color_rule"
+                    )
+                    or "any"
+                ),
+                "rarity_rule": (
+                    request.form.get(
+                        f"slot_{slot_number}_rarity_rule"
+                    )
+                    or "any"
+                ),
+                "special_category_rule": (
+                    request.form.get(
+                        f"slot_{slot_number}_special_category_rule"
+                    )
+                    or "none"
+                ),
+                "foil_rule": (
+                    request.form.get(
+                        f"slot_{slot_number}_foil_rule"
+                    )
+                    or "no"
+                ),
             })
 
         try:
-            update_custom_draft_pack_layout(
-                clean_set_code,
-                clean_booster_name,
-                slot_updates,
+            update_result = (
+                update_custom_draft_pack_layout(
+                    clean_set_code,
+                    clean_booster_name,
+                    slot_updates,
+                )
             )
-            flash("Pack layout saved.")
+
+            try:
+                ensure_custom_draft_set_default_pack_art(
+                    clean_set_code
+                )
+            except Exception as pack_art_exc:
+                write_error_log(
+                    "CUSTOM SET PACK ART REFRESH FAILED "
+                    "AFTER LAYOUT SAVE | "
+                    f"set_code={clean_set_code} | "
+                    f"booster_name="
+                    f"{clean_booster_name}",
+                    exc=pack_art_exc,
+                )
+
+            flash(
+                update_result.get("message")
+                or "Pack layout saved."
+            )
+
         except Exception as exc:
             flash(str(exc))
 
-        return redirect(url_for(
-            "custom_draft_set_layout_edit",
-            set_code=clean_set_code,
-            booster_name=clean_booster_name,
-        ))
+        return redirect(
+            url_for(
+                "custom_draft_set_layout_edit",
+                set_code=clean_set_code,
+                booster_name=clean_booster_name,
+            )
+        )
 
     pack_slots = get_custom_draft_pack_slots_for_booster(
         clean_set_code,
@@ -17867,6 +19160,12 @@ def custom_draft_set_layout_edit(set_code, booster_name):
         pack_slots=pack_slots,
         slot_options=slot_options,
         special_category_labels=special_category_labels,
+        default_pack_slot_count=(
+            CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT
+        ),
+        max_pack_slot_count=(
+            CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT
+        ),
     )
 
 @app.route("/custom-draft-sets/<path:set_code>/generate/<booster_name>", methods=["POST"])

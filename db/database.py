@@ -480,6 +480,7 @@ def initialize_database():
             fullbleed_image_path TEXT,
             remove_bleed INTEGER NOT NULL DEFAULT 0,
             bleed_size_mm REAL,
+            bleed_processing_version INTEGER NOT NULL DEFAULT 1,
             export_frame_template TEXT,
             is_enabled INTEGER NOT NULL DEFAULT 1,
             priority INTEGER NOT NULL DEFAULT 100,
@@ -507,6 +508,12 @@ def initialize_database():
     ensure_column_exists(cursor, "alternate_sources", "fullbleed_image_path", "TEXT")
     ensure_column_exists(cursor, "alternate_sources", "remove_bleed", "INTEGER NOT NULL DEFAULT 0")
     ensure_column_exists(cursor, "alternate_sources", "bleed_size_mm", "REAL")
+    ensure_column_exists(
+        cursor,
+        "alternate_sources",
+        "bleed_processing_version",
+        "INTEGER NOT NULL DEFAULT 1",
+    )
     ensure_column_exists(cursor, "alternate_sources", "export_frame_template", "TEXT")
 
     cursor.execute(
@@ -974,6 +981,9 @@ def get_custom_draft_set(set_code):
     conn.close()
     return row
 
+CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT = 15
+CUSTOM_DRAFT_PACK_MIN_SLOT_COUNT = 1
+CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT = 60
 
 def get_default_custom_draft_pack_slots():
     slots = []
@@ -1150,7 +1160,11 @@ def upsert_custom_draft_set(
         ),
     )
 
-    seed_default_custom_draft_pack_slots(cursor, clean_set_code)
+    if not existing_custom_set:
+        seed_default_custom_draft_pack_slots(
+            cursor,
+            clean_set_code,
+        )
 
     conn.commit()
     conn.close()
@@ -1364,37 +1378,91 @@ def get_custom_draft_pack_slots_for_booster(set_code, booster_name):
     conn.close()
     return rows
 
+def update_custom_draft_pack_layout(
+    set_code,
+    booster_name,
+    slot_updates,
+):
+    clean_set_code = normalize_custom_draft_set_code(
+        set_code
+    )
 
-def update_custom_draft_pack_layout(set_code, booster_name, slot_updates):
-    clean_set_code = normalize_custom_draft_set_code(set_code)
-    clean_booster_name = str(booster_name or "").strip().lower()
+    clean_booster_name = str(
+        booster_name or ""
+    ).strip().lower()
 
-    if clean_booster_name not in {"mystery", "play", "collector"}:
-        raise ValueError("Invalid custom draft booster layout.")
+    if clean_booster_name not in {
+        "mystery",
+        "play",
+        "collector",
+    }:
+        raise ValueError(
+            "Invalid custom draft booster layout."
+        )
 
     option_data = get_custom_draft_pack_slot_options()
 
-    valid_color_values = {option["value"] for option in option_data["color_options"]}
-    valid_rarity_values = {option["value"] for option in option_data["rarity_options"]}
-    valid_special_category_values = {option["value"] for option in option_data["special_category_options"]}
-    valid_foil_values = {option["value"] for option in option_data["foil_options"]}
+    valid_color_values = {
+        option["value"]
+        for option in option_data["color_options"]
+    }
 
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    valid_rarity_values = {
+        option["value"]
+        for option in option_data["rarity_options"]
+    }
+
+    valid_special_category_values = {
+        option["value"]
+        for option in option_data[
+            "special_category_options"
+        ]
+    }
+
+    valid_foil_values = {
+        option["value"]
+        for option in option_data["foil_options"]
+    }
+
+    normalized_updates = []
 
     for slot_update in slot_updates or []:
         try:
-            slot_number = int(slot_update.get("slot_number"))
+            slot_number = int(
+                slot_update.get("slot_number")
+            )
         except (TypeError, ValueError):
             continue
 
-        if slot_number < 1 or slot_number > 15:
+        if (
+            slot_number
+            < CUSTOM_DRAFT_PACK_MIN_SLOT_COUNT
+            or slot_number
+            > CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT
+        ):
             continue
 
-        color_rule = str(slot_update.get("color_rule") or "any").strip().lower()
-        rarity_rule = str(slot_update.get("rarity_rule") or "any").strip().lower()
-        special_category_rule = str(slot_update.get("special_category_rule") or "none").strip().lower()
-        foil_rule = str(slot_update.get("foil_rule") or "no").strip().lower()
+        color_rule = str(
+            slot_update.get("color_rule")
+            or "any"
+        ).strip().lower()
+
+        rarity_rule = str(
+            slot_update.get("rarity_rule")
+            or "any"
+        ).strip().lower()
+
+        special_category_rule = str(
+            slot_update.get(
+                "special_category_rule"
+            )
+            or "none"
+        ).strip().lower()
+
+        foil_rule = str(
+            slot_update.get("foil_rule")
+            or "no"
+        ).strip().lower()
 
         if color_rule not in valid_color_values:
             color_rule = "any"
@@ -1402,47 +1470,137 @@ def update_custom_draft_pack_layout(set_code, booster_name, slot_updates):
         if rarity_rule not in valid_rarity_values:
             rarity_rule = "any"
 
-        if special_category_rule not in valid_special_category_values:
+        if (
+            special_category_rule
+            not in valid_special_category_values
+        ):
             special_category_rule = "none"
 
         if foil_rule not in valid_foil_values:
             foil_rule = "no"
 
+        normalized_updates.append({
+            "slot_number": slot_number,
+            "color_rule": color_rule,
+            "rarity_rule": rarity_rule,
+            "special_category_rule":
+                special_category_rule,
+            "foil_rule": foil_rule,
+        })
+
+    normalized_updates.sort(
+        key=lambda item: item["slot_number"]
+    )
+
+    slot_count = len(normalized_updates)
+
+    if (
+        slot_count
+        < CUSTOM_DRAFT_PACK_MIN_SLOT_COUNT
+    ):
+        raise ValueError(
+            "A custom draft pack must contain "
+            "at least 1 card slot."
+        )
+
+    if (
+        slot_count
+        > CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT
+    ):
+        raise ValueError(
+            "A custom draft pack cannot contain "
+            f"more than "
+            f"{CUSTOM_DRAFT_PACK_MAX_SLOT_COUNT} "
+            "card slots."
+        )
+
+    expected_slot_numbers = list(
+        range(1, slot_count + 1)
+    )
+
+    actual_slot_numbers = [
+        item["slot_number"]
+        for item in normalized_updates
+    ]
+
+    if (
+        actual_slot_numbers
+        != expected_slot_numbers
+    ):
+        raise ValueError(
+            "Custom draft pack slots must be "
+            "numbered consecutively starting at 1."
+        )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("BEGIN")
+
         cursor.execute(
             """
-            INSERT INTO custom_draft_pack_slots (
-                set_code,
-                booster_name,
-                slot_number,
-                color_rule,
-                rarity_rule,
-                special_category_rule,
-                foil_rule
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(set_code, booster_name, slot_number) DO UPDATE SET
-                color_rule = excluded.color_rule,
-                rarity_rule = excluded.rarity_rule,
-                special_category_rule = excluded.special_category_rule,
-                foil_rule = excluded.foil_rule
+            DELETE FROM custom_draft_pack_slots
+            WHERE set_code = ?
+              AND booster_name = ?
             """,
             (
                 clean_set_code,
                 clean_booster_name,
-                slot_number,
-                color_rule,
-                rarity_rule,
-                special_category_rule,
-                foil_rule,
             ),
         )
 
-    conn.commit()
-    conn.close()
+        for slot_update in normalized_updates:
+            cursor.execute(
+                """
+                INSERT INTO custom_draft_pack_slots (
+                    set_code,
+                    booster_name,
+                    slot_number,
+                    color_rule,
+                    rarity_rule,
+                    special_category_rule,
+                    foil_rule
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    clean_set_code,
+                    clean_booster_name,
+                    slot_update[
+                        "slot_number"
+                    ],
+                    slot_update[
+                        "color_rule"
+                    ],
+                    slot_update[
+                        "rarity_rule"
+                    ],
+                    slot_update[
+                        "special_category_rule"
+                    ],
+                    slot_update[
+                        "foil_rule"
+                    ],
+                ),
+            )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
     return {
         "ok": True,
-        "message": "Pack layout saved.",
+        "message": (
+            f"Pack layout saved with "
+            f"{slot_count} card slot(s)."
+        ),
+        "slot_count": slot_count,
     }
 
 def get_custom_draft_set_pack_card_pool(set_code):

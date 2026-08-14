@@ -10535,6 +10535,83 @@ input {
     min-width: 160px;
 }
 
+.custom-draft-layout-header-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.custom-draft-layout-slot-count {
+    min-height: 38px;
+    padding: 0 12px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    border: 1px solid var(--border);
+    border-radius: 10px;
+
+    background: var(--panel-2);
+    color: var(--muted);
+
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.custom-draft-layout-add-slot-button {
+    width: auto;
+    min-width: 145px;
+}
+
+.custom-draft-layout-add-slot-button i {
+    margin-right: 5px;
+}
+
+.custom-draft-layout-row-actions {
+    min-height: 42px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.custom-draft-layout-remove-slot-button {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+
+    border: 1px solid rgba(190, 85, 85, 0.28);
+    border-radius: 9px;
+
+    background: rgba(150, 60, 60, 0.08);
+    color: #d98b8b;
+
+    cursor: pointer;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease;
+}
+
+.custom-draft-layout-remove-slot-button:hover:not(:disabled) {
+    background: rgba(170, 65, 65, 0.18);
+    border-color: rgba(215, 105, 105, 0.42);
+    color: #f0aaaa;
+}
+
+.custom-draft-layout-remove-slot-button:disabled {
+    opacity: 0.28;
+    cursor: not-allowed;
+}
+
 .custom-draft-layout-table {
     display: flex;
     flex-direction: column;
@@ -10543,7 +10620,10 @@ input {
 
 .custom-draft-layout-table-head {
     display: grid;
-    grid-template-columns: 92px repeat(4, minmax(0, 1fr));
+    grid-template-columns:
+        92px
+        repeat(4, minmax(0, 1fr))
+        54px;
     gap: 10px;
     padding: 0 10px 4px 10px;
     color: var(--muted);
@@ -10553,7 +10633,10 @@ input {
 
 .custom-draft-layout-row {
     display: grid;
-    grid-template-columns: 92px repeat(4, minmax(0, 1fr));
+    grid-template-columns:
+        92px
+        repeat(4, minmax(0, 1fr))
+        54px;
     gap: 10px;
     align-items: end;
     border: 1px solid var(--border);
@@ -10592,6 +10675,20 @@ input {
         width: 100%;
     }
 
+    .custom-draft-layout-header-actions {
+        width: 100%;
+        justify-content: stretch;
+    }
+
+    .custom-draft-layout-slot-count {
+        flex: 1 1 100%;
+    }
+
+    .custom-draft-layout-add-slot-button,
+    .custom-draft-layout-save-top {
+        flex: 1 1 200px;
+    }
+
     .custom-draft-layout-table-head {
         display: none;
     }
@@ -10599,6 +10696,10 @@ input {
     .custom-draft-layout-row {
         grid-template-columns: 1fr;
         gap: 12px;
+    }
+
+    .custom-draft-layout-row-actions {
+        justify-content: flex-end;
     }
 
     .custom-draft-layout-slot-number {

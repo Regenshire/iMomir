@@ -175,6 +175,7 @@ document.addEventListener("DOMContentLoaded", function () {
     initializeAppNavigationMenus();
     initializeResultCardZoom();
     initializeMomirSelectResultLinks();
+    initializeAlternateBleedReprocessing();
     initializeChaosDraftPage();
 });
 
@@ -708,6 +709,10 @@ function initializeSettingsConsole() {
         backup: {
             description: "Create, download, import, and restore iMomir backups."
         },
+        image_maintenance: {
+            description: "Repair and reprocess generated alternate-image derivatives.",
+            showSave: false
+        },
         danger_zone: {
             description: "Diagnostics and destructive maintenance operations."
         }
@@ -774,6 +779,7 @@ function initializeSettingsConsole() {
             sections: [
                 "exports",
                 "backup",
+                "image_maintenance",
                 "danger_zone"
             ],
             parent: "screen"
@@ -813,7 +819,10 @@ function initializeSettingsConsole() {
             }
         }
 
-        if (!body.querySelector(".settings-section-save-row")) {
+        if (
+            metadata.showSave !== false
+            && !body.querySelector(".settings-section-save-row")
+        ) {
             const saveRow = document.createElement("div");
             saveRow.className = "settings-section-save-row";
 
@@ -935,6 +944,231 @@ function initializeSettingsConsole() {
     });
 }
 
+function initializeAlternateBleedReprocessing() {
+    const startButton = document.getElementById(
+        "reprocessAlternateBleedButton"
+    );
+
+    if (!startButton) {
+        return;
+    }
+
+    const remainingElement = document.getElementById(
+        "alternateBleedRemaining"
+    );
+
+    const processedElement = document.getElementById(
+        "alternateBleedProcessed"
+    );
+
+    const correctedElement = document.getElementById(
+        "alternateBleedCorrected"
+    );
+
+    const missingElement = document.getElementById(
+        "alternateBleedMissing"
+    );
+
+    const failedElement = document.getElementById(
+        "alternateBleedFailed"
+    );
+
+    const messageElement = document.getElementById(
+        "alternateBleedStatusMessage"
+    );
+
+    const failureList = document.getElementById(
+        "alternateBleedFailureList"
+    );
+
+    let pollTimer = null;
+
+    function updateStatus(status) {
+        const isRunning = Boolean(
+            status.is_running
+        );
+
+        startButton.disabled = isRunning;
+
+        startButton.textContent = isRunning
+            ? "Reprocessing Alternate Images..."
+            : "Reprocess Bleed-Removed Alternate Images";
+
+        if (remainingElement) {
+            remainingElement.textContent =
+                String(status.remaining || 0);
+        }
+
+        if (processedElement) {
+            processedElement.textContent =
+                String(status.processed || 0);
+        }
+
+        if (correctedElement) {
+            correctedElement.textContent =
+                String(status.corrected || 0);
+        }
+
+        if (missingElement) {
+            missingElement.textContent =
+                String(
+                    status.missing_originals || 0
+                );
+        }
+
+        if (failedElement) {
+            failedElement.textContent =
+                String(status.failed || 0);
+        }
+
+        if (messageElement) {
+            messageElement.textContent =
+                status.message || "";
+        }
+
+        if (failureList) {
+            const failures = Array.isArray(
+                status.failure_samples
+            )
+                ? status.failure_samples
+                : [];
+
+            if (failures.length) {
+                failureList.classList.remove(
+                    "hidden"
+                );
+
+                failureList.textContent =
+                    failures.join("\n");
+            } else {
+                failureList.classList.add(
+                    "hidden"
+                );
+
+                failureList.textContent = "";
+            }
+        }
+
+        if (!isRunning && pollTimer) {
+            window.clearInterval(
+                pollTimer
+            );
+
+            pollTimer = null;
+        }
+    }
+
+    async function loadStatus() {
+        try {
+            const response = await fetch(
+                "/maintenance/alternate-bleed-reprocess/status",
+                {
+                    cache: "no-store"
+                }
+            );
+
+            const status = await response.json();
+
+            updateStatus(status);
+
+        } catch (error) {
+            if (messageElement) {
+                messageElement.textContent =
+                    "Unable to load reprocessing status.";
+            }
+        }
+    }
+
+    function startPolling() {
+        if (pollTimer) {
+            return;
+        }
+
+        pollTimer = window.setInterval(
+            loadStatus,
+            1000
+        );
+    }
+
+    startButton.addEventListener(
+        "click",
+        async function () {
+            startButton.disabled = true;
+            startButton.textContent = "Starting Reprocessing...";
+
+            if (messageElement) {
+                messageElement.textContent =
+                    "Starting alternate image bleed reprocessing...";
+            }
+
+            try {
+                const response = await fetch(
+                    "/maintenance/alternate-bleed-reprocess/start",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+                        body: "{}"
+                    }
+                );
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        result.message
+                        || "Unable to start reprocessing."
+                    );
+                }
+
+                if (messageElement) {
+                    messageElement.textContent =
+                        result.message || "";
+                }
+
+                await loadStatus();
+                startPolling();
+
+            } catch (error) {
+                startButton.disabled = false;
+                startButton.textContent =
+                    "Reprocess Bleed-Removed Alternate Images";
+
+                if (messageElement) {
+                    messageElement.textContent =
+                        error.message || "Unable to start reprocessing.";
+                }
+
+                console.error(
+                    "Alternate bleed reprocessing failed to start:",
+                    error
+                );
+            }
+        }
+    );
+
+    loadStatus().then(function () {
+        fetch(
+            "/maintenance/alternate-bleed-reprocess/status",
+            {
+                cache: "no-store"
+            }
+        )
+            .then(function (response) {
+                return response.json();
+            })
+            .then(function (status) {
+                if (status.is_running) {
+                    startPolling();
+                }
+            })
+            .catch(function () {
+                return;
+            });
+    });
+}
 
 function initializeConfigPanels() {
     const panels = document.querySelectorAll(".collapsible-panel");
@@ -1235,6 +1469,11 @@ function initializeChaosDraftPage() {
     const pointer = document.getElementById("chaosDraftPointer");
     const message = document.getElementById("chaosDraftMessage");
     const chaosDraftScreen = document.getElementById("chaosDraftScreen");
+
+    if (!chaosDraftScreen) {
+        return;
+    }
+
     const chaosSpinUrl = chaosDraftScreen.dataset.chaosSpinUrl || "/chaos-draft/spin";
     const chaosOpenUrl = chaosDraftScreen.dataset.chaosOpenUrl || "/chaos-draft/open";
     const chaosViewDataUrl = chaosDraftScreen.dataset.chaosViewDataUrl || "/chaos-draft/view-data";

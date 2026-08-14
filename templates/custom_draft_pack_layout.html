@@ -9,7 +9,15 @@
             <div class="chaos-pack-view-header-copy">
                 <h1 class="page-title">{{ booster_label }} Layout</h1>
                 <p class="page-subtitle">
-                    {{ custom_set.set_name }} • {{ custom_set.set_code }} • Edit all 15 pack slots.
+                    {{ custom_set.set_name }} • {{ custom_set.set_code }} •
+                    <span id="customDraftLayoutSlotCountText">
+                        {{ pack_slots|length }} card slots
+                    </span>
+                </p>
+
+                <p class="page-subtitle">
+                    New Mystery, Play, and Collector Booster layouts default to
+                    {{ default_pack_slot_count }} cards.
                 </p>
             </div>
 
@@ -37,6 +45,12 @@
         action="{{ url_for('custom_draft_set_layout_edit', set_code=custom_set.set_code, booster_name=booster_name) }}"
         class="config-form"
     >
+        <input
+            type="hidden"
+            id="customDraftLayoutSlotCount"
+            name="slot_count"
+            value="{{ pack_slots|length }}"
+        >
         <div class="page-panel">
             <div class="custom-draft-layout-header-row">
                 <div>
@@ -46,9 +60,31 @@
                     </p>
                 </div>
 
-                <button type="submit" class="action-button custom-draft-layout-save-top">
-                    Save Layout
-                </button>
+                <div class="custom-draft-layout-header-actions">
+                    <div
+                        id="customDraftLayoutSlotCountBadge"
+                        class="custom-draft-layout-slot-count"
+                    >
+                        {{ pack_slots|length }} cards
+                    </div>
+
+                    <button
+                        type="button"
+                        id="customDraftLayoutAddSlotButton"
+                        class="action-button secondary-button custom-draft-layout-add-slot-button"
+                        data-max-slots="{{ max_pack_slot_count }}"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                        Add Card Slot
+                    </button>
+
+                    <button
+                        type="submit"
+                        class="action-button custom-draft-layout-save-top"
+                    >
+                        Save Layout
+                    </button>
+                </div>
             </div>
 
             <div class="custom-draft-layout-table">
@@ -58,18 +94,26 @@
                     <div>Rarity</div>
                     <div>Special Slot Category</div>
                     <div>Foil</div>
+                    <div></div>
                 </div>
 
                 {% for slot in pack_slots %}
-                <div class="custom-draft-layout-row">
+                <div
+                    class="custom-draft-layout-row"
+                    data-custom-draft-slot-row
+                >
                     <div class="custom-draft-layout-slot-number">
-                        Slot {{ slot.slot_number }}
+                        Slot
+                        <span data-custom-draft-slot-number>
+                            {{ slot.slot_number }}
+                        </span>
                     </div>
 
                     <label class="custom-draft-layout-mobile-label">
                         <span>Color</span>
                         <select
                             name="slot_{{ slot.slot_number }}_color_rule"
+                            data-slot-rule="color_rule"
                             class="custom-draft-filter-input"
                         >
                             {% for option in slot_options.color_options %}
@@ -87,6 +131,7 @@
                         <span>Rarity</span>
                         <select
                             name="slot_{{ slot.slot_number }}_rarity_rule"
+                            data-slot-rule="rarity_rule"
                             class="custom-draft-filter-input"
                         >
                             {% for option in slot_options.rarity_options %}
@@ -104,6 +149,7 @@
                         <span>Special Slot Category</span>
                         <select
                             name="slot_{{ slot.slot_number }}_special_category_rule"
+                            data-slot-rule="special_category_rule"
                             class="custom-draft-filter-input"
                         >
                             {% for option in slot_options.special_category_options %}
@@ -121,6 +167,7 @@
                         <span>Foil</span>
                         <select
                             name="slot_{{ slot.slot_number }}_foil_rule"
+                            data-slot-rule="foil_rule"
                             class="custom-draft-filter-input"
                         >
                             {% for option in slot_options.foil_options %}
@@ -133,6 +180,18 @@
                             {% endfor %}
                         </select>
                     </label>
+
+                    <div class="custom-draft-layout-row-actions">
+                        <button
+                            type="button"
+                            class="custom-draft-layout-remove-slot-button"
+                            data-custom-draft-remove-slot
+                            title="Remove Card Slot"
+                            aria-label="Remove Card Slot"
+                        >
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
                 </div>
                 {% endfor %}
             </div>
@@ -145,4 +204,226 @@
         </div>
     </form>
 </div>
+<script>
+(function () {
+    const table = document.querySelector(
+        ".custom-draft-layout-table"
+    );
+
+    const addButton = document.getElementById(
+        "customDraftLayoutAddSlotButton"
+    );
+
+    const slotCountInput = document.getElementById(
+        "customDraftLayoutSlotCount"
+    );
+
+    const slotCountBadge = document.getElementById(
+        "customDraftLayoutSlotCountBadge"
+    );
+
+    const slotCountText = document.getElementById(
+        "customDraftLayoutSlotCountText"
+    );
+
+    if (
+        !table
+        || !addButton
+        || !slotCountInput
+    ) {
+        return;
+    }
+
+    const maxSlotCount = Math.max(
+        1,
+        Number(
+            addButton.dataset.maxSlots || "60"
+        )
+    );
+
+    function getRows() {
+        return Array.from(
+            table.querySelectorAll(
+                "[data-custom-draft-slot-row]"
+            )
+        );
+    }
+
+    function updateSlotCountDisplay(
+        slotCount
+    ) {
+        slotCountInput.value = String(
+            slotCount
+        );
+
+        if (slotCountBadge) {
+            slotCountBadge.textContent =
+                slotCount === 1
+                    ? "1 card"
+                    : slotCount + " cards";
+        }
+
+        if (slotCountText) {
+            slotCountText.textContent =
+                slotCount === 1
+                    ? "1 card slot"
+                    : slotCount + " card slots";
+        }
+
+        addButton.disabled =
+            slotCount >= maxSlotCount;
+    }
+
+    function renumberRows() {
+        const rows = getRows();
+        const rowCount = rows.length;
+
+        rows.forEach(function (
+            row,
+            rowIndex
+        ) {
+            const slotNumber =
+                rowIndex + 1;
+
+            const numberElement =
+                row.querySelector(
+                    "[data-custom-draft-slot-number]"
+                );
+
+            if (numberElement) {
+                numberElement.textContent =
+                    String(slotNumber);
+            }
+
+            row.querySelectorAll(
+                "[data-slot-rule]"
+            ).forEach(function (
+                field
+            ) {
+                const ruleName =
+                    field.dataset.slotRule;
+
+                field.name =
+                    "slot_"
+                    + slotNumber
+                    + "_"
+                    + ruleName;
+            });
+
+            const removeButton =
+                row.querySelector(
+                    "[data-custom-draft-remove-slot]"
+                );
+
+            if (removeButton) {
+                removeButton.disabled =
+                    rowCount <= 1;
+            }
+        });
+
+        updateSlotCountDisplay(
+            rowCount
+        );
+    }
+
+    function resetNewRow(
+        row
+    ) {
+        const defaultValues = {
+            color_rule: "any",
+            rarity_rule: "any",
+            special_category_rule: "none",
+            foil_rule: "no"
+        };
+
+        row.querySelectorAll(
+            "[data-slot-rule]"
+        ).forEach(function (
+            field
+        ) {
+            const ruleName =
+                field.dataset.slotRule;
+
+            if (
+                Object.prototype.hasOwnProperty.call(
+                    defaultValues,
+                    ruleName
+                )
+            ) {
+                field.value =
+                    defaultValues[
+                        ruleName
+                    ];
+            }
+        });
+    }
+
+    addButton.addEventListener(
+        "click",
+        function () {
+            const rows = getRows();
+
+            if (
+                !rows.length
+                || rows.length
+                    >= maxSlotCount
+            ) {
+                return;
+            }
+
+            const sourceRow =
+                rows[rows.length - 1];
+
+            const newRow =
+                sourceRow.cloneNode(true);
+
+            resetNewRow(newRow);
+
+            table.appendChild(newRow);
+
+            renumberRows();
+
+            newRow.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest"
+            });
+        }
+    );
+
+    table.addEventListener(
+        "click",
+        function (event) {
+            const removeButton =
+                event.target.closest(
+                    "[data-custom-draft-remove-slot]"
+                );
+
+            if (!removeButton) {
+                return;
+            }
+
+            const rows = getRows();
+
+            if (rows.length <= 1) {
+                return;
+            }
+
+            const row =
+                removeButton.closest(
+                    "[data-custom-draft-slot-row]"
+                );
+
+            if (!row) {
+                return;
+            }
+
+            row.remove();
+
+            renumberRows();
+        }
+    );
+
+    renumberRows();
+})();
+</script>
 {% endblock %}
