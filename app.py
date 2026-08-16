@@ -91,6 +91,9 @@ from settings import (
     PDF_CUTTING_GUIDE_COLOR_RGB,
     PDF_CUTTING_GUIDE_SIZE_MM,
     PDF_CUTTING_GUIDE_THICKNESS_MM,
+    PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+    PDF_OUTER_SLOT_REGION_BAND_DEFAULT_MODE,
+    PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
     PRINT_COLOR_MODE_OPTIONS,
     PRINT_TEMPLATE_METADATA,
     PRINT_TEMPLATE_OPTIONS,
@@ -495,7 +498,10 @@ def get_effective_print_label_settings(config):
         "print_labels_enabled": labels_enabled,
         "print_label_tracking_code": labels_enabled and tracking_code_enabled,
         "print_label_front_back": labels_enabled and front_back_enabled,
-        "print_pack_label_cards": labels_enabled and pack_label_cards_enabled,
+
+        # Pack Label Cards are a separate print feature. They do not
+        # depend on whether text labels are enabled on normal cards.
+        "print_pack_label_cards": pack_label_cards_enabled,
     }
 
 def apply_pack_print_label_override(label_settings, print_labels_enabled_override=None):
@@ -513,7 +519,6 @@ def apply_pack_print_label_override(label_settings, print_labels_enabled_overrid
         effective_settings["print_labels_enabled"] = False
         effective_settings["print_label_tracking_code"] = False
         effective_settings["print_label_front_back"] = False
-        effective_settings["print_pack_label_cards"] = False
 
     elif parsed_override == 1:
         effective_settings["print_labels_enabled"] = True
@@ -536,6 +541,105 @@ def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
 
     return (pack_tracking_code or "").strip()
 
+def normalize_hex_color_value(
+    value,
+    fallback_value=PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+):
+    clean_value = str(
+        value or ""
+    ).strip()
+
+    if clean_value.startswith("#"):
+        clean_value = clean_value[1:]
+
+    if re.fullmatch(
+        r"[0-9A-Fa-f]{6}",
+        clean_value,
+    ):
+        return f"#{clean_value.upper()}"
+
+    fallback_clean = str(
+        fallback_value or "#000000"
+    ).strip()
+
+    if fallback_clean.startswith("#"):
+        fallback_clean = fallback_clean[1:]
+
+    if not re.fullmatch(
+        r"[0-9A-Fa-f]{6}",
+        fallback_clean,
+    ):
+        fallback_clean = "000000"
+
+    return f"#{fallback_clean.upper()}"
+
+
+def resolve_pdf_outer_slot_region_band_settings(
+    config,
+):
+    raw_mode = (
+        config.get(
+            "pdf_outer_slot_region_band_mode"
+        )
+        or ""
+    ).strip().lower()
+
+    valid_modes = {
+        "off",
+        "front_back",
+        "back_only",
+        "front_only",
+    }
+
+    if raw_mode not in valid_modes:
+        legacy_enabled = (
+            config.get(
+                "pdf_outer_slot_region_band"
+            )
+            or "0"
+        ).strip() == "1"
+
+        raw_mode = (
+            "front_back"
+            if legacy_enabled
+            else PDF_OUTER_SLOT_REGION_BAND_DEFAULT_MODE
+        )
+
+    try:
+        size_mm = float(
+            config.get(
+                "pdf_outer_slot_region_band_size_mm"
+            )
+            or PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM
+        )
+    except (TypeError, ValueError):
+        size_mm = (
+            PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM
+        )
+
+    size_mm = max(
+        0.0,
+        min(
+            size_mm,
+            2.0,
+        ),
+    )
+
+    color_hex = normalize_hex_color_value(
+        config.get(
+            "pdf_outer_slot_region_band_color_hex"
+        ),
+        fallback_value=(
+            PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX
+        ),
+    )
+
+    return {
+        "mode": raw_mode,
+        "size_mm": size_mm,
+        "color_hex": color_hex,
+    }
+
 
 def _build_pdf_print_settings(config, print_labels_enabled_override=None):
     config = get_effective_print_config(config)
@@ -544,6 +648,12 @@ def _build_pdf_print_settings(config, print_labels_enabled_override=None):
     label_settings = apply_pack_print_label_override(
         get_effective_print_label_settings(config),
         print_labels_enabled_override=print_labels_enabled_override,
+    )
+
+    outer_band_settings = (
+        resolve_pdf_outer_slot_region_band_settings(
+            config
+        )
     )
 
     try:
@@ -566,6 +676,18 @@ def _build_pdf_print_settings(config, print_labels_enabled_override=None):
         "pdf_height_mm": pdf_height_mm,
         "pdf_crop_border": crop_border,
         "print_card_backs": (config.get("print_card_backs") or "0").strip() == "1",
+
+        "pdf_outer_slot_region_band_mode": (
+            outer_band_settings["mode"]
+        ),
+
+        "pdf_outer_slot_region_band_size_mm": (
+            outer_band_settings["size_mm"]
+        ),
+
+        "pdf_outer_slot_region_band_color_hex": (
+            outer_band_settings["color_hex"]
+        ),
 
         # New clear label settings.
         "print_labels_enabled": label_settings["print_labels_enabled"],
@@ -647,6 +769,12 @@ def _build_print_settings(config):
 
     open_in_new_tab = (config.get("open_print_in_new_tab") or "1").strip() == "1"
 
+    outer_band_settings = (
+        resolve_pdf_outer_slot_region_band_settings(
+            config
+        )
+    )
+
     return {
         "print_template": template_layout["print_template"],
         "print_width": template_layout["page_width_css"],
@@ -658,6 +786,18 @@ def _build_print_settings(config):
         "print_mode": print_mode,
         "open_in_new_tab": open_in_new_tab,
         "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
+
+        "pdf_outer_slot_region_band_mode": (
+            outer_band_settings["mode"]
+        ),
+
+        "pdf_outer_slot_region_band_size_mm": (
+            outer_band_settings["size_mm"]
+        ),
+
+        "pdf_outer_slot_region_band_color_hex": (
+            outer_band_settings["color_hex"]
+        ),
     }
 
 
@@ -1411,6 +1551,64 @@ def update_config_from_form(form_data):
             existing_print_config.get("print_bleed_size_mm") or "3.0",
             allow_zero=True,
             maximum=10.0,
+        )
+
+        valid_outer_band_modes = {
+            "off",
+            "front_back",
+            "back_only",
+            "front_only",
+        }
+
+        submitted_outer_band_mode = (
+            form_data.get(
+                f"{print_scope}_pdf_outer_slot_region_band_mode"
+            )
+            or ""
+        ).strip().lower()
+
+        if (
+            submitted_outer_band_mode
+            not in valid_outer_band_modes
+        ):
+            submitted_outer_band_mode = (
+                resolve_pdf_outer_slot_region_band_settings(
+                    existing_print_config
+                )["mode"]
+            )
+
+        updated_config[
+            f"{print_scope}_pdf_outer_slot_region_band_mode"
+        ] = submitted_outer_band_mode
+
+        updated_config[
+            f"{print_scope}_pdf_outer_slot_region_band_size_mm"
+        ] = parse_positive_float(
+            f"{print_scope}_pdf_outer_slot_region_band_size_mm",
+            (
+                existing_print_config.get(
+                    "pdf_outer_slot_region_band_size_mm"
+                )
+                or str(
+                    PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM
+                )
+            ),
+            allow_zero=True,
+            maximum=2.0,
+        )
+
+        updated_config[
+            f"{print_scope}_pdf_outer_slot_region_band_color_hex"
+        ] = normalize_hex_color_value(
+            form_data.get(
+                f"{print_scope}_pdf_outer_slot_region_band_color_hex"
+            ),
+            fallback_value=(
+                existing_print_config.get(
+                    "pdf_outer_slot_region_band_color_hex"
+                )
+                or PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX
+            ),
         )
 
     submitted_pack_price_source = (form_data.get("pack_price_source") or "").strip().lower()
@@ -5575,10 +5773,7 @@ def get_configured_print_pack_labels():
     if has_request_context() and hasattr(g, "print_export_include_pack_label_cards_override"):
         include_pack_label_cards = bool(g.print_export_include_pack_label_cards_override)
 
-    return (
-        label_settings.get("print_labels_enabled")
-        and include_pack_label_cards
-    )
+    return bool(include_pack_label_cards)
 
 
 def draw_chaos_pack_label_pdf_page(
@@ -5759,6 +5954,23 @@ def draw_chaos_card_back_entries_into_pdf_layout(
                 height_mm,
             )
 
+            if should_draw_pdf_outer_slot_region_band(
+                print_settings,
+                "back",
+            ):
+                draw_pdf_outer_slot_region_band(
+                    pdf_canvas,
+                    slot_defs,
+                    band_width_mm=print_settings.get(
+                        "pdf_outer_slot_region_band_size_mm",
+                        PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
+                    ),
+                    color_hex=print_settings.get(
+                        "pdf_outer_slot_region_band_color_hex",
+                        PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+                    ),
+                )
+
             occupied_back_slots = set()
 
             for front_slot_index, rendered_entry in enumerate(page_entries):
@@ -5862,6 +6074,171 @@ def draw_chaos_card_back_entries_into_pdf_layout(
 
     return pages_rendered
 
+def get_pdf_slot_region_bounds_mm(slot_defs):
+    valid_slots = [
+        slot_def
+        for slot_def in (slot_defs or [])
+        if float(slot_def.get("width_mm", 0) or 0) > 0
+        and float(slot_def.get("height_mm", 0) or 0) > 0
+    ]
+
+    if not valid_slots:
+        return None
+
+    min_x_mm = min(
+        float(slot_def.get("x_mm", 0) or 0)
+        for slot_def in valid_slots
+    )
+
+    min_y_mm = min(
+        float(slot_def.get("y_mm", 0) or 0)
+        for slot_def in valid_slots
+    )
+
+    max_x_mm = max(
+        float(slot_def.get("x_mm", 0) or 0)
+        + float(slot_def.get("width_mm", 0) or 0)
+        for slot_def in valid_slots
+    )
+
+    max_y_mm = max(
+        float(slot_def.get("y_mm", 0) or 0)
+        + float(slot_def.get("height_mm", 0) or 0)
+        for slot_def in valid_slots
+    )
+
+    return {
+        "x_mm": min_x_mm,
+        "y_mm": min_y_mm,
+        "width_mm": max_x_mm - min_x_mm,
+        "height_mm": max_y_mm - min_y_mm,
+    }
+
+def should_draw_pdf_outer_slot_region_band(
+    print_settings,
+    page_side,
+):
+    mode = (
+        (print_settings or {}).get(
+            "pdf_outer_slot_region_band_mode"
+        )
+        or PDF_OUTER_SLOT_REGION_BAND_DEFAULT_MODE
+    ).strip().lower()
+
+    normalized_side = (
+        page_side or ""
+    ).strip().lower()
+
+    if mode == "front_back":
+        return normalized_side in {
+            "front",
+            "back",
+        }
+
+    if mode == "back_only":
+        return normalized_side == "back"
+
+    if mode == "front_only":
+        return normalized_side == "front"
+
+    return False
+
+def draw_pdf_outer_slot_region_band(
+    pdf_canvas,
+    slot_defs,
+    band_width_mm=PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
+    color_hex=PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+):
+    try:
+        band_mm = float(
+            band_width_mm or 0.0
+        )
+    except (TypeError, ValueError):
+        band_mm = 0.0
+
+    if band_mm <= 0:
+        return
+
+    bounds = get_pdf_slot_region_bounds_mm(
+        slot_defs
+    )
+
+    if not bounds:
+        return
+
+    x_mm = bounds["x_mm"]
+    y_mm = bounds["y_mm"]
+    width_mm = bounds["width_mm"]
+    height_mm = bounds["height_mm"]
+
+    color_rgb = parse_hex_color_rgb(
+        color_hex,
+        fallback_rgb=(0, 0, 0),
+    )
+
+    pdf_canvas.saveState()
+
+    pdf_canvas.setFillColorRGB(
+        color_rgb[0] / 255.0,
+        color_rgb[1] / 255.0,
+        color_rgb[2] / 255.0,
+    )
+
+    # Bottom band.
+    # It sits completely OUTSIDE the card-slot region.
+    pdf_canvas.rect(
+        (x_mm - band_mm) * mm,
+        (y_mm - band_mm) * mm,
+        (width_mm + (band_mm * 2.0)) * mm,
+        band_mm * mm,
+        stroke=0,
+        fill=1,
+    )
+
+    # Top band.
+    pdf_canvas.rect(
+        (x_mm - band_mm) * mm,
+        (y_mm + height_mm) * mm,
+        (width_mm + (band_mm * 2.0)) * mm,
+        band_mm * mm,
+        stroke=0,
+        fill=1,
+    )
+
+    # Left band.
+    pdf_canvas.rect(
+        (x_mm - band_mm) * mm,
+        y_mm * mm,
+        band_mm * mm,
+        height_mm * mm,
+        stroke=0,
+        fill=1,
+    )
+
+    # Right band.
+    pdf_canvas.rect(
+        (x_mm + width_mm) * mm,
+        y_mm * mm,
+        band_mm * mm,
+        height_mm * mm,
+        stroke=0,
+        fill=1,
+    )
+
+    pdf_canvas.restoreState()
+
+    write_debug_log(
+        "PDF OUTER SLOT REGION BAND | "
+        f"band_mm={band_mm:.4f} | "
+        f"color={normalize_hex_color_value(color_hex)} | "
+        f"x_mm={x_mm:.4f} | "
+        f"y_mm={y_mm:.4f} | "
+        f"width_mm={width_mm:.4f} | "
+        f"height_mm={height_mm:.4f}"
+    )
+
+
+
 def draw_chaos_rendered_entries_into_pdf_layout(
     pdf_canvas,
     rendered_image_entries,
@@ -5907,6 +6284,23 @@ def draw_chaos_rendered_entries_into_pdf_layout(
                 width_mm,
                 height_mm,
             )
+
+            if should_draw_pdf_outer_slot_region_band(
+                print_settings,
+                "front",
+            ):
+                draw_pdf_outer_slot_region_band(
+                    pdf_canvas,
+                    slot_defs,
+                    band_width_mm=print_settings.get(
+                        "pdf_outer_slot_region_band_size_mm",
+                        PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
+                    ),
+                    color_hex=print_settings.get(
+                        "pdf_outer_slot_region_band_color_hex",
+                        PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+                    ),
+                )
 
             for slot_index, rendered_entry in enumerate(page_entries):
                 slot_def = slot_defs[slot_index]
@@ -8479,6 +8873,23 @@ def build_chaos_pack_pdf(
         pdf_settings.get("print_card_backs")
     )
 
+    include_pack_label_card = bool(
+        pdf_settings.get("print_pack_label_cards")
+    )
+
+    if (
+        has_request_context()
+        and hasattr(
+            g,
+            "print_export_include_pack_label_cards_override",
+        )
+    ):
+        include_pack_label_card = bool(
+            g.print_export_include_pack_label_cards_override
+        )
+
+    pack_label_card_already_included = False
+
     try:
         # Used by combined-pack print jobs to build a PDF made only of pack labels.
         # This must use the normal PDF layout system, and it must support multiple labels.
@@ -8527,9 +8938,12 @@ def build_chaos_pack_pdf(
             buffer.seek(0)
             return buffer
 
-        # Normal single-card/page title behavior for non-Silhouette layouts.
-        # Silhouette layouts already include the initial title card as a normal slot entry below.
-        if not is_silhouette_layout:
+        # Normal single-card/page pack label behavior for non-Silhouette layouts.
+        # Do not create the label card when Include Pack Label Cards is disabled.
+        if (
+            not is_silhouette_layout
+            and include_pack_label_card
+        ):
             title_card_bytes = build_chaos_pack_title_card_image_bytes(
                 pack_display_name,
                 set_code=set_code,
@@ -8555,9 +8969,16 @@ def build_chaos_pack_pdf(
             )
 
             c.showPage()
+            pack_label_card_already_included = True
 
-        # Initial title card as a normal card slot for Silhouette layouts.
-        if is_silhouette_template(pdf_template_layout["print_template"]):
+        # Pack label card as the first normal slot for Silhouette layouts.
+        # Only include it when explicitly enabled in Chaos Draft Print Settings.
+        if (
+            is_silhouette_template(
+                pdf_template_layout["print_template"]
+            )
+            and include_pack_label_card
+        ):
             try:
                 config = get_request_config()
                 use_pack_image_for_title = (config.get("use_pack_image_for_title") or "0").strip() == "1"
@@ -8593,6 +9014,8 @@ def build_chaos_pack_pdf(
                     "is_persistent_cache_file": False,
                     "is_template_rendered": False,
                 })
+
+                pack_label_card_already_included = True
 
                 if print_card_backs:
                     card_back_rendered_entries.append(
@@ -8788,7 +9211,7 @@ def build_chaos_pack_pdf(
         # They are rendered as their own trailing "pack" using the exact same layout system.
         if (
             include_pack_labels
-            and get_configured_print_pack_labels()
+            and include_pack_label_card
             and not is_silhouette_template(pdf_template_layout["print_template"])
         ):
             try:
@@ -9049,7 +9472,11 @@ def build_chaos_pack_pdf(
 
     rendered_image_entries = template_rendered_entries
 
-    if include_pack_labels and get_configured_print_pack_labels():
+    if (
+        include_pack_labels
+        and get_configured_print_pack_labels()
+        and not pack_label_card_already_included
+    ):
         try:
             pack_label_bytes = build_chaos_pack_title_card_image_bytes(
                 pack_display_name,
@@ -9114,6 +9541,23 @@ def build_chaos_pack_pdf(
                     width_mm,
                     height_mm,
                 )
+
+                if should_draw_pdf_outer_slot_region_band(
+                    print_settings,
+                    "front",
+                ):
+                    draw_pdf_outer_slot_region_band(
+                        c,
+                        slot_defs,
+                        band_width_mm=print_settings.get(
+                            "pdf_outer_slot_region_band_size_mm",
+                            PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
+                        ),
+                        color_hex=print_settings.get(
+                            "pdf_outer_slot_region_band_color_hex",
+                            PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX,
+                        ),
+                    )
 
                 for slot_index, rendered_entry in enumerate(page_entries):
                     slot_def = slot_defs[slot_index]

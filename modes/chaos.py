@@ -1838,6 +1838,9 @@ def get_custom_pack_candidate_rows_for_python_match(
             card_uuid,
             set_code,
             card_name,
+            face_name,
+            front_face_name,
+            back_face_name,
             rarity,
             type_line,
             image_url,
@@ -1861,6 +1864,64 @@ def get_custom_pack_candidate_rows_for_python_match(
 
     return rows
 
+def get_custom_pack_candidate_name_aliases(candidate_row):
+    aliases = []
+    seen_aliases = set()
+
+    def add_alias(value):
+        clean_value = str(value or "").strip()
+
+        if not clean_value:
+            return
+
+        normalized_value = (
+            normalize_custom_pack_card_name_for_lookup(
+                clean_value
+            )
+        )
+
+        if (
+            not normalized_value
+            or normalized_value in seen_aliases
+        ):
+            return
+
+        seen_aliases.add(normalized_value)
+        aliases.append(clean_value)
+
+    row_keys = set(candidate_row.keys())
+
+    # Use every card-name field that iMomir already stores.
+    for column_name in (
+        "card_name",
+        "face_name",
+        "front_face_name",
+        "back_face_name",
+    ):
+        if column_name in row_keys:
+            add_alias(
+                candidate_row[column_name]
+            )
+
+    card_name = (
+        candidate_row["card_name"]
+        if "card_name" in row_keys
+        else ""
+    )
+
+    # MTGJSON/Scryfall can store Adventures, split cards,
+    # DFCs, and similar cards using a combined name such as:
+    #
+    # Kellan, the Fae-Blooded // Birthright Boon
+    #
+    # Treat each named component as a valid lookup alias.
+    for name_part in re.split(
+        r"\s*//+\s*",
+        str(card_name or ""),
+    ):
+        add_alias(name_part)
+
+    return aliases
 
 def score_custom_pack_python_name_match(requested_name, candidate_name):
     normalized_requested = normalize_custom_pack_card_name_for_lookup(requested_name)
@@ -1882,41 +1943,133 @@ def score_custom_pack_python_name_match(requested_name, candidate_name):
 
     return None
 
-
 def resolve_custom_pack_card_by_python_name_match(
     card_name,
     preferred_set_code=None,
     requested_set_code=None,
     requested_collector_number=None,
 ):
-    clean_name = (card_name or "").strip()
+    clean_name = (
+        card_name or ""
+    ).strip()
+
+    clean_preferred_set_code = (
+        preferred_set_code or ""
+    ).strip().upper()
+
+    clean_requested_set_code = (
+        requested_set_code or ""
+    ).strip().upper()
+
+    clean_collector_number = (
+        requested_collector_number or ""
+    ).strip()
 
     if not clean_name:
         return None
 
-    candidate_rows = get_custom_pack_candidate_rows_for_python_match(
-        preferred_set_code=preferred_set_code,
-        requested_set_code=requested_set_code,
-        requested_collector_number=requested_collector_number,
-    )
+    def find_best_match(candidate_rows):
+        best_row = None
+        best_score = None
 
-    best_row = None
-    best_score = None
+        for row in candidate_rows:
+            candidate_aliases = (
+                get_custom_pack_candidate_name_aliases(
+                    row
+                )
+            )
 
-    for row in candidate_rows:
-        score = score_custom_pack_python_name_match(
-            clean_name,
-            row["card_name"] or "",
+            for candidate_name in candidate_aliases:
+                score = (
+                    score_custom_pack_python_name_match(
+                        clean_name,
+                        candidate_name,
+                    )
+                )
+
+                if score is None:
+                    continue
+
+                if (
+                    best_score is None
+                    or score < best_score
+                ):
+                    best_score = score
+                    best_row = row
+
+                    # Exact normalized alias match.
+                    # There is nothing better to find.
+                    if best_score == 0:
+                        break
+
+            if best_score == 0:
+                break
+
+        return best_row
+
+    # If the pasted decklist explicitly supplied a
+    # printing/set restriction, keep that restriction
+    # for the fallback search.
+    if (
+        clean_requested_set_code
+        or clean_collector_number
+    ):
+        candidate_rows = (
+            get_custom_pack_candidate_rows_for_python_match(
+                preferred_set_code=(
+                    clean_preferred_set_code
+                ),
+                requested_set_code=(
+                    clean_requested_set_code
+                ),
+                requested_collector_number=(
+                    clean_collector_number
+                ),
+            )
         )
 
-        if score is None:
-            continue
+        return find_best_match(
+            candidate_rows
+        )
 
-        if best_score is None or score < best_score:
-            best_score = score
-            best_row = row
+    # The Custom Pack Set Code is only a preference.
+    #
+    # Example:
+    #
+    # Pack Set Code = FCA
+    #
+    # But an upgrade list can legitimately contain:
+    #
+    # Halvar, God of Battle      -> KHM
+    # Kellan, the Fae-Blooded    -> WOE
+    #
+    # First prefer an FCA printing if one exists.
+    # If not, search the full card database.
+    if clean_preferred_set_code:
+        preferred_rows = (
+            get_custom_pack_candidate_rows_for_python_match(
+                preferred_set_code=(
+                    clean_preferred_set_code
+                ),
+            )
+        )
 
-    return best_row
+        preferred_match = find_best_match(
+            preferred_rows
+        )
+
+        if preferred_match:
+            return preferred_match
+
+    # Nothing matched in the preferred pack set.
+    # Retry globally.
+    global_rows = (
+        get_custom_pack_candidate_rows_for_python_match()
+    )
+
+    return find_best_match(
+        global_rows
+    )
 
 def resolve_custom_pack_card_by_name(
     card_name,

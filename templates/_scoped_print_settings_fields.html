@@ -83,6 +83,72 @@
         >
     </label>
 
+    <label class="toggle-row settings-field">
+        <span>Outer Grid Bleed Band</span>
+
+        {% set outer_band_mode = values.get("pdf_outer_slot_region_band_mode") or ("front_back" if values.get("pdf_outer_slot_region_band", "0") == "1" else "back_only") %}
+
+        <select
+            name="{{ scope }}_pdf_outer_slot_region_band_mode"
+        >
+            <option
+                value="off"
+                {% if outer_band_mode == "off" %}selected{% endif %}
+            >
+                Off
+            </option>
+
+            <option
+                value="front_back"
+                {% if outer_band_mode == "front_back" %}selected{% endif %}
+            >
+                Front &amp; Back
+            </option>
+
+            <option
+                value="back_only"
+                {% if outer_band_mode == "back_only" %}selected{% endif %}
+            >
+                Back Only
+            </option>
+
+            <option
+                value="front_only"
+                {% if outer_band_mode == "front_only" %}selected{% endif %}
+            >
+                Front Only
+            </option>
+        </select>
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>Outer Grid Bleed Band Size (mm)</span>
+
+        <input
+            type="number"
+            name="{{ scope }}_pdf_outer_slot_region_band_size_mm"
+            step="0.01"
+            min="0.00"
+            max="2.00"
+            value="{{ values.get('pdf_outer_slot_region_band_size_mm') or '0.40' }}"
+        >
+    </label>
+
+    <label class="toggle-row settings-field">
+        <span>Outer Grid Bleed Band Color (Hex)</span>
+
+        <input
+            type="text"
+            name="{{ scope }}_pdf_outer_slot_region_band_color_hex"
+            value="{{ values.get('pdf_outer_slot_region_band_color_hex') or '#000000' }}"
+            placeholder="#000000"
+            maxlength="7"
+            pattern="#?[0-9A-Fa-f]{6}"
+            spellcheck="false"
+            autocomplete="off"
+        >
+    </label>
+
     {% if include_chaos_options %}
     <label class="toggle-row settings-field">
         <span>Print Card Backs</span>

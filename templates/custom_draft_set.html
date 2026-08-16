@@ -1001,10 +1001,10 @@
 
     const cardImageLoadQueue = [];
     const queuedCardImageElements = new WeakSet();
+    const activeCardImageElements = new Set();
 
     const maxConcurrentCardImageLoads = 4;
 
-    let activeCardImageLoads = 0;
     let cardImageLoadingEnabled = false;
 
     function isCardImageElementEligible(imageElement) {
@@ -1016,23 +1016,31 @@
             ".custom-draft-current-card-row"
         );
 
-        if (
-            listRow
-            && listRow.classList.contains("hidden")
-        ) {
-            return false;
+        if (listRow) {
+            if (currentCardViewMode === "grid") {
+                return false;
+            }
+
+            if (listRow.classList.contains("hidden")) {
+                return false;
+            }
         }
 
         const gridCard = imageElement.closest(
             ".custom-draft-current-grid-card"
         );
 
-        if (
-            gridCard
-            && currentCardGrid
-            && currentCardGrid.classList.contains("hidden")
-        ) {
-            return false;
+        if (gridCard) {
+            if (currentCardViewMode !== "grid") {
+                return false;
+            }
+
+            if (
+                currentCardGrid
+                && currentCardGrid.classList.contains("hidden")
+            ) {
+                return false;
+            }
         }
 
         return true;
@@ -1044,7 +1052,7 @@
         }
 
         while (
-            activeCardImageLoads < maxConcurrentCardImageLoads
+            activeCardImageElements.size < maxConcurrentCardImageLoads
             && cardImageLoadQueue.length
         ) {
             const imageElement = cardImageLoadQueue.shift();
@@ -1062,17 +1070,26 @@
             if (
                 !imageSrc
                 || imageElement.dataset.cardImageState === "loaded"
-                || imageElement.dataset.cardImageState === "loading"
+                || activeCardImageElements.has(imageElement)
             ) {
                 continue;
             }
 
-            activeCardImageLoads += 1;
+            activeCardImageElements.add(imageElement);
 
             imageElement.dataset.cardImageState = "loading";
-            imageElement.loading = "lazy";
+
+            /*
+             * iMomir already controls concurrency with this queue.
+             *
+             * Once an image receives one of the four available slots,
+             * force the browser to actually begin loading it. Native
+             * lazy-loading can otherwise leave filtered cards marked
+             * "loading" without starting the request.
+             */
+            imageElement.loading = "eager";
             imageElement.decoding = "async";
-            imageElement.fetchPriority = "low";
+            imageElement.fetchPriority = "auto";
 
             const finishLoad = function (stateValue) {
                 imageElement.dataset.cardImageState = stateValue;
@@ -1087,12 +1104,13 @@
                     handleError
                 );
 
-                activeCardImageLoads = Math.max(
-                    0,
-                    activeCardImageLoads - 1
+                const wasActive = activeCardImageElements.delete(
+                    imageElement
                 );
 
-                pumpDeferredCardImageQueue();
+                if (wasActive) {
+                    pumpDeferredCardImageQueue();
+                }
             };
 
             const handleLoad = function () {
@@ -1119,6 +1137,63 @@
         }
     }
 
+    function abandonDeferredCardImageLoadsInContainer(containerElement) {
+        if (!containerElement) {
+            return;
+        }
+
+        /*
+         * Remove queued images that belong to DOM elements that are
+         * about to be destroyed.
+         */
+        for (
+            let queueIndex = cardImageLoadQueue.length - 1;
+            queueIndex >= 0;
+            queueIndex -= 1
+        ) {
+            const queuedImage = cardImageLoadQueue[queueIndex];
+
+            if (
+                queuedImage
+                && containerElement.contains(queuedImage)
+            ) {
+                cardImageLoadQueue.splice(
+                    queueIndex,
+                    1
+                );
+
+                queuedCardImageElements.delete(
+                    queuedImage
+                );
+            }
+        }
+
+        /*
+         * Grid filtering rebuilds the grid with innerHTML = "".
+         *
+         * If one of those destroyed images was still loading, the
+         * browser may never dispatch load/error for the old element.
+         *
+         * Remove those abandoned elements from the authoritative
+         * active set before destroying the grid.
+         */
+        Array.from(
+            activeCardImageElements
+        ).forEach(function (activeImage) {
+            if (
+                containerElement.contains(
+                    activeImage
+                )
+            ) {
+                activeCardImageElements.delete(
+                    activeImage
+                );
+            }
+        });
+
+        pumpDeferredCardImageQueue();
+    }
+
     function queueDeferredCardImage(imageElement) {
         if (
             !cardImageLoadingEnabled
@@ -1131,9 +1206,22 @@
             return;
         }
 
+        /*
+         * Recover from an orphaned "loading" state.
+         *
+         * The active element set is now the authoritative source for
+         * whether an image really owns a loader slot.
+         */
+        if (
+            imageElement.dataset.cardImageState === "loading"
+            && !activeCardImageElements.has(imageElement)
+        ) {
+            imageElement.dataset.cardImageState = "idle";
+        }
+
         if (
             imageElement.dataset.cardImageState === "loaded"
-            || imageElement.dataset.cardImageState === "loading"
+            || activeCardImageElements.has(imageElement)
         ) {
             return;
         }
@@ -3225,6 +3313,14 @@
         if (!currentCardGrid) {
             return;
         }
+
+        /*
+         * Filtering destroys and recreates all Grid View card elements.
+         * Release their queued/active loader slots before removing them.
+         */
+        abandonDeferredCardImageLoadsInContainer(
+            currentCardGrid
+        );
 
         currentCardGrid.innerHTML = "";
 

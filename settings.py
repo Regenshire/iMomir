@@ -52,6 +52,10 @@ PDF_CUTTING_GUIDE_SIZE_MM = 2.0
 PDF_CUTTING_GUIDE_THICKNESS_MM = 0.20
 PDF_CUTTING_GUIDE_COLOR_RGB = (0, 255, 0)
 
+PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM = 0.40
+PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX = "#000000"
+PDF_OUTER_SLOT_REGION_BAND_DEFAULT_MODE = "back_only"
+
 CARD_SEARCH_DEFAULT_TITLE = "Avatar - Momir Vig, Simic Visionary"
 CARD_SEARCH_DEFAULT_VARIANTS = {
     "dark": {
@@ -129,6 +133,14 @@ SCOPED_PRINT_SETTING_KEYS = (
     "print_bleed_size_mm",
     "pdf_crop_border",
     "pdf_cutting_guides",
+
+    # Legacy on/off key retained so existing scoped settings can be migrated.
+    "pdf_outer_slot_region_band",
+
+    "pdf_outer_slot_region_band_mode",
+    "pdf_outer_slot_region_band_size_mm",
+    "pdf_outer_slot_region_band_color_hex",
+
     "print_card_backs",
     "print_labels_enabled",
     "print_label_tracking_code",
@@ -193,6 +205,16 @@ DEFAULT_CONFIG = {
     "print_bleed_size_mm": "3.0",
     "pdf_crop_border": "1",
     "pdf_cutting_guides": "1",
+
+    # Legacy safety-band checkbox value.
+    "pdf_outer_slot_region_band": "0",
+
+    # New configurable safety-band settings.
+    # Blank values are resolved to Back Only / 0.40 mm / #000000.
+    "pdf_outer_slot_region_band_mode": "",
+    "pdf_outer_slot_region_band_size_mm": "",
+    "pdf_outer_slot_region_band_color_hex": "",
+
     "print_card_backs": "0",
 
     # Mode-specific print settings. Blank values intentionally fall back to
@@ -205,6 +227,14 @@ DEFAULT_CONFIG = {
     "momir_print_bleed_size_mm": "",
     "momir_pdf_crop_border": "",
     "momir_pdf_cutting_guides": "",
+
+    # Legacy safety-band checkbox value.
+    "momir_pdf_outer_slot_region_band": "",
+
+    "momir_pdf_outer_slot_region_band_mode": "",
+    "momir_pdf_outer_slot_region_band_size_mm": "",
+    "momir_pdf_outer_slot_region_band_color_hex": "",
+
     "momir_print_card_backs": "",
     "momir_print_labels_enabled": "",
     "momir_print_label_tracking_code": "",
@@ -220,6 +250,14 @@ DEFAULT_CONFIG = {
     "chaos_print_bleed_size_mm": "",
     "chaos_pdf_crop_border": "",
     "chaos_pdf_cutting_guides": "",
+
+    # Legacy safety-band checkbox value.
+    "chaos_pdf_outer_slot_region_band": "",
+
+    "chaos_pdf_outer_slot_region_band_mode": "",
+    "chaos_pdf_outer_slot_region_band_size_mm": "",
+    "chaos_pdf_outer_slot_region_band_color_hex": "",
+
     "chaos_print_card_backs": "",
     "chaos_print_labels_enabled": "",
     "chaos_print_label_tracking_code": "",
