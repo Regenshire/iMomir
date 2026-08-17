@@ -9,6 +9,8 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}"
     />
+
+    {% block page_styles %}{% endblock %}
   </head>
   <body>
     <div class="app-shell">
@@ -383,6 +385,11 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+
+    {% block page_scripts_before_app %}{% endblock %}
+
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+
+    {% block page_scripts_after_app %}{% endblock %}
   </body>
 </html>

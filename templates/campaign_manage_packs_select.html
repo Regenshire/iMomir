@@ -38,11 +38,25 @@
     {% endwith %}
 
     <div class="page-panel">
-        <h2>Select Campaign</h2>
+        <div class="campaign-list-section-header">
+            <div>
+                <h2>Select Campaign</h2>
+            </div>
 
-        <p class="page-subtitle">
-            Pack Management uses its own campaign selection and does not change the campaign currently loaded in Draft.
-        </p>
+            <a
+                class="campaign-icon-button campaign-manage-campaign-button"
+                href="{{ url_for('campaign_chaos_campaigns') }}"
+                title="Manage Campaigns"
+                aria-label="Manage Campaigns"
+            >
+                <i class="fa-solid fa-flag"></i>
+            </a>
+        </div>
+
+        {% set campaign_filter_action_url = url_for('campaign_chaos_packs_manage') %}
+        {% set campaign_filter_show_status = false %}
+        {% set campaign_filter_default_sort = "name_asc" %}
+        {% include "_campaign_list_filter.html" %}
 
         {% if campaigns %}
             <div class="campaign-save-list">
@@ -81,20 +95,26 @@
                     </form>
                 {% endfor %}
             </div>
-        {% else %}
+        {% elif campaign_total_count > 0 %}
             <div class="card-placeholder">
-                No active campaigns are available.
+                No campaigns match the current search and filter settings.
             </div>
 
             <div class="config-button-row">
                 <a
-                    href="{{ url_for('campaign_chaos_campaigns') }}"
-                    class="action-button"
+                    href="{{ url_for('campaign_chaos_packs_manage') }}"
+                    class="action-button secondary-button"
                 >
-                    Manage Campaigns
+                    Clear Filters
                 </a>
             </div>
+        {% else %}
+            <div class="card-placeholder">
+                No active campaigns are available.
+            </div>
         {% endif %}
+
+        {% include "_campaign_list_pagination.html" %}
     </div>
 </div>
 {% endblock %}

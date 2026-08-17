@@ -1,0 +1,89 @@
+{% if campaign_pagination.total_pages > 1 %}
+<nav class="ui-list-pagination" aria-label="Campaign pages">
+    {% if campaign_pagination.has_previous %}
+        {% if campaign_filter_show_status %}
+        <a
+            href="{{ url_for(
+                request.endpoint,
+                search_text=search_text,
+                status=selected_campaign_status,
+                sort=selected_campaign_sort,
+                page_size=campaign_pagination.page_size,
+                page=campaign_pagination.previous_page
+            ) }}"
+            class="action-button secondary-button ui-list-page-button"
+        >
+            <i class="fa-solid fa-chevron-left"></i>
+            Previous
+        </a>
+        {% else %}
+        <a
+            href="{{ url_for(
+                request.endpoint,
+                search_text=search_text,
+                sort=selected_campaign_sort,
+                page_size=campaign_pagination.page_size,
+                page=campaign_pagination.previous_page
+            ) }}"
+            class="action-button secondary-button ui-list-page-button"
+        >
+            <i class="fa-solid fa-chevron-left"></i>
+            Previous
+        </a>
+        {% endif %}
+    {% else %}
+    <span class="action-button secondary-button ui-list-page-button ui-list-page-button-disabled">
+        <i class="fa-solid fa-chevron-left"></i>
+        Previous
+    </span>
+    {% endif %}
+
+    <div class="ui-list-page-status">
+        <strong>
+            Page {{ campaign_pagination.page }} of {{ campaign_pagination.total_pages }}
+        </strong>
+
+        <span>
+            {{ campaign_pagination.total_count }} total campaigns
+        </span>
+    </div>
+
+    {% if campaign_pagination.has_next %}
+        {% if campaign_filter_show_status %}
+        <a
+            href="{{ url_for(
+                request.endpoint,
+                search_text=search_text,
+                status=selected_campaign_status,
+                sort=selected_campaign_sort,
+                page_size=campaign_pagination.page_size,
+                page=campaign_pagination.next_page
+            ) }}"
+            class="action-button secondary-button ui-list-page-button"
+        >
+            Next
+            <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        {% else %}
+        <a
+            href="{{ url_for(
+                request.endpoint,
+                search_text=search_text,
+                sort=selected_campaign_sort,
+                page_size=campaign_pagination.page_size,
+                page=campaign_pagination.next_page
+            ) }}"
+            class="action-button secondary-button ui-list-page-button"
+        >
+            Next
+            <i class="fa-solid fa-chevron-right"></i>
+        </a>
+        {% endif %}
+    {% else %}
+    <span class="action-button secondary-button ui-list-page-button ui-list-page-button-disabled">
+        Next
+        <i class="fa-solid fa-chevron-right"></i>
+    </span>
+    {% endif %}
+</nav>
+{% endif %}

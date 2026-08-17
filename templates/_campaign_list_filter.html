@@ -1,0 +1,137 @@
+<section class="ui-list-filter-toolbar">
+    <form
+        method="get"
+        action="{{ campaign_filter_action_url }}"
+        class="ui-list-filter-form {% if not campaign_filter_show_status %}ui-list-filter-form-compact{% endif %}"
+    >
+        <label class="ui-list-filter-field ui-list-filter-search-field">
+            <span>Search</span>
+
+            <input
+                type="text"
+                name="search_text"
+                class="campaign-add-pack-custom-input ui-list-filter-input"
+                value="{{ search_text or '' }}"
+                placeholder="Search campaign name or ID..."
+                autocomplete="off"
+            >
+        </label>
+
+        {% if campaign_filter_show_status %}
+        <label class="ui-list-filter-field">
+            <span>Status</span>
+
+            <select
+                name="status"
+                class="campaign-add-pack-custom-input ui-list-filter-input"
+            >
+                <option value="all" {% if selected_campaign_status == "all" %}selected{% endif %}>
+                    All Campaigns
+                </option>
+
+                <option value="active" {% if selected_campaign_status == "active" %}selected{% endif %}>
+                    Active
+                </option>
+
+                <option value="inactive" {% if selected_campaign_status == "inactive" %}selected{% endif %}>
+                    Inactive
+                </option>
+            </select>
+        </label>
+        {% endif %}
+
+        <label class="ui-list-filter-field">
+            <span>Sort</span>
+
+            <select
+                name="sort"
+                class="campaign-add-pack-custom-input ui-list-filter-input"
+            >
+                {% if campaign_filter_show_status %}
+                <option value="status_name_asc" {% if selected_campaign_sort == "status_name_asc" %}selected{% endif %}>
+                    Active First, Name A-Z
+                </option>
+                {% endif %}
+
+                <option value="name_asc" {% if selected_campaign_sort == "name_asc" %}selected{% endif %}>
+                    Name A-Z
+                </option>
+
+                <option value="name_desc" {% if selected_campaign_sort == "name_desc" %}selected{% endif %}>
+                    Name Z-A
+                </option>
+
+                <option value="created_desc" {% if selected_campaign_sort == "created_desc" %}selected{% endif %}>
+                    Create Date: Newest
+                </option>
+
+                <option value="created_asc" {% if selected_campaign_sort == "created_asc" %}selected{% endif %}>
+                    Create Date: Oldest
+                </option>
+            </select>
+        </label>
+
+        <label class="ui-list-filter-field ui-list-filter-page-size-field">
+            <span>Per Page</span>
+
+            <select
+                name="page_size"
+                class="campaign-add-pack-custom-input ui-list-filter-input"
+            >
+                {% for page_size_option in campaign_pagination.allowed_page_sizes %}
+                <option
+                    value="{{ page_size_option }}"
+                    {% if campaign_pagination.page_size == page_size_option %}selected{% endif %}
+                >
+                    {{ page_size_option }}
+                </option>
+                {% endfor %}
+            </select>
+        </label>
+
+        <div class="ui-list-filter-actions">
+            <button
+                type="submit"
+                class="action-button ui-list-filter-apply-button"
+            >
+                Apply
+            </button>
+
+            {% if search_text or selected_campaign_status != "all" or selected_campaign_sort != campaign_filter_default_sort or campaign_pagination.page_size != 20 %}
+            <a
+                href="{{ campaign_filter_action_url }}"
+                class="action-button secondary-button ui-list-filter-clear-button"
+            >
+                Clear
+            </a>
+            {% endif %}
+        </div>
+    </form>
+</section>
+
+<div class="ui-list-results-summary">
+    {% if campaign_filtered_count == 1 %}
+        1 campaign found
+    {% else %}
+        {{ campaign_filtered_count }} campaigns found
+    {% endif %}
+
+    {% if campaign_filtered_count > 0 %}
+        <span>•</span>
+        <span>
+            Showing {{ campaign_pagination.start_item }}-{{ campaign_pagination.end_item }}
+        </span>
+    {% endif %}
+
+    {% if campaign_pagination.total_pages > 1 %}
+        <span>•</span>
+        <span>
+            Page {{ campaign_pagination.page }} of {{ campaign_pagination.total_pages }}
+        </span>
+    {% endif %}
+
+    {% if campaign_filtered_count != campaign_total_count %}
+        <span>•</span>
+        <span>{{ campaign_total_count }} total</span>
+    {% endif %}
+</div>

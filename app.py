@@ -138,7 +138,10 @@ from image_export_templates import (
 )
 
 from pack_label_templates import get_pack_label_template
-from ui.ui import register_ui_navigation
+from ui.ui import (
+    register_ui_navigation,
+    ui_list_filter,
+)
 
 from db.exports import (
     EXPORT_KIND_CAMPAIGN,
@@ -13963,15 +13966,119 @@ def chaos_draft_open_test():
         "cards": open_result["cards"],
     })
 
+CAMPAIGN_UI_SORT_OPTIONS = {
+    "status_name_asc": {
+        "fields": [
+            {
+                "field": "is_active",
+                "type": "number",
+                "reverse": True,
+            },
+            {
+                "field": "campaign_name",
+                "type": "text",
+                "reverse": False,
+            },
+        ],
+    },
+    "name_asc": {
+        "field": "campaign_name",
+        "type": "text",
+        "reverse": False,
+    },
+    "name_desc": {
+        "field": "campaign_name",
+        "type": "text",
+        "reverse": True,
+    },
+    "created_desc": {
+        "field": "created_at_utc",
+        "type": "text",
+        "reverse": True,
+    },
+    "created_asc": {
+        "field": "created_at_utc",
+        "type": "text",
+        "reverse": False,
+    },
+}
+
+
 @app.route("/campaign-chaos/campaigns", methods=["GET"])
 def campaign_chaos_campaigns():
-    campaigns = get_chaos_campaigns(include_disabled=True)
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    all_campaigns = get_chaos_campaigns(
+        include_disabled=True
+    )
+
+    campaign_list_result = (
+        ui_list_filter.filter_rows(
+            all_campaigns,
+            search_text=(
+                request.args.get("search_text")
+                or ""
+            ),
+            search_fields=(
+                "campaign_name",
+                "campaign_id",
+            ),
+            status_value=(
+                request.args.get("status")
+                or "all"
+            ),
+            status_field="is_active",
+            status_options={
+                "active": True,
+                "inactive": False,
+            },
+            sort_option=(
+                request.args.get("sort")
+                or "status_name_asc"
+            ),
+            sort_options=(
+                CAMPAIGN_UI_SORT_OPTIONS
+            ),
+            default_sort_option=(
+                "status_name_asc"
+            ),
+            page_value=(
+                request.args.get("page")
+                or 1
+            ),
+            page_size_value=(
+                request.args.get("page_size")
+                or 20
+            ),
+        )
+    )
+
+    selected_chaos_campaign_id = (
+        get_selected_chaos_campaign_id()
+    )
 
     return render_template(
         "campaign_campaigns.html",
-        campaigns=campaigns,
-        selected_chaos_campaign_id=selected_chaos_campaign_id,
+        campaigns=campaign_list_result["rows"],
+        selected_chaos_campaign_id=(
+            selected_chaos_campaign_id
+        ),
+        search_text=(
+            campaign_list_result["search_text"]
+        ),
+        selected_campaign_status=(
+            campaign_list_result["status_value"]
+        ),
+        selected_campaign_sort=(
+            campaign_list_result["sort_option"]
+        ),
+        campaign_total_count=(
+            campaign_list_result["total_count"]
+        ),
+        campaign_filtered_count=(
+            campaign_list_result["filtered_count"]
+        ),
+        campaign_pagination=(
+            campaign_list_result["pagination"]
+        ),
     )
 
 @app.route("/campaign-chaos/campaigns/default/save", methods=["POST"])
@@ -14495,8 +14602,38 @@ def campaign_chaos_packs_current_campaign():
     methods=["GET"],
 )
 def campaign_chaos_packs_manage():
-    campaigns = get_chaos_campaigns(
+    all_campaigns = get_chaos_campaigns(
         include_disabled=False
+    )
+
+    campaign_list_result = (
+        ui_list_filter.filter_rows(
+            all_campaigns,
+            search_text=(
+                request.args.get("search_text")
+                or ""
+            ),
+            search_fields=(
+                "campaign_name",
+                "campaign_id",
+            ),
+            sort_option=(
+                request.args.get("sort")
+                or "name_asc"
+            ),
+            sort_options=(
+                CAMPAIGN_UI_SORT_OPTIONS
+            ),
+            default_sort_option="name_asc",
+            page_value=(
+                request.args.get("page")
+                or 1
+            ),
+            page_size_value=(
+                request.args.get("page_size")
+                or 20
+            ),
+        )
     )
 
     selected_pack_management_campaign_id = (
@@ -14505,9 +14642,25 @@ def campaign_chaos_packs_manage():
 
     return render_template(
         "campaign_manage_packs_select.html",
-        campaigns=campaigns,
+        campaigns=campaign_list_result["rows"],
         selected_pack_management_campaign_id=(
             selected_pack_management_campaign_id
+        ),
+        search_text=(
+            campaign_list_result["search_text"]
+        ),
+        selected_campaign_status="all",
+        selected_campaign_sort=(
+            campaign_list_result["sort_option"]
+        ),
+        campaign_total_count=(
+            campaign_list_result["total_count"]
+        ),
+        campaign_filtered_count=(
+            campaign_list_result["filtered_count"]
+        ),
+        campaign_pagination=(
+            campaign_list_result["pagination"]
         ),
     )
 
