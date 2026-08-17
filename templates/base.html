@@ -80,7 +80,7 @@
               </div>
             </div>
 
-            <div class="app-nav-menu {% if request.endpoint in ['deckbuilder_index', 'deckbuilder_open', 'deckbuilder_new', 'campaign_chaos_test_draft_deck_builder', 'sets', 'campaign_chaos_packs', 'campaign_chaos_pack_detail'] %}app-nav-menu-active{% endif %}">
+            <div class="app-nav-menu {% if request.endpoint in ['deckbuilder_index', 'deckbuilder_open', 'deckbuilder_new', 'campaign_chaos_test_draft_deck_builder', 'sets', 'campaign_chaos_packs_manage', 'campaign_chaos_packs', 'campaign_chaos_pack_detail'] %}app-nav-menu-active{% endif %}">
               <div class="app-nav-main-control">
                 <a
                   class="app-nav-primary-link"
@@ -151,7 +151,7 @@
                 <div class="app-nav-dropdown-group">
                   <a
                     class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
-                    href="{{ url_for('campaign_chaos_packs') }}"
+                    href="{{ url_for('campaign_chaos_packs_manage') }}"
                   >
                     <span class="app-nav-heading-icon">
                       <i class="fa-solid fa-box-open"></i>
@@ -161,7 +161,7 @@
 
                   <a
                     class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('campaign_chaos_packs') }}"
+                    href="{{ url_for('campaign_chaos_packs_manage') }}"
                     role="menuitem"
                   >
                     Manage
@@ -382,6 +382,7 @@
       </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   </body>
 </html>

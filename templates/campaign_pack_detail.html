@@ -22,7 +22,9 @@
             <div class="chaos-pack-view-header-actions">
                 <a
                     class="action-button secondary-button chaos-pack-view-back-button"
-                    href="{{ url_for('campaign_chaos_packs') }}"
+                    href="{{ ui_navigation.back_fallback_url }}"
+                    data-ui-navigation-action="{{ ui_navigation.back_action }}"
+                    data-ui-navigation-fallback="{{ ui_navigation.back_fallback_url }}"
                 >
                     Back
                 </a>

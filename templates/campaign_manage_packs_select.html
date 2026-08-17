@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}iMomir - Manage Packs{% endblock %}
+
+{% block content %}
+<div class="screen screen-wide">
+    <div class="page-panel">
+        <div class="chaos-pack-view-header-top">
+            <div class="chaos-pack-view-header-copy">
+                <h1 class="page-title">
+                    Manage Packs
+                </h1>
+
+                <p class="page-subtitle">
+                    Select the campaign whose saved packs you want to manage.
+                </p>
+            </div>
+
+            <div class="chaos-pack-view-header-actions">
+                <a
+                    class="action-button secondary-button chaos-pack-view-back-button"
+                    href="{{ ui_navigation.back_fallback_url }}"
+                    data-ui-navigation-action="{{ ui_navigation.back_action }}"
+                    data-ui-navigation-fallback="{{ ui_navigation.back_fallback_url }}"
+                >
+                    Back
+                </a>
+            </div>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash-message">
+                {{ messages[0] }}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="page-panel">
+        <h2>Select Campaign</h2>
+
+        <p class="page-subtitle">
+            Pack Management uses its own campaign selection and does not change the campaign currently loaded in Draft.
+        </p>
+
+        {% if campaigns %}
+            <div class="campaign-save-list">
+                {% for campaign in campaigns %}
+                    <form
+                        method="post"
+                        action="{{ url_for('campaign_chaos_packs_manage_select') }}"
+                        class="campaign-save-row"
+                    >
+                        <input
+                            type="hidden"
+                            name="campaign_id"
+                            value="{{ campaign.campaign_id }}"
+                        >
+
+                        <div>
+                            <div class="campaign-save-title">
+                                {{ campaign.campaign_name }}
+                            </div>
+
+                            <div class="campaign-save-meta">
+                                Campaign #{{ campaign.campaign_id }}
+
+                                {% if selected_pack_management_campaign_id == campaign.campaign_id %}
+                                    • Currently selected for Pack Management
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <button
+                            type="submit"
+                            class="action-button campaign-save-row-button"
+                        >
+                            Manage Packs
+                        </button>
+                    </form>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="card-placeholder">
+                No active campaigns are available.
+            </div>
+
+            <div class="config-button-row">
+                <a
+                    href="{{ url_for('campaign_chaos_campaigns') }}"
+                    class="action-button"
+                >
+                    Manage Campaigns
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

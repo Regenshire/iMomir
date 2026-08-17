@@ -138,6 +138,7 @@ from image_export_templates import (
 )
 
 from pack_label_templates import get_pack_label_template
+from ui.ui import register_ui_navigation
 
 from db.exports import (
     EXPORT_KIND_CAMPAIGN,
@@ -307,6 +308,7 @@ from modes.chaos import (
     is_custom_draft_set_code,
     get_chaos_pack_variants,
     get_chaos_session_state,
+    set_chaos_session_state,
     get_eligible_chaos_packs,
     get_eligible_chaos_packs_for_spin,
     get_pending_chaos_spin_result,
@@ -341,6 +343,8 @@ app = Flask(
     static_folder=get_static_dir(),
 )
 app.secret_key = APP_SECRET_KEY
+
+register_ui_navigation(app)
 
 def get_request_config():
     if not hasattr(g, "_config_cache"):
@@ -14354,11 +14358,222 @@ def build_manage_pack_summary_rows(packs):
         "rows": summary_rows,
     }
 
+
+PACK_MANAGEMENT_CAMPAIGN_STATE_KEY = (
+    "selected_pack_management_campaign_id"
+)
+
+
+def get_pack_management_campaign_id():
+    raw_campaign_id = get_chaos_session_state(
+        PACK_MANAGEMENT_CAMPAIGN_STATE_KEY,
+        default_value=None,
+    )
+
+    try:
+        campaign_id = int(raw_campaign_id)
+    except (TypeError, ValueError):
+        return None
+
+    campaign = get_chaos_campaign_by_id(
+        campaign_id
+    )
+
+    if (
+        not campaign
+        or not campaign["is_active"]
+    ):
+        clear_chaos_session_state(
+            PACK_MANAGEMENT_CAMPAIGN_STATE_KEY
+        )
+        return None
+
+    return campaign_id
+
+
+def set_pack_management_campaign_id(
+    campaign_id,
+):
+    try:
+        parsed_campaign_id = int(
+            campaign_id
+        )
+    except (TypeError, ValueError):
+        return {
+            "ok": False,
+            "message": (
+                "A valid campaign must be selected."
+            ),
+        }
+
+    campaign = get_chaos_campaign_by_id(
+        parsed_campaign_id
+    )
+
+    if (
+        not campaign
+        or not campaign["is_active"]
+    ):
+        return {
+            "ok": False,
+            "message": (
+                "The selected campaign is not active."
+            ),
+        }
+
+    set_chaos_session_state(
+        PACK_MANAGEMENT_CAMPAIGN_STATE_KEY,
+        parsed_campaign_id,
+    )
+
+    return {
+        "ok": True,
+        "campaign_id": parsed_campaign_id,
+        "campaign_name": (
+            campaign["campaign_name"]
+        ),
+    }
+
+
+@app.route(
+    "/campaign-chaos/packs/current-campaign",
+    methods=["GET"],
+)
+def campaign_chaos_packs_current_campaign():
+    selected_chaos_campaign_id = (
+        get_selected_chaos_campaign_id()
+    )
+
+    if not selected_chaos_campaign_id:
+        flash(
+            "No Chaos Draft campaign is currently selected."
+        )
+
+        return redirect(
+            url_for("play_draft")
+        )
+
+    previous_management_campaign_id = (
+        get_pack_management_campaign_id()
+    )
+
+    selection_result = (
+        set_pack_management_campaign_id(
+            selected_chaos_campaign_id
+        )
+    )
+
+    if not selection_result.get("ok"):
+        flash(
+            selection_result.get("message")
+            or "Could not open Pack Management for the selected campaign."
+        )
+
+        return redirect(
+            url_for("play_draft")
+        )
+
+    selected_management_campaign_id = int(
+        selection_result["campaign_id"]
+    )
+
+    if (
+        previous_management_campaign_id
+        != selected_management_campaign_id
+    ):
+        clear_chaos_session_state(
+            "pending_manage_pack_preview"
+        )
+
+    return redirect(
+        url_for("campaign_chaos_packs")
+    )
+
+
+@app.route(
+    "/campaign-chaos/packs/manage",
+    methods=["GET"],
+)
+def campaign_chaos_packs_manage():
+    campaigns = get_chaos_campaigns(
+        include_disabled=False
+    )
+
+    selected_pack_management_campaign_id = (
+        get_pack_management_campaign_id()
+    )
+
+    return render_template(
+        "campaign_manage_packs_select.html",
+        campaigns=campaigns,
+        selected_pack_management_campaign_id=(
+            selected_pack_management_campaign_id
+        ),
+    )
+
+
+@app.route(
+    "/campaign-chaos/packs/manage/select",
+    methods=["POST"],
+)
+def campaign_chaos_packs_manage_select():
+    campaign_id = (
+        request.form.get("campaign_id")
+        or ""
+    ).strip()
+
+    result = (
+        set_pack_management_campaign_id(
+            campaign_id
+        )
+    )
+
+    if not result.get("ok"):
+        flash(
+            result.get("message")
+            or "Could not select campaign."
+        )
+
+        return redirect(
+            url_for(
+                "campaign_chaos_packs_manage"
+            )
+        )
+
+    # A generated preview belongs to the management
+    # context it was created under. Clear any old
+    # preview when switching campaigns.
+    clear_chaos_session_state(
+        "pending_manage_pack_preview"
+    )
+
+    return redirect(
+        url_for("campaign_chaos_packs")
+    )
+
 @app.route("/campaign-chaos/packs", methods=["GET"])
 def campaign_chaos_packs():
-    search_text = (request.args.get("q") or "").strip()
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
-    selected_chaos_campaign = get_chaos_campaign_by_id(selected_chaos_campaign_id) if selected_chaos_campaign_id else None
+    search_text = (
+        request.args.get("q")
+        or ""
+    ).strip()
+
+    selected_chaos_campaign_id = (
+        get_pack_management_campaign_id()
+    )
+
+    if not selected_chaos_campaign_id:
+        return redirect(
+            url_for(
+                "campaign_chaos_packs_manage"
+            )
+        )
+
+    selected_chaos_campaign = (
+        get_chaos_campaign_by_id(
+            selected_chaos_campaign_id
+        )
+    )
 
     pack_import_campaign_options = get_campaign_pack_import_options(
         current_campaign_id=selected_chaos_campaign_id,
@@ -14777,8 +14992,16 @@ def campaign_chaos_pack_export(tracked_pack_id):
 
 @app.route("/campaign-chaos/packs/import-campaign-packs", methods=["GET"])
 def campaign_chaos_packs_import_campaign_packs():
-    source_campaign_id = (request.args.get("source_campaign_id") or "").strip()
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    source_campaign_id = (
+        request.args.get(
+            "source_campaign_id"
+        )
+        or ""
+    ).strip()
+
+    selected_chaos_campaign_id = (
+        get_pack_management_campaign_id()
+    )
 
     if not source_campaign_id:
         return jsonify({
@@ -14801,7 +15024,9 @@ def campaign_chaos_packs_import_campaign_packs():
 
 @app.route("/campaign-chaos/packs/import-campaign-packs", methods=["POST"])
 def campaign_chaos_packs_import_campaign_packs_post():
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    selected_chaos_campaign_id = (
+        get_pack_management_campaign_id()
+    )
     payload = request.get_json(silent=True) or {}
 
     selected_pack_ids = normalize_tracked_pack_id_list(payload.get("pack_ids") or [])
@@ -15192,8 +15417,12 @@ def campaign_chaos_manage_pack_bulk_create_one():
             set_code,
             booster_name,
             app.static_folder,
-            campaign_id=get_selected_chaos_campaign_id(),
-            batch_card_name_counts=batch_card_name_counts,
+            campaign_id=(
+                get_pack_management_campaign_id()
+            ),
+            batch_card_name_counts=(
+                batch_card_name_counts
+            ),
             write_debug_log_fn=write_debug_log,
         )
     except Exception as exc:
@@ -15225,7 +15454,9 @@ def campaign_chaos_pack_preview_save():
 
     result = save_opened_chaos_pack_to_tracking_db(
         preview_pack,
-        campaign_id=get_selected_chaos_campaign_id(),
+        campaign_id=(
+            get_pack_management_campaign_id()
+        ),
     )
 
     if not result.get("ok"):
@@ -15307,9 +15538,22 @@ def campaign_chaos_packs_export_zip():
 
 @app.route("/campaign-chaos/packs/action", methods=["POST"])
 def campaign_chaos_packs_action():
-    action = (request.form.get("bulk_action") or "").strip().lower()
-    selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    action = (
+        request.form.get("bulk_action")
+        or ""
+    ).strip().lower()
+
+    selected_pack_ids = (
+        normalize_tracked_pack_id_list(
+            request.form.getlist(
+                "pack_ids"
+            )
+        )
+    )
+
+    selected_chaos_campaign_id = (
+        get_pack_management_campaign_id()
+    )
 
     if not selected_pack_ids:
         flash("No packs were selected.")
@@ -15392,7 +15636,9 @@ def campaign_chaos_packs_action():
 
 @app.route("/campaign-chaos/test-draft/start", methods=["POST"])
 def campaign_chaos_test_draft_start():
-    selected_chaos_campaign_id = get_selected_chaos_campaign_id()
+    selected_chaos_campaign_id = (
+        get_pack_management_campaign_id()
+    )
     selected_pack_ids = normalize_tracked_pack_id_list(request.form.getlist("pack_ids"))
     start_payload = normalize_draft_test_start_payload(request.form)
 
