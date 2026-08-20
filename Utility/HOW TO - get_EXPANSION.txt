@@ -1,0 +1,69 @@
+
+🧾 About This Tool
+
+`get_EXPANSION.py` is a command-line utility that exports a full Moxfield-compatible decklist for any Magic: The Gathering expansion — including Secret Lair Drops.
+
+It uses the Scryfall API to pull all cards from the specified set, and intelligently selects the most visually impressive version available.
+
+---
+
+🎨 Card Art Priorities
+
+For each card, the script prefers printings in the following order:
+
+1. Showcase frame
+2. Borderless
+3. Extended Art
+4. Standard frame (non-foil, English)
+
+You can customize this priority order at runtime.
+
+---
+
+🛠️ How to Run `get_EXPANSION.py`
+
+✅ Requirements
+
+- Python 3.x installed
+- Internet connection
+
+No setup required — the script automatically installs `requests` and `beautifulsoup4` if they are missing.
+
+---
+
+▶️ Step-by-Step Instructions
+
+1. Open PowerShell or Terminal in that folder:
+   - Right-click the folder → “Open PowerShell window here”
+
+2. Run the command:
+   python get_EXPANSION.py
+
+3. When prompted, enter a set code. Examples:
+   - `EOE` → Edge of Eternity
+   - `MH2` → Modern Horizons 2
+   - `SLD` → Secret Lair Drop
+
+4. If you entered `SLD`, you'll be prompted for a drop name search term (e.g. `Final Fantasy`)
+   - The script will match partial names across all known Secret Lair Drops
+   - If multiple drops match, you can choose a specific one or select `0` to include all matches
+
+5. Choose your preferred card art priority order (or press Enter to use the default).
+
+6. Wait while the script fetches, filters, and writes the decklist.
+
+---
+
+📂 Output
+
+- A `.txt` file will be saved in a subfolder called `Decklist/`
+- The filename will follow one of these formats:
+  - `EOE.txt`
+  - `SLD-Final_Fantasy.txt`
+
+- Each line will follow this format:
+  ```
+  1 Card Name (SET) CollectorNumber
+  ```
+
+These files are ready to import into Moxfield compatible tools to use for fetching proxies.

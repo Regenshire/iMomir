@@ -488,9 +488,14 @@ class UICardCollection:
     Server-side configuration and normalization layer for reusable
     iMomir card-collection interfaces.
 
-    This class does not query the database. Routes supply card data
-    and feature configuration; the class converts those inputs into
-    a standard UI contract consumed by card_collection.js.
+    Routes remain responsible for loading cards and building route URLs.
+    This class owns the stable UI contract consumed by card_collection.js:
+    feature flags, filter flags, client state defaults, normalized cards,
+    per-card action URLs, labels, and collection-level endpoints.
+
+    The class deliberately does not query the database and does not render
+    HTML. That keeps it reusable for Custom Draft Sets, Chaos Draft views,
+    Campaign packs, previews, deck-style collections, and future card lists.
     """
 
     FEATURE_DEFAULTS = {
@@ -508,9 +513,35 @@ class UICardCollection:
         "alternate_image": True,
         "change_printing": True,
 
-        # Page-specific extension capabilities.
+        # Optional page-specific extension capabilities.
         "special_slot": False,
         "remove_card": False,
+        "foil_toggle": False,
+    }
+
+    # Named profiles prevent route-specific feature combinations from being
+    # duplicated throughout app.py. Every profile can still be overridden by
+    # the caller with the `features=` argument to build().
+    FEATURE_PROFILES = {
+        "default": {},
+        "custom_draft_set": {
+            "special_slot": True,
+            "remove_card": True,
+            "foil_toggle": True,
+        },
+        "chaos_draft_view": {
+            # /play/draft -> /chaos-draft/view must not allow replacing the
+            # underlying pack printing from this UI.
+            "change_printing": False,
+        },
+        "campaign_pack": {
+            "foil_toggle": True,
+        },
+        "campaign_pack_preview": {
+            # Preview cards do not have tracked-pack-card IDs yet.
+            "change_printing": False,
+            "foil_toggle": False,
+        },
     }
 
     FILTER_DEFAULTS = {
@@ -537,6 +568,8 @@ class UICardCollection:
         150,
     )
 
+    CARD_BASE_WIDTH_PX = 176
+
     PAGE_SIZE_OPTIONS = (
         50,
         100,
@@ -546,160 +579,118 @@ class UICardCollection:
     )
 
     SORT_OPTIONS = (
-        (
-            "name_asc",
-            "Name A-Z",
-        ),
-        (
-            "name_desc",
-            "Name Z-A",
-        ),
-        (
-            "set_asc",
-            "Set Code A-Z",
-        ),
-        (
-            "set_desc",
-            "Set Code Z-A",
-        ),
-        (
-            "rarity_low_high",
-            "Rarity Common → Mythic",
-        ),
-        (
-            "rarity_high_low",
-            "Rarity Mythic → Common",
-        ),
-        (
-            "mv_low_high",
-            "Mana Value Low → High",
-        ),
-        (
-            "mv_high_low",
-            "Mana Value High → Low",
-        ),
-        (
-            "edhrec_rank_best",
-            "EDHREC Rank Best",
-        ),
-        (
-            "edhrec_rank_worst",
-            "EDHREC Rank Worst",
-        ),
-        (
-            "edhrec_salt_high",
-            "EDHREC Salt High",
-        ),
-        (
-            "edhrec_salt_low",
-            "EDHREC Salt Low",
-        ),
-        (
-            "price_high",
-            "Price High",
-        ),
-        (
-            "price_low",
-            "Price Low",
-        ),
+        ("name_asc", "Name A-Z"),
+        ("name_desc", "Name Z-A"),
+        ("set_asc", "Set Code A-Z"),
+        ("set_desc", "Set Code Z-A"),
+        ("rarity_low_high", "Rarity Common → Mythic"),
+        ("rarity_high_low", "Rarity Mythic → Common"),
+        ("mv_low_high", "Mana Value Low → High"),
+        ("mv_high_low", "Mana Value High → Low"),
+        ("edhrec_rank_best", "EDHREC Rank Best"),
+        ("edhrec_rank_worst", "EDHREC Rank Worst"),
+        ("edhrec_salt_high", "EDHREC Salt High"),
+        ("edhrec_salt_low", "EDHREC Salt Low"),
+        ("price_high", "Price High"),
+        ("price_low", "Price Low"),
     )
 
     COPY_FORMATS = (
-        (
-            "simple",
-            "Simple",
-        ),
-        (
-            "detailed",
-            "Detailed",
-        ),
+        ("simple", "Simple"),
+        ("detailed", "Detailed"),
     )
 
-    def _normalize_bool(
-        self,
-        value,
-    ):
-        if isinstance(
-            value,
-            bool,
-        ):
+    LABEL_DEFAULTS = {
+        "card_singular": "card",
+        "card_plural": "cards",
+        "copy": "Copy",
+        "print_export": "Print / Export Selected Cards",
+        "stats": "Stats",
+        "filters": "Filters",
+        "card_size": "Card Size",
+        "list_view": "List View",
+        "grid_view": "Grid View",
+        "maximize": "Maximize",
+        "restore": "Restore",
+        "empty": "No cards are available.",
+    }
+
+    ENDPOINT_DEFAULTS = {
+        # Collection-level operations.
+        "print": "",
+        "export_zip": "",
+        "copy": "",
+        "face_data": "/card-face-data",
+
+        # Optional route-level fallbacks. Per-card action URLs take priority.
+        "change_printing_options": "",
+        "change_printing_update": "",
+        "foil_update": "",
+        "special_slot_update": "",
+        "remove": "",
+    }
+
+    CLIENT_STATE_DEFAULTS = {
+        "persist": True,
+        "persist_filters": False,
+        "persist_selection": False,
+    }
+
+    def _normalize_bool(self, value):
+        if isinstance(value, bool):
             return value
 
-        if isinstance(
-            value,
-            (int, float),
-        ):
+        if isinstance(value, (int, float)):
             return bool(value)
 
-        return str(
-            value or ""
-        ).strip().lower() in {
+        return str(value or "").strip().lower() in {
             "1",
             "true",
             "yes",
             "on",
         }
 
-    def _merge_flags(
-        self,
-        defaults,
-        overrides,
-    ):
+    def _merge_flags(self, defaults, overrides):
         merged = dict(defaults)
 
-        for key, value in dict(
-            overrides or {}
-        ).items():
+        for key, value in dict(overrides or {}).items():
             if key in merged:
-                merged[key] = (
-                    self._normalize_bool(
-                        value
-                    )
-                )
+                merged[key] = self._normalize_bool(value)
 
         return merged
 
-    def _normalize_choice(
-        self,
-        value,
-        allowed_values,
-        default_value,
-    ):
-        normalized = str(
-            value or ""
-        ).strip().lower()
+    def _merge_mapping(self, defaults, overrides):
+        merged = dict(defaults or {})
+
+        for key, value in dict(overrides or {}).items():
+            if value is None:
+                continue
+
+            merged[str(key)] = value
+
+        return merged
+
+    def _normalize_choice(self, value, allowed_values, default_value):
+        normalized = str(value or "").strip().lower()
 
         if normalized in allowed_values:
             return normalized
 
         return default_value
 
-    def _normalize_integer_choice(
-        self,
-        value,
-        allowed_values,
-        default_value,
-    ):
+    def _normalize_integer_choice(self, value, allowed_values, default_value):
         try:
             parsed = int(value)
         except (TypeError, ValueError):
-            parsed = int(
-                default_value
-            )
+            parsed = int(default_value)
 
         if parsed in allowed_values:
             return parsed
 
         return int(default_value)
 
-    def _parse_json_list(
-        self,
-        value,
-    ):
-        if isinstance(
-            value,
-            (list, tuple, set),
-        ):
+    def _parse_json_list(self, value):
+        if isinstance(value, (list, tuple, set)):
             return [
                 str(item)
                 for item in value
@@ -710,9 +701,7 @@ class UICardCollection:
             return []
 
         try:
-            parsed = json.loads(
-                str(value)
-            )
+            parsed = json.loads(str(value))
         except (
             TypeError,
             ValueError,
@@ -720,10 +709,7 @@ class UICardCollection:
         ):
             return []
 
-        if not isinstance(
-            parsed,
-            list,
-        ):
+        if not isinstance(parsed, list):
             return []
 
         return [
@@ -732,237 +718,206 @@ class UICardCollection:
             if str(item).strip()
         ]
 
-    def normalize_card(
-        self,
-        card,
-        index=0,
-    ):
-        """
-        Convert page-specific card records into the canonical
-        card-collection representation.
+    def _normalize_options(self, options, fallback_options):
+        normalized = []
 
-        Routes may add page-specific action URLs through the
-        'actions' dictionary.
-        """
+        for option in list(fallback_options if options is None else options):
+            if isinstance(option, dict):
+                value = str(option.get("value") or "").strip()
+                label = str(option.get("label") or value).strip()
+            elif isinstance(option, (list, tuple)) and len(option) >= 2:
+                value = str(option[0] or "").strip()
+                label = str(option[1] or value).strip()
+            else:
+                value = str(option or "").strip()
+                label = value
 
-        source = dict(
-            card or {}
+            if not value:
+                continue
+
+            normalized.append({
+                "value": value,
+                "label": label or value,
+            })
+
+        return normalized
+
+    def _normalize_actions(self, actions):
+        normalized = {}
+
+        for key, value in dict(actions or {}).items():
+            clean_key = str(key or "").strip()
+
+            if not clean_key or value is None:
+                continue
+
+            # Action payloads are intentionally allowed to be strings,
+            # booleans, IDs, or small dictionaries. This lets individual
+            # consumers attach endpoint URLs plus page-specific metadata
+            # without forcing another schema revision.
+            normalized[clean_key] = value
+
+        return normalized
+
+    def _resolve_feature_profile(self, profile_name, overrides):
+        clean_profile = str(profile_name or "default").strip().lower()
+
+        if clean_profile not in self.FEATURE_PROFILES:
+            raise ValueError(
+                f"Unknown card collection feature profile: {clean_profile}"
+            )
+
+        profile_features = self._merge_flags(
+            self.FEATURE_DEFAULTS,
+            self.FEATURE_PROFILES[clean_profile],
         )
+
+        return self._merge_flags(
+            profile_features,
+            overrides,
+        )
+
+    def normalize_card(self, card, index=0):
+        """
+        Convert page-specific card records into the canonical card-collection
+        representation.
+
+        Routes may add page-specific action URLs through the `actions`
+        dictionary. The client controller treats those actions as capabilities
+        for that specific card and does not need to know which route supplied
+        them.
+        """
+
+        source = dict(card or {})
 
         ui_card_id = (
             source.get("ui_card_id")
-            or source.get(
-                "custom_set_card_id"
-            )
-            or source.get(
-                "tracked_pack_card_id"
-            )
+            or source.get("custom_set_card_id")
+            or source.get("tracked_pack_card_id")
             or source.get("card_uuid")
+            or source.get("card_key")
             or f"card-{index + 1}"
         )
 
-        color_identity = source.get(
-            "color_identity"
+        selection_id = (
+            source.get("selection_id")
+            or source.get("custom_set_card_id")
+            or source.get("tracked_pack_card_id")
+            or ui_card_id
         )
+
+        color_identity = source.get("color_identity")
 
         if color_identity is None:
-            color_identity = source.get(
-                "color_identity_json"
-            )
+            color_identity = source.get("color_identity_json")
 
-        colors = source.get(
-            "colors"
-        )
+        colors = source.get("colors")
 
         if colors is None:
-            colors = source.get(
-                "colors_json"
-            )
+            colors = source.get("colors_json")
 
-        actions = source.get(
-            "actions"
-        )
-
-        if not isinstance(
-            actions,
-            dict,
-        ):
-            actions = {}
-
-        badges = source.get(
-            "badges"
-        )
+        badges = source.get("badges")
 
         if badges is None:
-            badges = source.get(
-                "special_badges"
-            )
+            badges = source.get("special_badges")
 
-        if not isinstance(
-            badges,
-            (list, tuple),
-        ):
+        if not isinstance(badges, (list, tuple)):
             badges = []
 
+        image_src = str(
+            source.get("image_src")
+            or source.get("image_url")
+            or ""
+        )
+
+        zoom_src = str(
+            source.get("zoom_src")
+            or source.get("image_preview_src")
+            or image_src
+            or ""
+        )
+
+        card_name = str(source.get("card_name") or source.get("name") or "")
+        set_code = str(
+            source.get("set_code")
+            or source.get("card_set_code")
+            or ""
+        )
+        collector_number = str(source.get("collector_number") or "")
+        rarity = str(source.get("rarity") or "")
+        type_line = str(source.get("type_line") or "")
+
+        search_text = str(source.get("search_text") or "").strip()
+
+        if not search_text:
+            search_text = " ".join(
+                part
+                for part in (
+                    card_name,
+                    set_code,
+                    collector_number,
+                    rarity,
+                    type_line,
+                    str(source.get("mana_value") or ""),
+                    " ".join(self._parse_json_list(color_identity)),
+                )
+                if part
+            )
+
         return {
-            "ui_card_id": str(
-                ui_card_id
-            ),
-            "card_uuid": str(
-                source.get(
-                    "card_uuid"
-                )
-                or ""
-            ),
-            "card_name": str(
-                source.get(
-                    "card_name"
-                )
-                or ""
-            ),
-            "set_code": str(
-                source.get(
-                    "set_code"
-                )
-                or source.get(
-                    "card_set_code"
-                )
-                or ""
-            ),
-            "collector_number": str(
-                source.get(
-                    "collector_number"
-                )
-                or ""
-            ),
-            "rarity": str(
-                source.get(
-                    "rarity"
-                )
-                or ""
-            ),
-            "type_line": str(
-                source.get(
-                    "type_line"
-                )
-                or ""
-            ),
-            "mana_value": source.get(
-                "mana_value"
-            ),
-            "colors": (
-                self._parse_json_list(
-                    colors
-                )
-            ),
-            "color_identity": (
-                self._parse_json_list(
-                    color_identity
-                )
-            ),
-            "edhrec_rank": source.get(
-                "edhrec_rank"
-            ),
-            "edhrec_saltiness": (
-                source.get(
-                    "edhrec_saltiness"
-                )
-            ),
-            "sort_price": source.get(
-                "sort_price"
-            ),
+            "ui_card_id": str(ui_card_id),
+            "selection_id": str(selection_id),
+            "card_uuid": str(source.get("card_uuid") or ""),
+            "card_key": str(source.get("card_key") or ""),
+            "card_name": card_name,
+            "set_code": set_code,
+            "collector_number": collector_number,
+            "rarity": rarity,
+            "type_line": type_line,
+            "mana_value": source.get("mana_value"),
+            "colors": self._parse_json_list(colors),
+            "color_identity": self._parse_json_list(color_identity),
+            "edhrec_rank": source.get("edhrec_rank"),
+            "edhrec_saltiness": source.get("edhrec_saltiness"),
+            "sort_price": source.get("sort_price"),
             "display_price": (
-                source.get(
-                    "display_price"
-                )
-                or source.get(
-                    "price"
-                )
+                source.get("display_price")
+                or source.get("price")
                 or ""
             ),
-            "currency": str(
+            "currency": str(source.get("currency") or "USD"),
+            "image_src": image_src,
+            "zoom_src": zoom_src,
+            "finish_type": str(source.get("finish_type") or ""),
+            "is_foil": self._normalize_bool(
                 source.get(
-                    "currency"
-                )
-                or "USD"
-            ),
-            "image_src": str(
-                source.get(
-                    "image_src"
-                )
-                or ""
-            ),
-            "finish_type": str(
-                source.get(
-                    "finish_type"
-                )
-                or ""
-            ),
-            "is_foil": (
-                self._normalize_bool(
-                    source.get(
-                        "is_foil",
-                        source.get(
-                            "sheet_is_foil",
-                            False,
-                        ),
-                    )
+                    "is_foil",
+                    source.get("sheet_is_foil", False),
                 )
             ),
-            "is_digital": (
-                self._normalize_bool(
-                    source.get(
-                        "is_digital",
-                        False,
-                    )
-                )
+            "is_digital": self._normalize_bool(
+                source.get("is_digital", False)
             ),
-            "has_alternate_source": (
-                self._normalize_bool(
-                    source.get(
-                        "has_alternate_source",
-                        False,
-                    )
-                )
+            "has_alternate_source": self._normalize_bool(
+                source.get("has_alternate_source", False)
             ),
-            "alternate_remove_bleed": (
-                self._normalize_bool(
-                    source.get(
-                        "alternate_remove_bleed",
-                        False,
-                    )
-                )
+            "alternate_remove_bleed": self._normalize_bool(
+                source.get("alternate_remove_bleed", False)
             ),
             "special_category": str(
-                source.get(
-                    "special_category"
-                )
-                or source.get(
-                    "special_category_index"
-                )
+                source.get("special_category")
+                or source.get("special_category_index")
                 or "0"
             ),
-            "badges": [
-                str(item)
-                for item in badges
-            ],
-            "actions": dict(
-                actions
-            ),
+            "badges": [str(item) for item in badges],
+            "search_text": search_text.casefold(),
+            "actions": self._normalize_actions(source.get("actions")),
         }
 
-    def normalize_cards(
-        self,
-        cards,
-    ):
+    def normalize_cards(self, cards):
         return [
-            self.normalize_card(
-                card,
-                index=index,
-            )
-            for index, card in enumerate(
-                cards or []
-            )
+            self.normalize_card(card, index=index)
+            for index, card in enumerate(cards or [])
         ]
 
     def build(
@@ -972,187 +927,160 @@ class UICardCollection:
         cards=None,
         *,
         subtitle="",
+        profile="default",
         features=None,
         filters=None,
+        filter_options=None,
         endpoints=None,
         labels=None,
-        default_view_mode="grid",
+        client_state=None,
+        default_view_mode="list",
         default_card_size=100,
         default_page_size=100,
         default_sort="name_asc",
         copy_formats=None,
     ):
-        clean_collection_id = str(
-            collection_id or ""
-        ).strip()
+        clean_collection_id = str(collection_id or "").strip()
 
         if not clean_collection_id:
-            raise ValueError(
-                "Card collection ID is required."
-            )
+            raise ValueError("Card collection ID is required.")
 
-        feature_flags = (
-            self._merge_flags(
-                self.FEATURE_DEFAULTS,
-                features,
-            )
+        feature_flags = self._resolve_feature_profile(
+            profile,
+            features,
         )
 
-        filter_flags = (
-            self._merge_flags(
-                self.FILTER_DEFAULTS,
-                filters,
-            )
+        filter_flags = self._merge_flags(
+            self.FILTER_DEFAULTS,
+            filters,
         )
 
-        if not feature_flags[
-            "filters"
-        ]:
+        if not feature_flags["filters"]:
             filter_flags = {
                 key: False
                 for key in filter_flags
             }
 
+        # Filters tied to disabled capabilities should disappear automatically.
+        if not feature_flags["alternate_image"]:
+            filter_flags["alternate_image"] = False
+
+        if not feature_flags["special_slot"]:
+            filter_flags["special_slot"] = False
+
         allowed_view_modes = set()
 
-        if feature_flags[
-            "list_view"
-        ]:
-            allowed_view_modes.add(
-                "list"
-            )
+        if feature_flags["list_view"]:
+            allowed_view_modes.add("list")
 
-        if feature_flags[
-            "grid_view"
-        ]:
-            allowed_view_modes.add(
-                "grid"
-            )
+        if feature_flags["grid_view"]:
+            allowed_view_modes.add("grid")
 
         if not allowed_view_modes:
-            allowed_view_modes.add(
-                "grid"
-            )
+            # A collection always needs one render mode. Use Grid View as the
+            # inert fallback even when both UI toggles are intentionally hidden.
+            allowed_view_modes.add("grid")
 
         fallback_view_mode = (
-            "grid"
-            if "grid"
-            in allowed_view_modes
-            else "list"
+            "list"
+            if "list" in allowed_view_modes
+            else "grid"
         )
 
-        normalized_view_mode = (
-            self._normalize_choice(
-                default_view_mode,
-                allowed_view_modes,
-                fallback_view_mode,
-            )
+        normalized_view_mode = self._normalize_choice(
+            default_view_mode,
+            allowed_view_modes,
+            fallback_view_mode,
         )
 
-        normalized_card_size = (
-            self._normalize_integer_choice(
-                default_card_size,
-                self.CARD_SIZE_OPTIONS,
-                100,
-            )
+        normalized_card_size = self._normalize_integer_choice(
+            default_card_size,
+            self.CARD_SIZE_OPTIONS,
+            100,
         )
 
-        normalized_page_size = (
-            self._normalize_integer_choice(
-                default_page_size,
-                self.PAGE_SIZE_OPTIONS,
-                100,
-            )
+        normalized_page_size = self._normalize_integer_choice(
+            default_page_size,
+            self.PAGE_SIZE_OPTIONS,
+            100,
         )
 
         allowed_sort_values = {
             value
-            for value, _label
-            in self.SORT_OPTIONS
+            for value, _label in self.SORT_OPTIONS
         }
 
-        normalized_sort = (
-            self._normalize_choice(
-                default_sort,
-                allowed_sort_values,
-                "name_asc",
-            )
+        normalized_sort = self._normalize_choice(
+            default_sort,
+            allowed_sort_values,
+            "name_asc",
         )
 
-        normalized_copy_formats = list(
-            copy_formats
-            or self.COPY_FORMATS
+        normalized_cards = self.normalize_cards(cards)
+        normalized_copy_formats = self._normalize_options(
+            copy_formats,
+            self.COPY_FORMATS,
         )
 
-        normalized_cards = (
-            self.normalize_cards(
-                cards
+        normalized_labels = self._merge_mapping(
+            self.LABEL_DEFAULTS,
+            labels,
+        )
+
+        normalized_endpoints = self._merge_mapping(
+            self.ENDPOINT_DEFAULTS,
+            endpoints,
+        )
+
+        normalized_client_state = self._merge_mapping(
+            self.CLIENT_STATE_DEFAULTS,
+            client_state,
+        )
+
+        # Make bool-like state options predictable before JSON serialization.
+        for bool_key in (
+            "persist",
+            "persist_filters",
+            "persist_selection",
+        ):
+            normalized_client_state[bool_key] = self._normalize_bool(
+                normalized_client_state.get(bool_key)
             )
+
+        normalized_client_state["storage_key"] = str(
+            normalized_client_state.get("storage_key")
+            or f"iMomir.cardCollection.{clean_collection_id}"
         )
 
         return {
-            "collection_id": (
-                clean_collection_id
-            ),
-            "title": str(
-                title or "Cards"
-            ),
-            "subtitle": str(
-                subtitle or ""
-            ),
-            "cards": (
-                normalized_cards
-            ),
-            "card_count": len(
-                normalized_cards
-            ),
-            "features": (
-                feature_flags
-            ),
-            "filters": (
-                filter_flags
-            ),
-            "endpoints": dict(
-                endpoints or {}
-            ),
-            "labels": dict(
-                labels or {}
-            ),
+            "schema_version": 1,
+            "collection_id": clean_collection_id,
+            "title": str(title or "Cards"),
+            "subtitle": str(subtitle or ""),
+            "cards": normalized_cards,
+            "card_count": len(normalized_cards),
+            "features": feature_flags,
+            "filters": filter_flags,
+            "filter_options": dict(filter_options or {}),
+            "endpoints": normalized_endpoints,
+            "labels": normalized_labels,
+            "client_state": normalized_client_state,
             "options": {
-                "default_view_mode": (
-                    normalized_view_mode
-                ),
-                "default_card_size": (
-                    normalized_card_size
-                ),
-                "default_page_size": (
-                    normalized_page_size
-                ),
-                "default_sort": (
-                    normalized_sort
-                ),
-                "card_size_options": list(
-                    self.CARD_SIZE_OPTIONS
-                ),
-                "page_size_options": list(
-                    self.PAGE_SIZE_OPTIONS
-                ),
+                "default_view_mode": normalized_view_mode,
+                "default_card_size": normalized_card_size,
+                "default_page_size": normalized_page_size,
+                "default_sort": normalized_sort,
+                "card_base_width_px": self.CARD_BASE_WIDTH_PX,
+                "card_size_options": list(self.CARD_SIZE_OPTIONS),
+                "page_size_options": list(self.PAGE_SIZE_OPTIONS),
                 "sort_options": [
                     {
                         "value": value,
                         "label": label,
                     }
-                    for value, label
-                    in self.SORT_OPTIONS
+                    for value, label in self.SORT_OPTIONS
                 ],
-                "copy_formats": [
-                    {
-                        "value": value,
-                        "label": label,
-                    }
-                    for value, label
-                    in normalized_copy_formats
-                ],
+                "copy_formats": normalized_copy_formats,
             },
         }
 

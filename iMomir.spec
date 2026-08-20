@@ -4,6 +4,7 @@ from PyInstaller.utils.hooks import collect_submodules
 hiddenimports = ['paths', 'settings', 'image_export_templates', 'pack_label_templates']
 hiddenimports += collect_submodules('db')
 hiddenimports += collect_submodules('modes')
+hiddenimports += collect_submodules('ui')
 
 
 a = Analysis(

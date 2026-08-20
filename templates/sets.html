@@ -275,13 +275,27 @@
                     data-set-year="{{ mtg_set['release_date'][:4] if mtg_set['release_date'] else '' }}"
                     data-selected="1"
                 >
-                    <span>
-                        {{ mtg_set["set_name"] }}
-                        <span class="set-meta">
-                            ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
-                            {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
-                        </span>
-                    </span>
+                    <div class="set-row-content">
+                        <img
+                            src="{{ url_for('static', filename=mtg_set['set_icon_static_path']) }}"
+                            alt=""
+                            class="set-row-icon"
+                            loading="lazy"
+                            decoding="async"
+                            aria-hidden="true"
+                        >
+
+                        <div class="set-row-label">
+                            <span class="set-row-name">
+                                {{ mtg_set["set_name"] }}
+                            </span>
+
+                            <span class="set-meta">
+                                ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
+                                {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
+                            </span>
+                        </div>
+                    </div>
                     <input
                         type="checkbox"
                         name="selected_sets"
@@ -301,13 +315,27 @@
                     data-set-year="{{ mtg_set['release_date'][:4] if mtg_set['release_date'] else '' }}"
                     data-selected="0"
                 >
-                    <span>
-                        {{ mtg_set["set_name"] }}
-                        <span class="set-meta">
-                            ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
-                            {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
-                        </span>
-                    </span>
+                    <div class="set-row-content">
+                        <img
+                            src="{{ url_for('static', filename=mtg_set['set_icon_static_path']) }}"
+                            alt=""
+                            class="set-row-icon"
+                            loading="lazy"
+                            decoding="async"
+                            aria-hidden="true"
+                        >
+
+                        <div class="set-row-label">
+                            <span class="set-row-name">
+                                {{ mtg_set["set_name"] }}
+                            </span>
+
+                            <span class="set-meta">
+                                ({{ mtg_set["set_code"] }}) [{{ mtg_set["release_date"][:4] if mtg_set["release_date"] else "----" }}]
+                                {% if mtg_set["set_type"] %} • {{ mtg_set["set_type"] }}{% endif %}
+                            </span>
+                        </div>
+                    </div>
                     <input
                         type="checkbox"
                         name="selected_sets"
