@@ -1,0 +1,10 @@
+{
+    "schema_version": 1,
+    "protocol_version": 1,
+    "plugin_id": "upscaler-nvidia-rtx50",
+    "plugin_type": "upscaler",
+    "name": "iMomir Upscaler - NVIDIA RTX 50 Series",
+    "version": "0.1.0",
+    "entrypoint": "plugin.py",
+    "requirements_file": "requirements.txt"
+}

@@ -713,6 +713,10 @@ function initializeSettingsConsole() {
             description: "Repair and reprocess generated alternate-image derivatives.",
             showSave: false
         },
+        image_upscaling: {
+            description: "Install and manage optional AI image upscaling plugins.",
+            showSave: false
+        },
         danger_zone: {
             description: "Diagnostics and destructive maintenance operations."
         }
@@ -774,12 +778,13 @@ function initializeSettingsConsole() {
             key: "advanced",
             eyebrow: "ADMINISTRATION",
             title: "Advanced",
-            description: "Export retention, backups, diagnostics, and destructive maintenance tools.",
+            description: "Export retention, backups, image tools, diagnostics, and destructive maintenance tools.",
             iconClass: "fa-solid fa-toolbox",
             sections: [
                 "exports",
                 "backup",
                 "image_maintenance",
+                "image_upscaling",
                 "danger_zone"
             ],
             parent: "screen"

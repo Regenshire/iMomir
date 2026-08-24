@@ -143,6 +143,13 @@ from ui.ui import (
     ui_list_filter,
 )
 
+from plugin_system.catalog import PLUGIN_CATALOG
+from plugin_system.manager import (
+    get_plugin_install_status,
+    get_plugin_status,
+    start_plugin_install,
+)
+
 from db.exports import (
     EXPORT_KIND_CAMPAIGN,
     EXPORT_KIND_FULL,
@@ -200,6 +207,11 @@ from db.database import (
 )
 
 from db.draftdb import ensure_draft_testing_schema
+
+from db.upscalyingdb import (
+    ensure_upscaling_schema,
+    get_current_upscaled_image_for_card,
+)
 
 from db.deckdb import (
     add_basic_land_to_deck,
@@ -7057,6 +7069,9 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
 
                 return {
                     "source_type": "alternate_source",
+                    "source_level": 2,
+                    "source_label": "Alternate",
+                    "upscaled_image_id": None,
 
                     # Existing processed derivative remains useful
                     # for previews and legacy output paths.
@@ -7116,8 +7131,49 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
                 f"page_kind={normalized_page_kind} | error={str(exc)} | falling back to Scryfall"
             )
 
+    upscaled_image = get_current_upscaled_image_for_card(
+        card_row,
+        face_kind=normalized_page_kind,
+    )
+
+    if upscaled_image:
+        absolute_path = (
+            upscaled_image["absolute_path"]
+            or ""
+        ).strip()
+
+        if absolute_path and os.path.exists(absolute_path):
+            write_debug_log(
+                "UPSCALED SCRYFALL SOURCE USED | "
+                f"upscaled_image_id={upscaled_image['upscaled_image_id']} | "
+                f"card_uuid={card_row['card_uuid']} | "
+                f"page_kind={normalized_page_kind} | "
+                f"path={absolute_path}"
+            )
+
+            return {
+                "source_type": "upscaled",
+                "source_level": 1,
+                "source_label": "Upscaled",
+                "absolute_path": absolute_path,
+                "fullbleed_absolute_path": "",
+                "print_master_absolute_path": absolute_path,
+                "source_has_real_bleed": False,
+                "source_bleed_mm": 0.0,
+                "image_url": "",
+                "alternate_source_id": None,
+                "upscaled_image_id": (
+                    upscaled_image[
+                        "upscaled_image_id"
+                    ]
+                ),
+                "export_frame_template": "auto",
+            }
+
     return {
         "source_type": "scryfall",
+        "source_level": 0,
+        "source_label": "Scryfall",
         "absolute_path": "",
         "fullbleed_absolute_path": "",
         "print_master_absolute_path": "",
@@ -7125,6 +7181,7 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
         "source_bleed_mm": 0.0,
         "image_url": fallback_image_url,
         "alternate_source_id": None,
+        "upscaled_image_id": None,
         "export_frame_template": "auto",
     }
 
@@ -8526,7 +8583,10 @@ def prefetch_chaos_pdf_remote_images(
                 page_image_url,
             )
 
-            if image_source.get("source_type") == "alternate_source":
+            if image_source.get("source_type") in {
+                "alternate_source",
+                "upscaled",
+            }:
                 continue
 
             if not page_image_url:
@@ -13429,6 +13489,67 @@ def card_search():
         featured_card_print_href=featured_card_print_href,
     )
 
+@app.route(
+    "/plugins/<plugin_id>/status",
+    methods=["GET"],
+)
+def plugin_status(plugin_id):
+    if plugin_id not in PLUGIN_CATALOG:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Unknown plugin.",
+            }
+        ), 404
+
+    return jsonify(
+        {
+            "ok": True,
+            "plugin": get_plugin_status(
+                plugin_id
+            ),
+            "install": get_plugin_install_status(
+                plugin_id
+            ),
+        }
+    )
+
+
+@app.route(
+    "/plugins/<plugin_id>/install",
+    methods=["POST"],
+)
+def plugin_install(plugin_id):
+    if plugin_id not in PLUGIN_CATALOG:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "Unknown plugin.",
+            }
+        ), 404
+
+    try:
+        install_status = start_plugin_install(
+            plugin_id
+        )
+
+    except Exception as exc:
+        return jsonify(
+            {
+                "ok": False,
+                "error": str(exc),
+            }
+        ), 400
+
+    return jsonify(
+        {
+            "ok": True,
+            "install": install_status,
+        }
+    )
+
+
+
 @app.route("/config/check-new-releases", methods=["POST"])
 def config_check_new_releases():
     config_values = get_config()
@@ -13493,6 +13614,20 @@ def config():
     current_image_status = build_config_page_image_status()
     current_alternate_bleed_status = (
         build_alternate_bleed_reprocess_status()
+    )
+
+    upscaler_plugin_id = (
+        "upscaler-nvidia-rtx50"
+    )
+
+    upscaler_plugin_status = get_plugin_status(
+        upscaler_plugin_id
+    )
+
+    upscaler_plugin_install_status = (
+        get_plugin_install_status(
+            upscaler_plugin_id
+        )
     )
 
     resolved_game_mode_cards = []
@@ -13622,6 +13757,15 @@ def config():
         image_download_status=current_image_status,
         alternate_bleed_reprocess_status=(
             current_alternate_bleed_status
+        ),
+        upscaler_plugin_id=(
+            upscaler_plugin_id
+        ),
+        upscaler_plugin_status=(
+            upscaler_plugin_status
+        ),
+        upscaler_plugin_install_status=(
+            upscaler_plugin_install_status
         ),
         section_defaults=section_defaults,
         history_count=get_recent_history_count(),
@@ -13878,6 +14022,22 @@ def card_image(card_key):
             return redirect(back_image_url)
 
         return ("Not found", 404)
+
+    upscaled_image = get_current_upscaled_image_for_card(
+        card,
+        face_kind="single",
+    )
+
+    if upscaled_image:
+        upscaled_path = (
+            upscaled_image["absolute_path"]
+            or ""
+        ).strip()
+
+        if upscaled_path and os.path.exists(upscaled_path):
+            return send_file(
+                upscaled_path
+            )
 
     card = ensure_card_has_local_image(card)
 
@@ -20868,5 +21028,6 @@ if __name__ == "__main__":
     initialize_database()
     ensure_draft_testing_schema()
     ensure_deck_schema()
+    ensure_upscaling_schema()
     set_runtime_debug_log_enabled_from_config()
     app.run(host="0.0.0.0", port=5000, debug=True)

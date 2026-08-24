@@ -24,6 +24,7 @@ Export/
 static/img/set_icons/
 static/img/*.psd
 static/img/*.PSD
+Utility/
 
 # OS
 .DS_Store
@@ -35,6 +36,16 @@ Thumbs.db
 # Dev Stuff
 .vscode/
 .dev_prompts/
+
+# Runtime-installed plugins
+plugins/*
+!plugins/.gitkeep
+
+# Downloaded plugin model files
+plugin_src/**/models/*.pth
+plugin_src/**/models/*.pt
+plugin_src/**/models/*.onnx
+plugin_src/**/models/*.safetensors
 
 # Distributions
 dist/

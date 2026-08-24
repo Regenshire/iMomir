@@ -731,66 +731,6 @@
                         Forced Refresh
                     </button>
                 </div>
-
-
-                <!-- REMOVE THIS FROM THE CODE - NOT USING THIS ANYMORE
-                <div class="refresh-panel">
-                    <div class="refresh-status-row">
-                        <div id="imageDownloadSpinner" class="spinner {% if not image_download_status.get('is_running') %}hidden{% endif %}"></div>
-                        <div class="refresh-status-text">
-                            <div><strong id="imageDownloadStage">{{ image_download_status.get("stage", "Idle") }}</strong></div>
-                            <div id="imageDownloadMessage">{{ image_download_status.get("message", "No image download has been run yet.") }}</div>
-                            <div id="imageDownloadError" class="refresh-error {% if not image_download_status.get('error') %}hidden{% endif %}">
-                                {{ image_download_status.get("error", "") }}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="metadata-list">
-                        <div class="metadata-row">
-                            <span>Image Cards Processed</span>
-                            <strong id="imageCardsProcessed">{{ image_download_status.get("cards_processed", 0) }}</strong>
-                        </div>
-                        <div class="metadata-row">
-                            <span>Images Downloaded</span>
-                            <strong id="imageCardsDownloaded">{{ image_download_status.get("cards_downloaded", 0) }}</strong>
-                        </div>
-                        <div class="metadata-row">
-                            <span>Cards Disabled</span>
-                            <strong id="imageCardsDisabled">{{ image_download_status.get("cards_disabled", 0) }}</strong>
-                        </div>
-                        <div class="metadata-row">
-                            <span>Image Job Finished</span>
-                            <strong id="imageDownloadFinishedAt">{{ image_download_status.get("finished_at", "Never") }}</strong>
-                        </div>
-                    </div>
-
-                    <div class="config-button-row">
-                        <button
-                            type="button"
-                            id="downloadCardImagesButton"
-                            class="action-button secondary-button"
-                        >
-                            Download Missing Card Images
-                        </button>
-
-                        <button
-                            type="button"
-                            id="redownloadCardImagesButton"
-                            class="action-button secondary-button"
-                        >
-                            ReDownload Cached Card Images
-                        </button>
-                    </div>
-
-                    <div class="metadata-row">
-                        <span>Recommended Use</span>
-                        <strong class="metadata-value-wrap">
-                            Refresh Card Database already downloads the card database, set list, and Scryfall image index. Full image download is optional. Card images can be downloaded automatically as cards are viewed or printed.
-                        </strong>
-                    </div>
-                </div>
-                -->
             </div>
         </div>
     </div>
@@ -948,6 +888,101 @@
             </div>
         </div>
 
+        <div
+            id="section_image_upscaling"
+            class="page-panel collapsible-panel {% if section_defaults.get('image_upscaling') == '1' %}is-open{% endif %}"
+            data-section="image_upscaling"
+        >
+            <button
+                type="button"
+                class="collapsible-header"
+            >
+                <span>Advanced Image Upscaling</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
+                <div class="metadata-list">
+                    <div class="metadata-row">
+                        <span>Upscaler Plugin</span>
+                        <strong id="upscalerPluginState">
+                            {% if upscaler_plugin_status.get("ready") %}
+                                Installed
+                            {% elif upscaler_plugin_status.get("installed") %}
+                                Incomplete
+                            {% else %}
+                                Not Installed
+                            {% endif %}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Plugin Version</span>
+                        <strong id="upscalerPluginVersion">
+                            {{ upscaler_plugin_status.get("version") or "—" }}
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Plugin Type</span>
+                        <strong>
+                            Image Upscaler
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Target Hardware</span>
+                        <strong>
+                            NVIDIA RTX 50 Series
+                        </strong>
+                    </div>
+                </div>
+
+                <div class="refresh-panel">
+                    <div class="refresh-status-row">
+                        <div
+                            id="upscalerPluginSpinner"
+                            class="spinner {% if not upscaler_plugin_install_status.get('is_running') %}hidden{% endif %}"
+                        ></div>
+
+                        <div class="refresh-status-text">
+                            <div>
+                                <strong id="upscalerPluginStage">
+                                    {{ upscaler_plugin_install_status.get("stage", "Idle") }}
+                                </strong>
+                            </div>
+
+                            <div id="upscalerPluginMessage">
+                                {{ upscaler_plugin_install_status.get("message", "The optional AI upscaler is not required to use iMomir.") }}
+                            </div>
+
+                            <div
+                                id="upscalerPluginError"
+                                class="refresh-error {% if not upscaler_plugin_install_status.get('error') %}hidden{% endif %}"
+                            >
+                                {{ upscaler_plugin_install_status.get("error", "") }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-button-row">
+                        <button
+                            type="button"
+                            id="installUpscalerPluginButton"
+                            class="action-button secondary-button"
+                            data-plugin-id="{{ upscaler_plugin_id }}"
+                            {% if upscaler_plugin_install_status.get("is_running") %}disabled{% endif %}
+                        >
+                            {% if upscaler_plugin_status.get("installed") %}
+                                Update / Reinstall Upscaler Plugin
+                            {% else %}
+                                Download & Install Upscaler Plugin
+                            {% endif %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div id="section_danger_zone" class="page-panel collapsible-panel {% if section_defaults.get('danger_zone') == '1' %}is-open{% endif %}" data-section="danger_zone">
             <button type="button" class="collapsible-header">
@@ -1137,6 +1172,272 @@
             closeReminderModal();
         }
     });
+})();
+</script>
+
+<script>
+(function () {
+    const installButton = document.getElementById(
+        "installUpscalerPluginButton"
+    );
+
+    if (!installButton) {
+        return;
+    }
+
+    const pluginId = (
+        installButton.dataset.pluginId
+        || ""
+    ).trim();
+
+    if (!pluginId) {
+        return;
+    }
+
+    const spinner = document.getElementById(
+        "upscalerPluginSpinner"
+    );
+
+    const stageElement = document.getElementById(
+        "upscalerPluginStage"
+    );
+
+    const messageElement = document.getElementById(
+        "upscalerPluginMessage"
+    );
+
+    const errorElement = document.getElementById(
+        "upscalerPluginError"
+    );
+
+    const stateElement = document.getElementById(
+        "upscalerPluginState"
+    );
+
+    const versionElement = document.getElementById(
+        "upscalerPluginVersion"
+    );
+
+    let pollTimer = null;
+
+    function renderPluginStatus(data) {
+        const install = data.install || {};
+        const plugin = data.plugin || {};
+
+        const isRunning = Boolean(
+            install.is_running
+        );
+
+        installButton.disabled = isRunning;
+
+        if (spinner) {
+            spinner.classList.toggle(
+                "hidden",
+                !isRunning
+            );
+        }
+
+        if (stageElement) {
+            stageElement.textContent = (
+                install.stage
+                || "Idle"
+            );
+        }
+
+        if (messageElement) {
+            messageElement.textContent = (
+                install.message
+                || ""
+            );
+        }
+
+        if (errorElement) {
+            const errorText = (
+                install.error
+                || ""
+            );
+
+            errorElement.textContent = (
+                errorText
+            );
+
+            errorElement.classList.toggle(
+                "hidden",
+                !errorText
+            );
+        }
+
+        if (stateElement) {
+            if (plugin.ready) {
+                stateElement.textContent = (
+                    "Installed"
+                );
+            } else if (plugin.installed) {
+                stateElement.textContent = (
+                    "Incomplete"
+                );
+            } else {
+                stateElement.textContent = (
+                    "Not Installed"
+                );
+            }
+        }
+
+        if (versionElement) {
+            versionElement.textContent = (
+                plugin.version
+                || "—"
+            );
+        }
+
+        installButton.textContent = (
+            plugin.installed
+            ? "Update / Reinstall Upscaler Plugin"
+            : "Download & Install Upscaler Plugin"
+        );
+
+        return isRunning;
+    }
+
+    async function fetchPluginStatus() {
+        const response = await fetch(
+            "/plugins/"
+            + encodeURIComponent(pluginId)
+            + "/status",
+            {
+                cache: "no-store"
+            }
+        );
+
+        const data = await response.json();
+
+        if (
+            !response.ok
+            || !data.ok
+        ) {
+            throw new Error(
+                data.error
+                || "Could not read plugin status."
+            );
+        }
+
+        return data;
+    }
+
+    async function pollPluginStatus() {
+        try {
+            const data = (
+                await fetchPluginStatus()
+            );
+
+            const isRunning = (
+                renderPluginStatus(data)
+            );
+
+            if (
+                !isRunning
+                && pollTimer
+            ) {
+                window.clearInterval(
+                    pollTimer
+                );
+
+                pollTimer = null;
+            }
+
+        } catch (error) {
+            if (errorElement) {
+                errorElement.textContent = (
+                    error.message
+                );
+
+                errorElement.classList.remove(
+                    "hidden"
+                );
+            }
+        }
+    }
+
+    function startPluginStatusPolling() {
+        if (pollTimer) {
+            window.clearInterval(
+                pollTimer
+            );
+        }
+
+        pollTimer = window.setInterval(
+            pollPluginStatus,
+            1500
+        );
+
+        pollPluginStatus();
+    }
+
+    installButton.addEventListener(
+        "click",
+        async function () {
+            installButton.disabled = true;
+
+            if (errorElement) {
+                errorElement.textContent = "";
+
+                errorElement.classList.add(
+                    "hidden"
+                );
+            }
+
+            try {
+                const response = await fetch(
+                    "/plugins/"
+                    + encodeURIComponent(pluginId)
+                    + "/install",
+                    {
+                        method: "POST",
+                        headers: {
+                            "Accept": "application/json"
+                        }
+                    }
+                );
+
+                const data = (
+                    await response.json()
+                );
+
+                if (
+                    !response.ok
+                    || !data.ok
+                ) {
+                    throw new Error(
+                        data.error
+                        || "Plugin installation could not start."
+                    );
+                }
+
+                startPluginStatusPolling();
+
+            } catch (error) {
+                installButton.disabled = false;
+
+                if (errorElement) {
+                    errorElement.textContent = (
+                        error.message
+                    );
+
+                    errorElement.classList.remove(
+                        "hidden"
+                    );
+                }
+            }
+        }
+    );
+
+    const initialRunning = (
+        {{ "true" if upscaler_plugin_install_status.get("is_running") else "false" }}
+    );
+
+    if (initialRunning) {
+        startPluginStatusPolling();
+    }
 })();
 </script>
 {% endblock %}
