@@ -2469,6 +2469,8 @@ def search_chaos_cards_for_custom_draft_set(
     year_end=None,
     sort_option="name_asc",
     digital_filter="",
+    exclude_added_filter="",
+    exclude_deck_id=None,
     page=1,
     page_size=50,
 ):
@@ -2526,9 +2528,24 @@ def search_chaos_cards_for_custom_draft_set(
     clean_set_code_filter = str(set_code_filter or "").strip().upper()
     clean_sort_option = str(sort_option or "name_asc").strip().lower()
     clean_digital_filter = str(digital_filter or "").strip().lower()
+    clean_exclude_added_filter = str(exclude_added_filter or "").strip().lower()
 
     if clean_digital_filter not in {"exclude", "only"}:
         clean_digital_filter = ""
+
+    if clean_exclude_added_filter != "exclude":
+        clean_exclude_added_filter = ""
+
+    parsed_exclude_deck_id = None
+
+    if exclude_deck_id not in {None, ""}:
+        try:
+            parsed_exclude_deck_id = int(exclude_deck_id)
+        except (TypeError, ValueError):
+            parsed_exclude_deck_id = None
+
+    if parsed_exclude_deck_id is not None and parsed_exclude_deck_id <= 0:
+        parsed_exclude_deck_id = None
 
     try:
         parsed_page = max(1, int(page))
@@ -2578,10 +2595,11 @@ def search_chaos_cards_for_custom_draft_set(
         parsed_year_start is not None,
         parsed_year_end is not None,
         clean_digital_filter == "only",
+        clean_exclude_added_filter == "exclude",
     ])
 
     if not has_any_filter:
-        return []
+        return [], 0
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -2776,6 +2794,42 @@ def search_chaos_cards_for_custom_draft_set(
     if parsed_year_start is not None:
         where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) >= ?")
         params.append(parsed_year_start)
+
+    if parsed_year_end is not None:
+        where_clauses.append("CAST(SUBSTR(COALESCE(s.release_date, ''), 1, 4) AS INTEGER) <= ?")
+        params.append(parsed_year_end)
+
+    if clean_exclude_added_filter == "exclude":
+        if parsed_exclude_deck_id is not None:
+            where_clauses.append(
+                """
+                NOT EXISTS (
+                    SELECT 1
+                    FROM deck_cards excluded_dc
+                    JOIN chaos_cards excluded_cc
+                        ON excluded_cc.card_uuid = excluded_dc.card_uuid
+                    WHERE excluded_dc.deck_id = ?
+                      AND LOWER(TRIM(COALESCE(excluded_cc.card_name, ''))) =
+                          LOWER(TRIM(COALESCE(cc.card_name, '')))
+                )
+                """
+            )
+            params.append(parsed_exclude_deck_id)
+        else:
+            where_clauses.append(
+                """
+                NOT EXISTS (
+                    SELECT 1
+                    FROM custom_draft_set_cards existing_cdsc
+                    JOIN chaos_cards existing_cc
+                        ON existing_cc.card_uuid = existing_cdsc.card_uuid
+                    WHERE existing_cdsc.set_code = ?
+                      AND LOWER(TRIM(COALESCE(existing_cc.card_name, ''))) =
+                          LOWER(TRIM(COALESCE(cc.card_name, '')))
+                )
+                """
+            )
+            params.append(clean_set_code)
 
     if clean_digital_filter:
         digital_set_sql = get_custom_draft_digital_set_sql(
@@ -3364,6 +3418,206 @@ def bulk_add_most_recent_cards_to_custom_draft_set(set_code, import_items):
         "unresolved": unresolved_cards,
     }
 
+def bulk_add_cards_to_custom_draft_set(set_code, search_rows):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not clean_set_code:
+        raise ValueError("Custom set code is required.")
+
+    def collector_number_sort_value(value):
+        collector_text = str(value or "").strip()
+        leading_digits = []
+
+        for character in collector_text:
+            if not character.isdigit():
+                break
+
+            leading_digits.append(character)
+
+        if not leading_digits:
+            return 0
+
+        try:
+            return int("".join(leading_digits))
+        except (TypeError, ValueError):
+            return 0
+
+    def candidate_is_more_recent(candidate, current):
+        candidate_release_date = str(
+            candidate.get("release_date") or ""
+        ).strip()
+
+        current_release_date = str(
+            current.get("release_date") or ""
+        ).strip()
+
+        if candidate_release_date != current_release_date:
+            return candidate_release_date > current_release_date
+
+        candidate_set_code = str(
+            candidate.get("set_code") or ""
+        ).strip().upper()
+
+        current_set_code = str(
+            current.get("set_code") or ""
+        ).strip().upper()
+
+        if candidate_set_code != current_set_code:
+            return candidate_set_code < current_set_code
+
+        candidate_collector_number = str(
+            candidate.get("collector_number") or ""
+        ).strip()
+
+        current_collector_number = str(
+            current.get("collector_number") or ""
+        ).strip()
+
+        candidate_collector_sort = collector_number_sort_value(
+            candidate_collector_number
+        )
+
+        current_collector_sort = collector_number_sort_value(
+            current_collector_number
+        )
+
+        if candidate_collector_sort != current_collector_sort:
+            return candidate_collector_sort < current_collector_sort
+
+        return candidate_collector_number < current_collector_number
+
+    most_recent_by_card_name = {}
+    unresolved_count = 0
+
+    for raw_row in search_rows or []:
+        try:
+            row = dict(raw_row)
+        except (TypeError, ValueError):
+            unresolved_count += 1
+            continue
+
+        card_uuid = str(row.get("card_uuid") or "").strip()
+        card_name = str(row.get("card_name") or "").strip()
+
+        if not card_uuid or not card_name:
+            unresolved_count += 1
+            continue
+
+        card_name_key = card_name.casefold()
+
+        current = most_recent_by_card_name.get(card_name_key)
+
+        if current is None or candidate_is_more_recent(row, current):
+            most_recent_by_card_name[card_name_key] = row
+
+    if not most_recent_by_card_name:
+        return {
+            "ok": True,
+            "matched_count": 0,
+            "unique_card_count": 0,
+            "added_count": 0,
+            "skipped_count": 0,
+            "unresolved_count": unresolved_count,
+        }
+
+    now_utc = __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    ).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT 1
+        FROM custom_draft_sets
+        WHERE set_code = ?
+        """,
+        (clean_set_code,),
+    )
+
+    if not cursor.fetchone():
+        conn.close()
+        raise ValueError("Custom draft set was not found.")
+
+    cursor.execute(
+        """
+        SELECT DISTINCT
+            cc.card_name
+        FROM custom_draft_set_cards cdsc
+        JOIN chaos_cards cc
+            ON cc.card_uuid = cdsc.card_uuid
+        WHERE cdsc.set_code = ?
+        """,
+        (clean_set_code,),
+    )
+
+    existing_card_names = {
+        str(row["card_name"] or "").strip().casefold()
+        for row in cursor.fetchall()
+        if str(row["card_name"] or "").strip()
+    }
+
+    added_count = 0
+    skipped_count = 0
+
+    for card_name_key in sorted(most_recent_by_card_name.keys()):
+        selected_row = most_recent_by_card_name[card_name_key]
+
+        card_uuid = str(
+            selected_row.get("card_uuid") or ""
+        ).strip()
+
+        card_name = str(
+            selected_row.get("card_name") or ""
+        ).strip()
+
+        if card_name_key in existing_card_names:
+            skipped_count += 1
+            continue
+
+        cursor.execute(
+            """
+            INSERT OR IGNORE INTO custom_draft_set_cards (
+                set_code,
+                card_uuid,
+                special_category_index,
+                sheet_is_foil,
+                sort_name,
+                added_at_utc
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                clean_set_code,
+                card_uuid,
+                0,
+                0,
+                card_name,
+                now_utc,
+            ),
+        )
+
+        if cursor.rowcount > 0:
+            added_count += 1
+            existing_card_names.add(card_name_key)
+        else:
+            skipped_count += 1
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "matched_count": len(search_rows or []),
+        "unique_card_count": len(most_recent_by_card_name),
+        "added_count": added_count,
+        "skipped_count": skipped_count,
+        "unresolved_count": unresolved_count,
+    }
+
+
+
 def add_card_to_custom_draft_set(set_code, card_uuid):
     clean_set_code = normalize_custom_draft_set_code(set_code)
     clean_card_uuid = str(card_uuid or "").strip()
@@ -3393,6 +3647,32 @@ def add_card_to_custom_draft_set(set_code, card_uuid):
     if not card_row:
         conn.close()
         raise ValueError("Card UUID was not found in chaos_cards.")
+
+    cursor.execute(
+        """
+        SELECT 1
+        FROM custom_draft_set_cards cdsc
+        JOIN chaos_cards existing_cc
+            ON existing_cc.card_uuid = cdsc.card_uuid
+        WHERE cdsc.set_code = ?
+          AND LOWER(TRIM(COALESCE(existing_cc.card_name, ''))) =
+              LOWER(TRIM(COALESCE(?, '')))
+        LIMIT 1
+        """,
+        (
+            clean_set_code,
+            card_row["card_name"] or "",
+        ),
+    )
+
+    if cursor.fetchone():
+        conn.close()
+
+        return {
+            "ok": True,
+            "inserted": False,
+            "message": "A printing of this card is already in this custom set.",
+        }
 
     cursor.execute(
         """

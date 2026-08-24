@@ -296,6 +296,14 @@
                     </label>
 
                     <label class="custom-draft-filter-field">
+                        <span>Exclude Added Cards</span>
+                        <select id="customDraftSearchExcludeAddedFilter" class="custom-draft-filter-input">
+                            <option value="" selected>No</option>
+                            <option value="exclude">Exclude</option>
+                        </select>
+                    </label>
+
+                    <label class="custom-draft-filter-field">
                         <span>Per Page</span>
                         <select id="customDraftSearchPageSizeSelect" class="custom-draft-filter-input">
                             <option value="100">100</option>
@@ -316,13 +324,20 @@
                         >
                             Search
                         </button>
-
                         <button
                             type="button"
                             id="customDraftSearchClearFiltersButton"
                             class="action-button secondary-button"
                         >
                             Clear Search
+                        </button>
+                        <button
+                            type="button"
+                            id="customDraftAddAllResultsButton"
+                            class="action-button secondary-button hidden"
+                            disabled
+                        >
+                            Add All Results to Set
                         </button>
                     </div>
 

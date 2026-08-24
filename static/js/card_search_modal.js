@@ -287,6 +287,7 @@
         const searchYearStartFilter = getElement("customDraftSearchYearStartFilter");
         const searchYearEndFilter = getElement("customDraftSearchYearEndFilter");
         const searchDigitalFilter = getElement("customDraftSearchDigitalFilter");
+        const searchExcludeAddedFilter = getElement("customDraftSearchExcludeAddedFilter");
         const searchPageSizeSelect = getElement("customDraftSearchPageSizeSelect");
         const searchPaginationBar = getElement("customDraftCardSearchPagination");
         const searchPrevButton = getElement("customDraftSearchPrevButton");
@@ -294,6 +295,7 @@
         const searchPageInput = getElement("customDraftSearchPageInput");
         const searchPageTotal = getElement("customDraftSearchPageTotal");
         const searchClearFiltersButton = getElement("customDraftSearchClearFiltersButton");
+        const addAllResultsButton = getElement("customDraftAddAllResultsButton");
 
         const bulkImportToggleButton = getElement("customDraftBulkImportToggleButton");
         const bulkImportPanel = getElement("customDraftBulkImportPanel");
@@ -305,11 +307,24 @@
         let activeChangePrintingState = null;
         let currentSearchPage = 1;
         let currentSearchTotalPages = 1;
+        let currentSearchTotalCount = 0;
         let modalZoomOverlay = null;
         let modalZoomImage = null;
 
         const clientAddedCardUuidLookup = new Set();
         const clientAddedPrintingKeyLookup = new Set();
+
+        function updateAddAllResultsButtonState() {
+            if (!addAllResultsButton) {
+                return;
+            }
+
+            const shouldShow = Boolean(config.addAllResultsUrl) && !activeChangePrintingState;
+
+            addAllResultsButton.classList.toggle("hidden", !shouldShow);
+            addAllResultsButton.disabled = !shouldShow || currentSearchTotalCount <= 0;
+            addAllResultsButton.textContent = config.addAllResultsText || "Add All Results to Set";
+        }
 
         function ensureModalZoomOverlay() {
             if (modalZoomOverlay && modalZoomImage) {
@@ -896,11 +911,12 @@
                 (searchTypeFilter && (searchTypeFilter.value || "").trim()) ||
                 (searchSetCodeFilter && (searchSetCodeFilter.value || "").trim()) ||
                 (searchYearStartFilter && (searchYearStartFilter.value || "").trim()) ||
-                (searchYearEndFilter && (searchYearEndFilter.value || "").trim())
+                (searchYearEndFilter && (searchYearEndFilter.value || "").trim()) ||
+                (searchExcludeAddedFilter && (searchExcludeAddedFilter.value || "").trim() === "exclude")
             );
         }
 
-        function buildAdvancedCardSearchUrl(page) {
+        function buildAdvancedCardSearchUrl(page, baseUrl) {
             const params = new URLSearchParams();
             const requestedPage = page || 1;
 
@@ -944,6 +960,10 @@
                 params.set("digital", searchDigitalFilter.value);
             }
 
+            if (searchExcludeAddedFilter && searchExcludeAddedFilter.value) {
+                params.set("exclude_added", searchExcludeAddedFilter.value);
+            }
+
             if (searchPageSizeSelect && searchPageSizeSelect.value) {
                 params.set("page_size", searchPageSizeSelect.value);
             }
@@ -954,7 +974,7 @@
                 params.set("sort", searchSortSelect.value);
             }
 
-            return config.searchUrl + "?" + params.toString();
+            return (baseUrl || config.searchUrl) + "?" + params.toString();
         }
 
         function getSearchResultsForActiveMode(results) {
@@ -1481,6 +1501,9 @@
             const manaValue = searchManaValueFilter ? (searchManaValueFilter.value || "").trim() : "";
             const typeValue = searchTypeFilter ? (searchTypeFilter.value || "").trim().toLowerCase() : "";
             const digitalValue = searchDigitalFilter ? (searchDigitalFilter.value || "").trim().toLowerCase() : "";
+            const excludeAddedValue = searchExcludeAddedFilter
+                ? (searchExcludeAddedFilter.value || "").trim().toLowerCase()
+                : "";
 
             const groups = Array.from(searchResults.querySelectorAll(".custom-draft-card-search-group"));
 
@@ -1497,8 +1520,19 @@
                     const manaMatches = rowMatchesManaFilter(row, manaOperator, manaValue);
                     const typeMatches = !typeValue || rowTypeLine.indexOf(typeValue) !== -1;
                     const digitalMatches = rowMatchesDigitalFilter(row, digitalValue);
+                    const excludeAddedMatches = (
+                        excludeAddedValue !== "exclude"
+                        || !row.classList.contains("custom-draft-card-search-row-disabled")
+                    );
 
-                    const isVisible = rarityMatches && colorMatches && manaMatches && typeMatches && digitalMatches;
+                    const isVisible = (
+                        rarityMatches
+                        && colorMatches
+                        && manaMatches
+                        && typeMatches
+                        && digitalMatches
+                        && excludeAddedMatches
+                    );
 
                     row.classList.toggle("hidden", !isVisible);
 
@@ -1564,6 +1598,9 @@
                 const totalCount = payload.total_count || 0;
                 const pageSize = payload.page_size || 50;
 
+                currentSearchTotalCount = totalCount;
+                updateAddAllResultsButtonState();
+
                 const modeResults = getSearchResultsForActiveMode(payload.results || []);
                 renderSearchResults(modeResults);
 
@@ -1581,6 +1618,8 @@
                 updatePaginationBar(currentSearchPage, currentSearchTotalPages);
             } catch (error) {
                 console.error(error);
+                currentSearchTotalCount = 0;
+                updateAddAllResultsButtonState();
                 clearSearchResults();
                 hidePagination();
                 setSearchStatus(error.message || "Card search failed.", true);
@@ -1590,6 +1629,72 @@
                 searchButton.textContent = "Search";
             }
         }
+
+        async function runAddAllResults() {
+            if (!addAllResultsButton || !config.addAllResultsUrl || activeChangePrintingState) {
+                return;
+            }
+
+            if (!getAdvancedSearchHasAnyValue()) {
+                setSearchStatus("Enter a text search or choose at least one search option.", true);
+                return;
+            }
+
+            const confirmed = await confirmAction({
+                title: "Add All Search Results",
+                message: config.addAllResultsConfirmMessage || (
+                    "This will add only the most recent printing of each unique matching card."
+                ),
+                confirmText: "Add All",
+                cancelText: "Cancel"
+            });
+
+            if (!confirmed) {
+                return;
+            }
+
+            const defaultButtonText = config.addAllResultsText || "Add All Results to Set";
+
+            addAllResultsButton.disabled = true;
+            addAllResultsButton.classList.add("action-button-loading");
+            addAllResultsButton.textContent = "Adding...";
+            setSearchStatus("Adding the most recent printing of each matching card...", false);
+
+            try {
+                const response = await fetch(
+                    buildAdvancedCardSearchUrl(1, config.addAllResultsUrl),
+                    {
+                        method: "POST",
+                        headers: {
+                            "Accept": "application/json"
+                        }
+                    }
+                );
+
+                const payload = await response.json();
+
+                if (!response.ok || !payload.ok) {
+                    throw new Error(payload.message || "Failed to add all search results.");
+                }
+
+                setSearchStatus(
+                    (payload.message || "Matching cards added.") + " Reloading card list...",
+                    false
+                );
+
+                window.setTimeout(function () {
+                    window.location.reload();
+                }, 700);
+            } catch (error) {
+                console.error(error);
+                setSearchStatus(error.message || "Failed to add all search results.", true);
+            } finally {
+                addAllResultsButton.classList.remove("action-button-loading");
+                addAllResultsButton.textContent = defaultButtonText;
+                updateAddAllResultsButtonState();
+            }
+        }
+
 
         function buildBulkImportFormDataOrShowError() {
             const importTextValue = bulkImportText ? (bulkImportText.value || "").trim() : "";
@@ -1624,6 +1729,9 @@
             if (!formData) {
                 return;
             }
+
+            currentSearchTotalCount = 0;
+            updateAddAllResultsButtonState();
 
             bulkImportButton.disabled = true;
             bulkImportButton.classList.add("action-button-loading");
@@ -1868,6 +1976,8 @@
         }
 
         function resetModalResultsForModeChange() {
+            currentSearchTotalCount = 0;
+            updateAddAllResultsButtonState();
             clearSearchResults();
             hidePagination();
             setSearchStatus("", false);
@@ -1963,6 +2073,9 @@
                 return;
             }
 
+            currentSearchTotalCount = 0;
+            updateAddAllResultsButtonState();
+
             setModalTitle(
                 "Change Printing",
                 "Choose a replacement printing for " + activeChangePrintingState.cardName + ". The special slot category will be preserved."
@@ -2002,6 +2115,10 @@
                 searchYearEndFilter.value = "";
             }
 
+            if (searchExcludeAddedFilter) {
+                searchExcludeAddedFilter.value = "";
+            }
+
             if (searchSortSelect) {
                 searchSortSelect.value = "year_newest";
             }
@@ -2011,6 +2128,9 @@
         }
 
         function clearSearchFilters() {
+            currentSearchTotalCount = 0;
+            updateAddAllResultsButtonState();
+
             if (searchInput) {
                 searchInput.value = "";
             }
@@ -2044,6 +2164,10 @@
 
             if (searchDigitalFilter) {
                 searchDigitalFilter.value = "exclude";
+            }
+
+            if (searchExcludeAddedFilter) {
+                searchExcludeAddedFilter.value = "";
             }
 
             if (searchSortSelect) {
@@ -2084,6 +2208,10 @@
                 });
             }
 
+            if (addAllResultsButton) {
+                addAllResultsButton.addEventListener("click", runAddAllResults);
+            }
+
             if (bulkImportButton) {
                 bulkImportButton.addEventListener("click", runBulkImportSearch);
             }
@@ -2110,6 +2238,7 @@
                 searchYearStartFilter,
                 searchYearEndFilter,
                 searchDigitalFilter,
+                searchExcludeAddedFilter,
                 searchPageSizeSelect
             ].forEach(function (searchFilterElement) {
                 if (!searchFilterElement) {
@@ -2179,7 +2308,8 @@
                 searchManaOperatorFilter,
                 searchManaValueFilter,
                 searchTypeFilter,
-                searchDigitalFilter
+                searchDigitalFilter,
+                searchExcludeAddedFilter
             ].forEach(function (filterElement) {
                 if (filterElement) {
                     filterElement.addEventListener("input", filterSearchResults);
@@ -2206,6 +2336,7 @@
             });
         }
 
+        updateAddAllResultsButtonState();
         bindEvents();
 
         return {

@@ -164,6 +164,7 @@ from db.database import (
     ensure_column_exists,
     get_all_sets,
     add_card_to_custom_draft_set,
+    bulk_add_cards_to_custom_draft_set,
     bulk_add_most_recent_cards_to_custom_draft_set,
     bulk_delete_custom_draft_set_cards,
     bulk_update_custom_draft_set_card_category,
@@ -16928,6 +16929,8 @@ def deckbuilder_cards_search(deck_id):
         year_end=request.args.get("year_end") or "",
         sort_option=request.args.get("sort") or "name_asc",
         digital_filter=request.args.get("digital") or "exclude",
+        exclude_added_filter=request.args.get("exclude_added") or "",
+        exclude_deck_id=deck_id,
         page=page,
         page_size=page_size,
     )
@@ -20523,6 +20526,7 @@ def custom_draft_set_cards_search(set_code):
         year_end=request.args.get("year_end") or "",
         sort_option=request.args.get("sort") or "name_asc",
         digital_filter=request.args.get("digital") or "",
+        exclude_added_filter=request.args.get("exclude_added") or "",
         page=page,
         page_size=page_size,
     )
@@ -20543,6 +20547,71 @@ def custom_draft_set_cards_search(set_code):
         "page_size": page_size,
         "total_pages": total_pages,
     })
+
+@app.route("/custom-draft-sets/<path:set_code>/cards/add-all-results", methods=["POST"])
+def custom_draft_set_cards_add_all_results(set_code):
+    clean_set_code = normalize_custom_draft_set_code(set_code)
+
+    if not get_custom_draft_set(clean_set_code):
+        return jsonify({
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }), 404
+
+    collected_rows = []
+    total_count = 0
+    search_page = 1
+    search_page_size = 1000
+
+    try:
+        while True:
+            page_rows, total_count = search_chaos_cards_for_custom_draft_set(
+                clean_set_code,
+                (request.args.get("q") or "").strip(),
+                rarity_filter=request.args.getlist("rarity") or request.args.get("rarity") or "",
+                color_identity_filter=request.args.getlist("color_identity") or request.args.get("color_identity") or "",
+                mana_operator=request.args.get("mana_operator") or "",
+                mana_value=request.args.get("mana_value") or "",
+                type_filter=request.args.get("type") or "",
+                set_code_filter=request.args.get("set_code") or "",
+                year_start=request.args.get("year_start") or "",
+                year_end=request.args.get("year_end") or "",
+                sort_option=request.args.get("sort") or "name_asc",
+                digital_filter=request.args.get("digital") or "",
+                exclude_added_filter=request.args.get("exclude_added") or "",
+                page=search_page,
+                page_size=search_page_size,
+            )
+
+            collected_rows.extend(page_rows)
+
+            if not page_rows or len(collected_rows) >= total_count:
+                break
+
+            search_page += 1
+
+        result = bulk_add_cards_to_custom_draft_set(
+            clean_set_code,
+            collected_rows,
+        )
+
+        result["matched_count"] = total_count
+        result["message"] = (
+            f"Added {result['added_count']} most-recent card printing(s) to the set. "
+            f"Found {result['unique_card_count']} unique card name(s) in the search results. "
+            f"Skipped {result['skipped_count']} card(s) already represented in the set. "
+            f"Unresolved {result['unresolved_count']} card(s)."
+        )
+
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+
 
 
 @app.route("/custom-draft-sets/<path:set_code>/cards/add", methods=["POST"])

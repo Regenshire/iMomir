@@ -982,6 +982,7 @@
     const generatedSaveButton = document.getElementById("customDraftGeneratedSaveButton");
 
     const searchUrl = {{ url_for('custom_draft_set_cards_search', set_code=custom_set.set_code)|tojson }};
+    const addAllResultsUrl = {{ url_for('custom_draft_set_cards_add_all_results', set_code=custom_set.set_code)|tojson }};
     const bulkImportUrl = {{ url_for('custom_draft_set_cards_import_list', set_code=custom_set.set_code)|tojson }};
     const bulkImportAddMostRecentUrl = {{ url_for('custom_draft_set_cards_import_list_add_most_recent', set_code=custom_set.set_code)|tojson }};
     const bulkCategoryUrl = {{ url_for('custom_draft_set_cards_bulk_update_category', set_code=custom_set.set_code)|tojson }};
@@ -3830,6 +3831,9 @@
     cardSearchModal = window.iMomirCardSearchModal.init({
         searchUrl: searchUrl,
         addUrl: addUrl,
+        addAllResultsUrl: addAllResultsUrl,
+        addAllResultsText: "Add All Results to Set",
+        addAllResultsConfirmMessage: "This will add only the most recent printing of each unique card matching the current search filters. Cards already represented in this set will be skipped.",
         bulkImportUrl: bulkImportUrl,
         bulkImportAddMostRecentUrl: bulkImportAddMostRecentUrl,
 
