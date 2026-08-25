@@ -21,6 +21,24 @@
     let currentData = null;
     let currentCandidate = null;
 
+    const lastUpscaleModelStorageKey =
+        "imomir_last_upscale_model";
+
+    let zoomOverlay = null;
+    let zoomTitleElement = null;
+    let zoomSlider = null;
+    let zoomValueLabel = null;
+
+    let zoomSourceImage = null;
+    let zoomOutputImage = null;
+    let zoomOutputEmpty = null;
+    let zoomOutputLabel = null;
+
+    let zoomLevel = 100;
+    let zoomPanX = 0;
+    let zoomPanY = 0;
+    let zoomDragState = null;
+
     let devFeedbackPanel = null;
     let sourceConditionInput = null;
     let sourceConditionValue = null;
@@ -492,6 +510,799 @@
         };
     }
 
+        function clampZoomLevel(
+        rawValue
+    ) {
+        const parsedValue = Number(
+            rawValue
+        );
+
+        if (!Number.isFinite(
+            parsedValue
+        )) {
+            return 100;
+        }
+
+        return Math.max(
+            25,
+            Math.min(
+                500,
+                parsedValue
+            )
+        );
+    }
+
+
+    function applyZoomTransform() {
+        const scale = (
+            zoomLevel / 100
+        );
+
+        const transformValue = (
+            "translate3d("
+            + zoomPanX
+            + "px, "
+            + zoomPanY
+            + "px, 0) "
+            + "scale("
+            + scale
+            + ")"
+        );
+
+        [
+            zoomSourceImage,
+            zoomOutputImage
+        ].forEach(
+            function (imageElement) {
+                if (!imageElement) {
+                    return;
+                }
+
+                imageElement.style.transform =
+                    transformValue;
+            }
+        );
+
+        if (zoomValueLabel) {
+            zoomValueLabel.textContent =
+                Math.round(
+                    zoomLevel
+                )
+                + "%";
+        }
+
+        if (zoomSlider) {
+            zoomSlider.value =
+                String(
+                    zoomLevel
+                );
+        }
+    }
+
+
+    function setZoomLevel(
+        rawValue
+    ) {
+        zoomLevel = clampZoomLevel(
+            rawValue
+        );
+
+        applyZoomTransform();
+    }
+
+
+    function resetZoomView() {
+        zoomLevel = 100;
+        zoomPanX = 0;
+        zoomPanY = 0;
+
+        applyZoomTransform();
+    }
+
+
+    function syncZoomViewerImages() {
+        if (
+            zoomSourceImage
+            && sourceImage
+            && sourceImage.src
+        ) {
+            zoomSourceImage.src =
+                sourceImage.src;
+        }
+
+        const hasOutput = Boolean(
+            outputImage
+            && outputImage.src
+            && !outputImage.classList.contains(
+                "hidden"
+            )
+        );
+
+        if (
+            hasOutput
+            && zoomOutputImage
+        ) {
+            zoomOutputImage.src =
+                outputImage.src;
+
+            zoomOutputImage.classList.remove(
+                "hidden"
+            );
+
+            if (zoomOutputEmpty) {
+                zoomOutputEmpty.classList.add(
+                    "hidden"
+                );
+            }
+
+        } else {
+            if (zoomOutputImage) {
+                zoomOutputImage.src = "";
+
+                zoomOutputImage.classList.add(
+                    "hidden"
+                );
+            }
+
+            if (zoomOutputEmpty) {
+                zoomOutputEmpty.classList.remove(
+                    "hidden"
+                );
+            }
+        }
+
+        if (zoomOutputLabel) {
+            zoomOutputLabel.textContent =
+                outputLabel
+                && outputLabel.textContent
+                    ? outputLabel.textContent
+                    : "Upscaled Output";
+        }
+    }
+
+
+    function closeZoomViewer() {
+        if (!zoomOverlay) {
+            return;
+        }
+
+        zoomOverlay.classList.add(
+            "hidden"
+        );
+
+        zoomOverlay.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        document.body.classList.remove(
+            "imomir-zoom-comparison-open"
+        );
+
+        zoomDragState = null;
+    }
+
+
+    function openZoomViewer() {
+        ensureZoomViewer();
+
+        syncZoomViewerImages();
+
+        resetZoomView();
+
+        if (zoomTitleElement) {
+            zoomTitleElement.textContent =
+                (
+                    currentData
+                    && currentData.title
+                        ? currentData.title
+                        : "Card"
+                )
+                + " — Zoom Comparison";
+        }
+
+        zoomOverlay.classList.remove(
+            "hidden"
+        );
+
+        zoomOverlay.setAttribute(
+            "aria-hidden",
+            "false"
+        );
+
+        document.body.classList.add(
+            "imomir-zoom-comparison-open"
+        );
+    }
+
+
+    function beginZoomPan(
+        event
+    ) {
+        if (
+            event.button !== undefined
+            && event.button !== 0
+        ) {
+            return;
+        }
+
+        zoomDragState = {
+            pointerId: (
+                event.pointerId
+            ),
+
+            startX: (
+                event.clientX
+            ),
+
+            startY: (
+                event.clientY
+            ),
+
+            startPanX: (
+                zoomPanX
+            ),
+
+            startPanY: (
+                zoomPanY
+            ),
+
+            viewport: (
+                event.currentTarget
+            )
+        };
+
+        if (
+            event.currentTarget
+            && event.currentTarget
+                .setPointerCapture
+        ) {
+            event.currentTarget
+                .setPointerCapture(
+                    event.pointerId
+                );
+        }
+
+        event.currentTarget.classList.add(
+            "imomir-zoom-viewport-panning"
+        );
+
+        event.preventDefault();
+    }
+
+
+    function continueZoomPan(
+        event
+    ) {
+        if (!zoomDragState) {
+            return;
+        }
+
+        zoomPanX = (
+            zoomDragState.startPanX
+            + (
+                event.clientX
+                - zoomDragState.startX
+            )
+        );
+
+        zoomPanY = (
+            zoomDragState.startPanY
+            + (
+                event.clientY
+                - zoomDragState.startY
+            )
+        );
+
+        applyZoomTransform();
+
+        event.preventDefault();
+    }
+
+
+    function endZoomPan(
+        event
+    ) {
+        if (!zoomDragState) {
+            return;
+        }
+
+        const viewport =
+            zoomDragState.viewport;
+
+        if (viewport) {
+            viewport.classList.remove(
+                "imomir-zoom-viewport-panning"
+            );
+        }
+
+        zoomDragState = null;
+
+        event.preventDefault();
+    }
+
+
+    function handleZoomWheel(
+        event
+    ) {
+        event.preventDefault();
+
+        const zoomDirection = (
+            event.deltaY < 0
+                ? 1
+                : -1
+        );
+
+        const zoomStep = (
+            event.shiftKey
+                ? 50
+                : 25
+        );
+
+        setZoomLevel(
+            zoomLevel
+            + (
+                zoomDirection
+                * zoomStep
+            )
+        );
+    }
+
+
+    function bindZoomViewport(
+        viewport
+    ) {
+        if (!viewport) {
+            return;
+        }
+
+        viewport.addEventListener(
+            "pointerdown",
+            beginZoomPan
+        );
+
+        viewport.addEventListener(
+            "pointermove",
+            continueZoomPan
+        );
+
+        viewport.addEventListener(
+            "pointerup",
+            endZoomPan
+        );
+
+        viewport.addEventListener(
+            "pointercancel",
+            endZoomPan
+        );
+
+        viewport.addEventListener(
+            "wheel",
+            handleZoomWheel,
+            {
+                passive: false
+            }
+        );
+    }
+
+
+    function ensureZoomViewer() {
+        if (zoomOverlay) {
+            return;
+        }
+
+        zoomOverlay =
+            document.createElement(
+                "div"
+            );
+
+        zoomOverlay.className =
+            "imomir-zoom-comparison-overlay hidden";
+
+        zoomOverlay.setAttribute(
+            "aria-hidden",
+            "true"
+        );
+
+        const header =
+            document.createElement(
+                "div"
+            );
+
+        header.className =
+            "imomir-zoom-comparison-header";
+
+        zoomTitleElement =
+            document.createElement(
+                "div"
+            );
+
+        zoomTitleElement.className =
+            "imomir-zoom-comparison-title";
+
+        const closeButton =
+            document.createElement(
+                "button"
+            );
+
+        closeButton.type = "button";
+
+        closeButton.className =
+            "imomir-zoom-comparison-close";
+
+        closeButton.innerHTML =
+            "&times;";
+
+        closeButton.title =
+            "Close Zoom Comparison";
+
+        closeButton.setAttribute(
+            "aria-label",
+            "Close Zoom Comparison"
+        );
+
+        header.appendChild(
+            zoomTitleElement
+        );
+
+        header.appendChild(
+            closeButton
+        );
+
+        const controls =
+            document.createElement(
+                "div"
+            );
+
+        controls.className =
+            "imomir-zoom-comparison-controls";
+
+        const zoomLabel =
+            document.createElement(
+                "span"
+            );
+
+        zoomLabel.className =
+            "imomir-zoom-control-label";
+
+        zoomLabel.textContent =
+            "Zoom";
+
+        const minimumLabel =
+            document.createElement(
+                "span"
+            );
+
+        minimumLabel.className =
+            "imomir-zoom-limit-label";
+
+        minimumLabel.textContent =
+            "25%";
+
+        zoomSlider =
+            document.createElement(
+                "input"
+            );
+
+        zoomSlider.type = "range";
+        zoomSlider.min = "25";
+        zoomSlider.max = "500";
+        zoomSlider.step = "5";
+        zoomSlider.value = "100";
+
+        zoomSlider.className =
+            "imomir-zoom-slider";
+
+        zoomSlider.setAttribute(
+            "aria-label",
+            "Comparison zoom"
+        );
+
+        const maximumLabel =
+            document.createElement(
+                "span"
+            );
+
+        maximumLabel.className =
+            "imomir-zoom-limit-label";
+
+        maximumLabel.textContent =
+            "500%";
+
+        zoomValueLabel =
+            document.createElement(
+                "strong"
+            );
+
+        zoomValueLabel.className =
+            "imomir-zoom-value";
+
+        zoomValueLabel.textContent =
+            "100%";
+
+        const resetButton =
+            document.createElement(
+                "button"
+            );
+
+        resetButton.type = "button";
+
+        resetButton.className =
+            "action-button secondary-button "
+            + "imomir-zoom-reset-button";
+
+        resetButton.textContent =
+            "Reset";
+
+        const helpText =
+            document.createElement(
+                "span"
+            );
+
+        helpText.className =
+            "imomir-zoom-help";
+
+        helpText.textContent =
+            "Drag either card to pan both. "
+            + "Mouse wheel also changes zoom.";
+
+        controls.appendChild(
+            zoomLabel
+        );
+
+        controls.appendChild(
+            minimumLabel
+        );
+
+        controls.appendChild(
+            zoomSlider
+        );
+
+        controls.appendChild(
+            maximumLabel
+        );
+
+        controls.appendChild(
+            zoomValueLabel
+        );
+
+        controls.appendChild(
+            resetButton
+        );
+
+        controls.appendChild(
+            helpText
+        );
+
+        const grid =
+            document.createElement(
+                "div"
+            );
+
+        grid.className =
+            "imomir-zoom-comparison-grid";
+
+        const sourcePanel =
+            document.createElement(
+                "div"
+            );
+
+        sourcePanel.className =
+            "imomir-zoom-comparison-panel";
+
+        const sourceHeader =
+            document.createElement(
+                "div"
+            );
+
+        sourceHeader.className =
+            "imomir-zoom-comparison-panel-header";
+
+        sourceHeader.textContent =
+            "Original Scryfall";
+
+        const sourceViewport =
+            document.createElement(
+                "div"
+            );
+
+        sourceViewport.className =
+            "imomir-zoom-comparison-viewport";
+
+        zoomSourceImage =
+            document.createElement(
+                "img"
+            );
+
+        zoomSourceImage.className =
+            "imomir-zoom-comparison-image";
+
+        zoomSourceImage.alt =
+            "Original Scryfall zoom comparison";
+
+        sourceViewport.appendChild(
+            zoomSourceImage
+        );
+
+        sourcePanel.appendChild(
+            sourceHeader
+        );
+
+        sourcePanel.appendChild(
+            sourceViewport
+        );
+
+        const outputPanel =
+            document.createElement(
+                "div"
+            );
+
+        outputPanel.className =
+            "imomir-zoom-comparison-panel";
+
+        zoomOutputLabel =
+            document.createElement(
+                "div"
+            );
+
+        zoomOutputLabel.className =
+            "imomir-zoom-comparison-panel-header";
+
+        zoomOutputLabel.textContent =
+            "Upscaled Output";
+
+        const outputViewport =
+            document.createElement(
+                "div"
+            );
+
+        outputViewport.className =
+            "imomir-zoom-comparison-viewport";
+
+        zoomOutputImage =
+            document.createElement(
+                "img"
+            );
+
+        zoomOutputImage.className =
+            "imomir-zoom-comparison-image";
+
+        zoomOutputImage.alt =
+            "Upscaled zoom comparison";
+
+        zoomOutputEmpty =
+            document.createElement(
+                "div"
+            );
+
+        zoomOutputEmpty.className =
+            "imomir-zoom-comparison-empty";
+
+        zoomOutputEmpty.textContent =
+            "Run an upscale first to compare both images.";
+
+        outputViewport.appendChild(
+            zoomOutputImage
+        );
+
+        outputViewport.appendChild(
+            zoomOutputEmpty
+        );
+
+        outputPanel.appendChild(
+            zoomOutputLabel
+        );
+
+        outputPanel.appendChild(
+            outputViewport
+        );
+
+        grid.appendChild(
+            sourcePanel
+        );
+
+        grid.appendChild(
+            outputPanel
+        );
+
+        zoomOverlay.appendChild(
+            header
+        );
+
+        zoomOverlay.appendChild(
+            controls
+        );
+
+        zoomOverlay.appendChild(
+            grid
+        );
+
+        document.body.appendChild(
+            zoomOverlay
+        );
+
+        bindZoomViewport(
+            sourceViewport
+        );
+
+        bindZoomViewport(
+            outputViewport
+        );
+
+        closeButton.addEventListener(
+            "click",
+            closeZoomViewer
+        );
+
+        resetButton.addEventListener(
+            "click",
+            resetZoomView
+        );
+
+        zoomSlider.addEventListener(
+            "input",
+            function () {
+                setZoomLevel(
+                    zoomSlider.value
+                );
+            }
+        );
+    }
+
+
+    function bindImageZoomTrigger(
+        imageElement
+    ) {
+        if (!imageElement) {
+            return;
+        }
+
+        imageElement.classList.add(
+            "imomir-image-compare-image-zoomable"
+        );
+
+        imageElement.setAttribute(
+            "role",
+            "button"
+        );
+
+        imageElement.setAttribute(
+            "tabindex",
+            "0"
+        );
+
+        imageElement.setAttribute(
+            "title",
+            "Open synchronized zoom comparison"
+        );
+
+        imageElement.setAttribute(
+            "aria-label",
+            "Open synchronized zoom comparison"
+        );
+
+        imageElement.addEventListener(
+            "click",
+            openZoomViewer
+        );
+
+        imageElement.addEventListener(
+            "keydown",
+            function (event) {
+                if (
+                    event.key === "Enter"
+                    || event.key === " "
+                ) {
+                    event.preventDefault();
+
+                    openZoomViewer();
+                }
+            }
+        );
+    }
+
+
+
 
     function ensureViewer() {
         if (overlay) {
@@ -541,6 +1352,15 @@
 
         modelSelect.className =
             "imomir-upscale-model-select";
+
+        modelSelect.addEventListener(
+            "change",
+            function () {
+                saveUpscaleModel(
+                    modelSelect.value
+                );
+            }
+        );
 
         runButton =
             document.createElement("button");
@@ -592,6 +1412,10 @@
         sourcePanel.appendChild(sourceImage);
         sourcePanel.appendChild(sourceMeta);
 
+        bindImageZoomTrigger(
+            sourceImage
+        );
+
         const outputPanel =
             document.createElement("div");
 
@@ -619,6 +1443,10 @@
         outputPanel.appendChild(outputLabel);
         outputPanel.appendChild(outputImage);
         outputPanel.appendChild(outputMeta);
+
+        bindImageZoomTrigger(
+            outputImage
+        );
 
         grid.appendChild(sourcePanel);
         grid.appendChild(outputPanel);
@@ -731,8 +1559,23 @@
             "keydown",
             function (event) {
                 if (
-                    event.key === "Escape"
-                    && overlay
+                    event.key !== "Escape"
+                ) {
+                    return;
+                }
+
+                if (
+                    zoomOverlay
+                    && !zoomOverlay.classList.contains(
+                        "hidden"
+                    )
+                ) {
+                    closeZoomViewer();
+                    return;
+                }
+
+                if (
+                    overlay
                     && !overlay.classList.contains(
                         "hidden"
                     )
@@ -771,6 +1614,51 @@
         }
     }
 
+    function getSavedUpscaleModel() {
+        try {
+            return String(
+                window.localStorage.getItem(
+                    lastUpscaleModelStorageKey
+                )
+                || ""
+            ).trim();
+
+        } catch (error) {
+            console.warn(
+                "Could not read saved Upscale model.",
+                error
+            );
+
+            return "";
+        }
+    }
+
+
+    function saveUpscaleModel(
+        modelValue
+    ) {
+        const cleanValue = String(
+            modelValue || ""
+        ).trim();
+
+        if (!cleanValue) {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(
+                lastUpscaleModelStorageKey,
+                cleanValue
+            );
+
+        } catch (error) {
+            console.warn(
+                "Could not save Upscale model.",
+                error
+            );
+        }
+    }
+
     function populateModels(data) {
         modelSelect.innerHTML = "";
 
@@ -800,6 +1688,28 @@
                 );
             }
         );
+
+        const savedModelValue =
+            getSavedUpscaleModel();
+
+        if (savedModelValue) {
+            const savedOptionExists =
+                Array.from(
+                    modelSelect.options
+                ).some(
+                    function (option) {
+                        return (
+                            option.value
+                            === savedModelValue
+                        );
+                    }
+                );
+
+            if (savedOptionExists) {
+                modelSelect.value =
+                    savedModelValue;
+            }
+        }
 
         runButton.disabled =
             modelSelect.options.length === 0;
@@ -979,6 +1889,8 @@
             return;
         }
 
+        closeZoomViewer();
+
         overlay.classList.add(
             "hidden"
         );
@@ -992,6 +1904,10 @@
     async function runUpscale() {
         const selectedValue =
             modelSelect.value || "";
+
+        saveUpscaleModel(
+            selectedValue
+        );
 
         const separatorIndex =
             selectedValue.indexOf("::");

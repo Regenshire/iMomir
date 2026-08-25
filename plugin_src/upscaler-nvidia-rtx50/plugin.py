@@ -8,13 +8,12 @@ from processors.rules_text import (
     process_rules_text_restore,
 )
 
-
 PLUGIN_ID = "upscaler-nvidia-rtx50"
 PLUGIN_NAME = (
     "iMomir Upscaler - "
     "NVIDIA RTX 50 Series"
 )
-PLUGIN_VERSION = "0.2.0"
+PLUGIN_VERSION = "0.7.0"
 PROTOCOL_VERSION = 1
 
 
@@ -66,6 +65,131 @@ UPSCALE_MODELS = {
 
         "targets": [
             "rules_text",
+        ],
+    },
+
+    "rules_text_realesrgan_x2_v1": {
+        "model_id": (
+            "rules_text_realesrgan_x2_v1"
+        ),
+
+        "label": (
+            "Rules Text AI v2 "
+            "(Real-ESRGAN x2)"
+        ),
+
+        "description": (
+            "Neural 2x restoration of "
+            "the Rules Text region using "
+            "RealESRGAN_x2plus."
+        ),
+
+        "scale": 2.0,
+
+        "ai_blend_strength": 0.88,
+
+        "test_only": False,
+
+        "targets": [
+            "rules_text",
+        ],
+    },
+
+    "magic_card_ai_v1": {
+        "model_id": (
+            "magic_card_ai_v1"
+        ),
+
+        "label": (
+            "Magic Card AI v1 "
+            "(Whole Card + Rules Text)"
+        ),
+
+        "description": (
+            "Real-ESRGAN x2 across the "
+            "entire card followed by a "
+            "targeted Rules Text "
+            "restoration pass."
+        ),
+
+        "scale": 2.0,
+
+        "rules_strength": 0.35,
+
+        "test_only": False,
+
+        "targets": [
+            "whole_card",
+            "rules_text",
+        ],
+    },
+
+    "magic_card_ai_v2": {
+        "model_id": (
+            "magic_card_ai_v2"
+        ),
+
+        "label": (
+            "Magic Card AI v2 "
+            "(Structure Protected)"
+        ),
+
+        "description": (
+            "Magic Card AI v1 plus "
+            "structure-aware protection "
+            "for titles, mana symbols, "
+            "Rules Text, P/T, and "
+            "bottom text."
+        ),
+
+        "scale": 2.0,
+
+        "rules_strength": 0.35,
+
+        "test_only": False,
+
+        "targets": [
+            "whole_card",
+            "card_title",
+            "mana_cost",
+            "type_line",
+            "rules_text",
+            "power_toughness",
+            "bottom_text",
+        ],
+    },
+
+    "magic_card_ai_v3": {
+        "model_id": (
+            "magic_card_ai_v3"
+        ),
+
+        "label": (
+            "Magic Card AI v3 "
+            "(Targeted Model Routing)"
+        ),
+
+        "description": (
+            "Real-ESRGAN x2 for the full "
+            "card with RealESRNet x4 "
+            "routed through text and "
+            "symbol-sensitive regions."
+        ),
+
+        "scale": 2.0,
+
+        "rules_strength": 0.35,
+
+        "test_only": False,
+
+        "targets": [
+            "whole_card",
+            "card_title",
+            "mana_cost",
+            "type_line",
+            "rules_text",
+            "power_toughness",
+            "bottom_text",
         ],
     },
 }
@@ -607,6 +731,10 @@ def handle_upscale_test(payload):
     }
 
 def handle_models(payload):
+    visible_model_ids = {
+        "magic_card_ai_v3",
+    }
+
     return {
         "ok": True,
         "plugin_id": PLUGIN_ID,
@@ -616,6 +744,10 @@ def handle_models(payload):
             dict(model)
             for model
             in UPSCALE_MODELS.values()
+            if model.get(
+                "model_id"
+            )
+            in visible_model_ids
         ],
     }
 
@@ -677,6 +809,90 @@ def handle_upscale(payload):
             )
         )
 
+    elif (
+        model_id
+        == "rules_text_realesrgan_x2_v1"
+    ):
+        from processors.rules_text_ai import (
+            process_rules_text_realesrgan,
+        )
+
+        processor_payload[
+            "ai_blend_strength"
+        ] = model.get(
+            "ai_blend_strength",
+            0.88,
+        )
+
+        result = (
+            process_rules_text_realesrgan(
+                processor_payload
+            )
+        )
+
+    elif (
+        model_id
+        == "magic_card_ai_v1"
+    ):
+        from processors.magic_card import (
+            process_magic_card_ai_v1,
+        )
+
+        processor_payload[
+            "rules_strength"
+        ] = model.get(
+            "rules_strength",
+            0.35,
+        )
+
+        result = (
+            process_magic_card_ai_v1(
+                processor_payload
+            )
+        )
+
+    elif (
+        model_id
+        == "magic_card_ai_v2"
+    ):
+        from processors.magic_card_v2 import (
+            process_magic_card_ai_v2,
+        )
+
+        processor_payload[
+            "rules_strength"
+        ] = model.get(
+            "rules_strength",
+            0.35,
+        )
+
+        result = (
+            process_magic_card_ai_v2(
+                processor_payload
+            )
+        )
+
+    elif (
+        model_id
+        == "magic_card_ai_v3"
+    ):
+        from processors.magic_card_v3 import (
+            process_magic_card_ai_v3,
+        )
+
+        processor_payload[
+            "rules_strength"
+        ] = model.get(
+            "rules_strength",
+            0.35,
+        )
+
+        result = (
+            process_magic_card_ai_v3(
+                processor_payload
+            )
+        )
+
     else:
         raise ValueError(
             "No processor is registered "
@@ -696,6 +912,14 @@ def handle_upscale(payload):
             "test_only",
             False,
         )
+    )
+
+    result["plugin_id"] = (
+        PLUGIN_ID
+    )
+
+    result["version"] = (
+        PLUGIN_VERSION
     )
 
     return result

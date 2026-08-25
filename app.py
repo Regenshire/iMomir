@@ -7202,6 +7202,61 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
         "export_frame_template": "auto",
     }
 
+
+def get_local_card_image_result_from_source(
+    image_source,
+    prefer_print_master=False,
+):
+    if not isinstance(
+        image_source,
+        dict,
+    ):
+        return None
+
+    source_type = (
+        image_source.get(
+            "source_type"
+        )
+        or ""
+    ).strip().lower()
+
+    if source_type not in {
+        "alternate_source",
+        "upscaled",
+    }:
+        return None
+
+    absolute_path = ""
+
+    if prefer_print_master:
+        absolute_path = (
+            image_source.get(
+                "print_master_absolute_path"
+            )
+            or ""
+        ).strip()
+
+    if not absolute_path:
+        absolute_path = (
+            image_source.get(
+                "absolute_path"
+            )
+            or ""
+        ).strip()
+
+    if (
+        not absolute_path
+        or not os.path.exists(
+            absolute_path
+        )
+    ):
+        return None
+
+    return {
+        "absolute_path": absolute_path,
+    }
+
+
 def serialize_alternate_source_row(row):
     if not row:
         return None
@@ -9202,24 +9257,16 @@ def build_chaos_pack_pdf(
                         == "silhouette-a4-vertical-9"
                     )
 
-                    if (
-                        image_source.get(
-                            "source_type"
-                        )
-                        == "alternate_source"
-                    ):
-                        cached_result = {
-                            "absolute_path": (
-                                image_source.get(
-                                    "print_master_absolute_path"
-                                )
-                                if use_real_source_bleed
-                                else image_source[
-                                    "absolute_path"
-                                ]
+                    cached_result = (
+                        get_local_card_image_result_from_source(
+                            image_source,
+                            prefer_print_master=(
+                                use_real_source_bleed
                             ),
-                        }
-                    else:
+                        )
+                    )
+
+                    if cached_result is None:
                         if not page_image_url:
                             continue
 
@@ -9502,11 +9549,13 @@ def build_chaos_pack_pdf(
             )
 
             try:
-                if image_source.get("source_type") == "alternate_source":
-                    cached_result = {
-                        "absolute_path": image_source["absolute_path"],
-                    }
-                else:
+                cached_result = (
+                    get_local_card_image_result_from_source(
+                        image_source
+                    )
+                )
+
+                if cached_result is None:
                     if not page_image_url:
                         continue
 
@@ -11067,11 +11116,13 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
             front_page_entry.get("image_url"),
         )
 
-        if front_image_source.get("source_type") == "alternate_source":
-            front_cached_result = {
-                "absolute_path": front_image_source["absolute_path"],
-            }
-        else:
+        front_cached_result = (
+            get_local_card_image_result_from_source(
+                front_image_source
+            )
+        )
+
+        if front_cached_result is None:
             front_cached_result = try_download_chaos_image_to_cache(
                 front_page_entry.get("card_uuid"),
                 front_page_entry.get("page_kind"),
@@ -11135,11 +11186,13 @@ def build_chaos_card_image_export_zip(tracked_pack_ids=None, export_rows=None, s
                 back_page_entry.get("image_url"),
             )
 
-            if back_image_source.get("source_type") == "alternate_source":
-                back_cached_result = {
-                    "absolute_path": back_image_source["absolute_path"],
-                }
-            else:
+            back_cached_result = (
+                get_local_card_image_result_from_source(
+                    back_image_source
+                )
+            )
+
+            if back_cached_result is None:
                 back_cached_result = try_download_chaos_image_to_cache(
                     back_page_entry.get("card_uuid"),
                     back_page_entry.get("page_kind"),
