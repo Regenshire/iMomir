@@ -982,6 +982,19 @@
                     {% endif %}
                 </div>
 
+                {% if upscaler_plugin_status.get("ready") %}
+                <div class="config-button-row">
+                    <button
+                        type="button"
+                        id="upscaleNextCardsButton"
+                        class="action-button secondary-button"
+                        {% if config.get("upscaling_add_button_to_card_view", "0") != "1" %}disabled{% endif %}
+                    >
+                        Upscale Next X Cards
+                    </button>
+                </div>
+                {% endif %}
+
                 {% if upscaler_plugin_status.get("development") %}
                 <div
                     id="upscalingDevFeedbackSettingStatus"
@@ -1319,6 +1332,10 @@
         "upscalingCardViewSettingStatus"
     );
 
+    const upscaleNextCardsButton = document.getElementById(
+        "upscaleNextCardsButton"
+    );
+
     const devFeedbackToggle = document.getElementById(
         "upscalingDevFeedbackSystem"
     );
@@ -1581,6 +1598,11 @@
                         data.enabled
                     );
 
+                    if (upscaleNextCardsButton) {
+                        upscaleNextCardsButton.disabled =
+                            !Boolean(data.enabled);
+                    }
+
                     if (cardViewSettingStatus) {
                         cardViewSettingStatus.textContent =
                             data.enabled
@@ -1599,6 +1621,26 @@
                 }
 
                 cardViewToggle.disabled = false;
+            }
+        );
+    }
+
+    if (upscaleNextCardsButton) {
+        upscaleNextCardsButton.addEventListener(
+            "click",
+            function () {
+                if (
+                    window.iMomirUpscaleBatch
+                    && window.iMomirUpscaleBatch.requestNext
+                ) {
+                    window.iMomirUpscaleBatch.requestNext(
+                        100,
+                        {
+                            title: "Upscale Next X Cards",
+                            sourceLabel: "Advanced Image Upscaling"
+                        }
+                    );
+                }
             }
         );
     }

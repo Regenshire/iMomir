@@ -697,6 +697,29 @@
                             Assign Special Slot
                         </button>
 
+                        {% if global_card_upscaling_control_enabled %}
+                        <button
+                            type="button"
+                            id="customDraftBatchUpscaleSelectedButton"
+                            class="action-button secondary-button imomir-batch-upscale-icon-button"
+                            title="Batch Upscale Selected Cards"
+                            aria-label="Batch Upscale selected cards"
+                            disabled
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                class="imomir-batch-upscale-icon"
+                                aria-hidden="true"
+                                focusable="false"
+                            >
+                                <rect x="3" y="7" width="11" height="12" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+                                <rect x="6" y="4" width="11" height="12" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+                                <path d="M19 12V5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path>
+                                <path d="M16.4 7.6L19 5l2.6 2.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                        </button>
+                        {% endif %}
+
                         <button
                             type="button"
                             id="customDraftBulkRemoveCardsButton"
@@ -1016,6 +1039,7 @@
     const selectedCardCountLabel = document.getElementById("customDraftSelectedCardCountLabel");
     const bulkSpecialSlotSelect = document.getElementById("customDraftBulkSpecialSlotSelect");
     const bulkApplySpecialSlotButton = document.getElementById("customDraftBulkApplySpecialSlotButton");
+    const batchUpscaleSelectedButton = document.getElementById("customDraftBatchUpscaleSelectedButton");
     const bulkRemoveCardsButton = document.getElementById("customDraftBulkRemoveCardsButton");
     const currentCardList = document.getElementById("customDraftCurrentCardList");
     const currentCardCountBadge = document.querySelector(".custom-draft-card-count");
@@ -3688,6 +3712,22 @@
             .filter(Boolean);
     }
 
+    function getSelectedCustomSetCardUuids() {
+        return getSelectedCurrentCardCheckboxes()
+            .map(function (checkbox) {
+                const row = checkbox.closest(
+                    ".custom-draft-current-card-row"
+                );
+
+                return row
+                    ? String(
+                        row.dataset.cardUuid || ""
+                    ).trim()
+                    : "";
+            })
+            .filter(Boolean);
+    }
+
     function clearCustomDraftPrintExportSelectedInputs() {
         const printExportForm = document.getElementById("printExportForm");
 
@@ -3755,6 +3795,22 @@
 
         if (bulkRemoveCardsButton) {
             bulkRemoveCardsButton.disabled = selectedCount === 0;
+        }
+
+        if (batchUpscaleSelectedButton) {
+            batchUpscaleSelectedButton.disabled = selectedCount === 0;
+
+            batchUpscaleSelectedButton.classList.toggle(
+                "custom-draft-header-icon-button-active",
+                selectedCount > 0
+            );
+
+            batchUpscaleSelectedButton.setAttribute(
+                "title",
+                selectedCount > 0
+                    ? "Batch Upscale " + selectedCount + " selected card(s)"
+                    : "Batch Upscale Selected Cards"
+            );
         }
 
         if (selectedPrintExportButton) {
@@ -4169,6 +4225,39 @@
 
     if (selectedPrintExportButton) {
         selectedPrintExportButton.addEventListener("click", openSelectedPrintExportModal);
+    }
+
+    if (batchUpscaleSelectedButton) {
+        batchUpscaleSelectedButton.addEventListener("click", function () {
+            const cardUuids = getSelectedCustomSetCardUuids();
+
+            if (!cardUuids.length) {
+                showUiMessage(
+                    "Select at least one card first.",
+                    true
+                );
+
+                return;
+            }
+
+            if (
+                window.iMomirUpscaleBatch
+                && window.iMomirUpscaleBatch.requestCards
+            ) {
+                window.iMomirUpscaleBatch.requestCards(
+                    cardUuids,
+                    {
+                        title: "Batch Upscale Selected Cards",
+                        sourceLabel: "Custom Draft Set Selection",
+                        message: (
+                            "Upscale all "
+                            + cardUuids.length
+                            + " selected card(s)?"
+                        )
+                    }
+                );
+            }
+        });
     }
 
     if (copyVisibleCardsButton) {

@@ -1013,6 +1013,164 @@ def revert_current_upscaled_image_for_card(
 
     return changed_count
 
+def delete_upscaled_images_for_card(
+    card_row,
+):
+    identity_where, identity_params = (
+        _build_upscaled_identity_where(
+            card_row
+        )
+    )
+
+    if not identity_where:
+        return {
+            "deleted_count": 0,
+            "deleted_files": 0,
+        }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT
+            upscaled_image_id,
+            output_image_path
+        FROM upscaled_images
+        WHERE ({identity_where})
+        ORDER BY upscaled_image_id ASC
+        """,
+        tuple(
+            identity_params
+        ),
+    )
+
+    rows = cursor.fetchall()
+
+    if not rows:
+        conn.close()
+
+        return {
+            "deleted_count": 0,
+            "deleted_files": 0,
+        }
+
+    upscaled_image_ids = [
+        int(
+            row[
+                "upscaled_image_id"
+            ]
+        )
+        for row
+        in rows
+    ]
+
+    absolute_paths = []
+
+    for row in rows:
+        absolute_path = (
+            get_upscaled_image_absolute_path(
+                row[
+                    "output_image_path"
+                ]
+            )
+        )
+
+        if absolute_path:
+            absolute_paths.append(
+                absolute_path
+            )
+
+    placeholders = ",".join(
+        "?"
+        for _ in upscaled_image_ids
+    )
+
+    try:
+        cursor.execute(
+            f"""
+            UPDATE upscaling_job_items
+            SET upscaled_image_id = NULL
+            WHERE upscaled_image_id
+                IN ({placeholders})
+            """,
+            tuple(
+                upscaled_image_ids
+            ),
+        )
+
+        cursor.execute(
+            f"""
+            DELETE FROM upscaled_images
+            WHERE upscaled_image_id
+                IN ({placeholders})
+            """,
+            tuple(
+                upscaled_image_ids
+            ),
+        )
+
+        deleted_count = (
+            cursor.rowcount
+        )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
+
+    conn.close()
+
+    deleted_files = 0
+    parent_directories = set()
+
+    for absolute_path in absolute_paths:
+        parent_directories.add(
+            os.path.dirname(
+                absolute_path
+            )
+        )
+
+        if not os.path.exists(
+            absolute_path
+        ):
+            continue
+
+        try:
+            os.remove(
+                absolute_path
+            )
+
+            deleted_files += 1
+
+        except OSError:
+            pass
+
+    for parent_directory in sorted(
+        parent_directories,
+        key=len,
+        reverse=True,
+    ):
+        if not parent_directory:
+            continue
+
+        try:
+            os.rmdir(
+                parent_directory
+            )
+        except OSError:
+            pass
+
+    return {
+        "deleted_count": int(
+            deleted_count
+        ),
+        "deleted_files": int(
+            deleted_files
+        ),
+    }
 
 
 def register_upscaled_image(

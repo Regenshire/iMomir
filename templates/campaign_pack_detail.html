@@ -29,6 +29,8 @@
                     Back
                 </a>
 
+
+
                 {% if pack.is_preview %}
                 <a
                     class="action-button chaos-pack-view-back-button"
@@ -112,6 +114,62 @@
                 >
                     History
                 </a>
+
+                {% if global_card_upscaling_control_enabled and cards %}
+                <button
+                    type="button"
+                    id="campaignPackBatchUpscaleButton"
+                    class="action-button secondary-button imomir-batch-upscale-icon-button chaos-packs-button"
+                    title="Batch Upscale Pack"
+                    aria-label="Batch Upscale all cards in this pack"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        class="imomir-batch-upscale-icon"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <rect
+                            x="3"
+                            y="7"
+                            width="11"
+                            height="12"
+                            rx="1.8"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                        ></rect>
+
+                        <rect
+                            x="6"
+                            y="4"
+                            width="11"
+                            height="12"
+                            rx="1.8"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.6"
+                        ></rect>
+
+                        <path
+                            d="M19 12V5"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.9"
+                            stroke-linecap="round"
+                        ></path>
+
+                        <path
+                            d="M16.4 7.6L19 5l2.6 2.6"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.9"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        ></path>
+                    </svg>
+                </button>
+                {% endif %}
                 {% endif %}
             </div>
         </div>
@@ -406,6 +464,10 @@
     const changePrintingStatus = document.getElementById("campaignPackChangePrintingStatus");
     const changePrintingResults = document.getElementById("campaignPackChangePrintingResults");
 
+    const batchUpscaleButton = document.getElementById(
+        "campaignPackBatchUpscaleButton"
+    );
+
     let activeChangePrintingState = null;
 
     function showCampaignPackMessage(messageText, isError) {
@@ -425,6 +487,42 @@
         }
 
         console.log(cleanMessage);
+    }
+
+    function getCampaignPackBatchUpscaleCardUuids() {
+        const seenCardUuids = new Set();
+
+        const cardUuids = [];
+
+        Array.from(
+            document.querySelectorAll(
+                ".chaos-pack-view-card[data-card-uuid]"
+            )
+        ).forEach(function (cardElement) {
+            const cardUuid = String(
+                cardElement.dataset.cardUuid
+                || ""
+            ).trim();
+
+            if (
+                !cardUuid
+                || seenCardUuids.has(
+                    cardUuid
+                )
+            ) {
+                return;
+            }
+
+            seenCardUuids.add(
+                cardUuid
+            );
+
+            cardUuids.push(
+                cardUuid
+            );
+        });
+
+        return cardUuids;
     }
 
     function setChangePrintingStatus(messageText, isError) {
@@ -1172,6 +1270,56 @@
             openChangePrintingModal(button);
         });
     });
+
+    if (batchUpscaleButton) {
+        batchUpscaleButton.addEventListener(
+            "click",
+            function () {
+                const cardUuids =
+                    getCampaignPackBatchUpscaleCardUuids();
+
+                if (!cardUuids.length) {
+                    showCampaignPackMessage(
+                        "This pack does not contain any cards to upscale.",
+                        true
+                    );
+
+                    return;
+                }
+
+                if (
+                    !window.iMomirUpscaleBatch
+                    || !window.iMomirUpscaleBatch.requestCards
+                ) {
+                    showCampaignPackMessage(
+                        "Batch Upscale controls are not available.",
+                        true
+                    );
+
+                    return;
+                }
+
+                window.iMomirUpscaleBatch.requestCards(
+                    cardUuids,
+                    {
+                        title:
+                            "Batch Upscale Pack",
+
+                        sourceLabel:
+                            {{ pack.pack_display_name|tojson }},
+
+                        message: (
+                            "Upscale all "
+                            + cardUuids.length
+                            + " card(s) currently shown in "
+                            + {{ pack.pack_display_name|tojson }}
+                            + "?"
+                        )
+                    }
+                );
+            }
+        );
+    }
 
     if (changePrintingCloseButton) {
         changePrintingCloseButton.addEventListener("click", closeChangePrintingModal);

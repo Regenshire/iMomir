@@ -1,0 +1,270 @@
+body.imomir-batch-upscale-open {
+    overflow: hidden;
+}
+
+.imomir-batch-upscale-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.82);
+    backdrop-filter: blur(4px);
+}
+
+.imomir-batch-upscale-overlay.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-dialog {
+    width: min(760px, 96vw);
+    max-height: 92vh;
+    overflow: auto;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 16px;
+    background: #171a20;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+}
+
+.imomir-batch-upscale-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.imomir-batch-upscale-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+.imomir-batch-upscale-close {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.imomir-batch-upscale-body {
+    padding: 18px;
+}
+
+.imomir-batch-upscale-message {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.imomir-batch-upscale-detail {
+    margin-top: 8px;
+    opacity: 0.74;
+    font-size: 0.86rem;
+    line-height: 1.5;
+}
+
+.imomir-batch-upscale-count-wrap {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) 140px;
+    gap: 12px;
+    align-items: center;
+    margin-top: 18px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.imomir-batch-upscale-count-wrap.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-count-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 9px 10px;
+}
+
+.imomir-batch-upscale-model-wrap {
+    display: grid;
+    grid-template-columns:
+        minmax(150px, 1fr)
+        minmax(240px, 2fr);
+    gap: 12px;
+    align-items: center;
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+}
+
+.imomir-batch-upscale-model-wrap.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-model-select {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 9px 10px;
+}
+
+.imomir-batch-upscale-replace-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+    cursor: pointer;
+}
+
+.imomir-batch-upscale-replace-wrap.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-replace-wrap input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+}
+
+.imomir-batch-upscale-delete-button {
+    margin-right: auto;
+    border-color: rgba(255, 120, 120, 0.38);
+}
+
+.imomir-batch-upscale-delete-button:hover {
+    border-color: rgba(255, 120, 120, 0.70);
+    background: rgba(255, 80, 80, 0.10);
+}
+
+.imomir-batch-upscale-progress-section {
+    margin-top: 18px;
+}
+
+.imomir-batch-upscale-progress-section.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-progress-track {
+    width: 100%;
+    height: 14px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+.imomir-batch-upscale-progress-bar {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: currentColor;
+    opacity: 0.78;
+    transition: width 220ms ease;
+}
+
+.imomir-batch-upscale-progress-text,
+.imomir-batch-upscale-current-card,
+.imomir-batch-upscale-counters,
+.imomir-batch-upscale-model {
+    margin-top: 10px;
+}
+
+.imomir-batch-upscale-current-card {
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025);
+    font-weight: 700;
+}
+
+.imomir-batch-upscale-counters,
+.imomir-batch-upscale-model,
+.imomir-batch-upscale-progress-text {
+    opacity: 0.82;
+    font-size: 0.88rem;
+}
+
+.imomir-batch-upscale-failures {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255, 120, 120, 0.22);
+    border-radius: 10px;
+    background: rgba(255, 80, 80, 0.045);
+    font-size: 0.84rem;
+}
+
+.imomir-batch-upscale-failures.hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-failures ul {
+    margin: 8px 0 0;
+    padding-left: 20px;
+}
+
+.imomir-batch-upscale-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 14px 18px 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.imomir-batch-upscale-footer .hidden {
+    display: none;
+}
+
+.imomir-batch-upscale-icon-button {
+    width: 42px;
+    min-width: 42px;
+    padding-left: 0;
+    padding-right: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.imomir-batch-upscale-icon {
+    display: block;
+    width: 19px;
+    height: 19px;
+    pointer-events: none;
+}
+
+.imomir-batch-upscale-icon-button {
+    min-height: 44px;
+}
+
+.chaos-packs-button {
+    min-height: 56px;
+}
+
+@media (max-width: 700px) {
+    .imomir-batch-upscale-overlay {
+        padding: 10px;
+    }
+
+    .imomir-batch-upscale-model-wrap {
+        grid-template-columns: 1fr;
+    }
+
+    .imomir-batch-upscale-count-wrap {
+        grid-template-columns: 1fr;
+    }
+
+    .imomir-batch-upscale-footer {
+        flex-direction: column;
+    }
+
+
+}
