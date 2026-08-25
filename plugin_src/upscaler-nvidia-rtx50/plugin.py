@@ -4,13 +4,17 @@ import platform
 import sys
 import time
 
+from processors.rules_text import (
+    process_rules_text_restore,
+)
+
 
 PLUGIN_ID = "upscaler-nvidia-rtx50"
 PLUGIN_NAME = (
     "iMomir Upscaler - "
     "NVIDIA RTX 50 Series"
 )
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.2.0"
 PROTOCOL_VERSION = 1
 
 
@@ -19,17 +23,50 @@ UPSCALE_MODELS = {
         "model_id": (
             "cuda_bicubic_test"
         ),
+
         "label": (
             "CUDA Bicubic "
             "(Test Baseline)"
         ),
+
         "description": (
             "2x CUDA bicubic resize. "
             "Testing baseline only; "
             "not AI super-resolution."
         ),
+
         "scale": 2.0,
         "test_only": True,
+
+        "targets": [
+            "whole_card",
+        ],
+    },
+
+    "rules_text_restore_v1": {
+        "model_id": (
+            "rules_text_restore_v1"
+        ),
+
+        "label": (
+            "Rules Text Restore v1"
+        ),
+
+        "description": (
+            "2x CUDA upscale with "
+            "region-aware Rules Text "
+            "restoration."
+        ),
+
+        "scale": 2.0,
+
+        "rules_strength": 0.70,
+
+        "test_only": False,
+
+        "targets": [
+            "rules_text",
+        ],
     },
 }
 
@@ -621,6 +658,23 @@ def handle_upscale(payload):
     ):
         result = handle_upscale_test(
             processor_payload
+        )
+
+    elif (
+        model_id
+        == "rules_text_restore_v1"
+    ):
+        processor_payload[
+            "rules_strength"
+        ] = model.get(
+            "rules_strength",
+            0.70,
+        )
+
+        result = (
+            process_rules_text_restore(
+                processor_payload
+            )
         )
 
     else:

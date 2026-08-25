@@ -20301,12 +20301,131 @@ def chaos_card_upscale_run(card_uuid):
             "upscale",
             {
                 "model_id": model_id,
+
                 "input_path": (
                     source_path
                 ),
+
                 "output_path": (
                     output_path
                 ),
+
+                "card": {
+                    "card_uuid": (
+                        card_row[
+                            "card_uuid"
+                        ]
+                    ),
+
+                    "card_name": (
+                        card_row[
+                            "card_name"
+                        ]
+                        or ""
+                    ),
+
+                    "face_name": (
+                        face_context[
+                            "face_name"
+                        ]
+                        or ""
+                    ),
+
+                    "face_kind": (
+                        face_context[
+                            "page_kind"
+                        ]
+                    ),
+
+                    "set_code": (
+                        card_row[
+                            "set_code"
+                        ]
+                        or ""
+                    ),
+
+                    "collector_number": (
+                        card_row[
+                            "collector_number"
+                        ]
+                        or ""
+                    ),
+
+                    "frame_version": (
+                        card_row[
+                            "frame_version"
+                        ]
+                        or ""
+                    ),
+
+                    "border_color": (
+                        card_row[
+                            "border_color"
+                        ]
+                        or ""
+                    ),
+
+                    "layout": (
+                        card_row[
+                            "layout"
+                        ]
+                        or ""
+                    ),
+
+                    "type_line": (
+                        card_row[
+                            "type_line"
+                        ]
+                        or ""
+                    ),
+
+                    "mana_cost": (
+                        card_row[
+                            "mana_cost"
+                        ]
+                        or ""
+                    ),
+
+                    "mana_value": (
+                        card_row[
+                            "mana_value"
+                        ]
+                    ),
+
+                    "is_dual_faced": bool(
+                        int(
+                            card_row[
+                                "is_dual_faced"
+                            ]
+                            or 0
+                        )
+                    ),
+
+                    "face_count": int(
+                        card_row[
+                            "face_count"
+                        ]
+                        or 0
+                    ),
+                },
+
+                "host_assets": {
+                    "fonts_dir": os.path.abspath(
+                        os.path.join(
+                            app.static_folder,
+                            "fonts",
+                        )
+                    ),
+
+                    "basic_watermarks_dir": os.path.abspath(
+                        os.path.join(
+                            app.static_folder,
+                            "img",
+                            "watermarks",
+                            "basics",
+                        )
+                    ),
+                },
             },
             timeout=900,
         )
