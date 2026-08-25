@@ -8684,24 +8684,66 @@ def prefetch_chaos_pdf_remote_images(
                 card_row
             )
 
-            if back_source.get("source_type") == "remote":
+            if back_source.get(
+                "source_type"
+            ) == "remote":
                 back_image_url = (
-                    back_source.get("image_url") or ""
+                    back_source.get(
+                        "image_url"
+                    )
+                    or ""
                 ).strip()
+
+                resolved_back_source = (
+                    resolve_card_image_source_for_page(
+                        card_row,
+                        "back",
+                        back_image_url,
+                    )
+                )
+
+                # Already local through the
+                # authoritative hierarchy.
+                if resolved_back_source.get(
+                    "source_type"
+                ) in {
+                    "alternate_source",
+                    "upscaled",
+                }:
+                    continue
 
                 if back_image_url:
                     job_key = (
                         card_uuid,
                         "back",
-                        back_source.get("face_name") or "Back",
+                        (
+                            back_source.get(
+                                "face_name"
+                            )
+                            or "Back"
+                        ),
                         back_image_url,
                     )
 
-                    download_jobs[job_key] = {
-                        "card_uuid": card_uuid,
+                    download_jobs[
+                        job_key
+                    ] = {
+                        "card_uuid": (
+                            card_uuid
+                        ),
+
                         "page_kind": "back",
-                        "face_name": back_source.get("face_name") or "Back",
-                        "image_url": back_image_url,
+
+                        "face_name": (
+                            back_source.get(
+                                "face_name"
+                            )
+                            or "Back"
+                        ),
+
+                        "image_url": (
+                            back_image_url
+                        ),
                     }
 
     uncached_download_jobs = {}
@@ -8836,8 +8878,12 @@ def build_chaos_pdf_card_back_rendered_entry(
     card_row,
     card_uuid="",
 ):
-    back_source = get_chaos_pdf_card_back_source(card_row)
+    back_source = get_chaos_pdf_card_back_source(
+        card_row
+    )
 
+    # Normal single-faced cards still use
+    # the configured local Magic card back.
     if back_source["source_type"] == "local":
         return {
             "temp_path": back_source["absolute_path"],
@@ -8851,26 +8897,76 @@ def build_chaos_pdf_card_back_rendered_entry(
             "is_template_rendered": False,
         }
 
-    cached_result = download_chaos_image_to_cache(
-        card_uuid,
+    # Double-faced card backs must use the
+    # exact same authoritative image hierarchy
+    # as every other card image:
+    #
+    # Alternate -> Upscaled -> Scryfall.
+    image_source = resolve_card_image_source_for_page(
+        card_row,
         "back",
-        back_source["face_name"],
-        back_source["image_url"],
+        back_source.get("image_url") or "",
     )
+
+    write_debug_log(
+        "CHAOS PDF CARD BACK SOURCE | "
+        f"card_uuid={(card_uuid or '').strip()} | "
+        f"card_name={card_row['card_name'] if card_row else ''} | "
+        f"source_type={image_source.get('source_type')} | "
+        f"upscaled_image_id={image_source.get('upscaled_image_id')}"
+    )
+
+    cached_result = (
+        get_local_card_image_result_from_source(
+            image_source
+        )
+    )
+
+    # Only download Scryfall if neither an
+    # Alternate nor accepted Upscaled image
+    # exists for the back face.
+    if cached_result is None:
+        back_image_url = (
+            back_source.get("image_url")
+            or ""
+        ).strip()
+
+        if not back_image_url:
+            raise ValueError(
+                "No image source was "
+                "available for the card back."
+            )
+
+        cached_result = download_chaos_image_to_cache(
+            card_uuid,
+            "back",
+            back_source["face_name"],
+            back_image_url,
+        )
 
     if not cached_result:
         raise ValueError(
-            "No cached result returned for card back image download."
+            "No cached result returned "
+            "for card back image."
         )
 
     return {
-        "temp_path": cached_result["absolute_path"],
+        "temp_path": (
+            cached_result["absolute_path"]
+        ),
+
         "page_kind": "card_back",
-        "card_uuid": (card_uuid or "").strip(),
+
+        "card_uuid": (
+            card_uuid or ""
+        ).strip(),
+
         "card_row": card_row,
+
         "is_dual_faced": int(
             card_row["is_dual_faced"] or 0
         ) if card_row else 0,
+
         "is_persistent_cache_file": True,
         "is_template_rendered": False,
     }
