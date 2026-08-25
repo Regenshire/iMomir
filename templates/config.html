@@ -953,6 +953,22 @@
                             {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
                         >
                     </label>
+
+                    {% if upscaler_plugin_status.get("development") %}
+                    <label class="toggle-row settings-field">
+                        <span>
+                            <strong>
+                                DEV MODE - Dev Feedback System
+                            </strong>
+                        </span>
+
+                        <input
+                            type="checkbox"
+                            id="upscalingDevFeedbackSystem"
+                            {% if config.get("upscaling_dev_feedback_system", "0") == "1" %}checked{% endif %}
+                        >
+                    </label>
+                    {% endif %}
                 </div>
 
                 <div
@@ -965,6 +981,53 @@
                         Install a compatible Upscaler plugin before enabling this option.
                     {% endif %}
                 </div>
+
+                {% if upscaler_plugin_status.get("development") %}
+                <div
+                    id="upscalingDevFeedbackSettingStatus"
+                    class="refresh-status-text"
+                >
+                    {% if config.get("upscaling_dev_feedback_system", "0") == "1" %}
+                        Dev Feedback is enabled. Accepting or discarding an upscale candidate will append one evaluation record to the feedback dataset.
+                    {% else %}
+                        Dev Feedback is disabled.
+                    {% endif %}
+                </div>
+
+                <div class="metadata-list">
+                    <div class="metadata-row">
+                        <span>Dev Feedback Directory</span>
+                        <strong class="metadata-value-wrap">
+                            data\upscaling_dev_feedback\
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Feedback Log</span>
+                        <strong class="metadata-value-wrap">
+                            upscaling_dev_feedback.jsonl
+                        </strong>
+                    </div>
+
+                    <div class="metadata-row">
+                        <span>Feedback Records</span>
+                        <strong>
+                            {{ upscaling_dev_feedback_log_status.get("record_count", 0) }}
+                        </strong>
+                    </div>
+                </div>
+
+                {% if upscaling_dev_feedback_log_status.get("exists") %}
+                <div class="config-button-row">
+                    <a
+                        class="action-button secondary-button"
+                        href="{{ url_for('upscaling_dev_feedback_download') }}"
+                    >
+                        Download Dev Feedback Log
+                    </a>
+                </div>
+                {% endif %}
+                {% endif %}
 
                 <div class="refresh-panel">
                     <div class="refresh-status-row">
@@ -1256,6 +1319,14 @@
         "upscalingCardViewSettingStatus"
     );
 
+    const devFeedbackToggle = document.getElementById(
+        "upscalingDevFeedbackSystem"
+    );
+
+    const devFeedbackSettingStatus = document.getElementById(
+        "upscalingDevFeedbackSettingStatus"
+    );
+
     let pollTimer = null;
 
     function renderPluginStatus(data) {
@@ -1528,6 +1599,69 @@
                 }
 
                 cardViewToggle.disabled = false;
+            }
+        );
+    }
+
+    if (devFeedbackToggle) {
+        devFeedbackToggle.addEventListener(
+            "change",
+            async function () {
+                const requestedEnabled = Boolean(
+                    devFeedbackToggle.checked
+                );
+
+                devFeedbackToggle.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/dev-feedback",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                enabled: requestedEnabled
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Could not save Dev Feedback setting."
+                        );
+                    }
+
+                    devFeedbackToggle.checked = Boolean(
+                        data.enabled
+                    );
+
+                    if (devFeedbackSettingStatus) {
+                        devFeedbackSettingStatus.textContent =
+                            data.enabled
+                                ? "Dev Feedback is enabled. Accepting or discarding an upscale candidate will append one evaluation record to the feedback dataset."
+                                : "Dev Feedback is disabled.";
+                    }
+
+                } catch (error) {
+                    devFeedbackToggle.checked =
+                        !requestedEnabled;
+
+                    if (devFeedbackSettingStatus) {
+                        devFeedbackSettingStatus.textContent =
+                            error.message;
+                    }
+                }
+
+                devFeedbackToggle.disabled = false;
             }
         );
     }

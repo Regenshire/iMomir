@@ -362,6 +362,19 @@ def handle_upscale_test(payload):
         )
     )
 
+    device_capability = (
+        torch.cuda.get_device_capability(
+            device
+        )
+    )
+
+    try:
+        cudnn_version = (
+            torch.backends.cudnn.version()
+        )
+    except Exception:
+        cudnn_version = None
+
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(
         device
@@ -517,6 +530,24 @@ def handle_upscale_test(payload):
         "test_only": True,
 
         "device": device_name,
+
+        "torch_version": str(
+            torch.__version__
+        ),
+
+        "cuda_runtime_version": str(
+            torch.version.cuda
+            or ""
+        ),
+
+        "cudnn_version": (
+            cudnn_version
+        ),
+
+        "compute_capability": (
+            f"{device_capability[0]}."
+            f"{device_capability[1]}"
+        ),
 
         "input_path": input_path,
         "output_path": output_path,

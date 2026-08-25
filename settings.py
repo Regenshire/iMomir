@@ -290,6 +290,7 @@ DEFAULT_CONFIG = {
     "chaos_scryfall_image_quality": "png",
 
     "upscaling_add_button_to_card_view": "0",
+    "upscaling_dev_feedback_system": "0",
 
     "display_pack_prices": "1",
     "check_new_releases": "1",

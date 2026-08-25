@@ -25,6 +25,17 @@ CHAOS_TEMP_CACHE_DIR = os.path.join(DATA_ROOT_DIR, "chaos_temp_cache")
 CAMPAIGN_PLAYER_PORTRAIT_DIR = os.path.join(DATA_ROOT_DIR, "campaign_player_portraits")
 ALTERNATE_SOURCE_DIR = os.path.join(DATA_ROOT_DIR, "alternate_sources")
 UPSCALED_SCRYFALL_DIR = os.path.join(DATA_ROOT_DIR, "upscaled_scryfall")
+
+UPSCALING_DEV_FEEDBACK_DIR = os.path.join(
+    DATA_ROOT_DIR,
+    "upscaling_dev_feedback",
+)
+
+UPSCALING_DEV_FEEDBACK_LOG_PATH = os.path.join(
+    UPSCALING_DEV_FEEDBACK_DIR,
+    "upscaling_dev_feedback.jsonl",
+)
+
 PLUGIN_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "plugin_downloads")
 
 CUSTOM_SET_ICON_DIR = os.path.join(DATA_ROOT_DIR, "custom_set_icons")

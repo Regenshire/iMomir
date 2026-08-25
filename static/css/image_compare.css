@@ -152,3 +152,110 @@
         flex-direction: column;
     }
 }
+
+.imomir-dev-feedback-panel {
+    margin: 0 18px 18px;
+    padding: 16px;
+    border: 1px solid rgba(255, 190, 70, 0.28);
+    border-radius: 12px;
+    background: rgba(255, 170, 40, 0.055);
+}
+
+.imomir-dev-feedback-panel.hidden {
+    display: none;
+}
+
+.imomir-dev-feedback-heading {
+    font-size: 0.96rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.imomir-dev-feedback-subtitle {
+    margin-top: 4px;
+    margin-bottom: 16px;
+    opacity: 0.72;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.imomir-dev-feedback-section-heading {
+    margin-top: 18px;
+    margin-bottom: 8px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    font-size: 0.88rem;
+    font-weight: 700;
+}
+
+.imomir-dev-feedback-row {
+    display: grid;
+    grid-template-columns:
+        minmax(130px, 180px)
+        minmax(280px, 1fr)
+        minmax(90px, 120px);
+    gap: 14px;
+    align-items: center;
+    padding: 9px 0;
+}
+
+.imomir-dev-feedback-row-label {
+    font-size: 0.86rem;
+    font-weight: 650;
+}
+
+.imomir-dev-feedback-slider-wrap {
+    min-width: 0;
+}
+
+.imomir-dev-feedback-slider {
+    display: block;
+    width: 100%;
+    margin: 0;
+}
+
+.imomir-dev-feedback-scale-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 0.66rem;
+    opacity: 0.58;
+}
+
+.imomir-dev-feedback-scale-labels span {
+    text-align: center;
+}
+
+.imomir-dev-feedback-current-value {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: right;
+}
+
+.imomir-dev-feedback-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-top: 16px;
+    font-size: 0.86rem;
+    font-weight: 700;
+}
+
+.imomir-dev-feedback-notes textarea {
+    width: 100%;
+    min-height: 78px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+@media (max-width: 800px) {
+    .imomir-dev-feedback-row {
+        grid-template-columns: 1fr;
+        gap: 5px;
+    }
+
+    .imomir-dev-feedback-current-value {
+        text-align: left;
+    }
+}

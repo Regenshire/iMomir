@@ -153,6 +153,11 @@ from plugin_system.manager import (
     start_plugin_install,
 )
 
+from upscaling.feedback import (
+    append_upscaling_dev_feedback,
+    get_upscaling_dev_feedback_log_status,
+)
+
 from db.exports import (
     EXPORT_KIND_CAMPAIGN,
     EXPORT_KIND_FULL,
@@ -13566,6 +13571,120 @@ def get_ready_upscaler_plugins():
     )
 
 
+def has_development_upscaler_plugin():
+    return any(
+        bool(
+            plugin.get(
+                "development"
+            )
+        )
+        for plugin
+        in get_ready_upscaler_plugins()
+    )
+
+
+def is_upscaling_dev_feedback_enabled():
+    if not has_development_upscaler_plugin():
+        return False
+
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    return (
+        config_values.get(
+            "upscaling_dev_feedback_system",
+            "0",
+        )
+        or "0"
+    ).strip() == "1"
+
+
+def try_record_upscaling_dev_feedback(
+    *,
+    decision,
+    candidate_row,
+    feedback_payload=None,
+):
+    if not is_upscaling_dev_feedback_enabled():
+        return {
+            "enabled": False,
+            "logged": False,
+            "record_id": "",
+            "error": "",
+        }
+
+    if not candidate_row:
+        return {
+            "enabled": True,
+            "logged": False,
+            "record_id": "",
+            "error": (
+                "Upscaling feedback candidate "
+                "was not found."
+            ),
+        }
+
+    card_uuid = str(
+        candidate_row.get(
+            "card_uuid",
+            "",
+        )
+        or ""
+    ).strip()
+
+    card_row = (
+        get_chaos_card_by_uuid(
+            card_uuid
+        )
+        if card_uuid
+        else None
+    )
+
+    try:
+        feedback_record = (
+            append_upscaling_dev_feedback(
+                decision=decision,
+                card_row=card_row,
+                candidate_row=(
+                    candidate_row
+                ),
+                feedback_payload=(
+                    feedback_payload
+                ),
+            )
+        )
+
+        return {
+            "enabled": True,
+            "logged": True,
+            "record_id": (
+                feedback_record.get(
+                    "record_id",
+                    "",
+                )
+            ),
+            "error": "",
+        }
+
+    except Exception as exc:
+        write_error_log(
+            "UPSCALING DEV FEEDBACK WRITE FAILED | "
+            f"decision={decision} | "
+            f"card_uuid={card_uuid}",
+            exc=exc,
+        )
+
+        return {
+            "enabled": True,
+            "logged": False,
+            "record_id": "",
+            "error": str(exc),
+        }
+
+
 def is_card_upscaling_control_enabled():
     config_values = (
         get_request_config()
@@ -13649,6 +13768,81 @@ def config_upscaling_card_view_button():
     })
 
 
+@app.route(
+    "/config/upscaling/dev-feedback",
+    methods=["POST"],
+)
+def config_upscaling_dev_feedback():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    enabled = bool(
+        payload.get(
+            "enabled"
+        )
+    )
+
+    if (
+        enabled
+        and not has_development_upscaler_plugin()
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Dev Feedback is available "
+                "only while a Development "
+                "Upscaler plugin is active."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_dev_feedback_system",
+        "1" if enabled else "0",
+    )
+
+    return jsonify({
+        "ok": True,
+        "enabled": enabled,
+    })
+
+
+@app.route(
+    "/upscaling/dev-feedback/download",
+    methods=["GET"],
+)
+def upscaling_dev_feedback_download():
+    feedback_status = (
+        get_upscaling_dev_feedback_log_status()
+    )
+
+    if not feedback_status.get(
+        "exists"
+    ):
+        return (
+            "No Upscaling Dev Feedback "
+            "log exists yet.",
+            404,
+        )
+
+    return send_file(
+        feedback_status[
+            "absolute_path"
+        ],
+        mimetype=(
+            "application/x-ndjson"
+        ),
+        as_attachment=True,
+        download_name=(
+            "upscaling_dev_feedback.jsonl"
+        ),
+        max_age=0,
+    )
+
+
 @app.route("/config/check-new-releases", methods=["POST"])
 def config_check_new_releases():
     config_values = get_config()
@@ -13728,6 +13922,10 @@ def config():
         get_plugin_install_status(
             upscaler_plugin_id
         )
+    )
+
+    upscaling_dev_feedback_log_status = (
+        get_upscaling_dev_feedback_log_status()
     )
 
     resolved_game_mode_cards = []
@@ -13866,6 +14064,9 @@ def config():
         ),
         upscaler_plugin_install_status=(
             upscaler_plugin_install_status
+        ),
+        upscaling_dev_feedback_log_status=(
+            upscaling_dev_feedback_log_status
         ),
         section_defaults=section_defaults,
         history_count=get_recent_history_count(),
@@ -19945,6 +20146,10 @@ def chaos_card_upscale_control(card_uuid):
             current_data
         ),
 
+        "dev_feedback_enabled": (
+            is_upscaling_dev_feedback_enabled()
+        ),
+
         "plugins": plugin_results,
 
         "run_url": url_for(
@@ -20190,6 +20395,9 @@ def chaos_card_upscale_run(card_uuid):
                 )
                 or model_id
             ),
+            plugin_result=(
+                plugin_result
+            ),
         )
     )
 
@@ -20301,6 +20509,28 @@ def upscaled_candidate_image(
 def upscaled_candidate_accept(
     upscaled_image_id,
 ):
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    candidate = (
+        get_upscaled_image_by_id(
+            upscaled_image_id
+        )
+    )
+
+    if not candidate:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Upscaled candidate "
+                "was not found."
+            ),
+        }), 404
+
     try:
         accepted = (
             accept_upscaled_candidate(
@@ -20314,15 +20544,54 @@ def upscaled_candidate_accept(
             "message": str(exc),
         }), 400
 
+    feedback_result = (
+        try_record_upscaling_dev_feedback(
+            decision="accepted",
+            candidate_row=candidate,
+            feedback_payload=(
+                payload.get(
+                    "feedback"
+                )
+                if isinstance(
+                    payload.get(
+                        "feedback"
+                    ),
+                    dict,
+                )
+                else {}
+            ),
+        )
+    )
+
     return jsonify({
         "ok": True,
+
         "message": (
             "Upscaled image is now "
             "the active Scryfall upscale."
         ),
+
         "upscaled_image_id": (
             accepted[
                 "upscaled_image_id"
+            ]
+        ),
+
+        "feedback_logged": (
+            feedback_result[
+                "logged"
+            ]
+        ),
+
+        "feedback_record_id": (
+            feedback_result[
+                "record_id"
+            ]
+        ),
+
+        "feedback_warning": (
+            feedback_result[
+                "error"
             ]
         ),
     })
@@ -20335,14 +20604,56 @@ def upscaled_candidate_accept(
 def upscaled_candidate_discard(
     upscaled_image_id,
 ):
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    candidate = (
+        get_upscaled_image_by_id(
+            upscaled_image_id
+        )
+    )
+
+    if not candidate:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Upscaled candidate "
+                "was not found."
+            ),
+        }), 404
+
     discarded = (
         discard_upscaled_candidate(
             upscaled_image_id
         )
     )
 
+    feedback_result = (
+        try_record_upscaling_dev_feedback(
+            decision="discarded",
+            candidate_row=candidate,
+            feedback_payload=(
+                payload.get(
+                    "feedback"
+                )
+                if isinstance(
+                    payload.get(
+                        "feedback"
+                    ),
+                    dict,
+                )
+                else {}
+            ),
+        )
+    )
+
     return jsonify({
         "ok": discarded,
+
         "message": (
             "Upscale preview discarded."
             if discarded
@@ -20351,8 +20662,25 @@ def upscaled_candidate_discard(
                 "not be discarded."
             )
         ),
-    })
 
+        "feedback_logged": (
+            feedback_result[
+                "logged"
+            ]
+        ),
+
+        "feedback_record_id": (
+            feedback_result[
+                "record_id"
+            ]
+        ),
+
+        "feedback_warning": (
+            feedback_result[
+                "error"
+            ]
+        ),
+    })
 
 @app.route(
     "/upscaling/card/<card_uuid>/revert",
@@ -20402,6 +20730,17 @@ def chaos_card_upscale_revert(
             ),
         }), 404
 
+    current_upscaled = (
+        get_current_upscaled_image_for_card(
+            card_row,
+            face_kind=(
+                face_context[
+                    "page_kind"
+                ]
+            ),
+        )
+    )
+
     reverted_count = (
         revert_current_upscaled_image_for_card(
             card_row,
@@ -20413,14 +20752,50 @@ def chaos_card_upscale_revert(
         )
     )
 
+    feedback_result = (
+        try_record_upscaling_dev_feedback(
+            decision="reverted",
+            candidate_row=(
+                current_upscaled
+            ),
+            feedback_payload=None,
+        )
+        if current_upscaled
+        else {
+            "logged": False,
+            "record_id": "",
+            "error": "",
+        }
+    )
+
     return jsonify({
         "ok": True,
+
         "reverted_count": (
             reverted_count
         ),
+
         "message": (
             "Reverted to the original "
             "Scryfall image."
+        ),
+
+        "feedback_logged": (
+            feedback_result[
+                "logged"
+            ]
+        ),
+
+        "feedback_record_id": (
+            feedback_result[
+                "record_id"
+            ]
+        ),
+
+        "feedback_warning": (
+            feedback_result[
+                "error"
+            ]
         ),
     })
 

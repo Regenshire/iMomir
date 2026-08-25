@@ -21,6 +21,478 @@
     let currentData = null;
     let currentCandidate = null;
 
+    let devFeedbackPanel = null;
+    let sourceConditionInput = null;
+    let sourceConditionValue = null;
+    let feedbackNotesInput = null;
+    let feedbackRatingInputs = {};
+
+    const sourceConditionLabels = {
+        0: "Low Quality",
+        1: "Ok Quality",
+        2: "Good Quality"
+    };
+
+    const qualityRatingLabels = {
+        "-2": "Much Worse",
+        "-1": "Worse",
+        "0": "Same",
+        "1": "Improved",
+        "2": "Perfect"
+    };
+
+    const feedbackRatingDefinitions = [
+        ["card_title", "Card Title"],
+        ["mana_cost", "Mana Cost"],
+        ["artwork", "Artwork"],
+        ["rules_text", "Rules Text"],
+        ["power_toughness", "Power/Toughness"],
+        ["frame", "Frame"],
+        ["bottom_text", "Bottom Text"],
+        ["card_overall", "Card Overall"]
+    ];
+
+
+    function createScaleLabels(labelValues) {
+        const scaleLabels =
+            document.createElement("div");
+
+        scaleLabels.className =
+            "imomir-dev-feedback-scale-labels";
+
+        labelValues.forEach(
+            function (labelText) {
+                const label =
+                    document.createElement(
+                        "span"
+                    );
+
+                label.textContent =
+                    labelText;
+
+                scaleLabels.appendChild(
+                    label
+                );
+            }
+        );
+
+        return scaleLabels;
+    }
+
+
+    function buildDevFeedbackPanel() {
+        const panel =
+            document.createElement(
+                "div"
+            );
+
+        panel.className =
+            "imomir-dev-feedback-panel hidden";
+
+        const heading =
+            document.createElement(
+                "div"
+            );
+
+        heading.className =
+            "imomir-dev-feedback-heading";
+
+        heading.textContent =
+            "DEV MODE - Dev Feedback System";
+
+        const subtitle =
+            document.createElement(
+                "div"
+            );
+
+        subtitle.className =
+            "imomir-dev-feedback-subtitle";
+
+        subtitle.textContent =
+            "Rate the source and this specific upscale candidate. Feedback is saved when you Accept or Discard the candidate.";
+
+        panel.appendChild(
+            heading
+        );
+
+        panel.appendChild(
+            subtitle
+        );
+
+        const sourceRow =
+            document.createElement(
+                "div"
+            );
+
+        sourceRow.className =
+            "imomir-dev-feedback-row "
+            + "imomir-dev-feedback-source-row";
+
+        const sourceLabel =
+            document.createElement(
+                "div"
+            );
+
+        sourceLabel.className =
+            "imomir-dev-feedback-row-label";
+
+        sourceLabel.textContent =
+            "Scryfall Source Condition";
+
+        const sourceControl =
+            document.createElement(
+                "div"
+            );
+
+        sourceControl.className =
+            "imomir-dev-feedback-slider-wrap";
+
+        sourceConditionInput =
+            document.createElement(
+                "input"
+            );
+
+        sourceConditionInput.type =
+            "range";
+
+        sourceConditionInput.min =
+            "0";
+
+        sourceConditionInput.max =
+            "2";
+
+        sourceConditionInput.step =
+            "1";
+
+        sourceConditionInput.value =
+            "1";
+
+        sourceConditionInput.className =
+            "imomir-dev-feedback-slider";
+
+        sourceControl.appendChild(
+            sourceConditionInput
+        );
+
+        sourceControl.appendChild(
+            createScaleLabels([
+                "Low Quality",
+                "Ok Quality",
+                "Good Quality"
+            ])
+        );
+
+        sourceConditionValue =
+            document.createElement(
+                "div"
+            );
+
+        sourceConditionValue.className =
+            "imomir-dev-feedback-current-value";
+
+        sourceConditionValue.textContent =
+            "Ok Quality";
+
+        sourceConditionInput.addEventListener(
+            "input",
+            function () {
+                sourceConditionValue.textContent =
+                    sourceConditionLabels[
+                        Number(
+                            sourceConditionInput.value
+                        )
+                    ]
+                    || "Ok Quality";
+            }
+        );
+
+        sourceRow.appendChild(
+            sourceLabel
+        );
+
+        sourceRow.appendChild(
+            sourceControl
+        );
+
+        sourceRow.appendChild(
+            sourceConditionValue
+        );
+
+        panel.appendChild(
+            sourceRow
+        );
+
+        const improvementHeading =
+            document.createElement(
+                "div"
+            );
+
+        improvementHeading.className =
+            "imomir-dev-feedback-section-heading";
+
+        improvementHeading.textContent =
+            "Targeted Improvements";
+
+        panel.appendChild(
+            improvementHeading
+        );
+
+        feedbackRatingInputs = {};
+
+        feedbackRatingDefinitions.forEach(
+            function (definition) {
+                const ratingKey =
+                    definition[0];
+
+                const ratingLabelText =
+                    definition[1];
+
+                const row =
+                    document.createElement(
+                        "div"
+                    );
+
+                row.className =
+                    "imomir-dev-feedback-row";
+
+                const label =
+                    document.createElement(
+                        "div"
+                    );
+
+                label.className =
+                    "imomir-dev-feedback-row-label";
+
+                label.textContent =
+                    ratingLabelText;
+
+                const sliderWrap =
+                    document.createElement(
+                        "div"
+                    );
+
+                sliderWrap.className =
+                    "imomir-dev-feedback-slider-wrap";
+
+                const slider =
+                    document.createElement(
+                        "input"
+                    );
+
+                slider.type = "range";
+                slider.min = "-2";
+                slider.max = "2";
+                slider.step = "1";
+                slider.value = "0";
+
+                slider.className =
+                    "imomir-dev-feedback-slider";
+
+                sliderWrap.appendChild(
+                    slider
+                );
+
+                sliderWrap.appendChild(
+                    createScaleLabels([
+                        "Much Worse",
+                        "Worse",
+                        "Same",
+                        "Improved",
+                        "Perfect"
+                    ])
+                );
+
+                const currentValue =
+                    document.createElement(
+                        "div"
+                    );
+
+                currentValue.className =
+                    "imomir-dev-feedback-current-value";
+
+                currentValue.textContent =
+                    "Same";
+
+                slider.addEventListener(
+                    "input",
+                    function () {
+                        currentValue.textContent =
+                            qualityRatingLabels[
+                                String(
+                                    slider.value
+                                )
+                            ]
+                            || "Same";
+                    }
+                );
+
+                feedbackRatingInputs[
+                    ratingKey
+                ] = slider;
+
+                row.appendChild(
+                    label
+                );
+
+                row.appendChild(
+                    sliderWrap
+                );
+
+                row.appendChild(
+                    currentValue
+                );
+
+                panel.appendChild(
+                    row
+                );
+            }
+        );
+
+        const notesLabel =
+            document.createElement(
+                "label"
+            );
+
+        notesLabel.className =
+            "imomir-dev-feedback-notes";
+
+        const notesTitle =
+            document.createElement(
+                "span"
+            );
+
+        notesTitle.textContent =
+            "Notes";
+
+        feedbackNotesInput =
+            document.createElement(
+                "textarea"
+            );
+
+        feedbackNotesInput.rows = 3;
+        feedbackNotesInput.maxLength = 8000;
+
+        feedbackNotesInput.placeholder =
+            "Optional: halos, malformed symbols, text damage, frame artifacts, model-specific observations, etc.";
+
+        notesLabel.appendChild(
+            notesTitle
+        );
+
+        notesLabel.appendChild(
+            feedbackNotesInput
+        );
+
+        panel.appendChild(
+            notesLabel
+        );
+
+        return panel;
+    }
+
+
+    function resetDevFeedback() {
+        if (sourceConditionInput) {
+            sourceConditionInput.value =
+                "1";
+        }
+
+        if (sourceConditionValue) {
+            sourceConditionValue.textContent =
+                "Ok Quality";
+        }
+
+        Object.keys(
+            feedbackRatingInputs
+        ).forEach(
+            function (ratingKey) {
+                const slider =
+                    feedbackRatingInputs[
+                        ratingKey
+                    ];
+
+                if (!slider) {
+                    return;
+                }
+
+                slider.value = "0";
+
+                slider.dispatchEvent(
+                    new Event(
+                        "input"
+                    )
+                );
+            }
+        );
+
+        if (feedbackNotesInput) {
+            feedbackNotesInput.value =
+                "";
+        }
+    }
+
+
+    function setDevFeedbackVisible(
+        isVisible
+    ) {
+        if (!devFeedbackPanel) {
+            return;
+        }
+
+        devFeedbackPanel.classList.toggle(
+            "hidden",
+            !isVisible
+        );
+    }
+
+
+    function collectDevFeedback() {
+        const ratings = {};
+
+        Object.keys(
+            feedbackRatingInputs
+        ).forEach(
+            function (ratingKey) {
+                const slider =
+                    feedbackRatingInputs[
+                        ratingKey
+                    ];
+
+                ratings[
+                    ratingKey
+                ] = (
+                    slider
+                    ? Number(
+                        slider.value
+                    )
+                    : 0
+                );
+            }
+        );
+
+        return {
+            source_condition: (
+                sourceConditionInput
+                ? Number(
+                    sourceConditionInput.value
+                )
+                : 1
+            ),
+
+            ratings: ratings,
+
+            notes: (
+                feedbackNotesInput
+                ? String(
+                    feedbackNotesInput.value
+                    || ""
+                ).trim()
+                : ""
+            )
+        };
+    }
+
+
     function ensureViewer() {
         if (overlay) {
             return;
@@ -157,6 +629,10 @@
         statusElement.className =
             "imomir-upscale-status";
 
+        devFeedbackPanel = (
+            buildDevFeedbackPanel()
+        );
+
         const footer =
             document.createElement("div");
 
@@ -201,6 +677,7 @@
         dialog.appendChild(controls);
         dialog.appendChild(grid);
         dialog.appendChild(statusElement);
+        dialog.appendChild(devFeedbackPanel);
         dialog.appendChild(footer);
 
         overlay.appendChild(dialog);
@@ -272,6 +749,26 @@
         acceptButton.disabled = isBusy;
         discardButton.disabled = isBusy;
         revertButton.disabled = isBusy;
+
+        if (sourceConditionInput) {
+            sourceConditionInput.disabled =
+                isBusy;
+        }
+
+        Object.keys(
+            feedbackRatingInputs
+        ).forEach(
+            function (ratingKey) {
+                feedbackRatingInputs[
+                    ratingKey
+                ].disabled = isBusy;
+            }
+        );
+
+        if (feedbackNotesInput) {
+            feedbackNotesInput.disabled =
+                isBusy;
+        }
     }
 
     function populateModels(data) {
@@ -386,6 +883,12 @@
     function renderControl(data) {
         currentData = data;
         currentCandidate = null;
+
+        setDevFeedbackVisible(
+            false
+        );
+
+        resetDevFeedback();
 
         titleElement.textContent =
             data.title
@@ -561,6 +1064,16 @@
                 "hidden"
             );
 
+            if (
+                currentData.dev_feedback_enabled
+            ) {
+                resetDevFeedback();
+
+                setDevFeedbackVisible(
+                    true
+                );
+            }
+
             statusElement.textContent =
                 "Review the candidate beside the original.";
 
@@ -585,9 +1098,18 @@
                 {
                     method: "POST",
                     headers: {
+                        "Content-Type":
+                            "application/json",
                         "Accept":
                             "application/json"
-                    }
+                    },
+                    body: JSON.stringify({
+                        feedback: (
+                            currentData.dev_feedback_enabled
+                            ? collectDevFeedback()
+                            : null
+                        )
+                    })
                 }
             );
 
@@ -607,7 +1129,10 @@
             await loadControl();
 
             statusElement.textContent =
-                "Upscaled image accepted and is now in use.";
+                data.feedback_warning
+                    ? "Upscale accepted, but Dev Feedback could not be written: "
+                        + data.feedback_warning
+                    : "Upscaled image accepted and is now in use.";
 
         } catch (error) {
             statusElement.textContent =
@@ -625,21 +1150,46 @@
         setBusy(true);
 
         try {
-            await fetch(
+            const response = await fetch(
                 currentCandidate.discard_url,
                 {
                     method: "POST",
                     headers: {
+                        "Content-Type":
+                            "application/json",
                         "Accept":
                             "application/json"
-                    }
+                    },
+                    body: JSON.stringify({
+                        feedback: (
+                            currentData.dev_feedback_enabled
+                            ? collectDevFeedback()
+                            : null
+                        )
+                    })
                 }
             );
+
+            const data =
+                await response.json();
+
+            if (
+                !response.ok
+                || !data.ok
+            ) {
+                throw new Error(
+                    data.message
+                    || "Could not discard candidate."
+                );
+            }
 
             await loadControl();
 
             statusElement.textContent =
-                "Candidate discarded.";
+                data.feedback_warning
+                    ? "Candidate discarded, but Dev Feedback could not be written: "
+                        + data.feedback_warning
+                    : "Candidate discarded.";
 
         } catch (error) {
             statusElement.textContent =

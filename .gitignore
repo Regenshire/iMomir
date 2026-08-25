@@ -17,6 +17,10 @@ data/downloads/
 data/scryfall/
 data/cache/
 data/image_cache/
+
+# Upscaling developer feedback datasets
+data/upscaling_dev_feedback/
+
 data/
 data/scryfall/default-cards.json
 Utility/temp/

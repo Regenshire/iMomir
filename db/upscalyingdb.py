@@ -1,7 +1,11 @@
+import json
 import os
 from datetime import datetime, timezone
 
-from db.database import get_db_connection
+from db.database import (
+    ensure_column_exists,
+    get_db_connection,
+)
 from paths import UPSCALED_SCRYFALL_DIR
 
 
@@ -48,6 +52,7 @@ def ensure_upscaling_schema():
             plugin_id TEXT NOT NULL,
             plugin_version TEXT,
             pipeline_version TEXT,
+            plugin_result_json TEXT,
 
             quality_status TEXT NOT NULL DEFAULT 'accepted',
             quality_score REAL,
@@ -60,6 +65,14 @@ def ensure_upscaling_schema():
         )
         """
     )
+
+    ensure_column_exists(
+        cursor,
+        "upscaled_images",
+        "plugin_result_json",
+        "TEXT",
+    )
+
 
     cursor.execute(
         """
@@ -523,6 +536,7 @@ def register_upscaled_candidate(
     plugin_id,
     plugin_version=None,
     pipeline_version=None,
+    plugin_result=None,
 ):
     clean_face_kind = (
         normalize_upscaled_face_kind(
@@ -567,6 +581,7 @@ def register_upscaled_candidate(
             plugin_id,
             plugin_version,
             pipeline_version,
+            plugin_result_json,
             quality_status,
             is_current,
             created_at_utc
@@ -574,7 +589,7 @@ def register_upscaled_candidate(
         VALUES (
             ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?,
+            ?, ?, ?, ?,
             ?, 0, ?
         )
         """,
@@ -591,6 +606,11 @@ def register_upscaled_candidate(
             plugin_id,
             plugin_version,
             pipeline_version,
+            json.dumps(
+                plugin_result
+                or {},
+                ensure_ascii=False,
+            ),
             UPSCALE_QUALITY_PENDING,
             now_utc,
         ),
@@ -604,6 +624,8 @@ def register_upscaled_candidate(
     conn.close()
 
     return candidate_id
+
+
 
 
 def accept_upscaled_candidate(
