@@ -13796,6 +13796,25 @@ def is_upscaling_dev_feedback_enabled():
     ).strip() == "1"
 
 
+def is_upscaling_dev_source_indicator_enabled():
+    if not has_development_upscaler_plugin():
+        return False
+
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    return (
+        config_values.get(
+            "upscaling_dev_source_indicator",
+            "0",
+        )
+        or "0"
+    ).strip() == "1"
+
+
 def try_record_upscaling_dev_feedback(
     *,
     decision,
@@ -13995,6 +14014,49 @@ def config_upscaling_dev_feedback():
 
     set_config_value(
         "upscaling_dev_feedback_system",
+        "1" if enabled else "0",
+    )
+
+    return jsonify({
+        "ok": True,
+        "enabled": enabled,
+    })
+
+
+@app.route(
+    "/config/upscaling/dev-source-indicator",
+    methods=["POST"],
+)
+def config_upscaling_dev_source_indicator():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    enabled = bool(
+        payload.get(
+            "enabled"
+        )
+    )
+
+    if (
+        enabled
+        and not has_development_upscaler_plugin()
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "The Upscaled source indicator "
+                "is available only while a "
+                "Development Upscaler plugin "
+                "is active."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_dev_source_indicator",
         "1" if enabled else "0",
     )
 
@@ -20953,6 +21015,9 @@ def run_card_upscale_candidate_batch(
             "upscale_batch",
             {
                 "model_id": model_id,
+                "dev_add_source_indicator": (
+                    is_upscaling_dev_source_indicator_enabled()
+                ),
                 "host_assets": {
                     "fonts_dir": os.path.abspath(
                         os.path.join(

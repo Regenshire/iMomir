@@ -751,6 +751,152 @@ def handle_models(payload):
         ],
     }
 
+def apply_dev_source_indicator(
+    payload,
+    result,
+):
+    result[
+        "dev_source_indicator_applied"
+    ] = False
+
+    enabled = bool(
+        payload.get(
+            "dev_add_source_indicator",
+            False,
+        )
+    )
+
+    if not enabled:
+        return
+
+    output_path = os.path.abspath(
+        str(
+            result.get(
+                "output_path",
+                "",
+            )
+            or payload.get(
+                "output_path",
+                "",
+            )
+            or ""
+        ).strip()
+    )
+
+    if not output_path:
+        raise RuntimeError(
+            "DEV source indicator could "
+            "not determine the Upscaled "
+            "output path."
+        )
+
+    if not os.path.exists(
+        output_path
+    ):
+        raise FileNotFoundError(
+            "DEV source indicator could "
+            "not find the generated "
+            "Upscaled image: "
+            f"{output_path}"
+        )
+
+    try:
+        from PIL import (
+            Image,
+            ImageDraw,
+        )
+
+    except Exception as exc:
+        raise RuntimeError(
+            "Pillow could not be loaded "
+            "for the DEV source indicator: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+    with Image.open(
+        output_path
+    ) as output_file:
+        output_image = (
+            output_file.convert(
+                "RGB"
+            )
+        )
+
+    shortest_side = max(
+        1,
+        min(
+            int(
+                output_image.width
+            ),
+            int(
+                output_image.height
+            ),
+        ),
+    )
+
+    radius_pixels = max(
+        8,
+        int(
+            round(
+                shortest_side
+                * 0.010
+            )
+        ),
+    )
+
+    margin_pixels = max(
+        14,
+        int(
+            round(
+                shortest_side
+                * 0.020
+            )
+        ),
+    )
+
+    center_x = (
+        margin_pixels
+        + radius_pixels
+    )
+
+    center_y = (
+        int(
+            output_image.height
+        )
+        - margin_pixels
+        - radius_pixels
+    )
+
+    draw = ImageDraw.Draw(
+        output_image
+    )
+
+    draw.ellipse(
+        (
+            center_x
+            - radius_pixels,
+            center_y
+            - radius_pixels,
+            center_x
+            + radius_pixels,
+            center_y
+            + radius_pixels,
+        ),
+        fill=(
+            255,
+            0,
+            0,
+        ),
+    )
+
+    output_image.save(
+        output_path,
+        format="PNG",
+    )
+
+    result[
+        "dev_source_indicator_applied"
+    ] = True
 
 def handle_upscale(payload):
     model_id = str(
@@ -898,6 +1044,11 @@ def handle_upscale(payload):
             "No processor is registered "
             f"for model {model_id}."
         )
+
+    apply_dev_source_indicator(
+        processor_payload,
+        result,
+    )
 
     result["model_id"] = (
         model_id
