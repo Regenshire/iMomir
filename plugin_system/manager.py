@@ -10,6 +10,7 @@ import zipfile
 import requests
 
 from paths import (
+    BUNDLE_BASE_DIR,
     PLUGIN_DOWNLOAD_DIR,
     PLUGIN_ROOT_DIR,
 )
@@ -160,6 +161,170 @@ def get_plugin_python_path(
         "python",
     )
 
+def get_plugin_development_dir(
+    plugin_id,
+):
+    clean_plugin_id = str(
+        plugin_id or ""
+    ).strip()
+
+    if not clean_plugin_id:
+        return ""
+
+    return os.path.join(
+        BUNDLE_BASE_DIR,
+        "plugin_src",
+        clean_plugin_id,
+    )
+
+
+def _get_plugin_python_path_for_directory(
+    plugin_dir,
+):
+    venv_dir = os.path.join(
+        plugin_dir,
+        ".venv",
+    )
+
+    if os.name == "nt":
+        return os.path.join(
+            venv_dir,
+            "Scripts",
+            "python.exe",
+        )
+
+    return os.path.join(
+        venv_dir,
+        "bin",
+        "python",
+    )
+
+
+def _load_plugin_manifest_from_directory(
+    plugin_id,
+    plugin_dir,
+):
+    if not plugin_dir:
+        return None
+
+    manifest_path = os.path.join(
+        plugin_dir,
+        PLUGIN_MANIFEST_FILENAME,
+    )
+
+    if not os.path.exists(
+        manifest_path
+    ):
+        return None
+
+    try:
+        with open(
+            manifest_path,
+            "r",
+            encoding="utf-8",
+        ) as manifest_file:
+            manifest = json.load(
+                manifest_file
+            )
+    except Exception:
+        return None
+
+    if (
+        manifest.get("plugin_id")
+        != plugin_id
+    ):
+        return None
+
+    return manifest
+
+
+def get_plugin_runtime_context(
+    plugin_id,
+):
+    runtime_candidates = [
+        (
+            "installed",
+            get_plugin_install_dir(
+                plugin_id
+            ),
+        ),
+    ]
+
+    if not getattr(
+        sys,
+        "frozen",
+        False,
+    ):
+        runtime_candidates.append(
+            (
+                "development",
+                get_plugin_development_dir(
+                    plugin_id
+                ),
+            )
+        )
+
+    for runtime_source, plugin_dir in runtime_candidates:
+        manifest = (
+            _load_plugin_manifest_from_directory(
+                plugin_id,
+                plugin_dir,
+            )
+        )
+
+        if not manifest:
+            continue
+
+        entrypoint = str(
+            manifest.get(
+                "entrypoint",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if not entrypoint:
+            continue
+
+        entrypoint_path = os.path.join(
+            plugin_dir,
+            entrypoint,
+        )
+
+        plugin_python = (
+            _get_plugin_python_path_for_directory(
+                plugin_dir
+            )
+        )
+
+        if (
+            not os.path.exists(
+                entrypoint_path
+            )
+            or not os.path.exists(
+                plugin_python
+            )
+        ):
+            continue
+
+        return {
+            "plugin_id": plugin_id,
+            "plugin_dir": plugin_dir,
+            "plugin_python": plugin_python,
+            "entrypoint_path": (
+                entrypoint_path
+            ),
+            "manifest": manifest,
+            "runtime_source": (
+                runtime_source
+            ),
+            "development": (
+                runtime_source
+                == "development"
+            ),
+        }
+
+    return None
 
 def get_plugin_status(
     plugin_id,
@@ -181,6 +346,57 @@ def get_plugin_status(
                 "Unknown plugin."
             ),
         }
+
+    runtime_context = (
+        get_plugin_runtime_context(
+            plugin_id
+        )
+    )
+
+    if runtime_context:
+        manifest = runtime_context[
+            "manifest"
+        ]
+
+        return {
+            **catalog_entry,
+
+            "known": True,
+            "installed": True,
+            "ready": True,
+            "status": "ready",
+
+            "development": (
+                runtime_context[
+                    "development"
+                ]
+            ),
+
+            "runtime_source": (
+                runtime_context[
+                    "runtime_source"
+                ]
+            ),
+
+            "version": str(
+                manifest.get(
+                    "version",
+                    "",
+                )
+                or ""
+            ),
+
+            "manifest": manifest,
+
+            "message": (
+                "Development plugin is ready."
+                if runtime_context[
+                    "development"
+                ]
+                else "Plugin is ready."
+            ),
+        }
+
 
     manifest = load_plugin_manifest(
         plugin_id
@@ -261,6 +477,45 @@ def get_plugin_status(
             )
         ),
     }
+
+def get_ready_plugins_by_type(
+    plugin_type,
+):
+    clean_plugin_type = str(
+        plugin_type or ""
+    ).strip().lower()
+
+    ready_plugins = []
+
+    for plugin_id, catalog_entry in (
+        PLUGIN_CATALOG.items()
+    ):
+        catalog_type = str(
+            catalog_entry.get(
+                "plugin_type",
+                "",
+            )
+            or ""
+        ).strip().lower()
+
+        if (
+            catalog_type
+            != clean_plugin_type
+        ):
+            continue
+
+        status = get_plugin_status(
+            plugin_id
+        )
+
+        if status.get("ready"):
+            ready_plugins.append(
+                status
+            )
+
+    return ready_plugins
+
+
 
 
 def _set_install_status(
@@ -1025,40 +1280,25 @@ def run_plugin_json(
     payload=None,
     timeout=300,
 ):
-    status = get_plugin_status(
-        plugin_id
+    runtime_context = (
+        get_plugin_runtime_context(
+            plugin_id
+        )
     )
 
-    if not status.get("ready"):
+    if not runtime_context:
         raise RuntimeError(
             "Plugin is not ready."
         )
 
-    manifest = status[
-        "manifest"
-    ]
-
-    plugin_dir = (
-        get_plugin_install_dir(
-            plugin_id
-        )
-    )
-
-    plugin_python = (
-        get_plugin_python_path(
-            plugin_id
-        )
-    )
-
-    entrypoint_path = os.path.join(
-        plugin_dir,
-        manifest["entrypoint"],
-    )
-
     process = subprocess.run(
         [
-            plugin_python,
-            entrypoint_path,
+            runtime_context[
+                "plugin_python"
+            ],
+            runtime_context[
+                "entrypoint_path"
+            ],
             command,
         ],
         input=json.dumps(

@@ -906,7 +906,9 @@
                     <div class="metadata-row">
                         <span>Upscaler Plugin</span>
                         <strong id="upscalerPluginState">
-                            {% if upscaler_plugin_status.get("ready") %}
+                            {% if upscaler_plugin_status.get("development") %}
+                                Development
+                            {% elif upscaler_plugin_status.get("ready") %}
                                 Installed
                             {% elif upscaler_plugin_status.get("installed") %}
                                 Incomplete
@@ -936,6 +938,32 @@
                             NVIDIA RTX 50 Series
                         </strong>
                     </div>
+                </div>
+
+                <div class="settings-grid">
+                    <label class="toggle-row settings-field">
+                        <span>
+                            Add Upscale Button to Card View
+                        </span>
+
+                        <input
+                            type="checkbox"
+                            id="upscalingAddButtonToCardView"
+                            {% if config.get("upscaling_add_button_to_card_view", "0") == "1" %}checked{% endif %}
+                            {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
+                        >
+                    </label>
+                </div>
+
+                <div
+                    id="upscalingCardViewSettingStatus"
+                    class="refresh-status-text"
+                >
+                    {% if upscaler_plugin_status.get("ready") %}
+                        Show the Upscale control icon on supported card views.
+                    {% else %}
+                        Install a compatible Upscaler plugin before enabling this option.
+                    {% endif %}
                 </div>
 
                 <div class="refresh-panel">
@@ -971,9 +999,11 @@
                             id="installUpscalerPluginButton"
                             class="action-button secondary-button"
                             data-plugin-id="{{ upscaler_plugin_id }}"
-                            {% if upscaler_plugin_install_status.get("is_running") %}disabled{% endif %}
+                            {% if upscaler_plugin_install_status.get("is_running") or upscaler_plugin_status.get("development") %}disabled{% endif %}
                         >
-                            {% if upscaler_plugin_status.get("installed") %}
+                            {% if upscaler_plugin_status.get("development") %}
+                                Development Plugin Active
+                            {% elif upscaler_plugin_status.get("installed") %}
                                 Update / Reinstall Upscaler Plugin
                             {% else %}
                                 Download & Install Upscaler Plugin
@@ -1218,6 +1248,14 @@
         "upscalerPluginVersion"
     );
 
+    const cardViewToggle = document.getElementById(
+        "upscalingAddButtonToCardView"
+    );
+
+    const cardViewSettingStatus = document.getElementById(
+        "upscalingCardViewSettingStatus"
+    );
+
     let pollTimer = null;
 
     function renderPluginStatus(data) {
@@ -1430,6 +1468,71 @@
             }
         }
     );
+
+    if (cardViewToggle) {
+        cardViewToggle.addEventListener(
+            "change",
+            async function () {
+                const requestedEnabled = Boolean(
+                    cardViewToggle.checked
+                );
+
+                cardViewToggle.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/card-view-button",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                enabled: requestedEnabled
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Could not save Upscaling setting."
+                        );
+                    }
+
+                    cardViewToggle.checked = Boolean(
+                        data.enabled
+                    );
+
+                    if (cardViewSettingStatus) {
+                        cardViewSettingStatus.textContent =
+                            data.enabled
+                                ? "Upscale controls are enabled."
+                                : "Upscale controls are disabled.";
+                    }
+
+                } catch (error) {
+                    cardViewToggle.checked =
+                        !requestedEnabled;
+
+                    if (cardViewSettingStatus) {
+                        cardViewSettingStatus.textContent =
+                            error.message;
+                    }
+                }
+
+                cardViewToggle.disabled = false;
+            }
+        );
+    }
+
+
 
     const initialRunning = (
         {{ "true" if upscaler_plugin_install_status.get("is_running") else "false" }}

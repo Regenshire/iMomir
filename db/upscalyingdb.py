@@ -383,6 +383,392 @@ def get_current_upscaled_image_for_card(
 
     return result
 
+def _build_upscaled_identity_where(
+    card_row,
+):
+    card_uuid = str(
+        _row_value(
+            card_row,
+            "card_uuid",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if card_uuid:
+        return (
+            "card_uuid = ?",
+            [card_uuid],
+        )
+
+    scryfall_id = str(
+        _row_value(
+            card_row,
+            "scryfall_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if scryfall_id:
+        return (
+            "scryfall_id = ?",
+            [scryfall_id],
+        )
+
+    set_code = str(
+        _row_value(
+            card_row,
+            "set_code",
+            "",
+        )
+        or ""
+    ).strip()
+
+    collector_number = str(
+        _row_value(
+            card_row,
+            "collector_number",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if set_code and collector_number:
+        return (
+            """
+            UPPER(COALESCE(set_code, ''))
+                = UPPER(?)
+            AND
+            LOWER(COALESCE(
+                collector_number,
+                ''
+            )) = LOWER(?)
+            """,
+            [
+                set_code,
+                collector_number,
+            ],
+        )
+
+    return "", []
+
+
+def get_upscaled_image_by_id(
+    upscaled_image_id,
+):
+    try:
+        parsed_id = int(
+            upscaled_image_id
+        )
+    except (TypeError, ValueError):
+        return None
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM upscaled_images
+        WHERE upscaled_image_id = ?
+        LIMIT 1
+        """,
+        (parsed_id,),
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    result = dict(row)
+
+    absolute_path = (
+        get_upscaled_image_absolute_path(
+            result.get(
+                "output_image_path",
+                "",
+            )
+        )
+    )
+
+    if (
+        not absolute_path
+        or not os.path.exists(
+            absolute_path
+        )
+    ):
+        return None
+
+    result["absolute_path"] = (
+        absolute_path
+    )
+
+    return result
+
+
+def register_upscaled_candidate(
+    *,
+    card_uuid=None,
+    scryfall_id=None,
+    set_code=None,
+    collector_number=None,
+    face_kind="single",
+    source_image_path=None,
+    output_image_path,
+    output_width=None,
+    output_height=None,
+    plugin_id,
+    plugin_version=None,
+    pipeline_version=None,
+):
+    clean_face_kind = (
+        normalize_upscaled_face_kind(
+            face_kind
+        )
+    )
+
+    absolute_output_path = (
+        get_upscaled_image_absolute_path(
+            output_image_path
+        )
+    )
+
+    if not absolute_output_path:
+        raise ValueError(
+            "Upscaled candidate must be "
+            "inside UPSCALED_SCRYFALL_DIR."
+        )
+
+    relative_output_path = os.path.relpath(
+        absolute_output_path,
+        UPSCALED_SCRYFALL_DIR,
+    )
+
+    now_utc = upscaling_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO upscaled_images (
+            card_uuid,
+            scryfall_id,
+            set_code,
+            collector_number,
+            face_kind,
+            source_image_path,
+            output_image_path,
+            output_width,
+            output_height,
+            plugin_id,
+            plugin_version,
+            pipeline_version,
+            quality_status,
+            is_current,
+            created_at_utc
+        )
+        VALUES (
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, 0, ?
+        )
+        """,
+        (
+            card_uuid,
+            scryfall_id,
+            set_code,
+            collector_number,
+            clean_face_kind,
+            source_image_path,
+            relative_output_path,
+            output_width,
+            output_height,
+            plugin_id,
+            plugin_version,
+            pipeline_version,
+            UPSCALE_QUALITY_PENDING,
+            now_utc,
+        ),
+    )
+
+    candidate_id = (
+        cursor.lastrowid
+    )
+
+    conn.commit()
+    conn.close()
+
+    return candidate_id
+
+
+def accept_upscaled_candidate(
+    upscaled_image_id,
+):
+    candidate = get_upscaled_image_by_id(
+        upscaled_image_id
+    )
+
+    if not candidate:
+        raise ValueError(
+            "Upscaled candidate was "
+            "not found."
+        )
+
+    identity_where, identity_params = (
+        _build_upscaled_identity_where(
+            candidate
+        )
+    )
+
+    if not identity_where:
+        raise ValueError(
+            "Upscaled candidate has no "
+            "usable card identity."
+        )
+
+    now_utc = upscaling_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        UPDATE upscaled_images
+        SET
+            is_current = 0,
+            quality_status = ?,
+            updated_at_utc = ?
+        WHERE upscaled_image_id <> ?
+          AND face_kind = ?
+          AND is_current = 1
+          AND quality_status = ?
+          AND ({identity_where})
+        """,
+        (
+            UPSCALE_QUALITY_SUPERSEDED,
+            now_utc,
+            int(upscaled_image_id),
+            candidate["face_kind"],
+            UPSCALE_QUALITY_ACCEPTED,
+            *identity_params,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE upscaled_images
+        SET
+            quality_status = ?,
+            is_current = 1,
+            updated_at_utc = ?
+        WHERE upscaled_image_id = ?
+        """,
+        (
+            UPSCALE_QUALITY_ACCEPTED,
+            now_utc,
+            int(upscaled_image_id),
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return get_upscaled_image_by_id(
+        upscaled_image_id
+    )
+
+
+def discard_upscaled_candidate(
+    upscaled_image_id,
+):
+    now_utc = upscaling_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        UPDATE upscaled_images
+        SET
+            quality_status = ?,
+            is_current = 0,
+            updated_at_utc = ?
+        WHERE upscaled_image_id = ?
+          AND is_current = 0
+        """,
+        (
+            UPSCALE_QUALITY_REJECTED,
+            now_utc,
+            int(upscaled_image_id),
+        ),
+    )
+
+    changed_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return changed_count > 0
+
+
+def revert_current_upscaled_image_for_card(
+    card_row,
+    face_kind="single",
+):
+    clean_face_kind = (
+        normalize_upscaled_face_kind(
+            face_kind
+        )
+    )
+
+    identity_where, identity_params = (
+        _build_upscaled_identity_where(
+            card_row
+        )
+    )
+
+    if not identity_where:
+        return 0
+
+    now_utc = upscaling_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        UPDATE upscaled_images
+        SET
+            quality_status = ?,
+            is_current = 0,
+            updated_at_utc = ?
+        WHERE face_kind IN (?, 'single')
+          AND is_current = 1
+          AND quality_status = ?
+          AND ({identity_where})
+        """,
+        (
+            UPSCALE_QUALITY_SUPERSEDED,
+            now_utc,
+            clean_face_kind,
+            UPSCALE_QUALITY_ACCEPTED,
+            *identity_params,
+        ),
+    )
+
+    changed_count = cursor.rowcount
+
+    conn.commit()
+    conn.close()
+
+    return changed_count
+
+
 
 def register_upscaled_image(
     *,

@@ -3032,6 +3032,35 @@ def search_chaos_cards_for_custom_draft_set(
                 THEN 1
                 ELSE 0
             END AS has_alternate_source,
+
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM upscaled_images up
+                    WHERE up.is_current = 1
+                      AND up.quality_status = 'accepted'
+                      AND up.face_kind IN ('single', 'front')
+                      AND (
+                            (
+                                COALESCE(up.card_uuid, '') <> ''
+                                AND up.card_uuid = cc.card_uuid
+                            )
+                         OR (
+                                COALESCE(up.scryfall_id, '') <> ''
+                                AND up.scryfall_id = cc.scryfall_id
+                            )
+                         OR (
+                                UPPER(COALESCE(up.set_code, '')) =
+                                    UPPER(COALESCE(cc.set_code, ''))
+                                AND LOWER(COALESCE(up.collector_number, '')) =
+                                    LOWER(COALESCE(cc.collector_number, ''))
+                            )
+                      )
+                )
+                THEN 1
+                ELSE 0
+            END AS has_upscaled_image,
+
             COALESCE(
                 (
                     SELECT alt.remove_bleed

@@ -10,6 +10,11 @@
       href="{{ url_for('static', filename='css/style.css') }}"
     />
 
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/image_compare.css') }}"
+    />
+
     {% block page_styles %}{% endblock %}
   </head>
   <body>
@@ -397,6 +402,7 @@
     {% block page_scripts_before_app %}{% endblock %}
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/image_compare.js') }}"></script>
 
     {% block page_scripts_after_app %}{% endblock %}
   </body>

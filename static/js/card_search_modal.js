@@ -1103,8 +1103,15 @@
                 || card.alternate_remove_bleed === "1"
             );
 
+            const hasUpscaledImage = (
+                card.has_upscaled_image === true
+                || card.has_upscaled_image === 1
+                || card.has_upscaled_image === "1"
+            );
+
             row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
             row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
+            row.dataset.hasUpscaledImage = hasUpscaledImage ? "1" : "0";
 
             const alreadyAdded = isSearchCardAlreadyAdded(card);
 
@@ -1148,6 +1155,28 @@
                 alternateBadge.textContent = "ALT IMG";
 
                 title.appendChild(alternateBadge);
+            }
+
+            if (hasUpscaledImage) {
+                const upscaledBadge = document.createElement("span");
+
+                upscaledBadge.className =
+                    "custom-draft-card-search-alt-image-badge "
+                    + "image-source-upscaled-badge";
+
+                upscaledBadge.title =
+                    "Upscaled Scryfall image available";
+
+                upscaledBadge.setAttribute(
+                    "aria-label",
+                    "Upscaled Scryfall image available"
+                );
+
+                upscaledBadge.textContent = "UPSCALED";
+
+                title.appendChild(
+                    upscaledBadge
+                );
             }
 
             const meta = document.createElement("div");

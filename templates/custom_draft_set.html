@@ -819,6 +819,67 @@
                                 >
                                     ⚙
                                 </button>
+
+                                {% if global_card_upscaling_control_enabled %}
+                                <button
+                                    type="button"
+                                    class="alternate-image-gear imomir-upscale-card-button"
+                                    data-upscale-control-url="{{ url_for('chaos_card_upscale_control', card_uuid=card.card_uuid, face='front') }}"
+                                    title="Upscale Image"
+                                    aria-label="Upscale {{ card.card_name }}"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        class="imomir-upscale-icon"
+                                        aria-hidden="true"
+                                        focusable="false"
+                                    >
+                                        <rect
+                                            x="3.5"
+                                            y="6"
+                                            width="13"
+                                            height="13"
+                                            rx="2"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.8"
+                                        ></rect>
+
+                                        <circle
+                                            cx="8"
+                                            cy="10"
+                                            r="1.4"
+                                            fill="currentColor"
+                                        ></circle>
+
+                                        <path
+                                            d="M5.5 16l3.1-3.2 2.5 2.4 2.1-2.2 3.2 3.1"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.6"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        ></path>
+
+                                        <path
+                                            d="M18.5 11V4.5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.9"
+                                            stroke-linecap="round"
+                                        ></path>
+
+                                        <path
+                                            d="M15.8 7.2l2.7-2.7 2.7 2.7"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="1.9"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                        ></path>
+                                    </svg>
+                                </button>
+                                {% endif %}
                             </div>
 
                             <div class="custom-draft-current-card-meta">
@@ -1996,6 +2057,91 @@
             .replace(/'/g, "&#039;");
     }
 
+    function getUpscaleIconSvgHtml() {
+        return [
+            '<svg',
+                ' viewBox="0 0 24 24"',
+                ' class="imomir-upscale-icon"',
+                ' aria-hidden="true"',
+                ' focusable="false"',
+            '>',
+                '<rect',
+                    ' x="3.5"',
+                    ' y="6"',
+                    ' width="13"',
+                    ' height="13"',
+                    ' rx="2"',
+                    ' fill="none"',
+                    ' stroke="currentColor"',
+                    ' stroke-width="1.8"',
+                '></rect>',
+
+                '<circle',
+                    ' cx="8"',
+                    ' cy="10"',
+                    ' r="1.4"',
+                    ' fill="currentColor"',
+                '></circle>',
+
+                '<path',
+                    ' d="M5.5 16l3.1-3.2 2.5 2.4 2.1-2.2 3.2 3.1"',
+                    ' fill="none"',
+                    ' stroke="currentColor"',
+                    ' stroke-width="1.6"',
+                    ' stroke-linecap="round"',
+                    ' stroke-linejoin="round"',
+                '></path>',
+
+                '<path',
+                    ' d="M18.5 11V4.5"',
+                    ' fill="none"',
+                    ' stroke="currentColor"',
+                    ' stroke-width="1.9"',
+                    ' stroke-linecap="round"',
+                '></path>',
+
+                '<path',
+                    ' d="M15.8 7.2l2.7-2.7 2.7 2.7"',
+                    ' fill="none"',
+                    ' stroke="currentColor"',
+                    ' stroke-width="1.9"',
+                    ' stroke-linecap="round"',
+                    ' stroke-linejoin="round"',
+                '></path>',
+            '</svg>'
+        ].join("");
+    }
+
+
+    function getUpscaleControlButtonHtml(
+        upscaleControlUrl,
+        cardName
+    ) {
+        const cleanUrl = String(
+            upscaleControlUrl || ""
+        ).trim();
+
+        if (!cleanUrl) {
+            return "";
+        }
+
+        return [
+            '<button',
+                ' type="button"',
+                ' class="alternate-image-gear imomir-upscale-card-button"',
+                ' data-upscale-control-url="'
+                    + escapeHtml(cleanUrl)
+                    + '"',
+                ' title="Upscale Image"',
+                ' aria-label="Upscale '
+                    + escapeHtml(cardName)
+                    + '"',
+            '>',
+                getUpscaleIconSvgHtml(),
+            '</button>'
+        ].join("");
+    }
+
     function createCurrentCardRowFromPayload(card) {
         if (!card) {
             return null;
@@ -2022,6 +2168,11 @@
             + encodeURIComponent(cardUuid)
         );
         const cacheBustedImageSrc = imageSrc + "?v=" + Date.now();
+
+        const upscaleControlUrl = String(
+            card.upscale_control_url
+            || ""
+        ).trim();
 
         const row = document.createElement("div");
 
@@ -2107,6 +2258,12 @@
                     '>',
                         '⚙',
                     '</button>',
+
+                    getUpscaleControlButtonHtml(
+                        upscaleControlUrl,
+                        cardName
+                    ),
+
                 '</div>',
 
                 '<div class="custom-draft-current-card-meta">',
@@ -3164,8 +3321,17 @@
         const cardUuid = row.dataset.cardUuid || "";
         const cardName = row.dataset.displayCardName || row.dataset.cardName || "Unknown Card";
         const imageElement = row.querySelector(".custom-draft-current-card-image");
-        const sourceGearButton = row.querySelector(".alternate-image-button");
-        const sourceChangePrintingButton = row.querySelector(".custom-draft-change-printing-button");
+        const sourceGearButton = row.querySelector(
+            ".alternate-image-button"
+        );
+
+        const sourceChangePrintingButton = row.querySelector(
+            ".custom-draft-change-printing-button"
+        );
+
+        const sourceUpscaleButton = row.querySelector(
+            ".imomir-upscale-card-button"
+        );
         const imageSrc = imageElement
             ? (
                 imageElement.dataset.cardImageSrc
@@ -3286,6 +3452,39 @@
 
         metaRow.appendChild(changePrintingButton);
         metaRow.appendChild(gearButton);
+
+        if (sourceUpscaleButton) {
+            const upscaleButton =
+                document.createElement(
+                    "button"
+                );
+
+            upscaleButton.type = "button";
+
+            upscaleButton.className =
+                "alternate-image-gear "
+                + "imomir-upscale-card-button";
+
+            upscaleButton.title =
+                "Upscale Image";
+
+            upscaleButton.setAttribute(
+                "aria-label",
+                "Upscale " + cardName
+            );
+
+            upscaleButton.dataset.upscaleControlUrl =
+                sourceUpscaleButton.dataset
+                    .upscaleControlUrl
+                || "";
+
+            upscaleButton.innerHTML =
+                getUpscaleIconSvgHtml();
+
+            metaRow.appendChild(
+                upscaleButton
+            );
+        }
 
         if (priceText) {
             const priceDiv = document.createElement("div");

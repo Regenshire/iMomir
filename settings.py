@@ -288,6 +288,9 @@ DEFAULT_CONFIG = {
     "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
     "chaos_draft_export_format": "none",
     "chaos_scryfall_image_quality": "png",
+
+    "upscaling_add_button_to_card_view": "0",
+
     "display_pack_prices": "1",
     "check_new_releases": "1",
     "pack_price_source": "tcgplayer-retail",

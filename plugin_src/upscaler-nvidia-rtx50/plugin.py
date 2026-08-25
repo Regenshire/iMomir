@@ -14,6 +14,26 @@ PLUGIN_VERSION = "0.1.0"
 PROTOCOL_VERSION = 1
 
 
+UPSCALE_MODELS = {
+    "cuda_bicubic_test": {
+        "model_id": (
+            "cuda_bicubic_test"
+        ),
+        "label": (
+            "CUDA Bicubic "
+            "(Test Baseline)"
+        ),
+        "description": (
+            "2x CUDA bicubic resize. "
+            "Testing baseline only; "
+            "not AI super-resolution."
+        ),
+        "scale": 2.0,
+        "test_only": True,
+    },
+}
+
+
 def read_payload():
     raw_input = sys.stdin.read()
 
@@ -518,7 +538,82 @@ def handle_upscale_test(payload):
         ),
     }
 
+def handle_models(payload):
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "version": PLUGIN_VERSION,
 
+        "models": [
+            dict(model)
+            for model
+            in UPSCALE_MODELS.values()
+        ],
+    }
+
+
+def handle_upscale(payload):
+    model_id = str(
+        payload.get(
+            "model_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if not model_id:
+        model_id = (
+            "cuda_bicubic_test"
+        )
+
+    model = UPSCALE_MODELS.get(
+        model_id
+    )
+
+    if not model:
+        raise ValueError(
+            "Unknown upscale model: "
+            f"{model_id}"
+        )
+
+    processor_payload = dict(
+        payload
+    )
+
+    processor_payload["scale"] = (
+        model["scale"]
+    )
+
+    if (
+        model_id
+        == "cuda_bicubic_test"
+    ):
+        result = handle_upscale_test(
+            processor_payload
+        )
+
+    else:
+        raise ValueError(
+            "No processor is registered "
+            f"for model {model_id}."
+        )
+
+    result["model_id"] = (
+        model_id
+    )
+
+    result["model_label"] = (
+        model["label"]
+    )
+
+    result["test_only"] = bool(
+        model.get(
+            "test_only",
+            False,
+        )
+    )
+
+    return result
 
 def handle_info(payload):
     return {
@@ -535,6 +630,8 @@ def handle_info(payload):
             "info",
             "health",
             "hardware",
+            "models",
+            "upscale",
             "upscale_test",
         ],
     }
@@ -617,6 +714,8 @@ COMMAND_HANDLERS = {
     "info": handle_info,
     "health": handle_health,
     "hardware": handle_hardware,
+    "models": handle_models,
+    "upscale": handle_upscale,
     "upscale_test": handle_upscale_test,
 }
 

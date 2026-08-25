@@ -186,6 +186,67 @@
                         ⚙
                     </button>
 
+                    {% if global_card_upscaling_control_enabled %}
+                    <button
+                        type="button"
+                        class="alternate-image-gear imomir-upscale-card-button"
+                        data-upscale-control-url="{{ url_for('chaos_card_upscale_control', card_uuid=card.card_uuid, face='front') }}"
+                        title="Upscale Image"
+                        aria-label="Upscale {{ card.card_name }}"
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            class="imomir-upscale-icon"
+                            aria-hidden="true"
+                            focusable="false"
+                        >
+                            <rect
+                                x="3.5"
+                                y="6"
+                                width="13"
+                                height="13"
+                                rx="2"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.8"
+                            ></rect>
+
+                            <circle
+                                cx="8"
+                                cy="10"
+                                r="1.4"
+                                fill="currentColor"
+                            ></circle>
+
+                            <path
+                                d="M5.5 16l3.1-3.2 2.5 2.4 2.1-2.2 3.2 3.1"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.6"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            ></path>
+
+                            <path
+                                d="M18.5 11V4.5"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                            ></path>
+
+                            <path
+                                d="M15.8 7.2l2.7-2.7 2.7 2.7"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="1.9"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            ></path>
+                        </svg>
+                    </button>
+                    {% endif %}
+
                     {% if display_pack_prices %}
                     <div class="chaos-pack-view-price">
                         {% if card.price_info.price is not none %}
