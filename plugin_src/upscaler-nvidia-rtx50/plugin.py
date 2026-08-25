@@ -13,7 +13,7 @@ PLUGIN_NAME = (
     "iMomir Upscaler - "
     "NVIDIA RTX 50 Series"
 )
-PLUGIN_VERSION = "0.7.0"
+PLUGIN_VERSION = "0.8.0"
 PROTOCOL_VERSION = 1
 
 
@@ -924,6 +924,82 @@ def handle_upscale(payload):
 
     return result
 
+def handle_upscale_batch(payload):
+    raw_items = payload.get(
+        "items"
+    )
+
+    if not isinstance(
+        raw_items,
+        list,
+    ) or not raw_items:
+        raise ValueError(
+            "upscale_batch requires "
+            "at least one item."
+        )
+
+    if len(raw_items) > 8:
+        raise ValueError(
+            "upscale_batch supports a "
+            "maximum of 8 items."
+        )
+
+    shared_payload = {
+        key: value
+        for key, value
+        in payload.items()
+        if key != "items"
+    }
+
+    results = []
+
+    for item_index, raw_item in enumerate(
+        raw_items
+    ):
+        if not isinstance(
+            raw_item,
+            dict,
+        ):
+            raise ValueError(
+                "Each upscale_batch item "
+                "must be an object."
+            )
+
+        item_payload = dict(
+            shared_payload
+        )
+
+        item_payload.update(
+            raw_item
+        )
+
+        batch_item_id = str(
+            raw_item.get(
+                "batch_item_id",
+                item_index,
+            )
+        )
+
+        result = handle_upscale(
+            item_payload
+        )
+
+        result[
+            "batch_item_id"
+        ] = batch_item_id
+
+        results.append(
+            result
+        )
+
+    return {
+        "ok": True,
+        "plugin_id": PLUGIN_ID,
+        "version": PLUGIN_VERSION,
+        "item_count": len(results),
+        "results": results,
+    }
+
 def handle_info(payload):
     return {
         "ok": True,
@@ -941,6 +1017,7 @@ def handle_info(payload):
             "hardware",
             "models",
             "upscale",
+            "upscale_batch",
             "upscale_test",
         ],
     }
@@ -1025,6 +1102,7 @@ COMMAND_HANDLERS = {
     "hardware": handle_hardware,
     "models": handle_models,
     "upscale": handle_upscale,
+    "upscale_batch": handle_upscale_batch,
     "upscale_test": handle_upscale_test,
 }
 

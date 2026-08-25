@@ -501,3 +501,41 @@ body.imomir-zoom-comparison-open {
         display: none;
     }
 }
+
+.imomir-upscale-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.imomir-upscale-face-flip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.045);
+    color: inherit;
+    font-size: 16px;
+    cursor: pointer;
+    transition:
+        transform 160ms ease,
+        background 160ms ease,
+        border-color 160ms ease;
+}
+
+.imomir-upscale-face-flip:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.24);
+}
+
+.imomir-upscale-face-flip.imomir-upscale-face-flip-flipped {
+    transform: rotate(180deg);
+}
+
+.imomir-upscale-face-flip.hidden {
+    display: none;
+}

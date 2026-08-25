@@ -10,6 +10,8 @@ FRAME_PROFILES = {
 
         "layouts": {
             "normal",
+            "transform",
+            "modal_dfc",
         },
 
         "title_box": (

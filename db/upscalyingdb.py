@@ -704,6 +704,229 @@ def accept_upscaled_candidate(
         upscaled_image_id
     )
 
+def accept_upscaled_candidates(
+    upscaled_image_ids,
+):
+    clean_ids = []
+
+    for raw_id in (
+        upscaled_image_ids
+        or []
+    ):
+        try:
+            clean_id = int(
+                raw_id
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            continue
+
+        if (
+            clean_id > 0
+            and clean_id
+            not in clean_ids
+        ):
+            clean_ids.append(
+                clean_id
+            )
+
+    if not clean_ids:
+        raise ValueError(
+            "No Upscale candidates "
+            "were supplied."
+        )
+
+    placeholders = ",".join(
+        "?"
+        for _ in clean_ids
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            f"""
+            SELECT *
+            FROM upscaled_images
+            WHERE upscaled_image_id
+                IN ({placeholders})
+            """,
+            tuple(
+                clean_ids
+            ),
+        )
+
+        candidate_rows = (
+            cursor.fetchall()
+        )
+
+        candidates_by_id = {
+            int(
+                row[
+                    "upscaled_image_id"
+                ]
+            ): row
+            for row
+            in candidate_rows
+        }
+
+        missing_ids = [
+            candidate_id
+            for candidate_id
+            in clean_ids
+            if candidate_id
+            not in candidates_by_id
+        ]
+
+        if missing_ids:
+            raise ValueError(
+                "One or more Upscale "
+                "candidates were not found."
+            )
+
+        batch_identity = None
+
+        for candidate_id in clean_ids:
+            candidate = (
+                candidates_by_id[
+                    candidate_id
+                ]
+            )
+
+            identity_token = (
+                (
+                    "card_uuid",
+                    candidate[
+                        "card_uuid"
+                    ],
+                )
+                if candidate[
+                    "card_uuid"
+                ]
+                else (
+                    "scryfall_id",
+                    candidate[
+                        "scryfall_id"
+                    ],
+                )
+            )
+
+            if (
+                not identity_token[1]
+            ):
+                raise ValueError(
+                    "Upscale candidate has "
+                    "no usable card identity."
+                )
+
+            if batch_identity is None:
+                batch_identity = (
+                    identity_token
+                )
+
+            elif (
+                identity_token
+                != batch_identity
+            ):
+                raise ValueError(
+                    "Batch candidates do "
+                    "not belong to the "
+                    "same card."
+                )
+
+        now_utc = (
+            upscaling_utc_now()
+        )
+
+        for candidate_id in clean_ids:
+            candidate = (
+                candidates_by_id[
+                    candidate_id
+                ]
+            )
+
+            (
+                identity_where,
+                identity_params,
+            ) = (
+                _build_upscaled_identity_where(
+                    candidate
+                )
+            )
+
+            if not identity_where:
+                raise ValueError(
+                    "Upscale candidate has "
+                    "no usable card identity."
+                )
+
+            cursor.execute(
+                f"""
+                UPDATE upscaled_images
+                SET
+                    is_current = 0,
+                    quality_status = ?,
+                    updated_at_utc = ?
+                WHERE upscaled_image_id <> ?
+                  AND face_kind = ?
+                  AND is_current = 1
+                  AND quality_status = ?
+                  AND ({identity_where})
+                """,
+                (
+                    UPSCALE_QUALITY_SUPERSEDED,
+                    now_utc,
+                    candidate_id,
+                    candidate[
+                        "face_kind"
+                    ],
+                    UPSCALE_QUALITY_ACCEPTED,
+                    *identity_params,
+                ),
+            )
+
+            cursor.execute(
+                """
+                UPDATE upscaled_images
+                SET
+                    quality_status = ?,
+                    is_current = 1,
+                    updated_at_utc = ?
+                WHERE upscaled_image_id = ?
+                """,
+                (
+                    UPSCALE_QUALITY_ACCEPTED,
+                    now_utc,
+                    candidate_id,
+                ),
+            )
+
+            if cursor.rowcount != 1:
+                raise RuntimeError(
+                    "Upscale candidate "
+                    "could not be accepted."
+                )
+
+        conn.commit()
+
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
+
+    conn.close()
+
+    return [
+        get_upscaled_image_by_id(
+            candidate_id
+        )
+        for candidate_id
+        in clean_ids
+    ]
+
 
 def discard_upscaled_candidate(
     upscaled_image_id,

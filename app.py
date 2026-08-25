@@ -218,6 +218,7 @@ from db.draftdb import ensure_draft_testing_schema
 
 from db.upscalyingdb import (
     accept_upscaled_candidate,
+    accept_upscaled_candidates,
     discard_upscaled_candidate,
     ensure_upscaling_schema,
     get_current_upscaled_image_for_card,
@@ -19411,6 +19412,60 @@ def get_chaos_card_image_face_context(
         )
     )
 
+    face_payloads = parse_faces_json(
+        card_row["faces_json"]
+    )
+
+    face_index = (
+        1
+        if clean_requested_face == "back"
+        else 0
+    )
+
+    face_payload = (
+        face_payloads[face_index]
+        if len(face_payloads) > face_index
+        and isinstance(
+            face_payloads[face_index],
+            dict,
+        )
+        else {}
+    )
+
+    face_metadata = {
+        "face_uuid": (
+            face_payload.get("uuid")
+            or card_row["card_uuid"]
+            or ""
+        ),
+
+        "type_line": (
+            face_payload.get("type_line")
+            or card_row["type_line"]
+            or ""
+        ),
+
+        "mana_cost": (
+            (
+                face_payload.get(
+                    "mana_cost"
+                )
+                or ""
+            )
+            if face_payload
+            else (
+                card_row["mana_cost"]
+                or ""
+            )
+        ),
+
+        "layout": (
+            face_payload.get("layout")
+            or card_row["layout"]
+            or ""
+        ),
+    }
+
     if clean_requested_face == "back":
         if not face_data:
             return None
@@ -19418,41 +19473,65 @@ def get_chaos_card_image_face_context(
         return {
             "requested_face": "back",
             "page_kind": "back",
+
             "image_url": (
-                face_data["back_image_url"]
+                face_data[
+                    "back_image_url"
+                ]
             ),
+
             "face_name": (
-                face_data["back_face_name"]
-                or card_row["card_name"]
+                face_data[
+                    "back_face_name"
+                ]
+                or card_row[
+                    "card_name"
+                ]
                 or ""
             ),
+
+            **face_metadata,
         }
 
     if face_data:
         return {
             "requested_face": "front",
             "page_kind": "front",
+
             "image_url": (
-                face_data["front_image_url"]
+                face_data[
+                    "front_image_url"
+                ]
             ),
+
             "face_name": (
-                face_data["front_face_name"]
-                or card_row["card_name"]
+                face_data[
+                    "front_face_name"
+                ]
+                or card_row[
+                    "card_name"
+                ]
                 or ""
             ),
+
+            **face_metadata,
         }
 
     return {
         "requested_face": "front",
         "page_kind": "single",
+
         "image_url": (
             card_row["image_url"]
             or ""
         ).strip(),
+
         "face_name": (
             card_row["card_name"]
             or ""
         ).strip(),
+
+        **face_metadata,
     }
 
 
@@ -19995,6 +20074,119 @@ def chaos_card_image_compare(card_uuid):
         response_data
     )
 
+def build_chaos_upscale_face_control_data(
+    card_row,
+    card_uuid,
+    face_context,
+):
+    current_upscaled = (
+        get_current_upscaled_image_for_card(
+            card_row,
+            face_kind=(
+                face_context[
+                    "page_kind"
+                ]
+            ),
+        )
+    )
+
+    current_data = None
+
+    if current_upscaled:
+        current_data = {
+            "upscaled_image_id": (
+                current_upscaled[
+                    "upscaled_image_id"
+                ]
+            ),
+
+            "src": url_for(
+                "chaos_card_image_upscaled",
+                card_uuid=card_uuid,
+                face=(
+                    face_context[
+                        "requested_face"
+                    ]
+                ),
+                v=current_upscaled[
+                    "upscaled_image_id"
+                ],
+            ),
+
+            "width": current_upscaled.get(
+                "output_width"
+            ),
+
+            "height": current_upscaled.get(
+                "output_height"
+            ),
+
+            "plugin_id": (
+                current_upscaled.get(
+                    "plugin_id"
+                )
+                or ""
+            ),
+
+            "plugin_version": (
+                current_upscaled.get(
+                    "plugin_version"
+                )
+                or ""
+            ),
+
+            "pipeline_version": (
+                current_upscaled.get(
+                    "pipeline_version"
+                )
+                or ""
+            ),
+        }
+
+    return {
+        "face": (
+            face_context[
+                "requested_face"
+            ]
+        ),
+
+        "page_kind": (
+            face_context[
+                "page_kind"
+            ]
+        ),
+
+        "title": (
+            face_context[
+                "face_name"
+            ]
+            or card_row[
+                "card_name"
+            ]
+            or "Card"
+        ),
+
+        "source": {
+            "label": (
+                "Scryfall Source"
+            ),
+
+            "src": url_for(
+                "chaos_card_image_source",
+                card_uuid=card_uuid,
+                face=(
+                    face_context[
+                        "requested_face"
+                    ]
+                ),
+            ),
+        },
+
+        "current_upscaled": (
+            current_data
+        ),
+    }
+
 
 @app.route(
     "/upscaling/card/<card_uuid>/control",
@@ -20015,6 +20207,12 @@ def chaos_card_upscale_control(card_uuid):
         or "front"
     ).strip().lower()
 
+    if requested_face not in {
+        "front",
+        "back",
+    }:
+        requested_face = "front"
+
     card_row = get_chaos_card_by_uuid(
         card_uuid
     )
@@ -20025,21 +20223,48 @@ def chaos_card_upscale_control(card_uuid):
             "message": "Card not found.",
         }), 404
 
-    face_context = (
-        get_chaos_card_image_face_context(
-            card_row,
-            requested_face,
+    face_data = (
+        get_chaos_card_front_back_face_data(
+            card_row
         )
     )
 
-    if not face_context:
+    is_dual_faced = bool(
+        face_data
+    )
+
+    face_names = (
+        ["front", "back"]
+        if is_dual_faced
+        else ["front"]
+    )
+
+    face_contexts = {}
+
+    for face_name in face_names:
+        face_context = (
+            get_chaos_card_image_face_context(
+                card_row,
+                face_name,
+            )
+        )
+
+        if face_context:
+            face_contexts[
+                face_name
+            ] = face_context
+
+    if not face_contexts:
         return jsonify({
             "ok": False,
             "message": (
-                "Requested card face "
-                "was not found."
+                "Card image data was "
+                "not found."
             ),
         }), 404
+
+    if requested_face not in face_contexts:
+        requested_face = "front"
 
     plugin_results = []
 
@@ -20081,122 +20306,74 @@ def chaos_card_upscale_control(card_uuid):
 
         plugin_results.append({
             "plugin_id": plugin_id,
+
             "plugin_name": (
                 plugin_status.get(
                     "name"
                 )
                 or plugin_id
             ),
+
             "plugin_version": (
                 plugin_status.get(
                     "version"
                 )
                 or ""
             ),
+
             "development": bool(
                 plugin_status.get(
                     "development"
                 )
             ),
+
             "models": models,
         })
 
-    current_upscaled = (
-        get_current_upscaled_image_for_card(
-            card_row,
-            face_kind=(
-                face_context[
-                    "page_kind"
-                ]
-            ),
+    faces = {}
+
+    for (
+        face_name,
+        face_context,
+    ) in face_contexts.items():
+        faces[face_name] = (
+            build_chaos_upscale_face_control_data(
+                card_row,
+                card_uuid,
+                face_context,
+            )
         )
-    )
 
-    current_data = None
-
-    if current_upscaled:
-        current_data = {
-            "upscaled_image_id": (
-                current_upscaled[
-                    "upscaled_image_id"
-                ]
-            ),
-            "src": url_for(
-                "chaos_card_image_upscaled",
-                card_uuid=card_uuid,
-                face=(
-                    face_context[
-                        "requested_face"
-                    ]
-                ),
-                v=current_upscaled[
-                    "upscaled_image_id"
-                ],
-            ),
-            "width": current_upscaled.get(
-                "output_width"
-            ),
-            "height": current_upscaled.get(
-                "output_height"
-            ),
-            "plugin_id": (
-                current_upscaled.get(
-                    "plugin_id"
-                )
-                or ""
-            ),
-            "plugin_version": (
-                current_upscaled.get(
-                    "plugin_version"
-                )
-                or ""
-            ),
-            "pipeline_version": (
-                current_upscaled.get(
-                    "pipeline_version"
-                )
-                or ""
-            ),
-        }
+    active_face_data = faces[
+        requested_face
+    ]
 
     return jsonify({
         "ok": True,
 
         "card_uuid": card_uuid,
 
-        "title": (
-            face_context[
-                "face_name"
-            ]
-            or card_row[
-                "card_name"
-            ]
-            or "Card"
+        "is_dual_faced": (
+            is_dual_faced
         ),
 
-        "face": (
-            face_context[
-                "requested_face"
-            ]
-        ),
+        "face": requested_face,
 
-        "source": {
-            "label": (
-                "Scryfall Source"
-            ),
-            "src": url_for(
-                "chaos_card_image_source",
-                card_uuid=card_uuid,
-                face=(
-                    face_context[
-                        "requested_face"
-                    ]
-                ),
-            ),
-        },
+        "faces": faces,
+
+        # Legacy active-face values.
+        "title": active_face_data[
+            "title"
+        ],
+
+        "source": active_face_data[
+            "source"
+        ],
 
         "current_upscaled": (
-            current_data
+            active_face_data[
+                "current_upscaled"
+            ]
         ),
 
         "dev_feedback_enabled": (
@@ -20214,8 +20391,207 @@ def chaos_card_upscale_control(card_uuid):
             "chaos_card_upscale_revert",
             card_uuid=card_uuid,
         ),
+
+        "accept_batch_url": url_for(
+            "upscaled_candidates_accept_batch",
+        ),
     })
 
+def build_upscale_plugin_card_payload(
+    card_row,
+    face_context,
+):
+    return {
+        "card_uuid": (
+            card_row["card_uuid"]
+        ),
+
+        "card_name": (
+            card_row["card_name"]
+            or ""
+        ),
+
+        "face_name": (
+            face_context["face_name"]
+            or ""
+        ),
+
+        "face_kind": (
+            face_context["page_kind"]
+        ),
+
+        "face_uuid": (
+            face_context.get(
+                "face_uuid"
+            )
+            or ""
+        ),
+
+        "set_code": (
+            card_row["set_code"]
+            or ""
+        ),
+
+        "collector_number": (
+            card_row[
+                "collector_number"
+            ]
+            or ""
+        ),
+
+        "frame_version": (
+            card_row[
+                "frame_version"
+            ]
+            or ""
+        ),
+
+        "border_color": (
+            card_row["border_color"]
+            or ""
+        ),
+
+        "layout": (
+            face_context.get("layout")
+            or card_row["layout"]
+            or ""
+        ),
+
+        "type_line": (
+            face_context.get(
+                "type_line"
+            )
+            or card_row["type_line"]
+            or ""
+        ),
+
+        "mana_cost": (
+            face_context.get(
+                "mana_cost"
+            )
+            if face_context.get(
+                "mana_cost"
+            ) is not None
+            else (
+                card_row["mana_cost"]
+                or ""
+            )
+        ),
+
+        "mana_value": (
+            card_row["mana_value"]
+        ),
+
+        "is_dual_faced": bool(
+            int(
+                card_row[
+                    "is_dual_faced"
+                ]
+                or 0
+            )
+        ),
+
+        "face_count": int(
+            card_row["face_count"]
+            or 0
+        ),
+    }
+
+
+def build_upscale_candidate_response(
+    candidate_id,
+    plugin_result,
+    face_context,
+):
+    return {
+        "face": (
+            face_context[
+                "requested_face"
+            ]
+        ),
+
+        "page_kind": (
+            face_context[
+                "page_kind"
+            ]
+        ),
+
+        "title": (
+            face_context[
+                "face_name"
+            ]
+            or "Card"
+        ),
+
+        "upscaled_image_id": (
+            candidate_id
+        ),
+
+        "src": url_for(
+            "upscaled_candidate_image",
+            upscaled_image_id=(
+                candidate_id
+            ),
+            v=int(
+                time.time()
+            ),
+        ),
+
+        "width": (
+            plugin_result.get(
+                "output_width"
+            )
+        ),
+
+        "height": (
+            plugin_result.get(
+                "output_height"
+            )
+        ),
+
+        "model_id": (
+            plugin_result.get(
+                "model_id"
+            )
+            or ""
+        ),
+
+        "model_label": (
+            plugin_result.get(
+                "model_label"
+            )
+            or plugin_result.get(
+                "model_id"
+            )
+            or ""
+        ),
+
+        "processing_ms": (
+            plugin_result.get(
+                "processing_ms"
+            )
+        ),
+
+        "peak_gpu_memory_mb": (
+            plugin_result.get(
+                "peak_gpu_memory_mb"
+            )
+        ),
+
+        "accept_url": url_for(
+            "upscaled_candidate_accept",
+            upscaled_image_id=(
+                candidate_id
+            ),
+        ),
+
+        "discard_url": url_for(
+            "upscaled_candidate_discard",
+            upscaled_image_id=(
+                candidate_id
+            ),
+        ),
+    }
 
 @app.route(
     "/upscaling/card/<card_uuid>/run",
@@ -20262,6 +20638,12 @@ def chaos_card_upscale_run(card_uuid):
         or "front"
     ).strip().lower()
 
+    if requested_face not in {
+        "front",
+        "back",
+    }:
+        requested_face = "front"
+
     ready_plugins = {
         plugin["plugin_id"]: plugin
         for plugin in
@@ -20287,45 +20669,45 @@ def chaos_card_upscale_run(card_uuid):
             "message": "Card not found.",
         }), 404
 
-    face_context = (
-        get_chaos_card_image_face_context(
-            card_row,
-            requested_face,
+    face_data = (
+        get_chaos_card_front_back_face_data(
+            card_row
         )
     )
 
-    if not face_context:
-        return jsonify({
-            "ok": False,
-            "message": (
-                "Requested card face "
-                "was not found."
-            ),
-        }), 404
+    is_dual_faced = bool(
+        face_data
+    )
 
-    source_result = (
-        download_chaos_image_to_cache(
-            card_row["card_uuid"],
-            face_context["page_kind"],
-            face_context["face_name"],
-            face_context["image_url"],
+    face_names = (
+        ["front", "back"]
+        if is_dual_faced
+        else [requested_face]
+    )
+
+    face_contexts = []
+
+    for face_name in face_names:
+        face_context = (
+            get_chaos_card_image_face_context(
+                card_row,
+                face_name,
+            )
         )
-    )
 
-    if not source_result:
-        return jsonify({
-            "ok": False,
-            "message": (
-                "The Scryfall source image "
-                "could not be loaded."
-            ),
-        }), 400
+        if not face_context:
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "Card face could not "
+                    "be loaded: "
+                    f"{face_name}."
+                ),
+            }), 400
 
-    source_path = os.path.abspath(
-        source_result[
-            "absolute_path"
-        ]
-    )
+        face_contexts.append(
+            face_context
+        )
 
     card_output_dir = os.path.join(
         UPSCALED_SCRYFALL_DIR,
@@ -20337,130 +20719,105 @@ def chaos_card_upscale_run(card_uuid):
         exist_ok=True,
     )
 
-    output_filename = (
-        f"{safe_filename(face_context['page_kind'])}_"
-        f"{safe_filename(model_id or 'model')}_"
-        f"{int(time.time() * 1000)}.png"
+    batch_stamp = int(
+        time.time() * 1000
     )
 
-    output_path = os.path.join(
-        card_output_dir,
-        output_filename,
-    )
+    prepared_faces = []
+
+    for face_context in face_contexts:
+        source_result = (
+            download_chaos_image_to_cache(
+                card_row["card_uuid"],
+                face_context["page_kind"],
+                face_context["face_name"],
+                face_context["image_url"],
+            )
+        )
+
+        if not source_result:
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "The Scryfall source "
+                    "image could not be "
+                    "loaded for "
+                    f"{face_context['requested_face']} "
+                    "face."
+                ),
+            }), 400
+
+        source_path = os.path.abspath(
+            source_result[
+                "absolute_path"
+            ]
+        )
+
+        output_filename = (
+            f"{safe_filename(face_context['page_kind'])}_"
+            f"{safe_filename(model_id or 'model')}_"
+            f"{batch_stamp}.png"
+        )
+
+        output_path = os.path.join(
+            card_output_dir,
+            output_filename,
+        )
+
+        prepared_faces.append({
+            "face_context": (
+                face_context
+            ),
+
+            "source_path": (
+                source_path
+            ),
+
+            "output_path": (
+                output_path
+            ),
+        })
+
+    plugin_items = []
+
+    for prepared_face in prepared_faces:
+        face_context = prepared_face[
+            "face_context"
+        ]
+
+        plugin_items.append({
+            "batch_item_id": (
+                face_context[
+                    "requested_face"
+                ]
+            ),
+
+            "input_path": (
+                prepared_face[
+                    "source_path"
+                ]
+            ),
+
+            "output_path": (
+                prepared_face[
+                    "output_path"
+                ]
+            ),
+
+            "card": (
+                build_upscale_plugin_card_payload(
+                    card_row,
+                    face_context,
+                )
+            ),
+        })
 
     try:
-        plugin_result = run_plugin_json(
+        batch_result = run_plugin_json(
             plugin_id,
-            "upscale",
+            "upscale_batch",
             {
                 "model_id": model_id,
-
-                "input_path": (
-                    source_path
-                ),
-
-                "output_path": (
-                    output_path
-                ),
-
-                "card": {
-                    "card_uuid": (
-                        card_row[
-                            "card_uuid"
-                        ]
-                    ),
-
-                    "card_name": (
-                        card_row[
-                            "card_name"
-                        ]
-                        or ""
-                    ),
-
-                    "face_name": (
-                        face_context[
-                            "face_name"
-                        ]
-                        or ""
-                    ),
-
-                    "face_kind": (
-                        face_context[
-                            "page_kind"
-                        ]
-                    ),
-
-                    "set_code": (
-                        card_row[
-                            "set_code"
-                        ]
-                        or ""
-                    ),
-
-                    "collector_number": (
-                        card_row[
-                            "collector_number"
-                        ]
-                        or ""
-                    ),
-
-                    "frame_version": (
-                        card_row[
-                            "frame_version"
-                        ]
-                        or ""
-                    ),
-
-                    "border_color": (
-                        card_row[
-                            "border_color"
-                        ]
-                        or ""
-                    ),
-
-                    "layout": (
-                        card_row[
-                            "layout"
-                        ]
-                        or ""
-                    ),
-
-                    "type_line": (
-                        card_row[
-                            "type_line"
-                        ]
-                        or ""
-                    ),
-
-                    "mana_cost": (
-                        card_row[
-                            "mana_cost"
-                        ]
-                        or ""
-                    ),
-
-                    "mana_value": (
-                        card_row[
-                            "mana_value"
-                        ]
-                    ),
-
-                    "is_dual_faced": bool(
-                        int(
-                            card_row[
-                                "is_dual_faced"
-                            ]
-                            or 0
-                        )
-                    ),
-
-                    "face_count": int(
-                        card_row[
-                            "face_count"
-                        ]
-                        or 0
-                    ),
-                },
 
                 "host_assets": {
                     "fonts_dir": os.path.abspath(
@@ -20479,16 +20836,34 @@ def chaos_card_upscale_run(card_uuid):
                         )
                     ),
                 },
+
+                "items": plugin_items,
             },
-            timeout=900,
+            timeout=1800,
         )
 
     except Exception as exc:
+        for prepared_face in prepared_faces:
+            output_path = prepared_face[
+                "output_path"
+            ]
+
+            if os.path.exists(
+                output_path
+            ):
+                try:
+                    os.remove(
+                        output_path
+                    )
+                except OSError:
+                    pass
+
         write_error_log(
-            "CARD UPSCALE FAILED | "
+            "CARD UPSCALE BATCH FAILED | "
             f"card_uuid={card_uuid} | "
             f"plugin_id={plugin_id} | "
-            f"model_id={model_id}",
+            f"model_id={model_id} | "
+            f"faces={','.join(face_names)}",
             exc=exc,
         )
 
@@ -20497,79 +20872,178 @@ def chaos_card_upscale_run(card_uuid):
             "message": str(exc),
         }), 500
 
-    if (
-        not plugin_result.get("ok")
-        or not os.path.exists(
-            output_path
+    plugin_results = (
+        batch_result.get(
+            "results",
+            [],
         )
-    ):
-        return jsonify({
-            "ok": False,
-            "message": (
-                "Upscaling plugin did not "
-                "produce an output image."
-            ),
-        }), 500
+        or []
+    )
 
-    candidate_id = (
-        register_upscaled_candidate(
-            card_uuid=(
-                card_row[
-                    "card_uuid"
+    plugin_result_by_face = {}
+
+    for plugin_result in plugin_results:
+        face_name = str(
+            plugin_result.get(
+                "batch_item_id",
+                "",
+            )
+            or ""
+        ).strip().lower()
+
+        if face_name:
+            plugin_result_by_face[
+                face_name
+            ] = plugin_result
+
+    # Nothing enters the DB unless
+    # every face succeeded.
+    for prepared_face in prepared_faces:
+        face_context = prepared_face[
+            "face_context"
+        ]
+
+        face_name = face_context[
+            "requested_face"
+        ]
+
+        plugin_result = (
+            plugin_result_by_face.get(
+                face_name
+            )
+        )
+
+        if (
+            not plugin_result
+            or not plugin_result.get(
+                "ok"
+            )
+            or not os.path.exists(
+                prepared_face[
+                    "output_path"
                 ]
-            ),
-            scryfall_id=(
-                card_row[
-                    "scryfall_id"
-                ]
-            ),
-            set_code=(
-                card_row[
-                    "set_code"
-                ]
-            ),
-            collector_number=(
-                card_row[
-                    "collector_number"
-                ]
-            ),
-            face_kind=(
-                face_context[
-                    "page_kind"
-                ]
-            ),
-            source_image_path=(
-                source_path
-            ),
-            output_image_path=(
-                output_path
-            ),
-            output_width=(
-                plugin_result.get(
-                    "output_width"
-                )
-            ),
-            output_height=(
-                plugin_result.get(
-                    "output_height"
-                )
-            ),
-            plugin_id=plugin_id,
-            plugin_version=(
-                plugin_result.get(
-                    "version"
-                )
-                or ""
-            ),
-            pipeline_version=(
-                plugin_result.get(
-                    "model_id"
-                )
-                or model_id
-            ),
-            plugin_result=(
-                plugin_result
-            ),
+            )
+        ):
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "Upscaling plugin did "
+                    "not produce every "
+                    "requested card face."
+                ),
+            }), 500
+
+    candidates = {}
+
+    for prepared_face in prepared_faces:
+        face_context = prepared_face[
+            "face_context"
+        ]
+
+        face_name = face_context[
+            "requested_face"
+        ]
+
+        plugin_result = (
+            plugin_result_by_face[
+                face_name
+            ]
+        )
+
+        candidate_id = (
+            register_upscaled_candidate(
+                card_uuid=(
+                    card_row[
+                        "card_uuid"
+                    ]
+                ),
+
+                scryfall_id=(
+                    card_row[
+                        "scryfall_id"
+                    ]
+                ),
+
+                set_code=(
+                    card_row[
+                        "set_code"
+                    ]
+                ),
+
+                collector_number=(
+                    card_row[
+                        "collector_number"
+                    ]
+                ),
+
+                face_kind=(
+                    face_context[
+                        "page_kind"
+                    ]
+                ),
+
+                source_image_path=(
+                    prepared_face[
+                        "source_path"
+                    ]
+                ),
+
+                output_image_path=(
+                    prepared_face[
+                        "output_path"
+                    ]
+                ),
+
+                output_width=(
+                    plugin_result.get(
+                        "output_width"
+                    )
+                ),
+
+                output_height=(
+                    plugin_result.get(
+                        "output_height"
+                    )
+                ),
+
+                plugin_id=plugin_id,
+
+                plugin_version=(
+                    plugin_result.get(
+                        "version"
+                    )
+                    or ""
+                ),
+
+                pipeline_version=(
+                    plugin_result.get(
+                        "model_id"
+                    )
+                    or model_id
+                ),
+
+                plugin_result=(
+                    plugin_result
+                ),
+            )
+        )
+
+        candidates[face_name] = (
+            build_upscale_candidate_response(
+                candidate_id,
+                plugin_result,
+                face_context,
+            )
+        )
+
+    active_candidate = (
+        candidates.get(
+            requested_face
+        )
+        or next(
+            iter(
+                candidates.values()
+            )
         )
     )
 
@@ -20577,77 +21051,30 @@ def chaos_card_upscale_run(card_uuid):
         "ok": True,
 
         "message": (
-            "Upscale complete. "
-            "Review the result."
+            "Front and back upscale "
+            "complete. Review both faces."
+            if is_dual_faced
+            else (
+                "Upscale complete. "
+                "Review the result."
+            )
         ),
 
-        "candidate": {
-            "upscaled_image_id": (
-                candidate_id
-            ),
+        "is_dual_faced": (
+            is_dual_faced
+        ),
 
-            "src": url_for(
-                "upscaled_candidate_image",
-                upscaled_image_id=(
-                    candidate_id
-                ),
-                v=int(
-                    time.time()
-                ),
-            ),
+        "faces_processed": list(
+            candidates.keys()
+        ),
 
-            "width": (
-                plugin_result.get(
-                    "output_width"
-                )
-            ),
+        "candidate": (
+            active_candidate
+        ),
 
-            "height": (
-                plugin_result.get(
-                    "output_height"
-                )
-            ),
-
-            "model_id": (
-                plugin_result.get(
-                    "model_id"
-                )
-                or model_id
-            ),
-
-            "model_label": (
-                plugin_result.get(
-                    "model_label"
-                )
-                or model_id
-            ),
-
-            "processing_ms": (
-                plugin_result.get(
-                    "processing_ms"
-                )
-            ),
-
-            "peak_gpu_memory_mb": (
-                plugin_result.get(
-                    "peak_gpu_memory_mb"
-                )
-            ),
-
-            "accept_url": url_for(
-                "upscaled_candidate_accept",
-                upscaled_image_id=(
-                    candidate_id
-                ),
-            ),
-
-            "discard_url": url_for(
-                "upscaled_candidate_discard",
-                upscaled_image_id=(
-                    candidate_id
-                ),
-            ),
-        },
+        "candidates": (
+            candidates
+        ),
     })
 
 
@@ -20673,6 +21100,225 @@ def upscaled_candidate_image(
         max_age=0,
     )
 
+@app.route(
+    "/upscaling/candidates/accept-batch",
+    methods=["POST"],
+)
+def upscaled_candidates_accept_batch():
+    try:
+        payload = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
+
+        raw_candidates = (
+            payload.get(
+                "candidates"
+            )
+        )
+
+        if not isinstance(
+            raw_candidates,
+            list,
+        ) or not raw_candidates:
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "No Upscale candidates "
+                    "were supplied."
+                ),
+            }), 400
+
+        candidate_items = []
+        candidate_rows = []
+        candidate_ids = []
+
+        for raw_item in raw_candidates:
+            if not isinstance(
+                raw_item,
+                dict,
+            ):
+                continue
+
+            try:
+                candidate_id = int(
+                    raw_item.get(
+                        "upscaled_image_id"
+                    )
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                continue
+
+            candidate = (
+                get_upscaled_image_by_id(
+                    candidate_id
+                )
+            )
+
+            if not candidate:
+                return jsonify({
+                    "ok": False,
+                    "message": (
+                        "Upscaled candidate "
+                        f"{candidate_id} "
+                        "was not found."
+                    ),
+                }), 404
+
+            candidate_ids.append(
+                candidate_id
+            )
+
+            candidate_rows.append(
+                candidate
+            )
+
+            candidate_items.append({
+                "face": str(
+                    raw_item.get(
+                        "face",
+                        candidate.get(
+                            "face_kind",
+                            "",
+                        ),
+                    )
+                    or ""
+                ).strip().lower(),
+
+                "feedback": (
+                    raw_item.get(
+                        "feedback"
+                    )
+                    if isinstance(
+                        raw_item.get(
+                            "feedback"
+                        ),
+                        dict,
+                    )
+                    else {}
+                ),
+            })
+
+        if not candidate_ids:
+            return jsonify({
+                "ok": False,
+                "message": (
+                    "No valid Upscale "
+                    "candidates were supplied."
+                ),
+            }), 400
+
+        accepted_rows = (
+            accept_upscaled_candidates(
+                candidate_ids
+            )
+        )
+
+        feedback_warnings = []
+
+        accepted_results = []
+
+        for (
+            candidate,
+            candidate_item,
+            accepted,
+        ) in zip(
+            candidate_rows,
+            candidate_items,
+            accepted_rows,
+        ):
+            feedback_result = (
+                try_record_upscaling_dev_feedback(
+                    decision="accepted",
+                    candidate_row=candidate,
+                    feedback_payload=(
+                        candidate_item[
+                            "feedback"
+                        ]
+                    ),
+                )
+            )
+
+            feedback_error = (
+                feedback_result.get(
+                    "error"
+                )
+                or ""
+            )
+
+            if feedback_error:
+                feedback_warnings.append(
+                    (
+                        candidate_item[
+                            "face"
+                        ]
+                        or candidate.get(
+                            "face_kind",
+                            "face",
+                        )
+                    )
+                    + ": "
+                    + feedback_error
+                )
+
+            accepted_results.append({
+                "face": (
+                    candidate_item[
+                        "face"
+                    ]
+                    or candidate.get(
+                        "face_kind",
+                        ""
+                    )
+                ),
+
+                "upscaled_image_id": (
+                    accepted[
+                        "upscaled_image_id"
+                    ]
+                ),
+            })
+
+        return jsonify({
+            "ok": True,
+
+            "message": (
+                "Upscale batch accepted."
+            ),
+
+            "accepted": (
+                accepted_results
+            ),
+
+            "feedback_warning": (
+                " | ".join(
+                    feedback_warnings
+                )
+            ),
+        })
+
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    except Exception as exc:
+        write_error_log(
+            "UPSCALE BATCH ACCEPT FAILED",
+            exc=exc,
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 500
 
 @app.route(
     "/upscaling/candidate/<int:upscaled_image_id>/accept",

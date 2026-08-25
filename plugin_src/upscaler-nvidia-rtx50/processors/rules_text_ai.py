@@ -32,6 +32,8 @@ RUNTIME_MODEL_ID = (
     "realesrgan_x2plus"
 )
 
+_RUNTIME_MODEL_CACHE = {}
+
 
 def build_feather_mask(
     torch_module,
@@ -120,7 +122,6 @@ def build_feather_mask(
         width,
     )
 
-
 def load_runtime_model(
     device,
     model_id=None,
@@ -131,6 +132,20 @@ def load_runtime_model(
             or RUNTIME_MODEL_ID
         ).strip()
     )
+
+    cache_key = (
+        runtime_model_id,
+        str(device),
+    )
+
+    cached_model = (
+        _RUNTIME_MODEL_CACHE.get(
+            cache_key
+        )
+    )
+
+    if cached_model:
+        return cached_model
 
     model_path = ensure_model_file(
         runtime_model_id
@@ -159,10 +174,16 @@ def load_runtime_model(
         .eval()
     )
 
-    return (
+    cached_model = (
         descriptor,
         model_path,
     )
+
+    _RUNTIME_MODEL_CACHE[
+        cache_key
+    ] = cached_model
+
+    return cached_model
 
 
 def process_rules_text_realesrgan(

@@ -16,10 +16,15 @@
     let acceptButton = null;
     let discardButton = null;
     let revertButton = null;
+    let flipButton = null;
 
     let currentControlUrl = "";
     let currentData = null;
     let currentCandidate = null;
+
+    let currentFace = "front";
+    let currentCandidatesByFace = {};
+    let feedbackByFace = {};
 
     const lastUpscaleModelStorageKey =
         "imomir_last_upscale_model";
@@ -1325,6 +1330,33 @@
         titleElement.className =
             "imomir-image-compare-title";
 
+        const headerActions =
+            document.createElement("div");
+
+        headerActions.className =
+            "imomir-upscale-header-actions";
+
+        flipButton =
+            document.createElement("button");
+
+        flipButton.type = "button";
+
+        flipButton.className =
+            "imomir-upscale-face-flip hidden";
+
+        flipButton.innerHTML =
+            '<i class="fa-solid fa-rotate"></i>';
+
+        flipButton.setAttribute(
+            "aria-label",
+            "Show back face"
+        );
+
+        flipButton.setAttribute(
+            "title",
+            "Show back face"
+        );
+
         const closeButton =
             document.createElement("button");
 
@@ -1333,13 +1365,27 @@
             "imomir-image-compare-close";
 
         closeButton.innerHTML = "&times;";
+
         closeButton.setAttribute(
             "aria-label",
             "Close Upscale controls"
         );
 
-        header.appendChild(titleElement);
-        header.appendChild(closeButton);
+        header.appendChild(
+            titleElement
+        );
+
+        headerActions.appendChild(
+            flipButton
+        );
+
+        headerActions.appendChild(
+            closeButton
+        );
+
+        header.appendChild(
+            headerActions
+        );
 
         const controls =
             document.createElement("div");
@@ -1516,6 +1562,11 @@
             closeViewer
         );
 
+        flipButton.addEventListener(
+            "click",
+            flipActiveFace
+        );
+
         overlay.addEventListener(
             "click",
             function (event) {
@@ -1659,6 +1710,188 @@
         }
     }
 
+    function saveCurrentFaceFeedback() {
+        if (
+            !currentData
+            || !currentData.dev_feedback_enabled
+            || !currentCandidatesByFace[
+                currentFace
+            ]
+            || !devFeedbackPanel
+            || devFeedbackPanel.classList.contains(
+                "hidden"
+            )
+        ) {
+            return;
+        }
+
+        feedbackByFace[
+            currentFace
+        ] = collectDevFeedback();
+    }
+
+
+    function getCurrentFaceData() {
+        if (!currentData) {
+            return null;
+        }
+
+        if (
+            currentData.faces
+            && currentData.faces[
+                currentFace
+            ]
+        ) {
+            return currentData.faces[
+                currentFace
+            ];
+        }
+
+        return {
+            face: (
+                currentData.face
+                || "front"
+            ),
+
+            title: currentData.title,
+            source: currentData.source,
+
+            current_upscaled: (
+                currentData.current_upscaled
+            )
+        };
+    }
+
+
+    function updateFaceFlipButton() {
+        if (!flipButton) {
+            return;
+        }
+
+        const canFlip = Boolean(
+            currentData
+            && currentData.is_dual_faced
+            && currentData.faces
+            && currentData.faces.front
+            && currentData.faces.back
+        );
+
+        flipButton.classList.toggle(
+            "hidden",
+            !canFlip
+        );
+
+        if (!canFlip) {
+            return;
+        }
+
+        const showingBack = (
+            currentFace === "back"
+        );
+
+        flipButton.classList.toggle(
+            "imomir-upscale-face-flip-flipped",
+            showingBack
+        );
+
+        const label = (
+            showingBack
+                ? "Show front face"
+                : "Show back face"
+        );
+
+        flipButton.setAttribute(
+            "aria-label",
+            label
+        );
+
+        flipButton.setAttribute(
+            "title",
+            label
+        );
+    }
+
+
+    function renderActiveFace() {
+        const faceData =
+            getCurrentFaceData();
+
+        if (!faceData) {
+            return;
+        }
+
+        currentCandidate = (
+            currentCandidatesByFace[
+                currentFace
+            ]
+            || null
+        );
+
+        titleElement.textContent =
+            faceData.title
+            || currentData.title
+            || "Image Upscaling";
+
+        if (
+            faceData.source
+            && faceData.source.src
+        ) {
+            sourceImage.src =
+                faceData.source.src;
+        }
+
+        const displayedOutput = (
+            currentCandidate
+            || faceData.current_upscaled
+        );
+
+        showOutput(
+            displayedOutput,
+
+            currentCandidate
+                ? "Upscaled — Candidate"
+                : (
+                    faceData.current_upscaled
+                        ? "Upscaled — In Use"
+                        : "Upscaled Output"
+                )
+        );
+
+        revertButton.classList.toggle(
+            "hidden",
+
+            Boolean(
+                Object.keys(
+                    currentCandidatesByFace
+                ).length
+            )
+            || !faceData.current_upscaled
+        );
+
+        updateFaceFlipButton();
+    }
+
+
+    function flipActiveFace() {
+        if (
+            !currentData
+            || !currentData.is_dual_faced
+            || !currentData.faces
+        ) {
+            return;
+        }
+
+        saveCurrentFaceFeedback();
+
+        currentFace = (
+            currentFace === "back"
+                ? "front"
+                : "back"
+        );
+
+        renderActiveFace();
+    }
+
     function populateModels(data) {
         modelSelect.innerHTML = "";
 
@@ -1794,27 +2027,24 @@
         currentData = data;
         currentCandidate = null;
 
+        currentCandidatesByFace = {};
+        feedbackByFace = {};
+
+        currentFace = (
+            data.face === "back"
+                ? "back"
+                : "front"
+        );
+
         setDevFeedbackVisible(
             false
         );
 
         resetDevFeedback();
 
-        titleElement.textContent =
-            data.title
-            || "Image Upscaling";
-
-        sourceImage.src =
-            data.source.src;
-
         populateModels(data);
 
-        showOutput(
-            data.current_upscaled,
-            data.current_upscaled
-                ? "Upscaled — In Use"
-                : "Upscaled Output"
-        );
+        renderActiveFace();
 
         acceptButton.classList.add(
             "hidden"
@@ -1824,15 +2054,22 @@
             "hidden"
         );
 
-        revertButton.classList.toggle(
-            "hidden",
-            !data.current_upscaled
-        );
+        const faceData =
+            getCurrentFaceData();
 
         statusElement.textContent =
-            data.current_upscaled
-                ? "An accepted upscale is currently in use."
-                : "Choose a model and run an upscale.";
+            faceData
+            && faceData.current_upscaled
+                ? (
+                    data.is_dual_faced
+                        ? "An accepted upscale is currently in use for this face. Use the flip button to review both sides."
+                        : "An accepted upscale is currently in use."
+                )
+                : (
+                    data.is_dual_faced
+                        ? "Choose a model and run one batch to upscale both faces."
+                        : "Choose a model and run an upscale."
+                );
     }
 
     async function loadControl() {
@@ -1930,7 +2167,9 @@
         setBusy(true);
 
         statusElement.textContent =
-            "Running Upscale...";
+            currentData.is_dual_faced
+                ? "Running one Upscale batch for front and back..."
+                : "Running Upscale...";
 
         try {
             const response = await fetch(
@@ -1964,13 +2203,36 @@
                 );
             }
 
-            currentCandidate =
-                data.candidate;
+            currentCandidatesByFace = (
+                data.candidates
+                && typeof data.candidates
+                === "object"
+            )
+                ? data.candidates
+                : {};
 
-            showOutput(
-                currentCandidate,
-                "Upscaled — Candidate"
+            if (
+                !Object.keys(
+                    currentCandidatesByFace
+                ).length
+                && data.candidate
+            ) {
+                currentCandidatesByFace[
+                    currentFace
+                ] = data.candidate;
+            }
+
+            feedbackByFace = {};
+
+            currentCandidate = (
+                currentCandidatesByFace[
+                    currentFace
+                ]
+                || data.candidate
+                || null
             );
+
+            renderActiveFace();
 
             acceptButton.classList.remove(
                 "hidden"
@@ -1991,7 +2253,9 @@
             }
 
             statusElement.textContent =
-                "Review the candidate beside the original.";
+                data.is_dual_faced
+                    ? "Front and back candidates are ready. Use the flip button to review both faces before accepting."
+                    : "Review the candidate beside the original.";
 
         } catch (error) {
             statusElement.textContent =
@@ -2002,35 +2266,125 @@
     }
 
     async function acceptCandidate() {
-        if (!currentCandidate) {
+        const candidateEntries =
+            Object.entries(
+                currentCandidatesByFace
+                || {}
+            );
+
+        if (
+            !candidateEntries.length
+            && currentCandidate
+        ) {
+            candidateEntries.push([
+                currentFace,
+                currentCandidate
+            ]);
+        }
+
+        if (!candidateEntries.length) {
             return;
         }
+
+        saveCurrentFaceFeedback();
 
         setBusy(true);
 
         try {
+            const batchCandidates =
+                candidateEntries.map(
+                    function (
+                        [
+                            face,
+                            candidate
+                        ]
+                    ) {
+                        let feedback = null;
+
+                        if (
+                            currentData
+                            && currentData
+                                .dev_feedback_enabled
+                        ) {
+                            if (
+                                feedbackByFace[
+                                    face
+                                ]
+                            ) {
+                                feedback =
+                                    feedbackByFace[
+                                        face
+                                    ];
+
+                            } else if (
+                                face
+                                === currentFace
+                            ) {
+                                feedback =
+                                    collectDevFeedback();
+                            }
+                        }
+
+                        return {
+                            face: face,
+
+                            upscaled_image_id:
+                                candidate
+                                    .upscaled_image_id,
+
+                            feedback: feedback
+                        };
+                    }
+                );
+
             const response = await fetch(
-                currentCandidate.accept_url,
+                (
+                    currentData
+                    && currentData
+                        .accept_batch_url
+                )
+                    || (
+                        "/upscaling/"
+                        + "candidates/"
+                        + "accept-batch"
+                    ),
                 {
                     method: "POST",
+
                     headers: {
                         "Content-Type":
                             "application/json",
+
                         "Accept":
                             "application/json"
                     },
+
                     body: JSON.stringify({
-                        feedback: (
-                            currentData.dev_feedback_enabled
-                            ? collectDevFeedback()
-                            : null
-                        )
+                        candidates:
+                            batchCandidates
                     })
                 }
             );
 
-            const data =
-                await response.json();
+            const rawResponse =
+                await response.text();
+
+            let data = {};
+
+            try {
+                data = rawResponse
+                    ? JSON.parse(
+                        rawResponse
+                    )
+                    : {};
+
+            } catch (parseError) {
+                throw new Error(
+                    "Accept Upscale returned "
+                    + "an invalid server "
+                    + "response."
+                );
+            }
 
             if (
                 !response.ok
@@ -2038,24 +2392,25 @@
             ) {
                 throw new Error(
                     data.message
-                    || "Could not accept Upscale."
+                    || (
+                        "Could not accept "
+                        + "Upscale batch."
+                    )
                 );
             }
 
-            await loadControl();
+            currentCandidate = null;
+            currentCandidatesByFace = {};
 
-            statusElement.textContent =
-                data.feedback_warning
-                    ? "Upscale accepted, but Dev Feedback could not be written: "
-                        + data.feedback_warning
-                    : "Upscaled image accepted and is now in use.";
+            closeViewer();
 
         } catch (error) {
             statusElement.textContent =
                 error.message;
-        }
 
-        setBusy(false);
+        } finally {
+            setBusy(false);
+        }
     }
 
     async function discardCandidate() {
