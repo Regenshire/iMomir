@@ -20389,6 +20389,151 @@ def build_chaos_upscale_face_control_data(
         ),
     }
 
+UPSCALER_MODEL_CAPABILITY_SCHEMA_VERSION = 1
+
+UPSCALER_MODEL_CAPABILITY_NAMES = (
+    "batch",
+    "double_faced",
+    "semantic_regions",
+    "generative_bleed",
+)
+
+
+def normalize_upscaler_model_contract(
+    model,
+):
+    if not isinstance(
+        model,
+        dict,
+    ):
+        return None
+
+    normalized_model = dict(
+        model
+    )
+
+    raw_capabilities = (
+        model.get(
+            "capabilities"
+        )
+    )
+
+    capabilities = (
+        dict(
+            raw_capabilities
+        )
+        if isinstance(
+            raw_capabilities,
+            dict,
+        )
+        else {}
+    )
+
+    for capability_name in (
+        UPSCALER_MODEL_CAPABILITY_NAMES
+    ):
+        capabilities[
+            capability_name
+        ] = bool(
+            capabilities.get(
+                capability_name,
+                False,
+            )
+        )
+
+    raw_requirements = (
+        model.get(
+            "requirements"
+        )
+    )
+
+    requirements = (
+        dict(
+            raw_requirements
+        )
+        if isinstance(
+            raw_requirements,
+            dict,
+        )
+        else {}
+    )
+
+    raw_minimum_memory_mb = (
+        requirements.get(
+            "minimum_memory_mb"
+        )
+    )
+
+    if raw_minimum_memory_mb in {
+        None,
+        "",
+    }:
+        minimum_memory_mb = None
+
+    else:
+        try:
+            minimum_memory_mb = max(
+                0,
+                int(
+                    raw_minimum_memory_mb
+                ),
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            minimum_memory_mb = None
+
+    requirements[
+        "minimum_memory_mb"
+    ] = minimum_memory_mb
+
+    normalized_model[
+        "capabilities"
+    ] = capabilities
+
+    normalized_model[
+        "requirements"
+    ] = requirements
+
+    return normalized_model
+
+
+def upscaler_model_supports(
+    model,
+    capability_name,
+):
+    if not isinstance(
+        model,
+        dict,
+    ):
+        return False
+
+    capabilities = (
+        model.get(
+            "capabilities"
+        )
+    )
+
+    if not isinstance(
+        capabilities,
+        dict,
+    ):
+        return False
+
+    return bool(
+        capabilities.get(
+            str(
+                capability_name
+                or ""
+            ).strip(),
+            False,
+        )
+    )
+
+
+
 def get_upscaler_plugin_model_results():
     plugin_results = []
 
@@ -20406,6 +20551,10 @@ def get_upscaler_plugin_model_results():
         if not plugin_id:
             continue
 
+        models = []
+
+        model_capability_schema_version = 0
+
         try:
             model_result = (
                 run_plugin_json(
@@ -20416,7 +20565,22 @@ def get_upscaler_plugin_model_results():
                 )
             )
 
-            models = (
+            try:
+                model_capability_schema_version = int(
+                    model_result.get(
+                        "model_capability_schema_version",
+                        0,
+                    )
+                    or 0
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                model_capability_schema_version = 0
+
+            raw_models = (
                 model_result.get(
                     "models",
                     [],
@@ -20424,9 +20588,19 @@ def get_upscaler_plugin_model_results():
                 or []
             )
 
-        except Exception as exc:
-            models = []
+            for raw_model in raw_models:
+                normalized_model = (
+                    normalize_upscaler_model_contract(
+                        raw_model
+                    )
+                )
 
+                if normalized_model:
+                    models.append(
+                        normalized_model
+                    )
+
+        except Exception as exc:
             write_error_log(
                 "UPSCALER MODEL LIST FAILED | "
                 f"plugin_id={plugin_id}",
@@ -20454,6 +20628,10 @@ def get_upscaler_plugin_model_results():
                 plugin_status.get(
                     "development"
                 )
+            ),
+
+            "model_capability_schema_version": (
+                model_capability_schema_version
             ),
 
             "models": models,
@@ -21912,6 +22090,16 @@ def resolve_batch_upscaler_selection(
                 if model_id != clean_model_id:
                     continue
 
+                if not upscaler_model_supports(
+                    model,
+                    "batch",
+                ):
+                    raise ValueError(
+                        "The selected Upscale "
+                        "model does not support "
+                        "batch processing."
+                    )
+
                 return {
                     "plugin_id": (
                         clean_plugin_id
@@ -21952,11 +22140,21 @@ def resolve_batch_upscaler_selection(
             or []
         )
 
+        batch_models = [
+            model
+            for model
+            in models
+            if upscaler_model_supports(
+                model,
+                "batch",
+            )
+        ]
+
         selected_model = next(
             (
                 model
                 for model
-                in models
+                in batch_models
                 if str(
                     model.get(
                         "model_id",
@@ -21967,8 +22165,8 @@ def resolve_batch_upscaler_selection(
                 == "magic_card_ai_v3"
             ),
             (
-                models[0]
-                if models
+                batch_models[0]
+                if batch_models
                 else None
             ),
         )

@@ -13,8 +13,98 @@ PLUGIN_NAME = (
     "iMomir Upscaler - "
     "NVIDIA RTX 50 Series"
 )
-PLUGIN_VERSION = "0.8.0"
+PLUGIN_VERSION = "0.9.0"
 PROTOCOL_VERSION = 1
+
+MODEL_CAPABILITY_SCHEMA_VERSION = 1
+HARDWARE_CAPABILITY_SCHEMA_VERSION = 1
+
+PLUGIN_COMMAND_CAPABILITIES = [
+    "info",
+    "health",
+    "hardware",
+    "models",
+    "upscale",
+    "upscale_batch",
+    "upscale_test",
+]
+
+DEFAULT_MODEL_CAPABILITIES = {
+    "batch": True,
+    "double_faced": True,
+    "semantic_regions": False,
+    "generative_bleed": False,
+}
+
+DEFAULT_MODEL_REQUIREMENTS = {
+    "minimum_memory_mb": None,
+}
+
+HARDWARE_CAPABILITIES = {
+    "device_class": "gpu",
+    "hardware_accelerated": True,
+    "supports_memory_reporting": True,
+}
+
+
+def build_model_contract(model):
+    model_contract = dict(
+        model
+    )
+
+    capabilities = dict(
+        DEFAULT_MODEL_CAPABILITIES
+    )
+
+    raw_capabilities = (
+        model.get(
+            "capabilities"
+        )
+    )
+
+    if isinstance(
+        raw_capabilities,
+        dict,
+    ):
+        for (
+            capability_name,
+            capability_value,
+        ) in raw_capabilities.items():
+            capabilities[
+                str(
+                    capability_name
+                )
+            ] = bool(
+                capability_value
+            )
+
+    requirements = dict(
+        DEFAULT_MODEL_REQUIREMENTS
+    )
+
+    raw_requirements = (
+        model.get(
+            "requirements"
+        )
+    )
+
+    if isinstance(
+        raw_requirements,
+        dict,
+    ):
+        requirements.update(
+            raw_requirements
+        )
+
+    model_contract[
+        "capabilities"
+    ] = capabilities
+
+    model_contract[
+        "requirements"
+    ] = requirements
+
+    return model_contract
 
 
 UPSCALE_MODELS = {
@@ -177,6 +267,17 @@ UPSCALE_MODELS = {
         ),
 
         "scale": 2.0,
+
+        "capabilities": {
+            "batch": True,
+            "double_faced": True,
+            "semantic_regions": True,
+            "generative_bleed": False,
+        },
+
+        "requirements": {
+            "minimum_memory_mb": None,
+        },
 
         "rules_strength": 0.35,
 
@@ -740,8 +841,14 @@ def handle_models(payload):
         "plugin_id": PLUGIN_ID,
         "version": PLUGIN_VERSION,
 
+        "model_capability_schema_version": (
+            MODEL_CAPABILITY_SCHEMA_VERSION
+        ),
+
         "models": [
-            dict(model)
+            build_model_contract(
+                model
+            )
             for model
             in UPSCALE_MODELS.values()
             if model.get(
@@ -1162,15 +1269,23 @@ def handle_info(payload):
         ),
         "plugin_type": "upscaler",
 
-        "capabilities": [
-            "info",
-            "health",
-            "hardware",
-            "models",
-            "upscale",
-            "upscale_batch",
-            "upscale_test",
-        ],
+        "model_capability_schema_version": (
+            MODEL_CAPABILITY_SCHEMA_VERSION
+        ),
+
+        "hardware_capability_schema_version": (
+            HARDWARE_CAPABILITY_SCHEMA_VERSION
+        ),
+
+        "command_capabilities": list(
+            PLUGIN_COMMAND_CAPABILITIES
+        ),
+
+        # Backward-compatible alias for
+        # existing protocol consumers.
+        "capabilities": list(
+            PLUGIN_COMMAND_CAPABILITIES
+        ),
     }
 
 
@@ -1195,6 +1310,15 @@ def handle_hardware(payload):
         "ok": True,
         "plugin_id": PLUGIN_ID,
         "version": PLUGIN_VERSION,
+
+        "hardware_capability_schema_version": (
+            HARDWARE_CAPABILITY_SCHEMA_VERSION
+        ),
+
+        "capabilities": dict(
+            HARDWARE_CAPABILITIES
+        ),
+
         "runtime_ready": runtime_ready,
         "hardware": hardware,
     }
@@ -1240,6 +1364,15 @@ def handle_health(payload):
         "ok": True,
         "plugin_id": PLUGIN_ID,
         "version": PLUGIN_VERSION,
+
+        "hardware_capability_schema_version": (
+            HARDWARE_CAPABILITY_SCHEMA_VERSION
+        ),
+
+        "capabilities": dict(
+            HARDWARE_CAPABILITIES
+        ),
+
         "status": status,
         "runtime_ready": runtime_ready,
         "message": message,

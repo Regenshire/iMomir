@@ -1899,6 +1899,25 @@
             function (plugin) {
                 (plugin.models || []).forEach(
                     function (model) {
+                        const capabilities =
+                            model.capabilities
+                            || {};
+
+                        if (
+                            capabilities.batch
+                            !== true
+                        ) {
+                            return;
+                        }
+
+                        if (
+                            data.is_dual_faced
+                            && capabilities.double_faced
+                            !== true
+                        ) {
+                            return;
+                        }
+
                         const option =
                             document.createElement(
                                 "option"
@@ -1908,6 +1927,17 @@
                             plugin.plugin_id
                             + "::"
                             + model.model_id;
+
+                        option.dataset.capabilities =
+                            JSON.stringify(
+                                capabilities
+                            );
+
+                        option.dataset.requirements =
+                            JSON.stringify(
+                                model.requirements
+                                || {}
+                            );
 
                         option.textContent =
                             plugin.plugin_name
