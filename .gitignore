@@ -46,6 +46,7 @@ plugins/*
 !plugins/.gitkeep
 
 # Downloaded plugin model files
+plugin_src/**/models/*
 plugin_src/**/models/*.pth
 plugin_src/**/models/*.pt
 plugin_src/**/models/*.onnx

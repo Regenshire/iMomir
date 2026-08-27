@@ -954,6 +954,32 @@
                         >
                     </label>
 
+                    <label class="toggle-row settings-field">
+                        <span>
+                            Generate Bleed / Outpainting
+                        </span>
+
+                        <input
+                            type="checkbox"
+                            id="upscalingGenerateBleed"
+                            {% if config.get("upscaling_generate_bleed", "0") == "1" %}checked{% endif %}
+                            {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
+                        >
+                    </label>
+
+                    <label class="toggle-row settings-field">
+                        <span>
+                            Show Generative Bleed in Upscale Window
+                        </span>
+
+                        <input
+                            type="checkbox"
+                            id="upscalingShowGeneratedBleed"
+                            {% if config.get("upscaling_show_generated_bleed", "0") == "1" %}checked{% endif %}
+                            {% if not upscaler_plugin_status.get("ready") or config.get("upscaling_generate_bleed", "0") != "1" %}disabled{% endif %}
+                        >
+                    </label>
+
                     {% if upscaler_plugin_status.get("development") %}
                     <label class="toggle-row settings-field">
                         <span>
@@ -994,6 +1020,113 @@
                     {% else %}
                         Install a compatible Upscaler plugin before enabling this option.
                     {% endif %}
+                </div>
+
+                <div
+                    id="upscalingGenerateBleedSettingStatus"
+                    class="refresh-status-text"
+                >
+                    {% if config.get("upscaling_generate_bleed", "0") == "1" %}
+                        Generated bleed is enabled. New Upscales will attempt to create a 3.0 mm full-bleed print master.
+                    {% else %}
+                        Generated bleed is disabled.
+                    {% endif %}
+                </div>
+
+                <div
+                    id="upscalingShowGeneratedBleedSettingStatus"
+                    class="refresh-status-text"
+                >
+                    {% if config.get("upscaling_generate_bleed", "0") != "1" %}
+                        Enable Generate Bleed / Outpainting to review bleed in the Upscale window.
+                    {% elif config.get("upscaling_show_generated_bleed", "0") == "1" %}
+                        The Upscale window will show the full-bleed candidate when one is available.
+                    {% else %}
+                        The Upscale window will show the normal cropped Upscale.
+                    {% endif %}
+                </div>
+
+                <div class="refresh-panel">
+                    <div class="refresh-status-text">
+                        <div>
+                            <strong>
+                                Image Maintenance
+                            </strong>
+                        </div>
+
+                        <div>
+                            Analyze and remove unused Upscaled image files,
+                            abandoned candidates, orphan files, and broken
+                            database references.
+                        </div>
+                    </div>
+
+                    <div
+                        class="metadata-list"
+                        style="margin-top: 12px;"
+                    >
+                        <div class="metadata-row">
+                            <span>Total Upscale Records</span>
+                            <strong id="upscaleMaintenanceTotalRecords">
+                                —
+                            </strong>
+                        </div>
+
+                        <div class="metadata-row">
+                            <span>Active Upscales</span>
+                            <strong id="upscaleMaintenanceActiveRecords">
+                                —
+                            </strong>
+                        </div>
+
+                        <div class="metadata-row">
+                            <span>Unused Records</span>
+                            <strong id="upscaleMaintenanceUnusedRecords">
+                                —
+                            </strong>
+                        </div>
+
+                        <div class="metadata-row">
+                            <span>Unused / Orphan Files</span>
+                            <strong id="upscaleMaintenanceUnusedFiles">
+                                —
+                            </strong>
+                        </div>
+
+                        <div class="metadata-row">
+                            <span>Recoverable Disk Space</span>
+                            <strong id="upscaleMaintenanceRecoverableSpace">
+                                —
+                            </strong>
+                        </div>
+                    </div>
+
+                    <div
+                        id="upscaleMaintenanceStatus"
+                        class="refresh-status-text"
+                        style="margin-top: 10px;"
+                    >
+                        Click Analyze Images to inspect the Upscale image store.
+                    </div>
+
+                    <div class="config-button-row">
+                        <button
+                            type="button"
+                            id="upscaleMaintenanceAnalyzeButton"
+                            class="action-button secondary-button"
+                        >
+                            Analyze Images
+                        </button>
+
+                        <button
+                            type="button"
+                            id="upscaleMaintenanceCleanButton"
+                            class="action-button secondary-button"
+                            disabled
+                        >
+                            Clean Unused Images
+                        </button>
+                    </div>
                 </div>
 
                 {% if upscaler_plugin_status.get("ready") %}
@@ -1357,6 +1490,62 @@
         "upscalingCardViewSettingStatus"
     );
 
+    const generateBleedToggle = document.getElementById(
+        "upscalingGenerateBleed"
+    );
+
+    const generateBleedSettingStatus = document.getElementById(
+        "upscalingGenerateBleedSettingStatus"
+    );
+
+    const showGeneratedBleedToggle = document.getElementById(
+        "upscalingShowGeneratedBleed"
+    );
+
+    const showGeneratedBleedSettingStatus = document.getElementById(
+        "upscalingShowGeneratedBleedSettingStatus"
+    );
+
+    const upscaleMaintenanceAnalyzeButton =
+        document.getElementById(
+            "upscaleMaintenanceAnalyzeButton"
+        );
+
+    const upscaleMaintenanceCleanButton =
+        document.getElementById(
+            "upscaleMaintenanceCleanButton"
+        );
+
+    const upscaleMaintenanceStatus =
+        document.getElementById(
+            "upscaleMaintenanceStatus"
+        );
+
+    const upscaleMaintenanceTotalRecords =
+        document.getElementById(
+            "upscaleMaintenanceTotalRecords"
+        );
+
+    const upscaleMaintenanceActiveRecords =
+        document.getElementById(
+            "upscaleMaintenanceActiveRecords"
+        );
+
+    const upscaleMaintenanceUnusedRecords =
+        document.getElementById(
+            "upscaleMaintenanceUnusedRecords"
+        );
+
+    const upscaleMaintenanceUnusedFiles =
+        document.getElementById(
+            "upscaleMaintenanceUnusedFiles"
+        );
+
+    const upscaleMaintenanceRecoverableSpace =
+        document.getElementById(
+            "upscaleMaintenanceRecoverableSpace"
+        );
+
     const upscaleNextCardsButton = document.getElementById(
         "upscaleNextCardsButton"
     );
@@ -1658,6 +1847,168 @@
         );
     }
 
+    if (generateBleedToggle) {
+        generateBleedToggle.addEventListener(
+            "change",
+            async function () {
+                const requestedEnabled = Boolean(
+                    generateBleedToggle.checked
+                );
+
+                generateBleedToggle.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/generated-bleed",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                enabled: requestedEnabled
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Could not save generated bleed setting."
+                        );
+                    }
+
+                    generateBleedToggle.checked = Boolean(
+                        data.enabled
+                    );
+
+                    if (
+                        showGeneratedBleedToggle
+                    ) {
+                        showGeneratedBleedToggle.disabled =
+                            !Boolean(
+                                data.enabled
+                            );
+
+                        if (!data.enabled) {
+                            showGeneratedBleedToggle.checked =
+                                false;
+                        }
+                    }
+
+                    if (
+                        generateBleedSettingStatus
+                    ) {
+                        generateBleedSettingStatus.textContent =
+                            data.enabled
+                                ? "Generated bleed is enabled. New Upscales will attempt to create a 3.0 mm full-bleed print master."
+                                : "Generated bleed is disabled.";
+                    }
+
+                    if (
+                        showGeneratedBleedSettingStatus
+                        && !data.enabled
+                    ) {
+                        showGeneratedBleedSettingStatus.textContent =
+                            "Enable Generate Bleed / Outpainting to review bleed in the Upscale window.";
+                    }
+
+                } catch (error) {
+                    generateBleedToggle.checked =
+                        !requestedEnabled;
+
+                    if (
+                        generateBleedSettingStatus
+                    ) {
+                        generateBleedSettingStatus.textContent =
+                            error.message;
+                    }
+                }
+
+                generateBleedToggle.disabled = false;
+            }
+        );
+    }
+
+    if (showGeneratedBleedToggle) {
+        showGeneratedBleedToggle.addEventListener(
+            "change",
+            async function () {
+                const requestedEnabled = Boolean(
+                    showGeneratedBleedToggle.checked
+                );
+
+                showGeneratedBleedToggle.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/show-generated-bleed",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                enabled: requestedEnabled
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Could not save generated bleed preview setting."
+                        );
+                    }
+
+                    showGeneratedBleedToggle.checked =
+                        Boolean(
+                            data.enabled
+                        );
+
+                    if (
+                        showGeneratedBleedSettingStatus
+                    ) {
+                        showGeneratedBleedSettingStatus.textContent =
+                            data.enabled
+                                ? "The Upscale window will show the full-bleed candidate when one is available."
+                                : "The Upscale window will show the normal cropped Upscale.";
+                    }
+
+                } catch (error) {
+                    showGeneratedBleedToggle.checked =
+                        !requestedEnabled;
+
+                    if (
+                        showGeneratedBleedSettingStatus
+                    ) {
+                        showGeneratedBleedSettingStatus.textContent =
+                            error.message;
+                    }
+                }
+
+                showGeneratedBleedToggle.disabled =
+                    !Boolean(
+                        generateBleedToggle
+                        && generateBleedToggle.checked
+                    );
+            }
+        );
+    }
+
+
     if (upscaleNextCardsButton) {
         upscaleNextCardsButton.addEventListener(
             "click",
@@ -1804,6 +2155,314 @@
                 }
 
                 devSourceIndicatorToggle.disabled = false;
+            }
+        );
+    }
+
+    function formatUpscaleMaintenanceBytes(
+        rawBytes
+    ) {
+        const bytes = Number(
+            rawBytes
+            || 0
+        );
+
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+
+        if (bytes < 1024 * 1024) {
+            return (
+                bytes / 1024
+            ).toFixed(1)
+                + " KB";
+        }
+
+        if (
+            bytes
+            < 1024 * 1024 * 1024
+        ) {
+            return (
+                bytes
+                / (
+                    1024
+                    * 1024
+                )
+            ).toFixed(1)
+                + " MB";
+        }
+
+        return (
+            bytes
+            / (
+                1024
+                * 1024
+                * 1024
+            )
+        ).toFixed(2)
+            + " GB";
+    }
+
+
+    function renderUpscaleMaintenanceAnalysis(
+        analysis
+    ) {
+        analysis = analysis || {};
+
+        if (
+            upscaleMaintenanceTotalRecords
+        ) {
+            upscaleMaintenanceTotalRecords.textContent =
+                Number(
+                    analysis.total_records
+                    || 0
+                ).toLocaleString();
+        }
+
+        if (
+            upscaleMaintenanceActiveRecords
+        ) {
+            upscaleMaintenanceActiveRecords.textContent =
+                Number(
+                    analysis.active_records
+                    || 0
+                ).toLocaleString();
+        }
+
+        if (
+            upscaleMaintenanceUnusedRecords
+        ) {
+            upscaleMaintenanceUnusedRecords.textContent =
+                Number(
+                    analysis.unused_records
+                    || 0
+                ).toLocaleString();
+        }
+
+        if (
+            upscaleMaintenanceUnusedFiles
+        ) {
+            upscaleMaintenanceUnusedFiles.textContent =
+                Number(
+                    analysis.unused_files
+                    || 0
+                ).toLocaleString();
+        }
+
+        if (
+            upscaleMaintenanceRecoverableSpace
+        ) {
+            upscaleMaintenanceRecoverableSpace.textContent =
+                formatUpscaleMaintenanceBytes(
+                    analysis.recoverable_bytes
+                );
+        }
+
+        const hasCleanup = Boolean(
+            Number(
+                analysis.unused_records
+                || 0
+            )
+            || Number(
+                analysis.unused_files
+                || 0
+            )
+            || Number(
+                analysis.broken_fullbleed_records
+                || 0
+            )
+        );
+
+        if (
+            upscaleMaintenanceCleanButton
+        ) {
+            upscaleMaintenanceCleanButton.disabled =
+                !hasCleanup;
+        }
+    }
+
+
+    if (
+        upscaleMaintenanceAnalyzeButton
+    ) {
+        upscaleMaintenanceAnalyzeButton.addEventListener(
+            "click",
+            async function () {
+                upscaleMaintenanceAnalyzeButton.disabled =
+                    true;
+
+                if (
+                    upscaleMaintenanceCleanButton
+                ) {
+                    upscaleMaintenanceCleanButton.disabled =
+                        true;
+                }
+
+                if (
+                    upscaleMaintenanceStatus
+                ) {
+                    upscaleMaintenanceStatus.textContent =
+                        "Analyzing Upscale images...";
+                }
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/image-maintenance/analyze",
+                        {
+                            cache: "no-store",
+                            headers: {
+                                "Accept":
+                                    "application/json"
+                            }
+                        }
+                    );
+
+                    const data =
+                        await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Image analysis failed."
+                        );
+                    }
+
+                    renderUpscaleMaintenanceAnalysis(
+                        data.analysis
+                    );
+
+                    if (
+                        upscaleMaintenanceStatus
+                    ) {
+                        upscaleMaintenanceStatus.textContent =
+                            "Analysis complete. "
+                            + Number(
+                                data.analysis.unused_files
+                                || 0
+                            ).toLocaleString()
+                            + " unused file(s) can recover "
+                            + formatUpscaleMaintenanceBytes(
+                                data.analysis.recoverable_bytes
+                            )
+                            + ".";
+                    }
+
+                } catch (error) {
+                    if (
+                        upscaleMaintenanceStatus
+                    ) {
+                        upscaleMaintenanceStatus.textContent =
+                            error.message;
+                    }
+
+                } finally {
+                    upscaleMaintenanceAnalyzeButton.disabled =
+                        false;
+                }
+            }
+        );
+    }
+
+
+    if (
+        upscaleMaintenanceCleanButton
+    ) {
+        upscaleMaintenanceCleanButton.addEventListener(
+            "click",
+            async function () {
+                const confirmed =
+                    window.confirm(
+                        "Delete the unused Upscaled "
+                        + "image files and database "
+                        + "records found by Image "
+                        + "Maintenance?"
+                    );
+
+                if (!confirmed) {
+                    return;
+                }
+
+                upscaleMaintenanceCleanButton.disabled =
+                    true;
+
+                upscaleMaintenanceAnalyzeButton.disabled =
+                    true;
+
+                if (
+                    upscaleMaintenanceStatus
+                ) {
+                    upscaleMaintenanceStatus.textContent =
+                        "Cleaning unused Upscale images...";
+                }
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/image-maintenance/clean",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type":
+                                    "application/json",
+                                "Accept":
+                                    "application/json"
+                            },
+                            body: JSON.stringify({})
+                        }
+                    );
+
+                    const data =
+                        await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Image cleanup failed."
+                        );
+                    }
+
+                    renderUpscaleMaintenanceAnalysis(
+                        data.result.after
+                    );
+
+                    if (
+                        upscaleMaintenanceStatus
+                    ) {
+                        upscaleMaintenanceStatus.textContent =
+                            "Cleanup complete. Deleted "
+                            + Number(
+                                data.result.deleted_records
+                                || 0
+                            ).toLocaleString()
+                            + " record(s) and "
+                            + Number(
+                                data.result.deleted_files
+                                || 0
+                            ).toLocaleString()
+                            + " file(s), recovering approximately "
+                            + formatUpscaleMaintenanceBytes(
+                                data.result.recovered_bytes
+                            )
+                            + ".";
+                    }
+
+                } catch (error) {
+                    if (
+                        upscaleMaintenanceStatus
+                    ) {
+                        upscaleMaintenanceStatus.textContent =
+                            error.message;
+                    }
+
+                } finally {
+                    upscaleMaintenanceAnalyzeButton.disabled =
+                        false;
+                }
             }
         );
     }

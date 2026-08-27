@@ -1,3 +1,4 @@
+import copy
 import csv
 import gzip
 import hashlib
@@ -158,6 +159,11 @@ from upscaling.feedback import (
     get_upscaling_dev_feedback_log_status,
 )
 
+from upscaling.generated_bleed import (
+    DEFAULT_BLEED_MM,
+    build_generated_bleed_derivative,
+)
+
 from db.exports import (
     EXPORT_KIND_CAMPAIGN,
     EXPORT_KIND_FULL,
@@ -219,6 +225,8 @@ from db.draftdb import ensure_draft_testing_schema
 from db.upscalyingdb import (
     accept_upscaled_candidate,
     accept_upscaled_candidates,
+    analyze_upscaled_image_maintenance,
+    cleanup_upscaled_image_maintenance,
     delete_upscaled_images_for_card,
     discard_upscaled_candidate,
     ensure_upscaling_schema,
@@ -226,6 +234,7 @@ from db.upscalyingdb import (
     get_upscaled_image_by_id,
     register_upscaled_candidate,
     revert_current_upscaled_image_for_card,
+    set_upscaled_generated_bleed,
 )
 
 from db.deckdb import (
@@ -7200,16 +7209,70 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
 
     if upscaled_image:
         absolute_path = (
-            upscaled_image["absolute_path"]
+            upscaled_image[
+                "absolute_path"
+            ]
             or ""
         ).strip()
 
-        if absolute_path and os.path.exists(absolute_path):
+        if (
+            absolute_path
+            and os.path.exists(
+                absolute_path
+            )
+        ):
+            fullbleed_absolute_path = (
+                upscaled_image.get(
+                    "fullbleed_absolute_path"
+                )
+                or ""
+            ).strip()
+
+            has_fullbleed_file = bool(
+                fullbleed_absolute_path
+                and os.path.exists(
+                    fullbleed_absolute_path
+                )
+            )
+
+            has_generated_bleed_flag = bool(
+                int(
+                    upscaled_image.get(
+                        "has_generated_bleed",
+                        0,
+                    )
+                    or 0
+                )
+                == 1
+            )
+
+            try:
+                source_bleed_mm = float(
+                    upscaled_image.get(
+                        "bleed_size_mm",
+                        0.0,
+                    )
+                    or 0.0
+                )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+                source_bleed_mm = 0.0
+
+            source_has_real_bleed = bool(
+                has_generated_bleed_flag
+                and has_fullbleed_file
+                and source_bleed_mm > 0
+            )
+
             write_debug_log(
                 "UPSCALED SCRYFALL SOURCE USED | "
                 f"upscaled_image_id={upscaled_image['upscaled_image_id']} | "
                 f"card_uuid={card_row['card_uuid']} | "
                 f"page_kind={normalized_page_kind} | "
+                f"generated_bleed={'yes' if source_has_real_bleed else 'no'} | "
                 f"path={absolute_path}"
             )
 
@@ -7217,18 +7280,71 @@ def resolve_card_image_source_for_page(card_row, page_kind, fallback_image_url):
                 "source_type": "upscaled",
                 "source_level": 1,
                 "source_label": "Upscaled",
-                "absolute_path": absolute_path,
-                "fullbleed_absolute_path": "",
-                "print_master_absolute_path": absolute_path,
-                "source_has_real_bleed": False,
-                "source_bleed_mm": 0.0,
+
+                # Clean Upscaled card used for
+                # previews and ordinary views.
+                "absolute_path": (
+                    absolute_path
+                ),
+
+                # Generated bleed exists only
+                # as a print/export derivative.
+                "fullbleed_absolute_path": (
+                    fullbleed_absolute_path
+                    if source_has_real_bleed
+                    else ""
+                ),
+
+                "print_master_absolute_path": (
+                    fullbleed_absolute_path
+                    if source_has_real_bleed
+                    else absolute_path
+                ),
+
+                "source_has_real_bleed": (
+                    source_has_real_bleed
+                ),
+
+                "source_bleed_mm": (
+                    source_bleed_mm
+                    if source_has_real_bleed
+                    else 0.0
+                ),
+
+                "has_generated_bleed": (
+                    source_has_real_bleed
+                ),
+
+                "bleed_model_id": (
+                    upscaled_image.get(
+                        "bleed_model_id"
+                    )
+                    or ""
+                ),
+
+                "bleed_plugin_id": (
+                    upscaled_image.get(
+                        "bleed_plugin_id"
+                    )
+                    or ""
+                ),
+
+                "bleed_plugin_version": (
+                    upscaled_image.get(
+                        "bleed_plugin_version"
+                    )
+                    or ""
+                ),
+
                 "image_url": "",
                 "alternate_source_id": None,
+
                 "upscaled_image_id": (
                     upscaled_image[
                         "upscaled_image_id"
                     ]
                 ),
+
                 "export_frame_template": "auto",
             }
 
@@ -9381,11 +9497,6 @@ def build_chaos_pack_pdf(
                 try:
                     use_real_source_bleed = bool(
                         image_source.get(
-                            "source_type"
-                        )
-                        == "alternate_source"
-
-                        and image_source.get(
                             "source_has_real_bleed"
                         )
 
@@ -13744,6 +13855,8 @@ def plugin_install(plugin_id):
             plugin_id
         )
 
+        invalidate_upscaler_metadata_cache()
+
     except Exception as exc:
         return jsonify(
             {
@@ -13759,9 +13872,99 @@ def plugin_install(plugin_id):
         }
     )
 
-def get_ready_upscaler_plugins():
-    return get_ready_plugins_by_type(
-        "upscaler"
+UPSCALER_READY_CACHE_SECONDS = 5
+UPSCALER_MODEL_CACHE_SECONDS = 300
+UPSCALER_DEV_MODEL_CACHE_SECONDS = 15
+
+upscaler_metadata_cache_lock = (
+    threading.Lock()
+)
+
+upscaler_ready_plugin_cache = {
+    "loaded_at": 0.0,
+    "plugins": [],
+}
+
+upscaler_model_result_cache = {
+    "loaded_at": 0.0,
+    "signature": None,
+    "plugins": [],
+}
+
+
+def invalidate_upscaler_metadata_cache():
+    with upscaler_metadata_cache_lock:
+        upscaler_ready_plugin_cache[
+            "loaded_at"
+        ] = 0.0
+
+        upscaler_ready_plugin_cache[
+            "plugins"
+        ] = []
+
+        upscaler_model_result_cache[
+            "loaded_at"
+        ] = 0.0
+
+        upscaler_model_result_cache[
+            "signature"
+        ] = None
+
+        upscaler_model_result_cache[
+            "plugins"
+        ] = []
+
+
+def get_ready_upscaler_plugins(
+    force_refresh=False,
+):
+    now = time.monotonic()
+
+    with upscaler_metadata_cache_lock:
+        cache_age = (
+            now
+            - float(
+                upscaler_ready_plugin_cache.get(
+                    "loaded_at",
+                    0.0,
+                )
+                or 0.0
+            )
+        )
+
+        if (
+            not force_refresh
+            and cache_age
+            < UPSCALER_READY_CACHE_SECONDS
+        ):
+            return copy.deepcopy(
+                upscaler_ready_plugin_cache.get(
+                    "plugins",
+                    [],
+                )
+                or []
+            )
+
+    plugins = (
+        get_ready_plugins_by_type(
+            "upscaler"
+        )
+        or []
+    )
+
+    with upscaler_metadata_cache_lock:
+        upscaler_ready_plugin_cache[
+            "loaded_at"
+        ] = now
+
+        upscaler_ready_plugin_cache[
+            "plugins"
+        ] = copy.deepcopy(
+            plugins
+        )
+
+    return copy.deepcopy(
+        plugins
     )
 
 
@@ -13897,6 +14100,111 @@ def try_record_upscaling_dev_feedback(
             "error": str(exc),
         }
 
+def is_upscaling_generated_bleed_enabled():
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    return (
+        config_values.get(
+            "upscaling_generate_bleed",
+            "0",
+        )
+        or "0"
+    ).strip() == "1"
+
+
+def is_upscaling_show_generated_bleed_enabled():
+    if not is_upscaling_generated_bleed_enabled():
+        return False
+
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    return (
+        config_values.get(
+            "upscaling_show_generated_bleed",
+            "0",
+        )
+        or "0"
+    ).strip() == "1"
+
+
+def get_upscaling_bleed_frame_context(
+    card_row,
+):
+    template_config = (
+        resolve_card_export_template(
+            card_row,
+            use_bleed_template=False,
+        )
+    )
+
+    row_keys = (
+        set(
+            card_row.keys()
+        )
+        if hasattr(
+            card_row,
+            "keys"
+        )
+        else set()
+    )
+
+    printing_frame_key = (
+        str(
+            card_row[
+                "frame_version"
+            ]
+            or ""
+        ).strip()
+        if "frame_version"
+        in row_keys
+        else ""
+    )
+
+    printing_frame_name = str(
+        template_config.get(
+            "template_name"
+        )
+        or printing_frame_key
+        or "Unknown"
+    ).strip()
+
+    try:
+        corner_radius_pct = float(
+            template_config.get(
+                "card_corner_radius_pct"
+            )
+            or 0.03
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        corner_radius_pct = 0.03
+
+    return {
+        "printing_frame_key": (
+            printing_frame_key
+        ),
+
+        "printing_frame_name": (
+            printing_frame_name
+        ),
+
+        "corner_radius_pct": (
+            corner_radius_pct
+        ),
+    }
+
+
 
 def is_card_upscaling_control_enabled():
     config_values = (
@@ -13980,6 +14288,201 @@ def config_upscaling_card_view_button():
         "enabled": enabled,
     })
 
+
+@app.route(
+    "/config/upscaling/generated-bleed",
+    methods=["POST"],
+)
+def config_upscaling_generated_bleed():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    enabled = bool(
+        payload.get(
+            "enabled"
+        )
+    )
+
+    if (
+        enabled
+        and not get_ready_upscaler_plugins()
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "No ready Upscaler plugin "
+                "is available."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_generate_bleed",
+        (
+            "1"
+            if enabled
+            else "0"
+        ),
+    )
+
+    if not enabled:
+        set_config_value(
+            "upscaling_show_generated_bleed",
+            "0",
+        )
+
+    return jsonify({
+        "ok": True,
+        "enabled": enabled,
+
+        "show_generated_bleed": (
+            is_upscaling_show_generated_bleed_enabled()
+        ),
+
+        "bleed_size_mm": (
+            DEFAULT_BLEED_MM
+        ),
+    })
+
+
+@app.route(
+    "/config/upscaling/show-generated-bleed",
+    methods=["POST"],
+)
+def config_upscaling_show_generated_bleed():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    enabled = bool(
+        payload.get(
+            "enabled"
+        )
+    )
+
+    if (
+        enabled
+        and not is_upscaling_generated_bleed_enabled()
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Generate Bleed / Outpainting "
+                "must be enabled first."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_show_generated_bleed",
+        (
+            "1"
+            if enabled
+            else "0"
+        ),
+    )
+
+    return jsonify({
+        "ok": True,
+        "enabled": (
+            is_upscaling_show_generated_bleed_enabled()
+        ),
+    })
+
+
+@app.route(
+    "/config/upscaling/image-maintenance/analyze",
+    methods=["GET"],
+)
+def config_upscaling_image_maintenance_analyze():
+    try:
+        analysis = (
+            analyze_upscaled_image_maintenance()
+        )
+
+    except Exception as exc:
+        write_error_log(
+            "UPSCALE IMAGE MAINTENANCE ANALYZE FAILED",
+            exc=exc,
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(
+                exc
+            ),
+        }), 500
+
+    return jsonify({
+        "ok": True,
+        "analysis": analysis,
+    })
+
+
+@app.route(
+    "/config/upscaling/image-maintenance/clean",
+    methods=["POST"],
+)
+def config_upscaling_image_maintenance_clean():
+    batch_status = (
+        get_upscaling_batch_status_copy()
+    )
+
+    if batch_status.get(
+        "is_running"
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Wait for Batch Upscaling "
+                "to finish before cleaning "
+                "Upscale images."
+            ),
+        }), 409
+
+    if has_active_manual_upscale_runs():
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Wait for the current manual "
+                "Upscale to finish before "
+                "cleaning images."
+            ),
+        }), 409
+
+    try:
+        result = (
+            cleanup_upscaled_image_maintenance()
+        )
+
+    except Exception as exc:
+        write_error_log(
+            "UPSCALE IMAGE MAINTENANCE CLEAN FAILED",
+            exc=exc,
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": str(
+                exc
+            ),
+        }), 500
+
+    return jsonify({
+        "ok": True,
+        "result": result,
+    })
+
+
+@app.route(
+    "/config/upscaling/dev-feedback",
+    methods=["POST"],
+)
 
 @app.route(
     "/config/upscaling/dev-feedback",
@@ -20105,13 +20608,30 @@ def chaos_card_image_upscaled(card_uuid):
     if not upscaled_image:
         return ("Not found", 404)
 
-    absolute_path = (
-        upscaled_image.get(
-            "absolute_path",
-            "",
+    requested_variant = (
+        request.args.get(
+            "variant"
         )
-        or ""
-    ).strip()
+        or "normal"
+    ).strip().lower()
+
+    if requested_variant == "fullbleed":
+        absolute_path = (
+            upscaled_image.get(
+                "fullbleed_absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
+
+    else:
+        absolute_path = (
+            upscaled_image.get(
+                "absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
 
     if (
         not absolute_path
@@ -20295,6 +20815,21 @@ def build_chaos_upscale_face_control_data(
     current_data = None
 
     if current_upscaled:
+        fullbleed_absolute_path = (
+            current_upscaled.get(
+                "fullbleed_absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
+
+        has_generated_bleed = bool(
+            fullbleed_absolute_path
+            and os.path.exists(
+                fullbleed_absolute_path
+            )
+        )
+
         current_data = {
             "upscaled_image_id": (
                 current_upscaled[
@@ -20313,6 +20848,34 @@ def build_chaos_upscale_face_control_data(
                 v=current_upscaled[
                     "upscaled_image_id"
                 ],
+            ),
+
+            "has_generated_bleed": (
+                has_generated_bleed
+            ),
+
+            "fullbleed_src": (
+                url_for(
+                    "chaos_card_image_upscaled",
+                    card_uuid=card_uuid,
+                    face=(
+                        face_context[
+                            "requested_face"
+                        ]
+                    ),
+                    variant="fullbleed",
+                    v=current_upscaled[
+                        "upscaled_image_id"
+                    ],
+                )
+                if has_generated_bleed
+                else ""
+            ),
+
+            "bleed_size_mm": (
+                current_upscaled.get(
+                    "bleed_size_mm"
+                )
             ),
 
             "width": current_upscaled.get(
@@ -20532,14 +21095,97 @@ def upscaler_model_supports(
         )
     )
 
+def get_upscaler_plugin_model_results(
+    force_refresh=False,
+):
+    ready_plugins = (
+        get_ready_upscaler_plugins(
+            force_refresh=(
+                force_refresh
+            )
+        )
+    )
 
+    plugin_signature = tuple(
+        sorted(
+            (
+                str(
+                    plugin.get(
+                        "plugin_id",
+                        "",
+                    )
+                    or ""
+                ).strip(),
 
-def get_upscaler_plugin_model_results():
+                str(
+                    plugin.get(
+                        "version",
+                        "",
+                    )
+                    or ""
+                ).strip(),
+
+                bool(
+                    plugin.get(
+                        "development"
+                    )
+                ),
+            )
+            for plugin
+            in ready_plugins
+        )
+    )
+
+    has_development_plugin = any(
+        bool(
+            plugin.get(
+                "development"
+            )
+        )
+        for plugin
+        in ready_plugins
+    )
+
+    cache_seconds = (
+        UPSCALER_DEV_MODEL_CACHE_SECONDS
+        if has_development_plugin
+        else UPSCALER_MODEL_CACHE_SECONDS
+    )
+
+    now = time.monotonic()
+
+    with upscaler_metadata_cache_lock:
+        cache_age = (
+            now
+            - float(
+                upscaler_model_result_cache.get(
+                    "loaded_at",
+                    0.0,
+                )
+                or 0.0
+            )
+        )
+
+        if (
+            not force_refresh
+            and upscaler_model_result_cache.get(
+                "signature"
+            )
+            == plugin_signature
+            and cache_age
+            < cache_seconds
+        ):
+            return copy.deepcopy(
+                upscaler_model_result_cache.get(
+                    "plugins",
+                    [],
+                )
+                or []
+            )
+
     plugin_results = []
 
-    for plugin_status in (
-        get_ready_upscaler_plugins()
-    ):
+    for plugin_status in ready_plugins:
         plugin_id = str(
             plugin_status.get(
                 "plugin_id",
@@ -20637,8 +21283,24 @@ def get_upscaler_plugin_model_results():
             "models": models,
         })
 
-    return plugin_results
+    with upscaler_metadata_cache_lock:
+        upscaler_model_result_cache[
+            "loaded_at"
+        ] = now
 
+        upscaler_model_result_cache[
+            "signature"
+        ] = plugin_signature
+
+        upscaler_model_result_cache[
+            "plugins"
+        ] = copy.deepcopy(
+            plugin_results
+        )
+
+    return copy.deepcopy(
+        plugin_results
+    )
 
 @app.route(
     "/upscaling/models",
@@ -20657,7 +21319,18 @@ def upscaling_model_options():
     return jsonify({
         "ok": True,
         "plugins": (
-            get_upscaler_plugin_model_results()
+            get_upscaler_plugin_model_results(
+                force_refresh=(
+                    str(
+                        request.args.get(
+                            "refresh",
+                            "0",
+                        )
+                        or "0"
+                    ).strip()
+                    == "1"
+                )
+            )
         ),
     })
 
@@ -20793,6 +21466,14 @@ def chaos_card_upscale_control(card_uuid):
             is_upscaling_dev_feedback_enabled()
         ),
 
+        "generate_bleed_enabled": (
+            is_upscaling_generated_bleed_enabled()
+        ),
+
+        "show_generated_bleed_in_upscale_window": (
+            is_upscaling_show_generated_bleed_enabled()
+        ),
+
         "plugins": plugin_results,
 
         "run_url": url_for(
@@ -20916,6 +21597,31 @@ def build_upscale_candidate_response(
     plugin_result,
     face_context,
 ):
+    candidate_row = (
+        get_upscaled_image_by_id(
+            candidate_id
+        )
+    )
+
+    fullbleed_absolute_path = (
+        (
+            candidate_row.get(
+                "fullbleed_absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
+        if candidate_row
+        else ""
+    )
+
+    has_generated_bleed = bool(
+        fullbleed_absolute_path
+        and os.path.exists(
+            fullbleed_absolute_path
+        )
+    )
+    
     return {
         "face": (
             face_context[
@@ -20948,6 +21654,33 @@ def build_upscale_candidate_response(
             v=int(
                 time.time()
             ),
+        ),
+
+        "has_generated_bleed": (
+            has_generated_bleed
+        ),
+
+        "fullbleed_src": (
+            url_for(
+                "upscaled_candidate_image",
+                upscaled_image_id=(
+                    candidate_id
+                ),
+                variant="fullbleed",
+                v=int(
+                    time.time()
+                ),
+            )
+            if has_generated_bleed
+            else ""
+        ),
+
+        "bleed_size_mm": (
+            candidate_row.get(
+                "bleed_size_mm"
+            )
+            if candidate_row
+            else None
         ),
 
         "width": (
@@ -21006,13 +21739,259 @@ def build_upscale_candidate_response(
         ),
     }
 
+upscaling_run_status_lock = (
+    threading.Lock()
+)
+
+upscaling_run_statuses = {}
+
+
+def set_upscaling_run_status(
+    run_id,
+    *,
+    stage=None,
+    message=None,
+    percent=None,
+    is_running=None,
+    error=None,
+    timings_ms=None,
+):
+    clean_run_id = str(
+        run_id
+        or ""
+    ).strip()
+
+    if not clean_run_id:
+        return
+
+    now_epoch = time.time()
+
+    with upscaling_run_status_lock:
+        current = dict(
+            upscaling_run_statuses.get(
+                clean_run_id,
+                {},
+            )
+        )
+
+        if not current:
+            current = {
+                "run_id": clean_run_id,
+                "started_at_epoch": (
+                    now_epoch
+                ),
+                "stage": "Starting",
+                "message": "",
+                "percent": 0,
+                "is_running": True,
+                "error": "",
+                "timings_ms": {},
+            }
+
+        if stage is not None:
+            current[
+                "stage"
+            ] = str(
+                stage
+            )
+
+        if message is not None:
+            current[
+                "message"
+            ] = str(
+                message
+            )
+
+        if percent is not None:
+            current[
+                "percent"
+            ] = max(
+                0,
+                min(
+                    100,
+                    int(
+                        percent
+                    ),
+                ),
+            )
+
+        if is_running is not None:
+            current[
+                "is_running"
+            ] = bool(
+                is_running
+            )
+
+        if error is not None:
+            current[
+                "error"
+            ] = str(
+                error
+                or ""
+            )
+
+        if timings_ms is not None:
+            current[
+                "timings_ms"
+            ] = dict(
+                timings_ms
+                or {}
+            )
+
+        current[
+            "updated_at_epoch"
+        ] = now_epoch
+
+        upscaling_run_statuses[
+            clean_run_id
+        ] = current
+
+        stale_run_ids = [
+            stored_run_id
+            for (
+                stored_run_id,
+                stored_status,
+            )
+            in upscaling_run_statuses.items()
+            if (
+                now_epoch
+                - float(
+                    stored_status.get(
+                        "updated_at_epoch",
+                        now_epoch,
+                    )
+                    or now_epoch
+                )
+            )
+            > 3600
+        ]
+
+        for stale_run_id in stale_run_ids:
+            upscaling_run_statuses.pop(
+                stale_run_id,
+                None,
+            )
+
+
+def get_upscaling_run_status(
+    run_id,
+):
+    clean_run_id = str(
+        run_id
+        or ""
+    ).strip()
+
+    if not clean_run_id:
+        return None
+
+    with upscaling_run_status_lock:
+        status = (
+            upscaling_run_statuses.get(
+                clean_run_id
+            )
+        )
+
+        return (
+            dict(
+                status
+            )
+            if status
+            else None
+        )
+
+
+def has_active_manual_upscale_runs():
+    with upscaling_run_status_lock:
+        return any(
+            bool(
+                status.get(
+                    "is_running"
+                )
+            )
+            for status
+            in upscaling_run_statuses.values()
+        )
+
+
+@app.route(
+    "/upscaling/run-status",
+    methods=["GET"],
+)
+def upscaling_run_status():
+    run_id = str(
+        request.args.get(
+            "run_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    status = (
+        get_upscaling_run_status(
+            run_id
+        )
+    )
+
+    return jsonify({
+        "ok": True,
+        "found": bool(
+            status
+        ),
+        "status": (
+            status
+            or {}
+        ),
+    })
+
 def run_card_upscale_candidate_batch(
     *,
     card_row,
     plugin_id,
     model_id,
     requested_face="front",
+    progress_callback=None,
 ):
+    total_started = (
+        time.perf_counter()
+    )
+
+    timings_ms = {}
+
+    def record_timing(
+        key,
+        started_at,
+    ):
+        timings_ms[
+            key
+        ] = int(
+            round(
+                (
+                    time.perf_counter()
+                    - started_at
+                )
+                * 1000.0
+            )
+        )
+
+    def report_progress(
+        stage,
+        message,
+        percent,
+    ):
+        if callable(
+            progress_callback
+        ):
+            progress_callback(
+                stage,
+                message,
+                percent,
+            )
+
+    report_progress(
+        "Preparing",
+        "Resolving card faces and image sources...",
+        5,
+    )
     if not card_row:
         raise ValueError(
             "Card not found."
@@ -21028,6 +22007,10 @@ def run_card_upscale_candidate_batch(
         "back",
     }:
         clean_requested_face = "front"
+
+    face_resolution_started = (
+        time.perf_counter()
+    )
 
     face_data = (
         get_chaos_card_front_back_face_data(
@@ -21079,12 +22062,37 @@ def run_card_upscale_candidate_batch(
             face_context
         )
 
+    record_timing(
+        "face_resolution_ms",
+        face_resolution_started,
+    )
+
+    report_progress(
+        "Loading Source",
+        (
+            "Loading front and back source images..."
+            if is_dual_faced
+            else "Loading source image..."
+        ),
+        15,
+    )
+
     card_uuid = str(
         card_row[
             "card_uuid"
         ]
         or ""
     ).strip()
+
+    generate_bleed = (
+        is_upscaling_generated_bleed_enabled()
+    )
+
+    bleed_frame_context = (
+        get_upscaling_bleed_frame_context(
+            card_row
+        )
+    )
 
     card_output_dir = os.path.join(
         UPSCALED_SCRYFALL_DIR,
@@ -21098,6 +22106,10 @@ def run_card_upscale_candidate_batch(
 
     batch_stamp = int(
         time.time() * 1000
+    )
+
+    source_loading_started = (
+        time.perf_counter()
     )
 
     prepared_faces = []
@@ -21144,17 +22156,45 @@ def run_card_upscale_candidate_batch(
             output_filename,
         )
 
+        fullbleed_output_path = (
+            os.path.splitext(
+                output_path
+            )[0]
+            + "_fullbleed.png"
+        )
+
         prepared_faces.append({
             "face_context": (
                 face_context
             ),
+
             "source_path": (
                 source_path
             ),
+
             "output_path": (
                 output_path
             ),
+
+            "fullbleed_output_path": (
+                fullbleed_output_path
+            ),
         })
+
+    record_timing(
+        "source_images_ms",
+        source_loading_started,
+    )
+
+    report_progress(
+        "Preparing AI",
+        "Building the AI Upscale request...",
+        30,
+    )
+
+    payload_started = (
+        time.perf_counter()
+    )
 
     plugin_items = []
 
@@ -21187,6 +22227,25 @@ def run_card_upscale_candidate_batch(
             ),
         })
 
+    record_timing(
+        "request_prepare_ms",
+        payload_started,
+    )
+
+    report_progress(
+        "AI Upscale",
+        (
+            "Running the AI Upscale model on both faces..."
+            if is_dual_faced
+            else "Running the AI Upscale model..."
+        ),
+        40,
+    )
+
+    plugin_call_started = (
+        time.perf_counter()
+    )
+
     try:
         batch_result = run_plugin_json(
             plugin_id,
@@ -21215,6 +22274,17 @@ def run_card_upscale_candidate_batch(
                 "items": plugin_items,
             },
             timeout=1800,
+        )
+
+        record_timing(
+            "plugin_call_ms",
+            plugin_call_started,
+        )
+
+        report_progress(
+            "AI Complete",
+            "AI processing finished. Validating the output...",
+            80,
         )
 
     except Exception as exc:
@@ -21252,6 +22322,35 @@ def run_card_upscale_candidate_batch(
             [],
         )
         or []
+    )
+
+    reported_processing_ms = sum(
+        int(
+            plugin_result.get(
+                "processing_ms",
+                0,
+            )
+            or 0
+        )
+        for plugin_result
+        in plugin_results
+    )
+
+    timings_ms[
+        "plugin_reported_processing_ms"
+    ] = reported_processing_ms
+
+    timings_ms[
+        "plugin_host_overhead_ms"
+    ] = max(
+        0,
+        int(
+            timings_ms.get(
+                "plugin_call_ms",
+                0,
+            )
+        )
+        - reported_processing_ms,
     )
 
     plugin_result_by_face = {}
@@ -21302,6 +22401,16 @@ def run_card_upscale_candidate_batch(
                 "requested card face."
             )
 
+    finalize_started = (
+        time.perf_counter()
+    )
+
+    report_progress(
+        "Finalizing",
+        "Preparing candidate image records...",
+        84,
+    )
+
     candidate_records = []
 
     try:
@@ -21318,6 +22427,158 @@ def run_card_upscale_candidate_batch(
                 plugin_result_by_face[
                     face_name
                 ]
+            )
+
+            bleed_result = {
+                "ok": True,
+                "enabled": False,
+                "attached": False,
+                "requires_outpaint": False,
+                "method": "disabled",
+            }
+
+            if generate_bleed:
+                report_progress(
+                    "Generated Bleed",
+                    (
+                        "Preparing print bleed for "
+                        f"{face_name}..."
+                    ),
+                    88,
+                )
+
+                try:
+                    bleed_result = (
+                        build_generated_bleed_derivative(
+                            source_path=(
+                                prepared_face[
+                                    "output_path"
+                                ]
+                            ),
+
+                            output_path=(
+                                prepared_face[
+                                    "fullbleed_output_path"
+                                ]
+                            ),
+
+                            printing_frame_key=(
+                                bleed_frame_context[
+                                    "printing_frame_key"
+                                ]
+                            ),
+
+                            printing_frame_name=(
+                                bleed_frame_context[
+                                    "printing_frame_name"
+                                ]
+                            ),
+
+                            corner_radius_pct=(
+                                bleed_frame_context[
+                                    "corner_radius_pct"
+                                ]
+                            ),
+
+                            bleed_size_mm=(
+                                DEFAULT_BLEED_MM
+                            ),
+                        )
+                    )
+
+                    if bleed_result.get(
+                        "requires_outpaint"
+                    ):
+                        unfinished_bleed_path = (
+                            bleed_result.get(
+                                "output_path"
+                            )
+                            or ""
+                        )
+
+                        if (
+                            unfinished_bleed_path
+                            and os.path.exists(
+                                unfinished_bleed_path
+                            )
+                        ):
+                            try:
+                                os.remove(
+                                    unfinished_bleed_path
+                                )
+
+                            except OSError:
+                                pass
+
+                        bleed_result[
+                            "output_path"
+                        ] = ""
+
+                        bleed_result[
+                            "attached"
+                        ] = False
+
+                        bleed_result[
+                            "method"
+                        ] = (
+                            "generative_outpainting_"
+                            "disabled"
+                        )
+
+                except Exception as exc:
+                    bleed_result = {
+                        "ok": False,
+                        "enabled": True,
+                        "attached": False,
+                        "requires_outpaint": False,
+                        "method": "failed",
+                        "error": str(
+                            exc
+                        ),
+                    }
+
+                    write_error_log(
+                        "GENERATED BLEED FAILED | "
+                        f"card_uuid={card_uuid} | "
+                        f"face={face_name} | "
+                        f"printing_frame="
+                        f"{bleed_frame_context['printing_frame_name']}",
+                        exc=exc,
+                    )
+
+                    failed_bleed_path = (
+                        prepared_face.get(
+                            "fullbleed_output_path"
+                        )
+                        or ""
+                    )
+
+                    if (
+                        failed_bleed_path
+                        and os.path.exists(
+                            failed_bleed_path
+                        )
+                    ):
+                        try:
+                            os.remove(
+                                failed_bleed_path
+                            )
+
+                        except OSError:
+                            pass
+
+            plugin_result[
+                "host_generated_bleed"
+            ] = bleed_result
+
+            report_progress(
+                "Saving Candidate",
+                (
+                    "Saving "
+                    f"{face_name} "
+                    "Upscale candidate..."
+                ),
+                94,
             )
 
             candidate_id = (
@@ -21386,15 +22647,121 @@ def run_card_upscale_candidate_batch(
                 )
             )
 
+            if (
+                bleed_result.get(
+                    "ok"
+                )
+                and bleed_result.get(
+                    "attached"
+                )
+                and bleed_result.get(
+                    "output_path"
+                )
+            ):
+                try:
+                    set_upscaled_generated_bleed(
+                        candidate_id,
+
+                        fullbleed_image_path=(
+                            bleed_result[
+                                "output_path"
+                            ]
+                        ),
+
+                        bleed_size_mm=(
+                            bleed_result.get(
+                                "bleed_size_mm",
+                                DEFAULT_BLEED_MM,
+                            )
+                        ),
+
+                        bleed_model_id=(
+                            bleed_result.get(
+                                "bleed_model_id"
+                            )
+                            or bleed_result.get(
+                                "method"
+                            )
+                            or (
+                                "imomir_"
+                                "synthetic_frame_"
+                                "bleed_v1"
+                            )
+                        ),
+
+                        bleed_plugin_id=(
+                            bleed_result.get(
+                                "bleed_plugin_id"
+                            )
+                            or "imomir-host"
+                        ),
+
+                        bleed_plugin_version=(
+                            bleed_result.get(
+                                "bleed_plugin_version"
+                            )
+                            or APP_VERSION
+                        ),
+
+                        bleed_generation_metadata=(
+                            bleed_result
+                        ),
+                    )
+
+                except Exception as exc:
+                    write_error_log(
+                        "GENERATED BLEED ATTACH FAILED | "
+                        f"card_uuid={card_uuid} | "
+                        f"face={face_name} | "
+                        f"candidate_id={candidate_id}",
+                        exc=exc,
+                    )
+
+                    fullbleed_path = (
+                        bleed_result.get(
+                            "output_path"
+                        )
+                        or ""
+                    )
+
+                    if (
+                        fullbleed_path
+                        and os.path.exists(
+                            fullbleed_path
+                        )
+                    ):
+                        try:
+                            os.remove(
+                                fullbleed_path
+                            )
+                        except OSError:
+                            pass
+
+                    bleed_result[
+                        "attached"
+                    ] = False
+
+                    bleed_result[
+                        "attach_error"
+                    ] = str(
+                        exc
+                    )
+
             candidate_records.append({
                 "candidate_id": (
                     candidate_id
                 ),
+
                 "face_context": (
                     face_context
                 ),
+
                 "plugin_result": (
                     plugin_result
+                ),
+
+                "bleed_result": (
+                    bleed_result
                 ),
             })
 
@@ -21411,6 +22778,30 @@ def run_card_upscale_candidate_batch(
 
         raise
 
+    record_timing(
+        "finalize_candidates_ms",
+        finalize_started,
+    )
+
+    record_timing(
+        "total_ms",
+        total_started,
+    )
+
+    report_progress(
+        "Complete",
+        "Upscale candidate is ready for review.",
+        100,
+    )
+
+    write_debug_log(
+        "UPSCALE PERFORMANCE | "
+        f"card_uuid={card_uuid} | "
+        f"plugin_id={plugin_id} | "
+        f"model_id={model_id} | "
+        f"timings={json.dumps(timings_ms, sort_keys=True)}"
+    )
+
     return {
         "is_dual_faced": (
             is_dual_faced
@@ -21426,6 +22817,9 @@ def run_card_upscale_candidate_batch(
         ],
         "candidate_records": (
             candidate_records
+        ),
+        "timings_ms": (
+            timings_ms
         ),
     }
 
@@ -21449,6 +22843,14 @@ def chaos_card_upscale_run(card_uuid):
         )
         or {}
     )
+
+    run_id = str(
+        payload.get(
+            "run_id",
+            "",
+        )
+        or ""
+    ).strip()[:100]
 
     plugin_id = str(
         payload.get(
@@ -21509,6 +22911,34 @@ def chaos_card_upscale_run(card_uuid):
             "message": "Card not found.",
         }), 404
 
+    if run_id:
+        set_upscaling_run_status(
+            run_id,
+            stage="Starting",
+            message=(
+                "Starting Upscale..."
+            ),
+            percent=2,
+            is_running=True,
+            error="",
+        )
+
+    def update_run_progress(
+        stage,
+        message,
+        percent,
+    ):
+        if not run_id:
+            return
+
+        set_upscaling_run_status(
+            run_id,
+            stage=stage,
+            message=message,
+            percent=percent,
+            is_running=True,
+        )
+
     try:
         run_result = (
             run_card_upscale_candidate_batch(
@@ -21518,16 +22948,65 @@ def chaos_card_upscale_run(card_uuid):
                 requested_face=(
                     requested_face
                 ),
+                progress_callback=(
+                    update_run_progress
+                ),
             )
         )
 
+        if run_id:
+            set_upscaling_run_status(
+                run_id,
+                stage="Complete",
+                message=(
+                    "Upscale candidate "
+                    "is ready for review."
+                ),
+                percent=100,
+                is_running=False,
+                timings_ms=(
+                    run_result.get(
+                        "timings_ms",
+                        {},
+                    )
+                ),
+            )
+
     except ValueError as exc:
+
+        if run_id:
+            set_upscaling_run_status(
+                run_id,
+                stage="Failed",
+                message=str(
+                    exc
+                ),
+                is_running=False,
+                error=str(
+                    exc
+                ),
+            )
+
         return jsonify({
             "ok": False,
             "message": str(exc),
         }), 400
 
     except Exception as exc:
+
+        if run_id:
+            set_upscaling_run_status(
+                run_id,
+                stage="Failed",
+                message=str(
+                    exc
+                ),
+                is_running=False,
+                error=str(
+                    exc
+                ),
+            )
+
         return jsonify({
             "ok": False,
             "message": str(exc),
@@ -21599,6 +23078,15 @@ def chaos_card_upscale_run(card_uuid):
         ),
         "candidates": (
             candidates
+        ),
+        "run_id": (
+            run_id
+        ),
+        "timings_ms": (
+            run_result.get(
+                "timings_ms",
+                {},
+            )
         ),
     })
 
@@ -22950,10 +24438,41 @@ def upscaled_candidate_image(
     if not candidate:
         return ("Not found", 404)
 
+    requested_variant = (
+        request.args.get(
+            "variant"
+        )
+        or "normal"
+    ).strip().lower()
+
+    if requested_variant == "fullbleed":
+        image_path = (
+            candidate.get(
+                "fullbleed_absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
+
+    else:
+        image_path = (
+            candidate.get(
+                "absolute_path",
+                "",
+            )
+            or ""
+        ).strip()
+
+    if (
+        not image_path
+        or not os.path.exists(
+            image_path
+        )
+    ):
+        return ("Not found", 404)
+
     return send_file(
-        candidate[
-            "absolute_path"
-        ],
+        image_path,
         conditional=True,
         max_age=0,
     )
@@ -23302,12 +24821,6 @@ def upscaled_candidate_discard(
             ),
         }), 404
 
-    discarded = (
-        discard_upscaled_candidate(
-            upscaled_image_id
-        )
-    )
-
     feedback_result = (
         try_record_upscaling_dev_feedback(
             decision="discarded",
@@ -23324,6 +24837,12 @@ def upscaled_candidate_discard(
                 )
                 else {}
             ),
+        )
+    )
+
+    discarded = (
+        discard_upscaled_candidate(
+            upscaled_image_id
         )
     )
 
@@ -23417,17 +24936,6 @@ def chaos_card_upscale_revert(
         )
     )
 
-    reverted_count = (
-        revert_current_upscaled_image_for_card(
-            card_row,
-            face_kind=(
-                face_context[
-                    "page_kind"
-                ]
-            ),
-        )
-    )
-
     feedback_result = (
         try_record_upscaling_dev_feedback(
             decision="reverted",
@@ -23444,6 +24952,17 @@ def chaos_card_upscale_revert(
         }
     )
 
+    reverted_count = (
+        revert_current_upscaled_image_for_card(
+            card_row,
+            face_kind=(
+                face_context[
+                    "page_kind"
+                ]
+            ),
+        )
+    )
+
     return jsonify({
         "ok": True,
 
@@ -23452,8 +24971,9 @@ def chaos_card_upscale_revert(
         ),
 
         "message": (
-            "Reverted to the original "
-            "Scryfall image."
+            "Upscale removed. The card "
+            "has reverted to its next "
+            "available image source."
         ),
 
         "feedback_logged": (

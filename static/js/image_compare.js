@@ -11,7 +11,17 @@
     let outputLabel = null;
     let outputMeta = null;
 
+    let statusContainer = null;
     let statusElement = null;
+    let statusStage = null;
+    let statusSpinner = null;
+    let statusElapsed = null;
+    let statusProgressBar = null;
+
+    let activeRunId = "";
+    let runStatusPollTimer = null;
+    let runStatusElapsedTimer = null;
+    let runStatusStartedAt = 0;
 
     let acceptButton = null;
     let discardButton = null;
@@ -1497,11 +1507,91 @@
         grid.appendChild(sourcePanel);
         grid.appendChild(outputPanel);
 
+        statusContainer =
+            document.createElement("div");
+
+        statusContainer.className =
+            "imomir-upscale-status";
+
+        statusSpinner =
+            document.createElement("div");
+
+        statusSpinner.className =
+            "imomir-upscale-status-spinner hidden";
+
+        const statusBody =
+            document.createElement("div");
+
+        statusBody.className =
+            "imomir-upscale-status-body";
+
+        const statusHeader =
+            document.createElement("div");
+
+        statusHeader.className =
+            "imomir-upscale-status-header";
+
+        statusStage =
+            document.createElement("strong");
+
+        statusStage.textContent =
+            "Ready";
+
+        statusElapsed =
+            document.createElement("span");
+
+        statusElapsed.className =
+            "imomir-upscale-status-elapsed";
+
+        statusHeader.appendChild(
+            statusStage
+        );
+
+        statusHeader.appendChild(
+            statusElapsed
+        );
+
         statusElement =
             document.createElement("div");
 
         statusElement.className =
-            "imomir-upscale-status";
+            "imomir-upscale-status-message";
+
+        const statusProgress =
+            document.createElement("div");
+
+        statusProgress.className =
+            "imomir-upscale-status-progress";
+
+        statusProgressBar =
+            document.createElement("div");
+
+        statusProgressBar.className =
+            "imomir-upscale-status-progress-bar";
+
+        statusProgress.appendChild(
+            statusProgressBar
+        );
+
+        statusBody.appendChild(
+            statusHeader
+        );
+
+        statusBody.appendChild(
+            statusElement
+        );
+
+        statusBody.appendChild(
+            statusProgress
+        );
+
+        statusContainer.appendChild(
+            statusSpinner
+        );
+
+        statusContainer.appendChild(
+            statusBody
+        );
 
         devFeedbackPanel = (
             buildDevFeedbackPanel()
@@ -1550,7 +1640,9 @@
         dialog.appendChild(header);
         dialog.appendChild(controls);
         dialog.appendChild(grid);
-        dialog.appendChild(statusElement);
+        dialog.appendChild(
+            statusContainer
+        );
         dialog.appendChild(devFeedbackPanel);
         dialog.appendChild(footer);
 
@@ -1634,6 +1726,267 @@
                     closeViewer();
                 }
             }
+        );
+    }
+
+    function stopRunStatusTracking() {
+        if (
+            runStatusPollTimer
+        ) {
+            window.clearTimeout(
+                runStatusPollTimer
+            );
+
+            runStatusPollTimer = null;
+        }
+
+        if (
+            runStatusElapsedTimer
+        ) {
+            window.clearInterval(
+                runStatusElapsedTimer
+            );
+
+            runStatusElapsedTimer = null;
+        }
+
+        activeRunId = "";
+        runStatusStartedAt = 0;
+    }
+
+
+    function renderRunElapsedTime() {
+        if (
+            !statusElapsed
+            || !runStatusStartedAt
+        ) {
+            return;
+        }
+
+        const elapsedSeconds = Math.max(
+            0,
+            (
+                performance.now()
+                - runStatusStartedAt
+            )
+            / 1000
+        );
+
+        statusElapsed.textContent =
+            elapsedSeconds.toFixed(1)
+            + "s";
+    }
+
+
+    function setUpscaleStatus(
+        stage,
+        message,
+        options
+    ) {
+        const settings =
+            options || {};
+
+        if (statusStage) {
+            statusStage.textContent =
+                String(
+                    stage
+                    || "Status"
+                );
+        }
+
+        if (statusElement) {
+            statusElement.textContent =
+                String(
+                    message
+                    || ""
+                );
+        }
+
+        if (statusSpinner) {
+            statusSpinner.classList.toggle(
+                "hidden",
+                !Boolean(
+                    settings.busy
+                )
+            );
+        }
+
+        if (statusProgressBar) {
+            const percent = Math.max(
+                0,
+                Math.min(
+                    100,
+                    Number(
+                        settings.percent
+                        || 0
+                    )
+                )
+            );
+
+            statusProgressBar.style.width =
+                percent + "%";
+        }
+
+        if (
+            statusContainer
+        ) {
+            statusContainer.classList.toggle(
+                "is-error",
+                Boolean(
+                    settings.error
+                )
+            );
+        }
+    }
+
+
+    function startRunElapsedTimer() {
+        runStatusStartedAt =
+            performance.now();
+
+        renderRunElapsedTime();
+
+        runStatusElapsedTimer =
+            window.setInterval(
+                renderRunElapsedTime,
+                250
+            );
+    }
+
+
+    async function pollRunStatus() {
+        if (
+            !activeRunId
+            || !currentData
+            || !currentData
+                .run_status_url
+        ) {
+            return;
+        }
+
+        try {
+            const statusUrl =
+                currentData
+                    .run_status_url
+                + "?run_id="
+                + encodeURIComponent(
+                    activeRunId
+                )
+                + "&_="
+                + Date.now();
+
+            const response = await fetch(
+                statusUrl,
+                {
+                    cache: "no-store",
+                    headers: {
+                        "Accept":
+                            "application/json"
+                    }
+                }
+            );
+
+            const data =
+                await response.json();
+
+            if (
+                response.ok
+                && data.ok
+                && data.found
+            ) {
+                const status =
+                    data.status
+                    || {};
+
+                setUpscaleStatus(
+                    status.stage
+                    || "Working",
+                    status.message
+                    || "Upscale is running...",
+                    {
+                        busy: Boolean(
+                            status.is_running
+                        ),
+
+                        percent: Number(
+                            status.percent
+                            || 0
+                        ),
+
+                        error: Boolean(
+                            status.error
+                        )
+                    }
+                );
+            }
+
+        } catch (error) {
+            console.debug(
+                "Upscale status poll failed.",
+                error
+            );
+        }
+
+        if (activeRunId) {
+            runStatusPollTimer =
+                window.setTimeout(
+                    pollRunStatus,
+                    500
+                );
+        }
+    }
+
+
+    function formatUpscaleTimingSummary(
+        timings
+    ) {
+        timings = timings || {};
+
+        const totalMs = Number(
+            timings.total_ms
+            || 0
+        );
+
+        const aiMs = Number(
+            timings.plugin_call_ms
+            || 0
+        );
+
+        const sourceMs = Number(
+            timings.source_images_ms
+            || 0
+        );
+
+        const finalizeMs = Number(
+            timings.finalize_candidates_ms
+            || 0
+        );
+
+        if (!totalMs) {
+            return "";
+        }
+
+        return (
+            "Completed in "
+            + (
+                totalMs / 1000
+            ).toFixed(1)
+            + "s"
+            + " · AI "
+            + (
+                aiMs / 1000
+            ).toFixed(1)
+            + "s"
+            + " · Sources "
+            + (
+                sourceMs / 1000
+            ).toFixed(1)
+            + "s"
+            + " · Finalize "
+            + (
+                finalizeMs / 1000
+            ).toFixed(1)
+            + "s"
         );
     }
 
@@ -1840,14 +2193,12 @@
                 faceData.source.src;
         }
 
-        const displayedOutput = (
+        let displayedOutput = (
             currentCandidate
             || faceData.current_upscaled
         );
 
-        showOutput(
-            displayedOutput,
-
+        let outputLabelText = (
             currentCandidate
                 ? "Upscaled — Candidate"
                 : (
@@ -1855,6 +2206,42 @@
                         ? "Upscaled — In Use"
                         : "Upscaled Output"
                 )
+        );
+
+        if (
+            currentData
+            && currentData
+                .show_generated_bleed_in_upscale_window
+            && displayedOutput
+            && displayedOutput
+                .has_generated_bleed
+            && displayedOutput
+                .fullbleed_src
+        ) {
+            displayedOutput = Object.assign(
+                {},
+                displayedOutput,
+                {
+                    src: (
+                        displayedOutput
+                            .fullbleed_src
+                    ),
+
+                    showing_generated_bleed:
+                        true
+                }
+            );
+
+            outputLabelText = (
+                currentCandidate
+                    ? "Upscaled + Bleed — Candidate"
+                    : "Upscaled + Bleed — In Use"
+            );
+        }
+
+        showOutput(
+            displayedOutput,
+            outputLabelText
         );
 
         revertButton.classList.toggle(
@@ -2009,7 +2396,8 @@
         const metaParts = [];
 
         if (
-            output.width
+            !output.showing_generated_bleed
+            && output.width
             && output.height
         ) {
             metaParts.push(
@@ -2017,6 +2405,28 @@
                 + " × "
                 + output.height
             );
+        }
+
+        if (
+            output.showing_generated_bleed
+        ) {
+            if (
+                output.bleed_size_mm
+                !== undefined
+                && output.bleed_size_mm
+                !== null
+            ) {
+                metaParts.push(
+                    output.bleed_size_mm
+                    + " mm generated bleed"
+                );
+            }
+
+            else {
+                metaParts.push(
+                    "Generated bleed"
+                );
+            }
         }
 
         if (output.model_label) {
@@ -2157,6 +2567,7 @@
         }
 
         closeZoomViewer();
+        stopRunStatusTracking();
 
         overlay.classList.add(
             "hidden"
@@ -2196,10 +2607,37 @@
 
         setBusy(true);
 
-        statusElement.textContent =
-            currentData.is_dual_faced
-                ? "Running one Upscale batch for front and back..."
-                : "Running Upscale...";
+        stopRunStatusTracking();
+
+        activeRunId = (
+            "manual-"
+            + Date.now()
+            + "-"
+            + Math.random()
+                .toString(36)
+                .slice(2, 10)
+        );
+
+        setUpscaleStatus(
+            "Starting",
+            (
+                currentData.is_dual_faced
+                    ? "Preparing front and back Upscale..."
+                    : "Preparing Upscale..."
+            ),
+            {
+                busy: true,
+                percent: 2
+            }
+        );
+
+        startRunElapsedTimer();
+
+        runStatusPollTimer =
+            window.setTimeout(
+                pollRunStatus,
+                250
+            );
 
         try {
             const response = await fetch(
@@ -2215,7 +2653,8 @@
                     body: JSON.stringify({
                         plugin_id: pluginId,
                         model_id: modelId,
-                        face: currentData.face
+                        face: currentData.face,
+                        run_id: activeRunId
                     })
                 }
             );
@@ -2282,14 +2721,43 @@
                 );
             }
 
-            statusElement.textContent =
-                data.is_dual_faced
-                    ? "Front and back candidates are ready. Use the flip button to review both faces before accepting."
-                    : "Review the candidate beside the original.";
+            const timingSummary =
+                formatUpscaleTimingSummary(
+                    data.timings_ms
+                );
+
+            stopRunStatusTracking();
+
+            setUpscaleStatus(
+                "Ready for Review",
+                (
+                    data.is_dual_faced
+                        ? "Front and back candidates are ready. Use the flip button to review both faces."
+                        : "Review the candidate beside the original."
+                )
+                + (
+                    timingSummary
+                        ? " " + timingSummary + "."
+                        : ""
+                ),
+                {
+                    busy: false,
+                    percent: 100
+                }
+            );
 
         } catch (error) {
-            statusElement.textContent =
-                error.message;
+            stopRunStatusTracking();
+
+            setUpscaleStatus(
+                "Upscale Failed",
+                error.message,
+                {
+                    busy: false,
+                    percent: 100,
+                    error: true
+                }
+            );
         }
 
         setBusy(false);
