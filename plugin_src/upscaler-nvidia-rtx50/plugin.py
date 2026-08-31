@@ -1391,6 +1391,75 @@ COMMAND_HANDLERS = {
 }
 
 
+def worker_main():
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        try:
+            request_data = json.loads(
+                line
+            )
+
+            command = str(
+                request_data.get(
+                    "command",
+                    "",
+                )
+                or ""
+            ).strip().lower()
+
+            payload = request_data.get(
+                "payload",
+                {},
+            )
+
+            handler = COMMAND_HANDLERS.get(
+                command
+            )
+
+            if not handler:
+                raise ValueError(
+                    "Unsupported plugin command: "
+                    f"{command}"
+                )
+
+            if not isinstance(
+                payload,
+                dict,
+            ):
+                raise ValueError(
+                    "Plugin input must be "
+                    "a JSON object."
+                )
+
+            response = {
+                "ok": True,
+                "result": handler(
+                    payload
+                ),
+            }
+
+        except Exception as exc:
+            response = {
+                "ok": False,
+                "error": str(exc),
+                "error_type": (
+                    type(exc).__name__
+                ),
+            }
+
+        print(
+            json.dumps(
+                response,
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
+
+
 def main():
     if len(sys.argv) < 2:
         raise ValueError(
@@ -1401,6 +1470,10 @@ def main():
         sys.argv[1]
         or ""
     ).strip().lower()
+
+    if command == "worker":
+        worker_main()
+        return
 
     if not command:
         raise ValueError(

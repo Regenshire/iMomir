@@ -1,3 +1,4 @@
+import atexit
 import json
 import os
 import shutil
@@ -28,6 +29,14 @@ PLUGIN_INSTALL_STATUS = {}
 PLUGIN_INSTALL_STATUS_LOCK = (
     threading.Lock()
 )
+
+PERSISTENT_PLUGIN_COMMANDS = {
+    "upscale",
+    "upscale_batch",
+}
+
+PLUGIN_WORKERS = {}
+PLUGIN_WORKERS_LOCK = threading.Lock()
 
 
 def ensure_plugin_directories():
@@ -1068,6 +1077,10 @@ def install_plugin(
 ):
     ensure_plugin_directories()
 
+    _stop_plugin_worker(
+        plugin_id
+    )
+
     catalog_entry = (
         get_plugin_catalog_entry(
             plugin_id
@@ -1274,6 +1287,183 @@ def start_plugin_install(
     )
 
 
+def _stop_plugin_worker(plugin_id):
+    with PLUGIN_WORKERS_LOCK:
+        worker = PLUGIN_WORKERS.pop(
+            plugin_id,
+            None,
+        )
+
+    if not worker:
+        return
+
+    process = worker["process"]
+
+    if process.poll() is None:
+        process.terminate()
+
+        try:
+            process.wait(timeout=2)
+
+        except subprocess.TimeoutExpired:
+            process.kill()
+
+
+def _stop_all_plugin_workers():
+    with PLUGIN_WORKERS_LOCK:
+        plugin_ids = list(
+            PLUGIN_WORKERS
+        )
+
+    for plugin_id in plugin_ids:
+        _stop_plugin_worker(
+            plugin_id
+        )
+
+
+def _get_plugin_worker(
+    plugin_id,
+    runtime_context,
+):
+    with PLUGIN_WORKERS_LOCK:
+        worker = PLUGIN_WORKERS.get(
+            plugin_id
+        )
+
+        if (
+            worker
+            and worker["process"].poll()
+            is None
+        ):
+            return worker
+
+        process = subprocess.Popen(
+            [
+                runtime_context[
+                    "plugin_python"
+                ],
+                runtime_context[
+                    "entrypoint_path"
+                ],
+                "worker",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+
+        worker = {
+            "process": process,
+            "lock": threading.Lock(),
+        }
+
+        PLUGIN_WORKERS[plugin_id] = (
+            worker
+        )
+
+        return worker
+
+
+def _run_persistent_plugin_json(
+    plugin_id,
+    command,
+    payload,
+    timeout,
+    runtime_context,
+):
+    worker = _get_plugin_worker(
+        plugin_id,
+        runtime_context,
+    )
+
+    with worker["lock"]:
+        process = worker["process"]
+
+        try:
+            process.stdin.write(
+                json.dumps({
+                    "command": command,
+                    "payload": payload or {},
+                })
+                + "\n"
+            )
+
+            process.stdin.flush()
+
+        except (
+            BrokenPipeError,
+            OSError,
+        ):
+            _stop_plugin_worker(
+                plugin_id
+            )
+
+            raise RuntimeError(
+                "Plugin worker stopped "
+                "unexpectedly."
+            )
+
+        response = {}
+
+        def read_response():
+            response["text"] = (
+                process.stdout.readline()
+            )
+
+        reader = threading.Thread(
+            target=read_response,
+            daemon=True,
+        )
+
+        reader.start()
+        reader.join(timeout)
+
+        if reader.is_alive():
+            _stop_plugin_worker(
+                plugin_id
+            )
+
+            raise RuntimeError(
+                "Plugin worker timed out."
+            )
+
+        response_text = str(
+            response.get("text")
+            or ""
+        ).strip()
+
+        if not response_text:
+            _stop_plugin_worker(
+                plugin_id
+            )
+
+            raise RuntimeError(
+                "Plugin worker exited "
+                "without a response."
+            )
+
+        result = json.loads(
+            response_text
+        )
+
+        if not result.get("ok"):
+            raise RuntimeError(
+                result.get("error")
+                or "Plugin worker failed."
+            )
+
+        return result.get(
+            "result",
+            {},
+        )
+
+
+atexit.register(
+    _stop_all_plugin_workers
+)
+
 def run_plugin_json(
     plugin_id,
     command,
@@ -1289,6 +1479,15 @@ def run_plugin_json(
     if not runtime_context:
         raise RuntimeError(
             "Plugin is not ready."
+        )
+
+    if command in PERSISTENT_PLUGIN_COMMANDS:
+        return _run_persistent_plugin_json(
+            plugin_id,
+            command,
+            payload,
+            timeout,
+            runtime_context,
         )
 
     process = subprocess.run(
