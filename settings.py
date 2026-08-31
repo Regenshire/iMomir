@@ -1,4 +1,4 @@
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
 GITHUB_RELEASE_OWNER = "Regenshire"
 GITHUB_RELEASE_REPO = "iMomir"
 GITHUB_LATEST_RELEASE_API_URL = (
@@ -242,14 +242,14 @@ DEFAULT_CONFIG = {
     "momir_print_pack_label_cards": "",
     "momir_open_print_in_new_tab": "",
 
-    "chaos_print_template": "",
-    "chaos_print_color_mode": "",
-    "chaos_use_pdf_print": "",
+    "chaos_print_template": "silhouette-letter-horizontal-8",
+    "chaos_print_color_mode": "color",
+    "chaos_use_pdf_print": "1",
     "chaos_pdf_width_mm": "",
     "chaos_pdf_height_mm": "",
     "chaos_print_bleed_size_mm": "",
     "chaos_pdf_crop_border": "",
-    "chaos_pdf_cutting_guides": "",
+    "chaos_pdf_cutting_guides": "1",
 
     # Legacy safety-band checkbox value.
     "chaos_pdf_outer_slot_region_band": "",
@@ -258,7 +258,7 @@ DEFAULT_CONFIG = {
     "chaos_pdf_outer_slot_region_band_size_mm": "",
     "chaos_pdf_outer_slot_region_band_color_hex": "",
 
-    "chaos_print_card_backs": "",
+    "chaos_print_card_backs": "1",
     "chaos_print_labels_enabled": "",
     "chaos_print_label_tracking_code": "",
     "chaos_print_label_front_back": "",
@@ -276,8 +276,9 @@ DEFAULT_CONFIG = {
     "print_pack_tracking_code": "0",
     "print_pack_labels": "0",
 
-    "enable_track_packs": "0",
-    "enable_chaos_card_image_export": "0",
+    "enable_track_packs": "1",
+    "enable_chaos_card_image_export": "1",
+    "export_add_bleed": "1",
     "export_separate_special_slots": "0",
     "use_pack_image_for_title": "0",
     "momir_default_token_variant": "dark",
@@ -286,7 +287,7 @@ DEFAULT_CONFIG = {
     "debug_log": "0",
     "tower_pdf_draw_count": "7",
     "chaos_pack_types": "core,default,draft,collector,set,play,jumpstart,jumpstart-v2,premium,six,collector-special",
-    "chaos_draft_export_format": "none",
+    "chaos_draft_export_format": "archidekt",
     "chaos_scryfall_image_quality": "png",
 
     "upscaling_active_plugin": "",

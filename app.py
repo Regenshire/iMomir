@@ -1551,7 +1551,7 @@ def update_config_from_form(form_data):
         "momir_mode": "momir_basic",
         "chaos_draft_mode": "chaos_draft",
         "allow_repeats": "1",
-        "chaos_draft_export_format": "none",
+        "chaos_draft_export_format": "archidekt",
         "chaos_scryfall_image_quality": "png",
         "auto_clear_exports": "7",
         "card_database_reminder_frequency": "monthly",
@@ -13489,9 +13489,10 @@ def play_draft():
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
-            enable_track_packs=(config.get("enable_track_packs") or "0").strip() == "1",
-            print_card_backs=(chaos_print_config.get("print_card_backs") or "0").strip() == "1",
+            enable_track_packs=(config.get("enable_track_packs") or "1").strip() == "1",
+            print_card_backs=(chaos_print_config.get("print_card_backs") or "1").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
+            print_export_defaults=get_print_export_defaults_from_config(config),
         )
 
     if current_game_mode == "chaos_draft_campaign":
@@ -13520,8 +13521,8 @@ def play_draft():
             current_game_mode=current_game_mode,
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
-            chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
-            print_card_backs=(chaos_print_config.get("print_card_backs") or "0").strip() == "1",
+            chaos_draft_export_format=(config.get("chaos_draft_export_format") or "archidekt").strip().lower(),
+            print_card_backs=(chaos_print_config.get("print_card_backs") or "1").strip() == "1",
             template_download_links=active_template_metadata["download_links"],
             campaign_players=campaign_players,
             selected_campaign_player_id=selected_campaign_player_id,
@@ -13529,6 +13530,7 @@ def play_draft():
             selected_chaos_campaign_id=selected_chaos_campaign_id,
             active_draft_game=active_draft_game,
             active_draft_game_label=active_draft_game_label,
+            print_export_defaults=get_print_export_defaults_from_config(config),
         )
 
     if current_game_mode == "preprint_chaos_draft":
@@ -16521,6 +16523,7 @@ def campaign_chaos_pack_detail(tracked_pack_id):
         cards=cards,
         display_pack_prices=display_pack_prices,
         pack_price_source=pack_price_source,
+        print_export_defaults=get_print_export_defaults_from_config(config),
     )
 
 @app.route("/campaign-chaos/packs/backup", methods=["POST"])
@@ -17015,6 +17018,7 @@ def campaign_chaos_pack_preview_view():
         cards=cards,
         display_pack_prices=display_pack_prices,
         pack_price_source=pack_price_source,
+        print_export_defaults=get_print_export_defaults_from_config(config),
     )
 
 
@@ -19723,6 +19727,12 @@ def campaign_chaos_open():
                 },
             )
 
+    if "print_export_action" in request.form:
+        set_request_print_export_overrides_from_form(
+            request.form,
+            default_label_text=None,
+        )
+
     result = build_pending_chaos_pack_pdf(
         build_chaos_pack_pdf,
         write_debug_log,
@@ -19731,6 +19741,9 @@ def campaign_chaos_open():
 
     if not result.get("ok"):
         return jsonify(result), 400
+
+    if "print_export_action" in request.form:
+        return redirect(result["download_url"])
 
     return jsonify(result)
 
@@ -19754,6 +19767,12 @@ def chaos_draft_spin():
 
 @app.route("/chaos-draft/open", methods=["POST"])
 def chaos_draft_open():
+    if "print_export_action" in request.form:
+        set_request_print_export_overrides_from_form(
+            request.form,
+            default_label_text=None,
+        )
+
     result = build_pending_chaos_pack_pdf(
         build_chaos_pack_pdf,
         write_debug_log,
@@ -19763,7 +19782,67 @@ def chaos_draft_open():
     if not result.get("ok"):
         return jsonify(result), 400
 
+    if "print_export_action" in request.form:
+        return redirect(result["download_url"])
+
     return jsonify(result)
+
+
+@app.route("/chaos-draft/export-zip", methods=["POST"])
+def chaos_draft_export_zip():
+    opened_pack = get_chaos_session_state(
+        "pending_opened_pack",
+        default_value=None,
+    )
+
+    if not opened_pack:
+        return "No opened Chaos Draft pack is available.", 404
+
+    config = get_request_config()
+
+    if (config.get("enable_chaos_card_image_export") or "1").strip() != "1":
+        return "Chaos Draft Card Image Export is disabled in Settings.", 400
+
+    if "print_export_action" in request.form:
+        set_request_print_export_overrides_from_form(
+            request.form,
+            default_label_text=None,
+        )
+
+    try:
+        tracked_pack_id = opened_pack.get(
+            "tracked_pack_id"
+        )
+
+        if tracked_pack_id:
+            export_result = build_chaos_card_image_export_zip(
+                [tracked_pack_id]
+            )
+        else:
+            export_rows = build_campaign_preview_image_export_rows(
+                opened_pack
+            )
+
+            export_result = build_chaos_card_image_export_zip(
+                export_rows=export_rows,
+                separate_special_slots=False,
+            )
+
+    except Exception as exc:
+        write_debug_log(
+            f"CHAOS DRAFT IMAGE EXPORT ERROR | error={str(exc)}"
+        )
+
+        return str(exc), 400
+
+    return send_file(
+        export_result["zip_path"],
+        mimetype="application/zip",
+        as_attachment=True,
+        download_name=export_result["zip_filename"],
+        max_age=0,
+    )
+
 
 @app.route("/chaos-draft/save-pack", methods=["POST"])
 def chaos_draft_save_pack():
@@ -25491,7 +25570,7 @@ def is_valid_chaos_copy_export_format(export_format):
 @app.route("/chaos-draft/export", methods=["POST"])
 def chaos_draft_export():
     config = get_request_config()
-    export_format = (config.get("chaos_draft_export_format") or "none").strip().lower()
+    export_format = (config.get("chaos_draft_export_format") or "archidekt").strip().lower()
 
     if not is_valid_chaos_copy_export_format(export_format):
         return jsonify({

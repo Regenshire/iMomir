@@ -21,6 +21,7 @@
     data-chaos-open-url="{{ url_for('chaos_draft_open') }}"
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
+    data-chaos-export-zip-url="{{ url_for('chaos_draft_export_zip') }}"
     data-card-face-data-url="{{ url_for('card_face_data') }}"
 >
     {% if not card_database_ready %}
@@ -77,7 +78,7 @@
                 View
             </button>
             <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
-                Open Pack (PDF)
+                Print / Export
             </button>
 
             {% if enable_track_packs %}
@@ -181,6 +182,9 @@
 </div>
 </div>
 
+{% set print_export_subject_label = "pack" %}
+{% include "_print_export_modal.html" %}
+
 <style>
 .chaos-pack-inline-image-wrap,
 .card-zoom-content {
@@ -260,4 +264,5 @@
     }
 }
 </style>
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 {% endblock %}

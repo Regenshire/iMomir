@@ -31,6 +31,10 @@
         >
             <input type="hidden" id="printExportActionInput" name="print_export_action" value="print">
 
+            {% for pack_id in print_export_pack_ids|default([]) %}
+            <input type="hidden" name="pack_ids" value="{{ pack_id }}">
+            {% endfor %}
+
             <div class="print-export-main-actions">
                 <button
                     type="button"

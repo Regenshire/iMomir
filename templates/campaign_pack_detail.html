@@ -38,23 +38,22 @@
 
 
 
-                {% if pack.is_preview %}
-                <a
+                <button
+                    type="button"
+                    id="campaignPackOpenPrintExportButton"
                     class="action-button chaos-pack-view-back-button"
-                    href="{{ url_for('campaign_chaos_pack_preview_print') }}"
-                    target="_blank"
+                    {% if pack.is_preview %}
+                    data-print-url="{{ url_for('campaign_chaos_pack_preview_print') }}"
+                    data-export-zip-url="{{ url_for('campaign_chaos_pack_preview_export_zip') }}"
+                    {% else %}
+                    data-print-url="{{ url_for('campaign_chaos_packs_print') }}"
+                    data-export-zip-url="{{ url_for('campaign_chaos_packs_export_zip') }}"
+                    {% endif %}
                 >
-                    Print
-                </a>
-                {% else %}
-                <a
-                    class="action-button chaos-pack-view-back-button"
-                    href="{{ url_for('campaign_chaos_pack_print', tracked_pack_id=pack.tracked_pack_id) }}"
-                    target="_blank"
-                >
-                    Print
-                </a>
+                    Print / Export
+                </button>
 
+                {% if not pack.is_preview %}
                 <div
                     class="chaos-export-split pack-view-export-split"
                     id="packViewCopySplit"
@@ -370,6 +369,13 @@
             </div>
         </div>
     </div>
+    {% set print_export_subject_label = "pack" %}
+    {% if pack.is_preview %}
+        {% set print_export_pack_ids = [] %}
+    {% else %}
+        {% set print_export_pack_ids = [pack.tracked_pack_id] %}
+    {% endif %}
+    {% include "_print_export_modal.html" %}
     {% include "_alternate_image_modal.html" %}
     <div id="campaignPackZoomOverlay" class="card-zoom-overlay hidden" aria-hidden="true">
         <div id="campaignPackZoomBackdrop" class="card-zoom-backdrop"></div>
@@ -459,6 +465,7 @@
 }
 </style>
 
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 <script>
 (function () {
     const zoomOverlay = document.getElementById("campaignPackZoomOverlay");
@@ -474,6 +481,10 @@
 
     const batchUpscaleButton = document.getElementById(
         "campaignPackBatchUpscaleButton"
+    );
+
+    const printExportButton = document.getElementById(
+        "campaignPackOpenPrintExportButton"
     );
 
     let activeChangePrintingState = null;
@@ -495,6 +506,15 @@
         }
 
         console.log(cleanMessage);
+    }
+
+    if (printExportButton && window.iMomirPrintExportModal) {
+        window.iMomirPrintExportModal.init({
+            openButtonId: "campaignPackOpenPrintExportButton",
+            printUrl: printExportButton.dataset.printUrl || "",
+            exportZipUrl: printExportButton.dataset.exportZipUrl || "",
+            showMessage: showCampaignPackMessage
+        });
     }
 
     function getCampaignPackBatchUpscaleCardUuids() {

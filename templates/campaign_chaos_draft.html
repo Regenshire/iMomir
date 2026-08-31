@@ -22,6 +22,7 @@
     data-chaos-new-draft-url="{{ url_for('campaign_chaos_new_draft') }}"
     data-chaos-view-data-url="{{ url_for('chaos_draft_view_data') }}"
     data-chaos-export-url="{{ url_for('chaos_draft_export') }}"
+    data-chaos-export-zip-url="{{ url_for('chaos_draft_export_zip') }}"
     data-card-face-data-url="{{ url_for('card_face_data') }}"
 >
     {% set selected_player = namespace(item=None) %}
@@ -191,7 +192,7 @@
                 View
             </button>
             <button type="button" id="chaosOpenButton" class="action-button chaos-draft-open-button" disabled>
-                Open Pack (PDF)
+                Print / Export
             </button>
 
             {% if chaos_draft_export_format in ["archidekt", "moxfield"] %}
@@ -277,6 +278,9 @@
 </div>
 </div>
 
+{% set print_export_subject_label = "pack" %}
+{% include "_print_export_modal.html" %}
+
 <style>
 .chaos-pack-inline-image-wrap,
 .card-zoom-content {
@@ -356,6 +360,7 @@
     }
 }
 </style>
+<script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 <script>
 (function () {
     const screen = document.getElementById("chaosDraftScreen");

@@ -534,7 +534,7 @@
                         <span>Chaos Draft Export</span>
                         <select id="chaos_draft_export_format" name="chaos_draft_export_format">
                             {% for value, label in chaos_draft_export_format_options %}
-                                <option value="{{ value }}" {% if config.get("chaos_draft_export_format", "none") == value %}selected{% endif %}>
+                                <option value="{{ value }}" {% if config.get("chaos_draft_export_format", "archidekt") == value %}selected{% endif %}>
                                     {{ label }}
                                 </option>
                             {% endfor %}
@@ -557,7 +557,7 @@
                         <input
                             type="checkbox"
                             name="enable_track_packs"
-                            {% if config.get("enable_track_packs", "0") == "1" %}checked{% endif %}
+                            {% if config.get("enable_track_packs", "1") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -575,7 +575,7 @@
                         <input
                             type="checkbox"
                             name="enable_chaos_card_image_export"
-                            {% if config.get("enable_chaos_card_image_export", "0") == "1" %}checked{% endif %}
+                            {% if config.get("enable_chaos_card_image_export", "1") == "1" %}checked{% endif %}
                         >
                     </label>
 
@@ -584,7 +584,7 @@
                         <input
                             type="checkbox"
                             name="export_add_bleed"
-                            {% if config.get("export_add_bleed", "0") == "1" %}checked{% endif %}
+                            {% if config.get("export_add_bleed", "1") == "1" %}checked{% endif %}
                         >
                     </label>
 

@@ -1504,6 +1504,7 @@ function initializeChaosDraftPage() {
     const chaosOpenUrl = chaosDraftScreen.dataset.chaosOpenUrl || "/chaos-draft/open";
     const chaosViewDataUrl = chaosDraftScreen.dataset.chaosViewDataUrl || "/chaos-draft/view-data";
     const chaosExportUrl = chaosDraftScreen.dataset.chaosExportUrl || "/chaos-draft/export";
+    const chaosExportZipUrl = chaosDraftScreen.dataset.chaosExportZipUrl || "/chaos-draft/export-zip";
     const cardFaceDataUrl = chaosDraftScreen.dataset.cardFaceDataUrl || "/card-face-data";
     const printCardBacksEnabled = chaosDraftScreen.dataset.printCardBacks === "1";
     const busyOverlay = document.getElementById("chaosDraftBusyOverlay");
@@ -1521,6 +1522,15 @@ function initializeChaosDraftPage() {
     const packZoomOverlay = document.getElementById("chaosPackZoomOverlay");
     const packZoomBackdrop = document.getElementById("chaosPackZoomBackdrop");
     const packZoomImage = document.getElementById("chaosPackZoomImage");
+    const printExportPrintButton = document.getElementById("printExportPrintButton");
+
+    if (window.iMomirPrintExportModal) {
+        window.iMomirPrintExportModal.init({
+            openButtonId: "chaosOpenButton",
+            printUrl: chaosOpenUrl,
+            exportZipUrl: chaosExportZipUrl
+        });
+    }
     const openPrintInNewTab = chaosDraftScreen
         ? chaosDraftScreen.getAttribute("data-open-print-in-new-tab") === "1"
         : true;
@@ -2019,7 +2029,7 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = false;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack (PDF)";
+            openButton.textContent = "Print / Export";
         }
 
         setSavePackButtonState(false);
@@ -2928,102 +2938,24 @@ function initializeChaosDraftPage() {
         });
     }
 
-    if (openButton) {
-        openButton.addEventListener("click", async function () {
-            const openTimeoutMs = printCardBacksEnabled
-                ? 120000
-                : 30000;
+    if (printExportPrintButton) {
+        printExportPrintButton.addEventListener("click", function () {
+            if (
+                autoSavePackToggle
+                && autoSavePackToggle.checked
+                && savePackButton
+                && !currentPackSavedToDb
+            ) {
+                saveCurrentPackToDb(false).catch(function (saveError) {
+                    console.error(saveError);
+                    setSavePackButtonState(false, "Save Failed");
 
-            let timeoutId = null;
-
-            try {
-                if (!currentSpinResult || animationInProgress || openInProgress) {
-                    throw new Error("No completed Chaos Draft spin is ready to open.");
-                }
-
-                openInProgress = true;
-                openAbortController = new AbortController();
-
-                openButton.disabled = true;
-                spinCtaButton.disabled = true;
-
-                if (nextButton) {
-                    nextButton.disabled = true;
-                }
-
-                openButton.classList.add("action-button-loading");
-                openButton.textContent = "Opening Pack...";
-
-                showBusyOverlay(
-                    "Opening Pack",
-                    "We are cracking your pack! Lets see what you opened..."
-                );
-
-                if (autoSavePackToggle && autoSavePackToggle.checked && savePackButton && !currentPackSavedToDb) {
-                    saveCurrentPackToDb(false).catch(function (saveError) {
-                        console.error(saveError);
-                        setSavePackButtonState(false, "Save Failed");
-
-                        setTimeout(function () {
-                            if (!currentPackSavedToDb) {
-                                setSavePackButtonState(false, "Save");
-                            }
-                        }, 2200);
-                    });
-                }
-
-                timeoutId = window.setTimeout(function () {
-                    if (openAbortController) {
-                        openAbortController.abort();
-                    }
-                }, openTimeoutMs);
-
-                const response = await fetch(chaosOpenUrl, {
-                    method: "POST",
-                    headers: {
-                        "Accept": "application/json"
-                    },
-                    signal: openAbortController.signal
+                    setTimeout(function () {
+                        if (!currentPackSavedToDb) {
+                            setSavePackButtonState(false, "Save");
+                        }
+                    }, 2200);
                 });
-
-                const payload = await response.json();
-
-                if (!response.ok || !payload.ok || !payload.download_url) {
-                    throw new Error(payload.message || "Failed to open pack.");
-                }
-
-                hideBusyOverlay();
-
-                if (openPrintInNewTab) {
-                    resetOpenPackUiState();
-                    window.open(payload.download_url, "_blank", "noopener");
-                } else {
-                    resetOpenPackUiState();
-                    window.location.href = payload.download_url;
-                }
-            } catch (error) {
-                const wasUserCancel =
-                    error &&
-                    error.name === "AbortError" &&
-                    !openInProgress;
-
-                hideBusyOverlay();
-
-                if (!wasUserCancel) {
-                    const timeoutSeconds = Math.round(openTimeoutMs / 1000);
-
-                    const errorMessage = error && error.name === "AbortError"
-                        ? `Opening the pack timed out after ${timeoutSeconds} seconds.`
-                        : (error.message || "Failed to open Chaos Draft pack.");
-
-                    window.alert(errorMessage);
-                }
-
-                resetOpenPackUiState();
-            } finally {
-                if (timeoutId) {
-                    window.clearTimeout(timeoutId);
-                }
             }
         });
     }
