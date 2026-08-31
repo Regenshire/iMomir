@@ -39,7 +39,9 @@ Thumbs.db
 
 # Dev Stuff
 .vscode/
-.dev_prompts/
+.dev_prompts/*
+!.dev_prompts/Start_iMomir.bat
+!.dev_prompts/build_imomir_release.ps1
 
 # Runtime-installed plugins
 plugins/*
