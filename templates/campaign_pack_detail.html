@@ -247,7 +247,8 @@
                     {% if global_card_upscaling_control_enabled %}
                     <button
                         type="button"
-                        class="alternate-image-gear imomir-upscale-card-button"
+                        class="alternate-image-gear imomir-upscale-card-button {% if card.has_upscaled_image %}imomir-upscale-card-active{% endif %}"
+                        data-card-uuid="{{ card.card_uuid }}"
                         data-upscale-control-url="{{ url_for('chaos_card_upscale_control', card_uuid=card.card_uuid, face='front') }}"
                         title="Upscale Image"
                         aria-label="Upscale {{ card.card_name }}"

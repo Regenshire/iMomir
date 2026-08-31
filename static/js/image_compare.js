@@ -2763,6 +2763,38 @@
         setBusy(false);
     }
 
+    function setPageUpscaleIndicator(
+        cardUuid,
+        isActive
+    ) {
+        if (!cardUuid) {
+            return;
+        }
+
+        document.querySelectorAll(
+            '.imomir-upscale-card-button[data-card-uuid="'
+            + CSS.escape(cardUuid)
+            + '"]'
+        ).forEach(function (button) {
+            button.classList.toggle(
+                "imomir-upscale-card-active",
+                Boolean(isActive)
+            );
+
+            const row = button.closest(
+                ".custom-draft-current-card-row"
+            );
+
+            if (row) {
+                row.dataset.hasUpscaledImage =
+                    isActive ? "1" : "0";
+            }
+        });
+    }
+
+
+    async function acceptCandidate() {
+
     async function acceptCandidate() {
         const candidateEntries =
             Object.entries(
@@ -2897,6 +2929,10 @@
                 );
             }
 
+            setPageUpscaleIndicator(
+                currentData.card_uuid,
+                true
+            );
             currentCandidate = null;
             currentCandidatesByFace = {};
 
@@ -3006,6 +3042,11 @@
             }
 
             await loadControl();
+
+            setPageUpscaleIndicator(
+                currentData.card_uuid,
+                false
+            );
 
             statusElement.textContent =
                 "Reverted to the original Scryfall image.";

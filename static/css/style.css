@@ -12548,6 +12548,13 @@ input {
     color: #b8ffc8 !important;
 }
 
+.imomir-upscale-card-active {
+    color: #7dff9f !important;
+}
+
+.imomir-upscale-card-active:hover {
+    color: #b8ffc8 !important;
+}
 
 /* ==========================================
    Custom Draft Alternate Image Text Line

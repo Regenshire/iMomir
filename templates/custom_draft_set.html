@@ -768,6 +768,7 @@
                         data-collector-number="{{ card.collector_number or '' }}"
                         data-special-category="{{ card.special_category_index }}"
                         data-has-alternate-source="{{ 1 if card.has_alternate_source else 0 }}"
+                        data-has-upscaled-image="{{ 1 if card.has_upscaled_image else 0 }}"
                         data-alternate-remove-bleed="{{ 1 if card.alternate_remove_bleed else 0 }}"
                         data-is-foil="{{ 1 if card.sheet_is_foil else 0 }}"
                         data-edhrec-rank="{{ card.edhrec_rank if card.edhrec_rank is not none else '' }}"
@@ -846,7 +847,8 @@
                                 {% if global_card_upscaling_control_enabled %}
                                 <button
                                     type="button"
-                                    class="alternate-image-gear imomir-upscale-card-button"
+                                    class="alternate-image-gear imomir-upscale-card-button {% if card.has_upscaled_image and not card.has_alternate_source %}imomir-upscale-card-active{% endif %}"
+                                    data-card-uuid="{{ card.card_uuid }}"
                                     data-upscale-control-url="{{ url_for('chaos_card_upscale_control', card_uuid=card.card_uuid, face='front') }}"
                                     title="Upscale Image"
                                     aria-label="Upscale {{ card.card_name }}"
@@ -2139,7 +2141,9 @@
 
     function getUpscaleControlButtonHtml(
         upscaleControlUrl,
-        cardName
+        cardName,
+        cardUuid,
+        isUpscaled
     ) {
         const cleanUrl = String(
             upscaleControlUrl || ""
@@ -2152,7 +2156,10 @@
         return [
             '<button',
                 ' type="button"',
-                ' class="alternate-image-gear imomir-upscale-card-button"',
+                ' class="alternate-image-gear imomir-upscale-card-button'
+                    + (isUpscaled ? ' imomir-upscale-card-active' : '')
+                    + '"',
+                ' data-card-uuid="' + escapeHtml(cardUuid) + '"',
                 ' data-upscale-control-url="'
                     + escapeHtml(cleanUrl)
                     + '"',
@@ -2185,6 +2192,7 @@
         const sortPrice = card.sort_price === null || card.sort_price === undefined ? "" : String(card.sort_price);
         const specialCategoryIndex = String(card.special_category_index ?? "0");
         const hasAlternateSource = Boolean(card.has_alternate_source);
+        const hasUpscaledImage = Boolean(card.has_upscaled_image);
         const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
         const isFoil = Boolean(card.sheet_is_foil);
         const imageSrc = card.image_src || (
@@ -2214,6 +2222,7 @@
         row.dataset.collectorNumber = collectorNumber;
         row.dataset.specialCategory = specialCategoryIndex;
         row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+        row.dataset.hasUpscaledImage = hasUpscaledImage ? "1" : "0";
         row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
         row.dataset.isFoil = isFoil ? "1" : "0";
         row.dataset.edhrecRank = edhrecRank;
@@ -2285,7 +2294,10 @@
 
                     getUpscaleControlButtonHtml(
                         upscaleControlUrl,
-                        cardName
+                        cardName,
+                        cardUuid,
+                        hasUpscaledImage
+                            && !hasAlternateSource
                     ),
 
                 '</div>',
@@ -2526,6 +2538,7 @@
         const colorIdentityJson = card.color_identity_json || "[]";
         const manaValue = card.mana_value === null || card.mana_value === undefined ? "" : String(card.mana_value);
         const hasAlternateSource = Boolean(card.has_alternate_source);
+        const hasUpscaledImage = Boolean(card.has_upscaled_image);
         const alternateRemoveBleed = Boolean(card.alternate_remove_bleed);
         const imageSrc = card.image_src || (
             "/chaos-card-image-preview/"
@@ -2544,6 +2557,7 @@
         row.dataset.setCode = String(setCode).toUpperCase();
         row.dataset.collectorNumber = collectorNumber;
         row.dataset.hasAlternateSource = hasAlternateSource ? "1" : "0";
+        row.dataset.hasUpscaledImage = hasUpscaledImage ? "1" : "0";
         row.dataset.alternateRemoveBleed = alternateRemoveBleed ? "1" : "0";
         row.dataset.isFoil = row.dataset.isFoil || "0";
         row.dataset.edhrecRank = card.edhrec_rank === null || card.edhrec_rank === undefined ? "" : String(card.edhrec_rank);
@@ -2595,6 +2609,20 @@
             alternateButton.dataset.isFoil = row.dataset.isFoil || "0";
             alternateButton.classList.toggle("custom-draft-alternate-image-active", hasAlternateSource);
             alternateButton.setAttribute("aria-label", "Alternate image settings for " + cardName);
+        }
+
+        const upscaleButton = row.querySelector(
+            ".imomir-upscale-card-button"
+        );
+
+        if (upscaleButton) {
+            upscaleButton.dataset.cardUuid = cardUuid;
+
+            upscaleButton.classList.toggle(
+                "imomir-upscale-card-active",
+                hasUpscaledImage
+                    && !hasAlternateSource
+            );
         }
 
         const removeButton = row.querySelector(".custom-draft-card-remove-button");
@@ -3488,6 +3516,19 @@
             upscaleButton.className =
                 "alternate-image-gear "
                 + "imomir-upscale-card-button";
+
+            if (
+                sourceUpscaleButton.classList.contains(
+                    "imomir-upscale-card-active"
+                )
+            ) {
+                upscaleButton.classList.add(
+                    "imomir-upscale-card-active"
+                );
+            }
+
+            upscaleButton.dataset.cardUuid =
+                cardUuid;
 
             upscaleButton.title =
                 "Upscale Image";

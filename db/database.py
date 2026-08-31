@@ -2310,6 +2310,20 @@ def get_custom_draft_set_card_rows(set_code, search_text=""):
                 THEN 1
                 ELSE 0
             END AS has_alternate_source,
+
+            CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM upscaled_images up
+                    WHERE up.is_current = 1
+                      AND up.quality_status = 'accepted'
+                      AND up.face_kind IN ('single', 'front')
+                      AND up.card_uuid = cc.card_uuid
+                )
+                THEN 1
+                ELSE 0
+            END AS has_upscaled_image,
+
             COALESCE(
                 (
                     SELECT alt.remove_bleed

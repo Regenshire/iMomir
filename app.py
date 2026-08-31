@@ -16115,6 +16115,53 @@ def campaign_chaos_history_delete_all():
 
     return redirect(url_for("campaign_chaos_history"))
 
+def add_upscaled_state_to_cards(cards):
+    cards = list(cards or [])
+
+    card_uuids = {
+        str(card.get("card_uuid") or "").strip()
+        for card in cards
+        if str(card.get("card_uuid") or "").strip()
+    }
+
+    if not card_uuids:
+        return cards
+
+    placeholders = ",".join(
+        "?"
+        for _ in card_uuids
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT DISTINCT card_uuid
+        FROM upscaled_images
+        WHERE is_current = 1
+          AND quality_status = 'accepted'
+          AND face_kind IN ('single', 'front')
+          AND card_uuid IN ({placeholders})
+        """,
+        tuple(card_uuids),
+    )
+
+    upscaled_uuids = {
+        str(row["card_uuid"] or "").strip()
+        for row in cursor.fetchall()
+    }
+
+    conn.close()
+
+    for card in cards:
+        card["has_upscaled_image"] = (
+            str(card.get("card_uuid") or "").strip()
+            in upscaled_uuids
+        )
+
+    return cards
+
 @app.route("/campaign-chaos/packs/<int:tracked_pack_id>", methods=["GET"])
 def campaign_chaos_pack_detail(tracked_pack_id):
     pack = get_tracked_pack_state_by_id(tracked_pack_id)
@@ -16126,10 +16173,12 @@ def campaign_chaos_pack_detail(tracked_pack_id):
     display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
     pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
 
-    cards = enrich_pack_cards_with_prices(
-        pack.get("cards") or [],
-        display_prices=display_pack_prices,
-        price_source=pack_price_source,
+    cards = add_upscaled_state_to_cards(
+        enrich_pack_cards_with_prices(
+            pack.get("cards") or [],
+            display_prices=display_pack_prices,
+            price_source=pack_price_source,
+        )
     )
 
     return render_template(
@@ -16610,10 +16659,12 @@ def campaign_chaos_pack_preview_view():
     display_pack_prices = (config.get("display_pack_prices") or "1").strip() == "1"
     pack_price_source = (config.get("pack_price_source") or "tcgplayer-retail").strip().lower()
 
-    cards = enrich_pack_cards_with_prices(
-        preview_pack.get("cards") or [],
-        display_prices=display_pack_prices,
-        price_source=pack_price_source,
+    cards = add_upscaled_state_to_cards(
+        enrich_pack_cards_with_prices(
+            preview_pack.get("cards") or [],
+            display_prices=display_pack_prices,
+            price_source=pack_price_source,
+        )
     )
 
     return render_template(
@@ -26256,6 +26307,7 @@ def serialize_custom_draft_current_card_result(row):
         "special_category_index": int(row["special_category_index"] or 0),
         "has_alternate_source": int(row["has_alternate_source"] or 0) == 1,
         "alternate_remove_bleed": int(row["alternate_remove_bleed"] or 0) == 1,
+        "has_upscaled_image": int(row["has_upscaled_image"] or 0) == 1,
 
         "upscale_control_url": (
             build_chaos_upscale_control_url(
