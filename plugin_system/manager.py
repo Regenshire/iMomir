@@ -1269,6 +1269,16 @@ def start_plugin_install(
     ):
         return current_status
 
+    _set_install_status(
+        plugin_id,
+        is_running=True,
+        stage="Starting",
+        message=(
+            "Starting plugin installation."
+        ),
+        error="",
+    )
+
     worker = threading.Thread(
         target=_install_plugin_worker,
         args=(plugin_id,),

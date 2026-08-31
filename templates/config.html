@@ -1167,7 +1167,10 @@
                     </label>
                 </div>
 
-                <div class="refresh-status-text">
+                <div
+                    id="upscalingActivePluginStatus"
+                    class="refresh-status-text"
+                >
                     Only the selected Upscaler will provide models to manual and batch image upscaling.
                 </div>
 
@@ -1637,6 +1640,14 @@ window.setTimeout(function () {
 
 <script>
 (function () {
+    const activeUpscalerSelect = document.getElementById(
+        "upscalingActivePlugin"
+    );
+
+    const activeUpscalerStatus = document.getElementById(
+        "upscalingActivePluginStatus"
+    );
+
     const cardViewToggle = document.getElementById(
         "upscalingAddButtonToCardView"
     );
@@ -1720,6 +1731,82 @@ window.setTimeout(function () {
     const devSourceIndicatorSettingStatus = document.getElementById(
         "upscalingDevSourceIndicatorSettingStatus"
     );
+
+    if (activeUpscalerSelect) {
+        activeUpscalerSelect.addEventListener(
+            "change",
+            async function () {
+                const previousPluginId = (
+                    activeUpscalerSelect.dataset.savedValue
+                    || ""
+                );
+
+                const requestedPluginId = (
+                    activeUpscalerSelect.value
+                    || ""
+                ).trim();
+
+                activeUpscalerSelect.disabled = true;
+
+                if (activeUpscalerStatus) {
+                    activeUpscalerStatus.textContent =
+                        "Saving active Upscaler...";
+                }
+
+                try {
+                    const response = await fetch(
+                        "/config/upscaling/active-plugin",
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Accept": "application/json"
+                            },
+                            body: JSON.stringify({
+                                plugin_id: requestedPluginId
+                            })
+                        }
+                    );
+
+                    const data = await response.json();
+
+                    if (
+                        !response.ok
+                        || !data.ok
+                    ) {
+                        throw new Error(
+                            data.message
+                            || "Could not save the active Upscaler."
+                        );
+                    }
+
+                    activeUpscalerSelect.dataset.savedValue =
+                        data.plugin_id;
+
+                    window.location.href =
+                        "{{ url_for('config') }}?open=image_upscaling&scroll=image_upscaling";
+
+                    return;
+
+                } catch (error) {
+                    activeUpscalerSelect.value =
+                        previousPluginId;
+
+                    if (activeUpscalerStatus) {
+                        activeUpscalerStatus.textContent =
+                            error.message
+                            || "Could not save the active Upscaler.";
+                    }
+
+                } finally {
+                    activeUpscalerSelect.disabled = false;
+                }
+            }
+        );
+
+        activeUpscalerSelect.dataset.savedValue =
+            activeUpscalerSelect.value;
+    }
 
     if (cardViewToggle) {
         cardViewToggle.addEventListener(

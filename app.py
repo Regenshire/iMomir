@@ -14450,6 +14450,65 @@ def build_chaos_upscale_control_url(
 
 
 @app.route(
+    "/config/upscaling/active-plugin",
+    methods=["POST"],
+)
+def config_upscaling_active_plugin():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    plugin_id = str(
+        payload.get(
+            "plugin_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    ready_plugins = (
+        get_ready_upscaler_plugins(
+            force_refresh=True
+        )
+    )
+
+    ready_plugin_ids = {
+        str(
+            plugin.get(
+                "plugin_id",
+                "",
+            )
+            or ""
+        ).strip()
+        for plugin in ready_plugins
+    }
+
+    if plugin_id not in ready_plugin_ids:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "The selected Upscaler plugin "
+                "is not ready."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_active_plugin",
+        plugin_id,
+    )
+
+    invalidate_upscaler_metadata_cache()
+
+    return jsonify({
+        "ok": True,
+        "plugin_id": plugin_id,
+    })
+
+
+@app.route(
     "/config/upscaling/card-view-button",
     methods=["POST"],
 )

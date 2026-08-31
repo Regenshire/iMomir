@@ -14,7 +14,7 @@ Optional AI image upscaling plugin for iMomir.
 
 Install the plugin directly from iMomir:
 
-Settings → Advanced Image Upscaling → Download & Install Upscaler Plugin
+Settings → Plugins → Plugin Manager → Available → Download & Install
 
 iMomir will automatically:
 
