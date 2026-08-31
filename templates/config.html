@@ -933,7 +933,13 @@
                         {% set plugin_state_label = "Not Installed" %}
                     {% endif %}
 
-                    <div class="plugin-card">
+                    <div
+                        class="plugin-card"
+                        data-plugin-id="{{ plugin.get('plugin_id') }}"
+                        data-plugin-status-url="{{ url_for('plugin_status', plugin_id=plugin.get('plugin_id')) }}"
+                        data-plugin-install-url="{{ url_for('plugin_install', plugin_id=plugin.get('plugin_id')) }}"
+                        data-install-running="{{ 'true' if install_status.get('is_running') else 'false' }}"
+                    >
                         <div class="plugin-card-header">
                             <div class="plugin-card-heading">
                                 <div class="plugin-card-title-row">
@@ -943,6 +949,7 @@
 
                                     <span
                                         class="plugin-status-badge plugin-status-{{ plugin_state_class }}"
+                                        data-plugin-role="badge"
                                     >
                                         {{ plugin_state_label }}
                                     </span>
@@ -966,7 +973,7 @@
                             <div class="plugin-card-meta-item">
                                 <span>Version</span>
 
-                                <strong>
+                                <strong data-plugin-role="version">
                                     {% if plugin_status.get("version") %}
                                         {{ plugin_status.get("version") }}
                                     {% elif plugin_status.get("installed") %}
@@ -987,42 +994,38 @@
                         </div>
 
                         <div class="plugin-card-status">
-                            {% if install_status.get("is_running") %}
-                            <div class="spinner"></div>
-                            {% endif %}
+                            <div
+                                class="spinner {% if not install_status.get('is_running') %}hidden{% endif %}"
+                                data-plugin-role="spinner"
+                            ></div>
 
                             <div class="plugin-card-status-copy">
-                                {% if install_status.get("is_running") or install_status.get("error") %}
-                                    <strong>
+                                <strong data-plugin-role="status-title">
+                                    {% if install_status.get("is_running") or install_status.get("error") %}
                                         {{ install_status.get("stage", plugin_state_label) }}
-                                    </strong>
-
-                                    <span>
-                                        {{ install_status.get("message", "") }}
-                                    </span>
-                                {% elif plugin_status.get("development") %}
-                                    <strong>
+                                    {% elif plugin_status.get("development") %}
                                         Development source is active.
-                                    </strong>
-
-                                    <span>
-                                        iMomir is currently using this plugin directly from plugin_src.
-                                    </span>
-                                {% else %}
-                                    <strong>
+                                    {% else %}
                                         {{ plugin_state_label }}
-                                    </strong>
+                                    {% endif %}
+                                </strong>
 
-                                    <span>
+                                <span data-plugin-role="status-message">
+                                    {% if install_status.get("is_running") or install_status.get("error") %}
+                                        {{ install_status.get("message", "") }}
+                                    {% elif plugin_status.get("development") %}
+                                        iMomir is currently using this plugin directly from plugin_src.
+                                    {% else %}
                                         {{ plugin_status.get("message", "") }}
-                                    </span>
-                                {% endif %}
+                                    {% endif %}
+                                </span>
 
-                                {% if install_status.get("error") %}
-                                <span class="plugin-card-error">
+                                <span
+                                    class="plugin-card-error {% if not install_status.get('error') %}hidden{% endif %}"
+                                    data-plugin-role="error"
+                                >
                                     {{ install_status.get("error", "") }}
                                 </span>
-                                {% endif %}
                             </div>
                         </div>
 
@@ -1030,10 +1033,12 @@
                             <form
                                 method="post"
                                 action="{{ url_for('plugin_install_page', plugin_id=plugin.get('plugin_id')) }}"
+                                data-plugin-role="install-form"
                             >
                                 <button
                                     type="submit"
                                     class="action-button plugin-action-button {% if plugin_status.get('installed') and not plugin_status.get('development') %}secondary-button{% endif %}"
+                                    data-plugin-role="install-button"
                                     {% if install_status.get("is_running") %}disabled{% endif %}
                                 >
                                     {% if install_status.get("is_running") %}
@@ -1048,21 +1053,22 @@
                                 </button>
                             </form>
 
-                            {% if plugin_status.get("installed") and not plugin_status.get("development") %}
                             <form
                                 method="post"
                                 action="{{ url_for('plugin_uninstall_page', plugin_id=plugin.get('plugin_id')) }}"
+                                class="{% if not plugin_status.get('installed') or plugin_status.get('development') %}hidden{% endif %}"
+                                data-plugin-role="uninstall-form"
                                 onsubmit="return window.confirm('Uninstall {{ plugin.get('name') or plugin.get('plugin_id') }}?');"
                             >
                                 <button
                                     type="submit"
                                     class="action-button secondary-button plugin-action-button plugin-uninstall-button"
+                                    data-plugin-role="uninstall-button"
                                     {% if install_status.get("is_running") %}disabled{% endif %}
                                 >
                                     Uninstall
                                 </button>
                             </form>
-                            {% endif %}
                         </div>
                     </div>
                 {% endmacro %}
@@ -1077,8 +1083,10 @@
                     {% endif %}
                 {% endfor %}
 
-                {% if plugin_counts.installed > 0 %}
-                <div class="plugin-group">
+                <div
+                    class="plugin-group {% if plugin_counts.installed == 0 %}hidden{% endif %}"
+                    data-plugin-group="installed"
+                >
                     <div class="plugin-group-header">
                         <div class="plugin-group-title">
                             Installed
@@ -1089,7 +1097,10 @@
                         </div>
                     </div>
 
-                    <div class="plugin-list">
+                    <div
+                        class="plugin-list"
+                        data-plugin-list="installed"
+                    >
                         {% for plugin in plugin_catalog_items %}
                             {% if plugin.get("status", {}).get("installed") %}
                                 {{ render_plugin_card(plugin) }}
@@ -1097,9 +1108,11 @@
                         {% endfor %}
                     </div>
                 </div>
-                {% endif %}
 
-                <div class="plugin-group">
+                <div
+                    class="plugin-group"
+                    data-plugin-group="available"
+                >
                     <div class="plugin-group-header">
                         <div class="plugin-group-title">
                             Available
@@ -1110,19 +1123,23 @@
                         </div>
                     </div>
 
-                    {% if plugin_counts.available > 0 %}
-                    <div class="plugin-list">
+                    <div
+                        class="plugin-list {% if plugin_counts.available == 0 %}hidden{% endif %}"
+                        data-plugin-list="available"
+                    >
                         {% for plugin in plugin_catalog_items %}
                             {% if not plugin.get("status", {}).get("installed") %}
                                 {{ render_plugin_card(plugin) }}
                             {% endif %}
                         {% endfor %}
                     </div>
-                    {% else %}
-                    <div class="plugin-empty-state">
+
+                    <div
+                        class="plugin-empty-state {% if plugin_counts.available > 0 %}hidden{% endif %}"
+                        data-plugin-empty="available"
+                    >
                         No additional plugins are available.
                     </div>
-                    {% endif %}
                 </div>
             </div>
         </div>
@@ -1154,6 +1171,7 @@
                         <select
                             id="upscalingActivePlugin"
                             name="upscaling_active_plugin"
+                            form="configForm"
                         >
                             {% for plugin in ready_upscaler_plugins %}
                             <option
@@ -1183,7 +1201,7 @@
                         <input
                             type="checkbox"
                             id="upscalingAddButtonToCardView"
-                            {% if config.get("upscaling_add_button_to_card_view", "0") == "1" %}checked{% endif %}
+                            {% if config.get("upscaling_add_button_to_card_view", "1") == "1" %}checked{% endif %}
                             {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
                         >
                     </label>
@@ -1369,7 +1387,7 @@
                         type="button"
                         id="upscaleNextCardsButton"
                         class="action-button secondary-button"
-                        {% if config.get("upscaling_add_button_to_card_view", "0") != "1" %}disabled{% endif %}
+                        {% if config.get("upscaling_add_button_to_card_view", "1") != "1" %}disabled{% endif %}
                     >
                         Upscale Next X Cards
                     </button>
@@ -1503,13 +1521,9 @@
     </footer>
 </div>
 
-{% if plugin_install_running and request.args.get("open") == "plugins" %}
-<script>
-window.setTimeout(function () {
-    window.location.href = "{{ url_for('config') }}?open=plugins&scroll=plugins";
-}, 2000);
-</script>
-{% endif %}
+<script
+    src="{{ url_for('static', filename='js/plugin_manager.js') }}"
+></script>
 
 <script>
 (function () {

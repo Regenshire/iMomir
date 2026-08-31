@@ -1,4 +1,4 @@
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 GITHUB_RELEASE_OWNER = "Regenshire"
 GITHUB_RELEASE_REPO = "iMomir"
 GITHUB_LATEST_RELEASE_API_URL = (
@@ -290,7 +290,7 @@ DEFAULT_CONFIG = {
     "chaos_scryfall_image_quality": "png",
 
     "upscaling_active_plugin": "",
-    "upscaling_add_button_to_card_view": "0",
+    "upscaling_add_button_to_card_view": "1",
     "upscaling_dev_feedback_system": "0",
 
     "display_pack_prices": "1",

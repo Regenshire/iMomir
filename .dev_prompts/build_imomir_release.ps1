@@ -86,7 +86,16 @@ if (-not $PyInstallerCommand) {
     throw "PyInstaller was not found in the current environment."
 }
 
+$PythonCommand = Get-Command `
+    "python" `
+    -ErrorAction SilentlyContinue
+
+if (-not $PythonCommand) {
+    throw "Python was not found in the current environment."
+}
+
 Write-Host "      PyInstaller: $($PyInstallerCommand.Source)"
+Write-Host "      Python:      $($PythonCommand.Source)"
 Write-Host "      Spec:        $SpecPath"
 Write-Host "      Launcher:    $StartBatSource"
 Write-Host ""
@@ -207,10 +216,133 @@ Write-Host ""
 Write-Host "      Compressing..."
 Write-Host ""
 
-Compress-Archive `
-    -Path $AppDistDir `
-    -DestinationPath $OutputZip `
-    -Force
+$ZipHelperPath = Join-Path `
+    $RepoRoot `
+    "build\zip_imomir_release.py"
+
+$ZipHelperCode = @'
+import os
+import sys
+import zipfile
+
+
+source_dir = os.path.abspath(sys.argv[1])
+output_zip = os.path.abspath(sys.argv[2])
+
+archive_root = os.path.basename(
+    source_dir.rstrip("\\/")
+)
+
+
+def windows_extended_path(path):
+    path = os.path.abspath(path)
+
+    if (
+        os.name == "nt"
+        and not path.startswith("\\\\?\\")
+    ):
+        return "\\\\?\\" + path
+
+    return path
+
+
+files = []
+
+for directory, _, filenames in os.walk(source_dir):
+    for filename in filenames:
+        files.append(
+            os.path.join(
+                directory,
+                filename,
+            )
+        )
+
+
+total_files = len(files)
+
+print(
+    f"      Preparing to compress "
+    f"{total_files} files."
+)
+
+with zipfile.ZipFile(
+    output_zip,
+    mode="w",
+    compression=zipfile.ZIP_DEFLATED,
+    compresslevel=6,
+    allowZip64=True,
+) as archive:
+
+    for index, file_path in enumerate(
+        files,
+        start=1,
+    ):
+        relative_path = os.path.relpath(
+            file_path,
+            source_dir,
+        )
+
+        archive_path = os.path.join(
+            archive_root,
+            relative_path,
+        ).replace(
+            "\\",
+            "/",
+        )
+
+        archive.write(
+            windows_extended_path(
+                file_path
+            ),
+            archive_path,
+        )
+
+        if (
+            index == 1
+            or index % 250 == 0
+            or index == total_files
+        ):
+            percent = (
+                index
+                / total_files
+                * 100
+            )
+
+            print(
+                f"      {index}/{total_files} "
+                f"files ({percent:.0f}%)"
+            )
+
+
+print(
+    "      ZIP compression finished."
+)
+'@
+
+Set-Content `
+    -Path $ZipHelperPath `
+    -Value $ZipHelperCode `
+    -Encoding UTF8
+
+try {
+    & $PythonCommand.Source `
+        $ZipHelperPath `
+        $AppDistDir `
+        $OutputZip
+
+    $ZipExitCode = $LASTEXITCODE
+
+    if ($ZipExitCode -ne 0) {
+        throw "ZIP creation failed with exit code $ZipExitCode."
+    }
+}
+finally {
+    if (Test-Path $ZipHelperPath) {
+        Remove-Item `
+            $ZipHelperPath `
+            -Force
+    }
+}
 
 if (-not (Test-Path $OutputZip)) {
     throw "Release ZIP was not created."

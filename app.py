@@ -13873,6 +13873,45 @@ def card_search():
         featured_card_print_href=featured_card_print_href,
     )
 
+
+def start_plugin_install_with_defaults(
+    plugin_id,
+):
+    catalog_entry = (
+        PLUGIN_CATALOG.get(
+            plugin_id,
+            {},
+        )
+        or {}
+    )
+
+    should_enable_card_view = (
+        str(
+            catalog_entry.get(
+                "plugin_type",
+                "",
+            )
+            or ""
+        ).strip().lower()
+        == "upscaler"
+        and not get_ready_upscaler_plugins(
+            force_refresh=True
+        )
+    )
+
+    install_status = start_plugin_install(
+        plugin_id
+    )
+
+    if should_enable_card_view:
+        set_config_value(
+            "upscaling_add_button_to_card_view",
+            "1",
+        )
+
+    return install_status
+
+
 @app.route(
     "/plugins/<plugin_id>/status",
     methods=["GET"],
@@ -13913,7 +13952,7 @@ def plugin_install(plugin_id):
         ), 404
 
     try:
-        install_status = start_plugin_install(
+        install_status = start_plugin_install_with_defaults(
             plugin_id
         )
 
@@ -13949,7 +13988,7 @@ def plugin_install_page(plugin_id):
         )
 
     try:
-        start_plugin_install(
+        start_plugin_install_with_defaults(
             plugin_id
         )
 
@@ -14415,9 +14454,9 @@ def is_card_upscaling_control_enabled():
     feature_enabled = (
         config_values.get(
             "upscaling_add_button_to_card_view",
-            "0",
+            "1",
         )
-        or "0"
+        or "1"
     ).strip() == "1"
 
     if not feature_enabled:
@@ -14905,6 +14944,7 @@ def config():
             "momir_print_settings",
             "exports",
             "backup",
+            "image_maintenance",
             "plugins",
             "image_upscaling",
             "danger_zone",
@@ -14970,18 +15010,6 @@ def config():
     upscaler_plugin_status = (
         active_upscaler_plugin_status
         or {}
-    )
-
-    plugin_install_running = any(
-        bool(
-            plugin.get(
-                "install_status",
-                {},
-            ).get(
-                "is_running"
-            )
-        )
-        for plugin in plugin_catalog_items
     )
 
     upscaling_dev_feedback_log_status = (
@@ -15120,9 +15148,6 @@ def config():
         ),
         plugin_catalog_items=(
             plugin_catalog_items
-        ),
-        plugin_install_running=(
-            plugin_install_running
         ),
         ready_upscaler_plugins=(
             ready_upscaler_plugins

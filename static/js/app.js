@@ -427,6 +427,7 @@ function initializeRefreshCards() {
 
     let refreshPollTimer = null;
     let lastRefreshFinishedAtPrompted = null;
+    let refreshObservedRunning = Boolean(refreshButton.disabled);
 
     function setRefreshRunningUi(isRunning) {
         refreshButton.disabled = isRunning;
@@ -494,6 +495,10 @@ function initializeRefreshCards() {
             importSourceLastUpdated.textContent = status.source_last_updated;
         }
 
+        if (status.is_running) {
+            refreshObservedRunning = true;
+        }
+
         setRefreshRunningUi(Boolean(status.is_running));
     }
 
@@ -523,15 +528,18 @@ function initializeRefreshCards() {
             }
 
             if (
+                refreshObservedRunning &&
                 !status.is_running &&
                 status.stage === "Complete" &&
                 status.finished_at &&
                 status.finished_at !== lastRefreshFinishedAtPrompted
             ) {
                 lastRefreshFinishedAtPrompted = status.finished_at;
+                refreshObservedRunning = false;
 
-                // Intentionally do not prompt for bulk image download here.
-                // Card images are downloaded on demand as cards are viewed or printed.
+                window.alert(
+                    "Card database download complete."
+                );
             }
         } catch (error) {
             if (refreshError) {
@@ -550,6 +558,7 @@ function initializeRefreshCards() {
 
     async function startRefresh(forceDownload) {
         try {
+            refreshObservedRunning = true;
             setRefreshRunningUi(true);
 
             if (refreshError) {
@@ -710,16 +719,13 @@ function initializeSettingsConsole() {
             description: "Create, download, import, and restore iMomir backups."
         },
         image_maintenance: {
-            description: "Repair and reprocess generated alternate-image derivatives.",
-            showSave: false
+            description: "Repair and reprocess generated alternate-image derivatives."
         },
         plugins: {
-            description: "View installed plugins and add optional iMomir capabilities.",
-            showSave: false
+            description: "View installed plugins and add optional iMomir capabilities."
         },
         image_upscaling: {
-            description: "Choose the active Upscaler and configure image upscaling behavior.",
-            showSave: false
+            description: "Choose the active Upscaler and configure image upscaling behavior."
         },
         danger_zone: {
             description: "Diagnostics and destructive maintenance operations."
