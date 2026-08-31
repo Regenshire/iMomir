@@ -2,6 +2,13 @@
 
 {% block title %}iMomir - Custom Draft Set {{ custom_set.set_code }}{% endblock %}
 
+{% block page_styles %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/card_views.css') }}"
+>
+{% endblock %}
+
 {% block content %}
 <div class="screen screen-wide">
     <div class="page-panel">

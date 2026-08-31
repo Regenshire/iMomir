@@ -2794,8 +2794,6 @@
 
 
     async function acceptCandidate() {
-
-    async function acceptCandidate() {
         const candidateEntries =
             Object.entries(
                 currentCandidatesByFace
