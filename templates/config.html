@@ -896,6 +896,241 @@
         </div>
 
         <div
+            id="section_plugins"
+            class="page-panel collapsible-panel {% if section_defaults.get('plugins') == '1' %}is-open{% endif %}"
+            data-section="plugins"
+        >
+            <button
+                type="button"
+                class="collapsible-header"
+            >
+                <span>Plugin Manager</span>
+                <span class="collapsible-chevron">▾</span>
+            </button>
+
+            <div class="collapsible-body">
+                {% macro render_plugin_card(plugin) %}
+                    {% set plugin_status = plugin.get("status", {}) %}
+                    {% set install_status = plugin.get("install_status", {}) %}
+
+                    {% if install_status.get("is_running") %}
+                        {% set plugin_state_class = "installing" %}
+                        {% set plugin_state_label = install_status.get("stage", "Installing") %}
+                    {% elif install_status.get("error") %}
+                        {% set plugin_state_class = "error" %}
+                        {% set plugin_state_label = "Installation Failed" %}
+                    {% elif plugin_status.get("development") %}
+                        {% set plugin_state_class = "development" %}
+                        {% set plugin_state_label = "Development" %}
+                    {% elif plugin_status.get("ready") %}
+                        {% set plugin_state_class = "ready" %}
+                        {% set plugin_state_label = "Installed" %}
+                    {% elif plugin_status.get("installed") %}
+                        {% set plugin_state_class = "incomplete" %}
+                        {% set plugin_state_label = "Incomplete" %}
+                    {% else %}
+                        {% set plugin_state_class = "not-installed" %}
+                        {% set plugin_state_label = "Not Installed" %}
+                    {% endif %}
+
+                    <div class="plugin-card">
+                        <div class="plugin-card-header">
+                            <div class="plugin-card-heading">
+                                <div class="plugin-card-title-row">
+                                    <div class="plugin-card-title">
+                                        {{ plugin.get("name") or plugin.get("plugin_id") }}
+                                    </div>
+
+                                    <span
+                                        class="plugin-status-badge plugin-status-{{ plugin_state_class }}"
+                                    >
+                                        {{ plugin_state_label }}
+                                    </span>
+                                </div>
+
+                                <div class="plugin-card-description">
+                                    {{ plugin.get("description", "") }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="plugin-card-meta">
+                            <div class="plugin-card-meta-item">
+                                <span>Type</span>
+
+                                <strong>
+                                    {{ plugin.get("type_label", "Plugin") }}
+                                </strong>
+                            </div>
+
+                            <div class="plugin-card-meta-item">
+                                <span>Version</span>
+
+                                <strong>
+                                    {% if plugin_status.get("version") %}
+                                        {{ plugin_status.get("version") }}
+                                    {% elif plugin_status.get("installed") %}
+                                        Unknown
+                                    {% else %}
+                                        Latest release
+                                    {% endif %}
+                                </strong>
+                            </div>
+
+                            <div class="plugin-card-meta-item plugin-card-meta-wide">
+                                <span>Requirements</span>
+
+                                <strong>
+                                    {{ plugin.get("requirements", "None") }}
+                                </strong>
+                            </div>
+                        </div>
+
+                        <div class="plugin-card-status">
+                            {% if install_status.get("is_running") %}
+                            <div class="spinner"></div>
+                            {% endif %}
+
+                            <div class="plugin-card-status-copy">
+                                {% if install_status.get("is_running") or install_status.get("error") %}
+                                    <strong>
+                                        {{ install_status.get("stage", plugin_state_label) }}
+                                    </strong>
+
+                                    <span>
+                                        {{ install_status.get("message", "") }}
+                                    </span>
+                                {% elif plugin_status.get("development") %}
+                                    <strong>
+                                        Development source is active.
+                                    </strong>
+
+                                    <span>
+                                        iMomir is currently using this plugin directly from plugin_src.
+                                    </span>
+                                {% else %}
+                                    <strong>
+                                        {{ plugin_state_label }}
+                                    </strong>
+
+                                    <span>
+                                        {{ plugin_status.get("message", "") }}
+                                    </span>
+                                {% endif %}
+
+                                {% if install_status.get("error") %}
+                                <span class="plugin-card-error">
+                                    {{ install_status.get("error", "") }}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="plugin-card-actions">
+                            <form
+                                method="post"
+                                action="{{ url_for('plugin_install_page', plugin_id=plugin.get('plugin_id')) }}"
+                            >
+                                <button
+                                    type="submit"
+                                    class="action-button plugin-action-button {% if plugin_status.get('installed') and not plugin_status.get('development') %}secondary-button{% endif %}"
+                                    {% if install_status.get("is_running") %}disabled{% endif %}
+                                >
+                                    {% if install_status.get("is_running") %}
+                                        Installing...
+                                    {% elif plugin_status.get("development") %}
+                                        Install Release Copy
+                                    {% elif plugin_status.get("installed") %}
+                                        Update / Reinstall
+                                    {% else %}
+                                        Download & Install
+                                    {% endif %}
+                                </button>
+                            </form>
+
+                            {% if plugin_status.get("installed") and not plugin_status.get("development") %}
+                            <form
+                                method="post"
+                                action="{{ url_for('plugin_uninstall_page', plugin_id=plugin.get('plugin_id')) }}"
+                                onsubmit="return window.confirm('Uninstall {{ plugin.get('name') or plugin.get('plugin_id') }}?');"
+                            >
+                                <button
+                                    type="submit"
+                                    class="action-button secondary-button plugin-action-button plugin-uninstall-button"
+                                    {% if install_status.get("is_running") %}disabled{% endif %}
+                                >
+                                    Uninstall
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endmacro %}
+
+                {% set plugin_counts = namespace(installed=0, available=0) %}
+
+                {% for plugin in plugin_catalog_items %}
+                    {% if plugin.get("status", {}).get("installed") %}
+                        {% set plugin_counts.installed = plugin_counts.installed + 1 %}
+                    {% else %}
+                        {% set plugin_counts.available = plugin_counts.available + 1 %}
+                    {% endif %}
+                {% endfor %}
+
+                {% if plugin_counts.installed > 0 %}
+                <div class="plugin-group">
+                    <div class="plugin-group-header">
+                        <div class="plugin-group-title">
+                            Installed
+                        </div>
+
+                        <div class="plugin-group-description">
+                            Plugins currently installed.
+                        </div>
+                    </div>
+
+                    <div class="plugin-list">
+                        {% for plugin in plugin_catalog_items %}
+                            {% if plugin.get("status", {}).get("installed") %}
+                                {{ render_plugin_card(plugin) }}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="plugin-group">
+                    <div class="plugin-group-header">
+                        <div class="plugin-group-title">
+                            Available
+                        </div>
+
+                        <div class="plugin-group-description">
+                            Optional plugins that can be added to iMomir.
+                        </div>
+                    </div>
+
+                    {% if plugin_counts.available > 0 %}
+                    <div class="plugin-list">
+                        {% for plugin in plugin_catalog_items %}
+                            {% if not plugin.get("status", {}).get("installed") %}
+                                {{ render_plugin_card(plugin) }}
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="plugin-empty-state">
+                        No additional plugins are available.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+
+        {% if ready_upscaler_plugins %}
+
+        <div
             id="section_image_upscaling"
             class="page-panel collapsible-panel {% if section_defaults.get('image_upscaling') == '1' %}is-open{% endif %}"
             data-section="image_upscaling"
@@ -909,42 +1144,31 @@
             </button>
 
             <div class="collapsible-body">
-                <div class="metadata-list">
-                    <div class="metadata-row">
-                        <span>Upscaler Plugin</span>
-                        <strong id="upscalerPluginState">
-                            {% if upscaler_plugin_status.get("development") %}
-                                Development
-                            {% elif upscaler_plugin_status.get("ready") %}
-                                Installed
-                            {% elif upscaler_plugin_status.get("installed") %}
-                                Incomplete
-                            {% else %}
-                                Not Installed
-                            {% endif %}
-                        </strong>
-                    </div>
+                <div class="settings-grid">
+                    <label
+                        class="toggle-row settings-field"
+                        for="upscalingActivePlugin"
+                    >
+                        <span>Active Upscaler</span>
 
-                    <div class="metadata-row">
-                        <span>Plugin Version</span>
-                        <strong id="upscalerPluginVersion">
-                            {{ upscaler_plugin_status.get("version") or "—" }}
-                        </strong>
-                    </div>
+                        <select
+                            id="upscalingActivePlugin"
+                            name="upscaling_active_plugin"
+                        >
+                            {% for plugin in ready_upscaler_plugins %}
+                            <option
+                                value="{{ plugin.get('plugin_id') }}"
+                                {% if plugin.get('plugin_id') == active_upscaler_plugin_id %}selected{% endif %}
+                            >
+                                {{ plugin.get("name") or plugin.get("plugin_id") }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                </div>
 
-                    <div class="metadata-row">
-                        <span>Plugin Type</span>
-                        <strong>
-                            Image Upscaler
-                        </strong>
-                    </div>
-
-                    <div class="metadata-row">
-                        <span>Target Hardware</span>
-                        <strong>
-                            NVIDIA RTX 50 Series
-                        </strong>
-                    </div>
+                <div class="refresh-status-text">
+                    Only the selected Upscaler will provide models to manual and batch image upscaling.
                 </div>
 
                 <div class="settings-grid">
@@ -1207,53 +1431,9 @@
                 {% endif %}
                 {% endif %}
 
-                <div class="refresh-panel">
-                    <div class="refresh-status-row">
-                        <div
-                            id="upscalerPluginSpinner"
-                            class="spinner {% if not upscaler_plugin_install_status.get('is_running') %}hidden{% endif %}"
-                        ></div>
-
-                        <div class="refresh-status-text">
-                            <div>
-                                <strong id="upscalerPluginStage">
-                                    {{ upscaler_plugin_install_status.get("stage", "Idle") }}
-                                </strong>
-                            </div>
-
-                            <div id="upscalerPluginMessage">
-                                {{ upscaler_plugin_install_status.get("message", "The optional AI upscaler is not required to use iMomir.") }}
-                            </div>
-
-                            <div
-                                id="upscalerPluginError"
-                                class="refresh-error {% if not upscaler_plugin_install_status.get('error') %}hidden{% endif %}"
-                            >
-                                {{ upscaler_plugin_install_status.get("error", "") }}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="config-button-row">
-                        <button
-                            type="button"
-                            id="installUpscalerPluginButton"
-                            class="action-button secondary-button"
-                            data-plugin-id="{{ upscaler_plugin_id }}"
-                            {% if upscaler_plugin_install_status.get("is_running") or upscaler_plugin_status.get("development") %}disabled{% endif %}
-                        >
-                            {% if upscaler_plugin_status.get("development") %}
-                                Development Plugin Active
-                            {% elif upscaler_plugin_status.get("installed") %}
-                                Update / Reinstall Upscaler Plugin
-                            {% else %}
-                                Download & Install Upscaler Plugin
-                            {% endif %}
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
+        {% endif %}
 
         <div id="section_danger_zone" class="page-panel collapsible-panel {% if section_defaults.get('danger_zone') == '1' %}is-open{% endif %}" data-section="danger_zone">
             <button type="button" class="collapsible-header">
@@ -1319,6 +1499,15 @@
         </div>
     </footer>
 </div>
+
+{% if plugin_install_running and request.args.get("open") == "plugins" %}
+<script>
+window.setTimeout(function () {
+    window.location.href = "{{ url_for('config') }}?open=plugins&scroll=plugins";
+}, 2000);
+</script>
+{% endif %}
+
 <script>
 (function () {
     const clearAllHistoryForm = document.getElementById("clearAllHistoryForm");
@@ -1448,47 +1637,6 @@
 
 <script>
 (function () {
-    const installButton = document.getElementById(
-        "installUpscalerPluginButton"
-    );
-
-    if (!installButton) {
-        return;
-    }
-
-    const pluginId = (
-        installButton.dataset.pluginId
-        || ""
-    ).trim();
-
-    if (!pluginId) {
-        return;
-    }
-
-    const spinner = document.getElementById(
-        "upscalerPluginSpinner"
-    );
-
-    const stageElement = document.getElementById(
-        "upscalerPluginStage"
-    );
-
-    const messageElement = document.getElementById(
-        "upscalerPluginMessage"
-    );
-
-    const errorElement = document.getElementById(
-        "upscalerPluginError"
-    );
-
-    const stateElement = document.getElementById(
-        "upscalerPluginState"
-    );
-
-    const versionElement = document.getElementById(
-        "upscalerPluginVersion"
-    );
-
     const cardViewToggle = document.getElementById(
         "upscalingAddButtonToCardView"
     );
@@ -1571,219 +1719,6 @@
 
     const devSourceIndicatorSettingStatus = document.getElementById(
         "upscalingDevSourceIndicatorSettingStatus"
-    );
-
-    let pollTimer = null;
-
-    function renderPluginStatus(data) {
-        const install = data.install || {};
-        const plugin = data.plugin || {};
-
-        const isRunning = Boolean(
-            install.is_running
-        );
-
-        installButton.disabled = isRunning;
-
-        if (spinner) {
-            spinner.classList.toggle(
-                "hidden",
-                !isRunning
-            );
-        }
-
-        if (stageElement) {
-            stageElement.textContent = (
-                install.stage
-                || "Idle"
-            );
-        }
-
-        if (messageElement) {
-            messageElement.textContent = (
-                install.message
-                || ""
-            );
-        }
-
-        if (errorElement) {
-            const errorText = (
-                install.error
-                || ""
-            );
-
-            errorElement.textContent = (
-                errorText
-            );
-
-            errorElement.classList.toggle(
-                "hidden",
-                !errorText
-            );
-        }
-
-        if (stateElement) {
-            if (plugin.ready) {
-                stateElement.textContent = (
-                    "Installed"
-                );
-            } else if (plugin.installed) {
-                stateElement.textContent = (
-                    "Incomplete"
-                );
-            } else {
-                stateElement.textContent = (
-                    "Not Installed"
-                );
-            }
-        }
-
-        if (versionElement) {
-            versionElement.textContent = (
-                plugin.version
-                || "—"
-            );
-        }
-
-        installButton.textContent = (
-            plugin.installed
-            ? "Update / Reinstall Upscaler Plugin"
-            : "Download & Install Upscaler Plugin"
-        );
-
-        return isRunning;
-    }
-
-    async function fetchPluginStatus() {
-        const response = await fetch(
-            "/plugins/"
-            + encodeURIComponent(pluginId)
-            + "/status",
-            {
-                cache: "no-store"
-            }
-        );
-
-        const data = await response.json();
-
-        if (
-            !response.ok
-            || !data.ok
-        ) {
-            throw new Error(
-                data.error
-                || "Could not read plugin status."
-            );
-        }
-
-        return data;
-    }
-
-    async function pollPluginStatus() {
-        try {
-            const data = (
-                await fetchPluginStatus()
-            );
-
-            const isRunning = (
-                renderPluginStatus(data)
-            );
-
-            if (
-                !isRunning
-                && pollTimer
-            ) {
-                window.clearInterval(
-                    pollTimer
-                );
-
-                pollTimer = null;
-            }
-
-        } catch (error) {
-            if (errorElement) {
-                errorElement.textContent = (
-                    error.message
-                );
-
-                errorElement.classList.remove(
-                    "hidden"
-                );
-            }
-        }
-    }
-
-    function startPluginStatusPolling() {
-        if (pollTimer) {
-            window.clearInterval(
-                pollTimer
-            );
-        }
-
-        pollTimer = window.setInterval(
-            pollPluginStatus,
-            1500
-        );
-
-        pollPluginStatus();
-    }
-
-    installButton.addEventListener(
-        "click",
-        async function () {
-            installButton.disabled = true;
-
-            if (errorElement) {
-                errorElement.textContent = "";
-
-                errorElement.classList.add(
-                    "hidden"
-                );
-            }
-
-            try {
-                const response = await fetch(
-                    "/plugins/"
-                    + encodeURIComponent(pluginId)
-                    + "/install",
-                    {
-                        method: "POST",
-                        headers: {
-                            "Accept": "application/json"
-                        }
-                    }
-                );
-
-                const data = (
-                    await response.json()
-                );
-
-                if (
-                    !response.ok
-                    || !data.ok
-                ) {
-                    throw new Error(
-                        data.error
-                        || "Plugin installation could not start."
-                    );
-                }
-
-                startPluginStatusPolling();
-
-            } catch (error) {
-                installButton.disabled = false;
-
-                if (errorElement) {
-                    errorElement.textContent = (
-                        error.message
-                    );
-
-                    errorElement.classList.remove(
-                        "hidden"
-                    );
-                }
-            }
-        }
     );
 
     if (cardViewToggle) {
@@ -2474,14 +2409,6 @@
         );
     }
 
-
-    const initialRunning = (
-        {{ "true" if upscaler_plugin_install_status.get("is_running") else "false" }}
-    );
-
-    if (initialRunning) {
-        startPluginStatusPolling();
-    }
 })();
 </script>
 {% endblock %}

@@ -1209,7 +1209,6 @@ def _install_plugin_worker(
     try:
         _set_install_status(
             plugin_id,
-            plugin_id=plugin_id,
             is_running=True,
             stage="Starting",
             message=(
@@ -1307,6 +1306,69 @@ def _stop_plugin_worker(plugin_id):
 
         except subprocess.TimeoutExpired:
             process.kill()
+
+
+def uninstall_plugin(
+    plugin_id,
+):
+    if not get_plugin_catalog_entry(
+        plugin_id
+    ):
+        raise ValueError(
+            "Unknown plugin."
+        )
+
+    install_status = (
+        get_plugin_install_status(
+            plugin_id
+        )
+    )
+
+    if install_status.get(
+        "is_running"
+    ):
+        raise RuntimeError(
+            "Plugin installation is still running."
+        )
+
+    _stop_plugin_worker(
+        plugin_id
+    )
+
+    plugin_dir = (
+        get_plugin_install_dir(
+            plugin_id
+        )
+    )
+
+    if os.path.exists(
+        plugin_dir
+    ):
+        shutil.rmtree(
+            plugin_dir
+        )
+
+    download_path = os.path.join(
+        PLUGIN_DOWNLOAD_DIR,
+        f"{plugin_id}.zip",
+    )
+
+    if os.path.exists(
+        download_path
+    ):
+        os.remove(
+            download_path
+        )
+
+    with PLUGIN_INSTALL_STATUS_LOCK:
+        PLUGIN_INSTALL_STATUS.pop(
+            plugin_id,
+            None,
+        )
+
+    return get_plugin_status(
+        plugin_id
+    )
 
 
 def _stop_all_plugin_workers():

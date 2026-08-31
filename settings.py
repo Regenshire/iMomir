@@ -289,6 +289,7 @@ DEFAULT_CONFIG = {
     "chaos_draft_export_format": "none",
     "chaos_scryfall_image_quality": "png",
 
+    "upscaling_active_plugin": "",
     "upscaling_add_button_to_card_view": "0",
     "upscaling_dev_feedback_system": "0",
 

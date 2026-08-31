@@ -5,6 +5,7 @@ hiddenimports = ['paths', 'settings', 'image_export_templates', 'pack_label_temp
 hiddenimports += collect_submodules('db')
 hiddenimports += collect_submodules('modes')
 hiddenimports += collect_submodules('ui')
+hiddenimports += collect_submodules('plugin_system')
 
 
 a = Analysis(

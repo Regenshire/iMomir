@@ -2,18 +2,41 @@
 
 Optional AI image upscaling plugin for iMomir.
 
+## Requirements
+
+- Windows
+- NVIDIA RTX 50 Series GPU
+- Current NVIDIA graphics driver
+- Python 3.12 64-bit
+- Internet connection during initial installation
+
+## Installation
+
+Install the plugin directly from iMomir:
+
+Settings → Advanced Image Upscaling → Download & Install Upscaler Plugin
+
+iMomir will automatically:
+
+1. Download the plugin.
+2. Create an isolated Python environment.
+3. Install the required NVIDIA/PyTorch dependencies.
+4. Download AI model files when required.
+
+The plugin is optional. iMomir does not require the plugin or Python for normal use.
+
 ## Plugin ID
 
 `upscaler-nvidia-rtx50`
 
-## Initial Target Hardware
+## Current Production Model
 
-NVIDIA RTX 50 Series GPUs.
+Magic Card AI v3
 
-The initial development target is the RTX 5090.
+## Supported Features
 
-## Status
-
-Early development.
-
-The current plugin implements only the iMomir plugin communication protocol. Image upscaling functionality will be added in later development stages.
+- AI card image upscaling
+- Single-faced cards
+- Double-faced cards
+- Batch upscaling
+- Persistent GPU worker for faster repeated processing

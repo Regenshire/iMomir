@@ -713,8 +713,12 @@ function initializeSettingsConsole() {
             description: "Repair and reprocess generated alternate-image derivatives.",
             showSave: false
         },
+        plugins: {
+            description: "View installed plugins and add optional iMomir capabilities.",
+            showSave: false
+        },
         image_upscaling: {
-            description: "Install and manage optional AI image upscaling plugins.",
+            description: "Choose the active Upscaler and configure image upscaling behavior.",
             showSave: false
         },
         danger_zone: {
@@ -773,6 +777,17 @@ function initializeSettingsConsole() {
                 "card_database"
             ],
             parent: "form"
+        },
+        {
+            key: "plugins",
+            eyebrow: "EXTENSIONS",
+            title: "Plugins",
+            description: "Install and manage optional capabilities for iMomir.",
+            iconClass: "fa-solid fa-puzzle-piece",
+            sections: [
+                "plugins"
+            ],
+            parent: "screen"
         },
         {
             key: "advanced",

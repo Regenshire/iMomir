@@ -152,6 +152,7 @@ from plugin_system.manager import (
     get_ready_plugins_by_type,
     run_plugin_json,
     start_plugin_install,
+    uninstall_plugin,
 )
 
 from upscaling.feedback import (
@@ -1208,6 +1209,10 @@ def inject_global_template_state():
         "global_card_upscaling_control_enabled": (
             is_card_upscaling_control_enabled()
         ),
+
+        "global_ready_upscaler_plugins": (
+            get_ready_upscaler_plugins()
+        ),
     }
 
 PACK_ART_DIR = get_pack_art_dir(app.static_folder)
@@ -1737,6 +1742,63 @@ def update_config_from_form(form_data):
         if not any_primary_selected:
             for key, _ in PRIMARY_TYPE_KEYS:
                 updated_config[key] = "1"
+
+    ready_upscaler_plugins = (
+        get_ready_upscaler_plugins()
+    )
+
+    ready_upscaler_plugin_ids = {
+        str(
+            plugin.get(
+                "plugin_id",
+                "",
+            )
+            or ""
+        ).strip()
+        for plugin in ready_upscaler_plugins
+    }
+
+    submitted_active_upscaler = str(
+        form_data.get(
+            "upscaling_active_plugin",
+            "",
+        )
+        or ""
+    ).strip()
+
+    current_active_upscaler = str(
+        current_config.get(
+            "upscaling_active_plugin",
+            "",
+        )
+        or ""
+    ).strip()
+
+    if (
+        submitted_active_upscaler
+        not in ready_upscaler_plugin_ids
+    ):
+        if (
+            current_active_upscaler
+            in ready_upscaler_plugin_ids
+        ):
+            submitted_active_upscaler = (
+                current_active_upscaler
+            )
+        elif ready_upscaler_plugins:
+            submitted_active_upscaler = str(
+                ready_upscaler_plugins[0].get(
+                    "plugin_id",
+                    "",
+                )
+                or ""
+            ).strip()
+        else:
+            submitted_active_upscaler = ""
+
+    updated_config[
+        "upscaling_active_plugin"
+    ] = submitted_active_upscaler
 
     update_config_values(updated_config)
     set_runtime_debug_log_enabled_from_config()
@@ -13872,6 +13934,96 @@ def plugin_install(plugin_id):
         }
     )
 
+
+@app.route(
+    "/plugins/<plugin_id>/install-page",
+    methods=["POST"],
+)
+def plugin_install_page(plugin_id):
+    if plugin_id not in PLUGIN_CATALOG:
+        flash("Unknown plugin.")
+
+        return redirect(
+            url_for("config")
+            + "?open=plugins&scroll=plugins"
+        )
+
+    try:
+        start_plugin_install(
+            plugin_id
+        )
+
+        invalidate_upscaler_metadata_cache()
+
+        flash(
+            "Plugin installation started."
+        )
+
+    except Exception as exc:
+        flash(
+            f"Plugin installation failed: {exc}"
+        )
+
+    return redirect(
+        url_for("config")
+        + "?open=plugins&scroll=plugins"
+    )
+
+
+@app.route(
+    "/plugins/<plugin_id>/uninstall-page",
+    methods=["POST"],
+)
+def plugin_uninstall_page(plugin_id):
+    if plugin_id not in PLUGIN_CATALOG:
+        flash("Unknown plugin.")
+
+        return redirect(
+            url_for("config")
+            + "?open=plugins&scroll=plugins"
+        )
+
+    current_plugin_status = (
+        get_plugin_status(
+            plugin_id
+        )
+    )
+
+    if current_plugin_status.get(
+        "development"
+    ):
+        flash(
+            "Development plugins cannot be "
+            "uninstalled from Config."
+        )
+
+        return redirect(
+            url_for("config")
+            + "?open=plugins&scroll=plugins"
+        )
+
+    try:
+        uninstall_plugin(
+            plugin_id
+        )
+
+        invalidate_upscaler_metadata_cache()
+
+        flash(
+            "Plugin uninstalled."
+        )
+
+    except Exception as exc:
+        flash(
+            f"Plugin uninstall failed: {exc}"
+        )
+
+    return redirect(
+        url_for("config")
+        + "?open=plugins&scroll=plugins"
+    )
+
+
 UPSCALER_READY_CACHE_SECONDS = 5
 UPSCALER_MODEL_CACHE_SECONDS = 300
 UPSCALER_DEV_MODEL_CACHE_SECONDS = 15
@@ -13968,15 +14120,62 @@ def get_ready_upscaler_plugins(
     )
 
 
-def has_development_upscaler_plugin():
-    return any(
-        bool(
-            plugin.get(
-                "development"
-            )
+def get_active_upscaler_plugin_status(
+    config_values=None,
+    force_refresh=False,
+):
+    ready_plugins = (
+        get_ready_upscaler_plugins(
+            force_refresh=force_refresh
         )
-        for plugin
-        in get_ready_upscaler_plugins()
+    )
+
+    if not ready_plugins:
+        return None
+
+    if config_values is None:
+        config_values = (
+            get_request_config()
+            if has_request_context()
+            else get_config()
+        )
+
+    configured_plugin_id = str(
+        config_values.get(
+            "upscaling_active_plugin",
+            "",
+        )
+        or ""
+    ).strip()
+
+    for plugin in ready_plugins:
+        plugin_id = str(
+            plugin.get(
+                "plugin_id",
+                "",
+            )
+            or ""
+        ).strip()
+
+        if (
+            plugin_id
+            == configured_plugin_id
+        ):
+            return plugin
+
+    return ready_plugins[0]
+
+
+def has_development_upscaler_plugin():
+    active_plugin = (
+        get_active_upscaler_plugin_status()
+    )
+
+    return bool(
+        active_plugin
+        and active_plugin.get(
+            "development"
+        )
     )
 
 
@@ -14647,6 +14846,7 @@ def config():
             "momir_print_settings",
             "exports",
             "backup",
+            "plugins",
             "image_upscaling",
             "danger_zone",
         }
@@ -14669,18 +14869,60 @@ def config():
         build_alternate_bleed_reprocess_status()
     )
 
-    upscaler_plugin_id = (
-        "upscaler-nvidia-rtx50"
+    plugin_catalog_items = []
+
+    for (
+        plugin_id,
+        catalog_entry,
+    ) in PLUGIN_CATALOG.items():
+        plugin_catalog_items.append({
+            **catalog_entry,
+            "status": get_plugin_status(
+                plugin_id
+            ),
+            "install_status": (
+                get_plugin_install_status(
+                    plugin_id
+                )
+            ),
+        })
+
+    ready_upscaler_plugins = (
+        get_ready_upscaler_plugins()
     )
 
-    upscaler_plugin_status = get_plugin_status(
-        upscaler_plugin_id
-    )
-
-    upscaler_plugin_install_status = (
-        get_plugin_install_status(
-            upscaler_plugin_id
+    active_upscaler_plugin_status = (
+        get_active_upscaler_plugin_status(
+            config_values=config_values
         )
+    )
+
+    active_upscaler_plugin_id = str(
+        (
+            active_upscaler_plugin_status
+            or {}
+        ).get(
+            "plugin_id",
+            "",
+        )
+        or ""
+    ).strip()
+
+    upscaler_plugin_status = (
+        active_upscaler_plugin_status
+        or {}
+    )
+
+    plugin_install_running = any(
+        bool(
+            plugin.get(
+                "install_status",
+                {},
+            ).get(
+                "is_running"
+            )
+        )
+        for plugin in plugin_catalog_items
     )
 
     upscaling_dev_feedback_log_status = (
@@ -14773,7 +15015,7 @@ def config():
     section_defaults = {
         "card_database": "0" if source_file_present else "1",
         "card_repeats": "0",
-        "draft_modes": "1",
+        "draft_modes": "0",
         "momir_modes": "0",
         "other_modes": "0",
         "chaos_print_settings": "0",
@@ -14784,6 +15026,8 @@ def config():
         "exports": "0",
         "backup": "0",
         "image_maintenance": "0",
+        "plugins": "0",
+        "image_upscaling": "0",
         "danger_zone": "0",
     }
 
@@ -14815,14 +15059,20 @@ def config():
         alternate_bleed_reprocess_status=(
             current_alternate_bleed_status
         ),
-        upscaler_plugin_id=(
-            upscaler_plugin_id
+        plugin_catalog_items=(
+            plugin_catalog_items
+        ),
+        plugin_install_running=(
+            plugin_install_running
+        ),
+        ready_upscaler_plugins=(
+            ready_upscaler_plugins
+        ),
+        active_upscaler_plugin_id=(
+            active_upscaler_plugin_id
         ),
         upscaler_plugin_status=(
             upscaler_plugin_status
-        ),
-        upscaler_plugin_install_status=(
-            upscaler_plugin_install_status
         ),
         upscaling_dev_feedback_log_status=(
             upscaling_dev_feedback_log_status
@@ -21149,12 +21399,16 @@ def upscaler_model_supports(
 def get_upscaler_plugin_model_results(
     force_refresh=False,
 ):
-    ready_plugins = (
-        get_ready_upscaler_plugins(
-            force_refresh=(
-                force_refresh
-            )
+    active_plugin = (
+        get_active_upscaler_plugin_status(
+            force_refresh=force_refresh
         )
+    )
+
+    ready_plugins = (
+        [active_plugin]
+        if active_plugin
+        else []
     )
 
     plugin_signature = tuple(

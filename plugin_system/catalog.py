@@ -4,10 +4,20 @@ PLUGIN_CATALOG = {
             "upscaler-nvidia-rtx50"
         ),
         "name": (
-            "iMomir Upscaler - "
-            "NVIDIA RTX 50 Series"
+            "NVIDIA RTX 50 Series "
+            "Upscaler"
         ),
         "plugin_type": "upscaler",
+        "type_label": "Upscaler",
+        "description": (
+            "AI image upscaling for systems "
+            "with an NVIDIA RTX 50 Series "
+            "graphics card."
+        ),
+        "requirements": (
+            "Windows; NVIDIA RTX 50 Series GPU; "
+            "Python 3.12 (64-bit)"
+        ),
 
         "github_owner": "Regenshire",
         "github_repo": "iMomir",

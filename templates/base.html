@@ -334,11 +334,21 @@
 
                 <a
                   class="app-nav-dropdown-item"
+                  href="{{ url_for('config') }}?open=plugins&scroll=plugins"
+                  role="menuitem"
+                >
+                  Plugins
+                </a>
+
+                {% if global_ready_upscaler_plugins %}
+                <a
+                  class="app-nav-dropdown-item"
                   href="{{ url_for('config') }}?open=image_upscaling&scroll=image_upscaling"
                   role="menuitem"
                 >
-                  Image Upscaling
+                  Advanced Image Upscaling
                 </a>
+                {% endif %}
 
                 <a
                   class="app-nav-dropdown-item app-nav-dropdown-item-danger"
