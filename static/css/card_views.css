@@ -307,6 +307,17 @@
         repeat(auto-fit, minmax(230px, 1fr));
 }
 
+/*
+ * Maximize must remain density-focused.
+ * Override the shared fixed-column pack layout so
+ * Custom Draft can add columns as space becomes available.
+ */
+.custom-draft-set-card-list-panel-maximized
+.custom-draft-current-card-grid {
+    grid-template-columns:
+        repeat(auto-fit, minmax(230px, 1fr));
+}
+
 .custom-draft-current-card-grid .chaos-pack-view-card {
     min-width: 0;
 }
@@ -325,6 +336,10 @@
     height: 20px;
 
     cursor: pointer;
+}
+
+.custom-draft-grid-card-badges {
+    margin-top: 0.45rem;
 }
 
 
