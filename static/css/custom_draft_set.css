@@ -1,0 +1,167 @@
+/*
+ * Custom Draft Set page-specific styles.
+ *
+ * Keep styles here when they are used only by
+ * templates/custom_draft_set.html.
+ */
+
+
+/* ==========================================
+   Set Card List Copy Split Button
+   ========================================== */
+
+.custom-draft-copy-split {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(88px, 1fr) 44px;
+    width: auto;
+    min-width: 150px;
+}
+
+.custom-draft-copy-main-button {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    font-size: 0.92rem;
+    padding: 8px 12px;
+}
+
+.custom-draft-copy-menu-button {
+    width: 44px;
+    min-width: 44px;
+    min-height: 40px;
+    border-left: 1px solid var(--border);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    font-size: 0.9rem;
+    padding: 8px;
+}
+
+.custom-draft-copy-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 1700;
+    min-width: 170px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--panel);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.custom-draft-copy-menu.hidden {
+    display: none !important;
+}
+
+.custom-draft-copy-menu-item {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel-2);
+    color: var(--text);
+    text-align: left;
+    padding: 9px 12px;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.custom-draft-copy-menu-item:hover,
+.custom-draft-copy-menu-item-active {
+    background: rgba(72, 127, 255, 0.18);
+    border-color: rgba(110, 156, 255, 0.58);
+}
+
+
+/* Keep overlays above the maximized Set Card List. */
+
+.custom-draft-card-search-overlay {
+    z-index: 2600;
+}
+
+.custom-draft-set-card-list-panel-maximized {
+    z-index: 1450;
+}
+
+
+@media (max-width: 700px) {
+    .custom-draft-copy-split {
+        width: 100%;
+    }
+}
+
+/* ==========================================
+   Change Printing Button
+   ========================================== */
+
+.custom-draft-change-printing-button {
+    color: #b9c0cf;
+    padding: 0;
+}
+
+.custom-draft-change-printing-button:hover {
+    color: #ffffff;
+}
+
+.custom-draft-change-printing-icon {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.custom-draft-grid-change-printing-button {
+    color: #b9c0cf;
+    padding: 0;
+}
+
+.custom-draft-grid-change-printing-button:hover {
+    color: #ffffff;
+}
+
+
+/* ==========================================
+   Alternate Image State
+   ========================================== */
+
+.custom-draft-alternate-image-active {
+    color: #7dff9f !important;
+}
+
+.custom-draft-alternate-image-active:hover {
+    color: #b8ffc8 !important;
+}
+
+.custom-draft-alternate-image-meta-line {
+    flex-basis: 100%;
+    display: block;
+}
+
+
+/* ==========================================
+   Set Export Button
+   ========================================== */
+
+.custom-draft-export-set-form {
+    margin: 0;
+}
+
+.custom-draft-export-set-button {
+    width: auto;
+    min-width: 180px;
+    min-height: 52px;
+    border-radius: 14px;
+    white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+    .custom-draft-export-set-form,
+    .custom-draft-export-set-button {
+        width: 100%;
+    }
+}

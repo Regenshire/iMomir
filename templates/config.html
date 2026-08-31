@@ -2,6 +2,13 @@
 
 {% block title %}iMomir - Config{% endblock %}
 
+{% block page_styles %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/config.css') }}"
+>
+{% endblock %}
+
 {% block content %}
 {% from "_scoped_print_settings_fields.html" import render_scoped_print_settings %}
 <div class="screen screen-wide">

@@ -2792,7 +2792,6 @@
         });
     }
 
-
     async function acceptCandidate() {
         const candidateEntries =
             Object.entries(
