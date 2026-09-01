@@ -1,0 +1,72 @@
+.campaign-pack-flip-host {
+    position: relative;
+}
+
+.campaign-pack-flip-button {
+    position: absolute;
+    top: 5%;
+    left: 10px;
+    z-index: 30;
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.78);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease,
+        left 0.15s ease,
+        right 0.15s ease;
+}
+
+.campaign-pack-flip-host:hover .campaign-pack-flip-button,
+.campaign-pack-flip-button:focus-visible {
+    opacity: 1;
+}
+
+.campaign-pack-flip-button-flipped {
+    left: auto;
+    right: 10px;
+}
+
+.card-zoom-content.campaign-pack-flip-host .campaign-pack-flip-button {
+    opacity: 1;
+    z-index: 10002;
+    top: 5%;
+    left: calc(50% - min(46vw, 260px) + 14px);
+}
+
+.card-zoom-content.campaign-pack-flip-host .campaign-pack-flip-button-flipped {
+    left: auto;
+    right: calc(50% - min(46vw, 260px) + 14px);
+}
+
+.campaign-pack-card-flipping {
+    animation: campaign-pack-card-flip 280ms ease;
+}
+
+@keyframes campaign-pack-card-flip {
+    0% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
+    }
+
+    50% {
+        transform: rotateY(88deg) scale(0.985);
+        filter: brightness(1.15);
+    }
+
+    100% {
+        transform: rotateY(0deg) scale(1);
+        filter: brightness(1);
+    }
+}
