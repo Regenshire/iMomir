@@ -2524,7 +2524,7 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = true;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack (PDF)";
+            openButton.textContent = "Print / Export";
         }
 
         if (savePackButton) {
@@ -2558,7 +2558,7 @@ function initializeChaosDraftPage() {
         if (openButton) {
             openButton.disabled = false;
             openButton.classList.remove("action-button-loading");
-            openButton.textContent = "Open Pack (PDF)";
+            openButton.textContent = "Print / Export";
         }
 
         setSavePackButtonState(false);

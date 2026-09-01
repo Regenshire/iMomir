@@ -5,6 +5,14 @@
 {% block page_styles %}
 <link
     rel="stylesheet"
+    href="{{ url_for('static', filename='css/image_compare.css') }}"
+>
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/upscale_batch.css') }}"
+>
+<link
+    rel="stylesheet"
     href="{{ url_for('static', filename='css/card_views.css') }}"
 >
 {% endblock %}
@@ -1390,4 +1398,9 @@
     setSelectedPackViewExportFormat("archidekt");
 })();
 </script>
+{% endblock %}
+
+{% block page_scripts_after_app %}
+<script src="{{ url_for('static', filename='js/image_compare.js') }}"></script>
+<script src="{{ url_for('static', filename='js/upscale_batch.js') }}"></script>
 {% endblock %}
