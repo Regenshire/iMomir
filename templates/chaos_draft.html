@@ -266,3 +266,7 @@
 </style>
 <script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 {% endblock %}
+
+{% block page_scripts_after_app %}
+<script src="{{ url_for('static', filename='js/chaos_draft.js') }}"></script>
+{% endblock %}
