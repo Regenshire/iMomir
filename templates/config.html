@@ -2518,6 +2518,10 @@
 </script>
 {% endblock %}
 
+{% block page_scripts_before_app %}
+<script src="{{ url_for('static', filename='js/config.js') }}"></script>
+{% endblock %}
+
 {% block page_scripts_after_app %}
 <script src="{{ url_for('static', filename='js/upscale_batch.js') }}"></script>
 {% endblock %}

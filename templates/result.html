@@ -467,3 +467,7 @@
 </script>
 {% endif %}
 {% endblock %}
+
+{% block page_scripts_after_app %}
+<script src="{{ url_for('static', filename='js/result.js') }}"></script>
+{% endblock %}

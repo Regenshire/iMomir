@@ -385,3 +385,7 @@
 })();
 </script>
 {% endblock %}
+
+{% block page_scripts_before_app %}
+<script src="{{ url_for('static', filename='js/sets.js') }}"></script>
+{% endblock %}
