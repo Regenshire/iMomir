@@ -204,7 +204,7 @@ input {
 
 .app-tabs {
     position: relative;
-    z-index: 1200;
+    z-index: 1500;
     gap: 8px;
     min-height: 66px;
     padding: 7px 14px;
