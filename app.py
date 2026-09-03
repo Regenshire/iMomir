@@ -3936,6 +3936,12 @@ def get_silhouette_letter_horizontal_8_slots_mm():
                 "y_mm": art_y_mm - vertical_border_mm,
                 "width_mm": SILHOUETTE_LETTER_CARD_WIDTH_MM + (horizontal_border_mm * 2),
                 "height_mm": SILHOUETTE_LETTER_CARD_HEIGHT_MM + (vertical_border_mm * 2),
+
+                # The physical card inside every paper-template slot is always
+                # 63 x 88 mm. Any additional slot area is template bleed.
+                "finished_card_width_mm": CARD_PRINT_WIDTH_MM,
+                "finished_card_height_mm": CARD_PRINT_HEIGHT_MM,
+
                 "rotation_degrees": 0,
             })
 
@@ -3988,9 +3994,10 @@ def get_silhouette_a4_vertical_9_slots_mm():
                 "width_mm": slot_width_mm,
                 "height_mm": slot_height_mm,
 
-                # Alternate sources with real MPCFill bleed should
-                # retain exactly this much of their existing bleed.
-                "required_source_bleed_mm": SILHOUETTE_A4_BLEED_MM,
+                # The physical card remains 63 x 88 mm. The A4 template's
+                # fixed 0.5925 mm bleed exists outside this inner rectangle.
+                "finished_card_width_mm": CARD_PRINT_WIDTH_MM,
+                "finished_card_height_mm": CARD_PRINT_HEIGHT_MM,
 
                 "rotation_degrees": 0,
             })
@@ -4073,7 +4080,28 @@ def add_duplicated_edge_border(image, border_pixels=None):
     if border_pixels is None:
         border_pixels = get_silhouette_edge_border_pixels()
 
-    if border_pixels <= 0:
+    if isinstance(border_pixels, (tuple, list)):
+        if len(border_pixels) != 4:
+            raise ValueError(
+                "border_pixels must be an integer or a four-value "
+                "(left, top, right, bottom) sequence."
+            )
+
+        left_pixels, top_pixels, right_pixels, bottom_pixels = [
+            max(0, int(round(value or 0)))
+            for value in border_pixels
+        ]
+    else:
+        uniform_pixels = max(
+            0,
+            int(round(border_pixels or 0)),
+        )
+        left_pixels = uniform_pixels
+        top_pixels = uniform_pixels
+        right_pixels = uniform_pixels
+        bottom_pixels = uniform_pixels
+
+    if not any((left_pixels, top_pixels, right_pixels, bottom_pixels)):
         return image
 
     source_image = image.convert("RGB")
@@ -4082,38 +4110,119 @@ def add_duplicated_edge_border(image, border_pixels=None):
     if source_width <= 0 or source_height <= 0:
         return source_image
 
+    expanded_width = source_width + left_pixels + right_pixels
+    expanded_height = source_height + top_pixels + bottom_pixels
+
     expanded_image = Image.new(
         "RGB",
-        (source_width + (border_pixels * 2), source_height + (border_pixels * 2))
+        (expanded_width, expanded_height),
     )
 
-    # Paste the original image in the center.
-    expanded_image.paste(source_image, (border_pixels, border_pixels))
+    expanded_image.paste(
+        source_image,
+        (left_pixels, top_pixels),
+    )
 
-    # Duplicate top and bottom rows.
-    top_row = source_image.crop((0, 0, source_width, 1)).resize((source_width, border_pixels), Image.NEAREST)
-    bottom_row = source_image.crop((0, source_height - 1, source_width, source_height)).resize((source_width, border_pixels), Image.NEAREST)
+    if top_pixels > 0:
+        top_row = source_image.crop(
+            (0, 0, source_width, 1)
+        ).resize(
+            (source_width, top_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            top_row,
+            (left_pixels, 0),
+        )
 
-    expanded_image.paste(top_row, (border_pixels, 0))
-    expanded_image.paste(bottom_row, (border_pixels, border_pixels + source_height))
+    if bottom_pixels > 0:
+        bottom_row = source_image.crop(
+            (0, source_height - 1, source_width, source_height)
+        ).resize(
+            (source_width, bottom_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            bottom_row,
+            (left_pixels, top_pixels + source_height),
+        )
 
-    # Duplicate left and right columns.
-    left_column = source_image.crop((0, 0, 1, source_height)).resize((border_pixels, source_height), Image.NEAREST)
-    right_column = source_image.crop((source_width - 1, 0, source_width, source_height)).resize((border_pixels, source_height), Image.NEAREST)
+    if left_pixels > 0:
+        left_column = source_image.crop(
+            (0, 0, 1, source_height)
+        ).resize(
+            (left_pixels, source_height),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            left_column,
+            (0, top_pixels),
+        )
 
-    expanded_image.paste(left_column, (0, border_pixels))
-    expanded_image.paste(right_column, (border_pixels + source_width, border_pixels))
+    if right_pixels > 0:
+        right_column = source_image.crop(
+            (source_width - 1, 0, source_width, source_height)
+        ).resize(
+            (right_pixels, source_height),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            right_column,
+            (left_pixels + source_width, top_pixels),
+        )
 
-    # Duplicate corners.
-    top_left_pixel = source_image.crop((0, 0, 1, 1)).resize((border_pixels, border_pixels), Image.NEAREST)
-    top_right_pixel = source_image.crop((source_width - 1, 0, source_width, 1)).resize((border_pixels, border_pixels), Image.NEAREST)
-    bottom_left_pixel = source_image.crop((0, source_height - 1, 1, source_height)).resize((border_pixels, border_pixels), Image.NEAREST)
-    bottom_right_pixel = source_image.crop((source_width - 1, source_height - 1, source_width, source_height)).resize((border_pixels, border_pixels), Image.NEAREST)
+    if left_pixels > 0 and top_pixels > 0:
+        top_left_pixel = source_image.crop(
+            (0, 0, 1, 1)
+        ).resize(
+            (left_pixels, top_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(top_left_pixel, (0, 0))
 
-    expanded_image.paste(top_left_pixel, (0, 0))
-    expanded_image.paste(top_right_pixel, (border_pixels + source_width, 0))
-    expanded_image.paste(bottom_left_pixel, (0, border_pixels + source_height))
-    expanded_image.paste(bottom_right_pixel, (border_pixels + source_width, border_pixels + source_height))
+    if right_pixels > 0 and top_pixels > 0:
+        top_right_pixel = source_image.crop(
+            (source_width - 1, 0, source_width, 1)
+        ).resize(
+            (right_pixels, top_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            top_right_pixel,
+            (left_pixels + source_width, 0),
+        )
+
+    if left_pixels > 0 and bottom_pixels > 0:
+        bottom_left_pixel = source_image.crop(
+            (0, source_height - 1, 1, source_height)
+        ).resize(
+            (left_pixels, bottom_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            bottom_left_pixel,
+            (0, top_pixels + source_height),
+        )
+
+    if right_pixels > 0 and bottom_pixels > 0:
+        bottom_right_pixel = source_image.crop(
+            (
+                source_width - 1,
+                source_height - 1,
+                source_width,
+                source_height,
+            )
+        ).resize(
+            (right_pixels, bottom_pixels),
+            Image.NEAREST,
+        )
+        expanded_image.paste(
+            bottom_right_pixel,
+            (
+                left_pixels + source_width,
+                top_pixels + source_height,
+            ),
+        )
 
     return expanded_image
 
@@ -4398,6 +4507,43 @@ def draw_processed_image_into_slot(
 
     target_width_px = mm_to_px(slot_width_mm, 12)
     target_height_px = mm_to_px(slot_height_mm, 12)
+
+    rotation_degrees = int(
+        slot_def.get("rotation_degrees", 0) or 0
+    ) % 360
+
+    card_width_mm = float(
+        slot_def.get("finished_card_width_mm", slot_width_mm)
+    )
+    card_height_mm = float(
+        slot_def.get("finished_card_height_mm", slot_height_mm)
+    )
+
+    if rotation_degrees in {90, 270}:
+        finished_width_mm = card_height_mm
+        finished_height_mm = card_width_mm
+    else:
+        finished_width_mm = card_width_mm
+        finished_height_mm = card_height_mm
+
+    finished_width_px = min(
+        target_width_px,
+        mm_to_px(finished_width_mm, 12),
+    )
+    finished_height_px = min(
+        target_height_px,
+        mm_to_px(finished_height_mm, 12),
+    )
+
+    horizontal_bleed_mm = max(
+        0.0,
+        (slot_width_mm - finished_width_mm) / 2.0,
+    )
+    vertical_bleed_mm = max(
+        0.0,
+        (slot_height_mm - finished_height_mm) / 2.0,
+    )
+
     radius_px = (
         mm_to_px(rounded_corner_radius_mm, 12)
         if rounded_corner_radius_mm and rounded_corner_radius_mm > 0
@@ -4413,31 +4559,15 @@ def draw_processed_image_into_slot(
             (print_mode or "").strip().lower(),
             target_width_px,
             target_height_px,
+            finished_width_px,
+            finished_height_px,
             bool(add_edge_bleed_border),
             radius_px,
-            int(
-                slot_def.get(
-                    "rotation_degrees",
-                    0,
-                )
-                or 0
-            ),
-
-            bool(
-                preserve_real_source_bleed
-            ),
-
-            float(
-                source_bleed_mm or 0.0
-            ),
-
-            float(
-                slot_def.get(
-                    "required_source_bleed_mm",
-                    0.0,
-                )
-                or 0.0
-            ),
+            rotation_degrees,
+            bool(preserve_real_source_bleed),
+            float(source_bleed_mm or 0.0),
+            round(horizontal_bleed_mm, 6),
+            round(vertical_bleed_mm, 6),
         )
 
         slot_cache = getattr(
@@ -4468,33 +4598,6 @@ def draw_processed_image_into_slot(
             with Image.open(BytesIO(processed_image_bytes)) as source_image:
                 image = source_image.convert("RGB")
 
-                if preserve_real_source_bleed:
-                    image = (
-                        crop_real_bleed_to_required_bleed(
-                            image,
-                            source_bleed_mm=(
-                                source_bleed_mm
-                            ),
-                            required_bleed_mm=(
-                                slot_def.get(
-                                    "required_source_bleed_mm",
-                                    0.0,
-                                )
-                            ),
-                        )
-                    )
-
-                elif add_edge_bleed_border:
-                    image = (
-                        add_duplicated_edge_border(
-                            image
-                        )
-                    )
-
-                rotation_degrees = int(
-                    slot_def.get("rotation_degrees", 0) or 0
-                )
-
                 if rotation_degrees == 90:
                     image = image.transpose(
                         Image.Transpose.ROTATE_270
@@ -4508,22 +4611,78 @@ def draw_processed_image_into_slot(
                         Image.Transpose.ROTATE_90
                     )
 
-                image = image.resize(
-                    (target_width_px, target_height_px),
-                    Image.LANCZOS,
-                )
-
-                if (
-                    radius_px > 0
-                    and not preserve_real_source_bleed
-                ):
-                    image = apply_rounded_corner_mask(
+                if preserve_real_source_bleed:
+                    image = crop_real_bleed_to_required_bleed(
                         image,
-                        radius_px,
-                        matte_rgb=(0, 0, 0),
+                        source_bleed_mm=source_bleed_mm,
+                        required_horizontal_bleed_mm=horizontal_bleed_mm,
+                        required_vertical_bleed_mm=vertical_bleed_mm,
+                        card_width_mm=finished_width_mm,
+                        card_height_mm=finished_height_mm,
                     )
+
+                    image = image.resize(
+                        (target_width_px, target_height_px),
+                        Image.LANCZOS,
+                    )
+
                 else:
-                    image = image.convert("RGB")
+                    # Resize only the finished card to its physical 63 x 88 mm
+                    # area. Bleed is added outside this rectangle afterward.
+                    image = image.resize(
+                        (finished_width_px, finished_height_px),
+                        Image.LANCZOS,
+                    )
+
+                    if radius_px > 0:
+                        image = apply_rounded_corner_mask(
+                            image,
+                            radius_px,
+                            matte_rgb=(0, 0, 0),
+                        )
+
+                    if add_edge_bleed_border:
+                        bleed_left_px = max(
+                            0,
+                            (target_width_px - finished_width_px) // 2,
+                        )
+                        bleed_right_px = max(
+                            0,
+                            target_width_px
+                            - finished_width_px
+                            - bleed_left_px,
+                        )
+                        bleed_top_px = max(
+                            0,
+                            (target_height_px - finished_height_px) // 2,
+                        )
+                        bleed_bottom_px = max(
+                            0,
+                            target_height_px
+                            - finished_height_px
+                            - bleed_top_px,
+                        )
+
+                        image = add_duplicated_edge_border(
+                            image,
+                            border_pixels=(
+                                bleed_left_px,
+                                bleed_top_px,
+                                bleed_right_px,
+                                bleed_bottom_px,
+                            ),
+                        )
+
+                    if image.size != (
+                        target_width_px,
+                        target_height_px,
+                    ):
+                        image = image.resize(
+                            (target_width_px, target_height_px),
+                            Image.LANCZOS,
+                        )
+
+                image = image.convert("RGB")
 
         slot_buffer = BytesIO()
         image.convert("RGB").save(
@@ -4652,6 +4811,10 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
             or "auto"
         ),
 
+        # PDF slot rendering owns the physical bleed. Do not add the legacy
+        # one-pixel export border before the card reaches the PDF layout.
+        add_edge_border=False,
+
         # The overlay-coordinate system already has a special
         # 69 x 94 / 3 mm bleed version. Use that while the
         # original MPCFill canvas is still intact.
@@ -4659,11 +4822,10 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
             uses_real_source_bleed
         ),
 
-        # Never round/cut the outer corners of a real
-        # full-bleed source.
-        skip_card_corner_radius=(
-            uses_real_source_bleed
-        ),
+        # PDF slot rendering owns corner cleanup as well as bleed. For
+        # ordinary cards it rounds the finished 63 x 88 mm card before
+        # adding bleed; real full-bleed sources keep their existing edges.
+        skip_card_corner_radius=True,
     )
 
     updated_entry = dict(rendered_entry)
@@ -7766,16 +7928,19 @@ def crop_image_to_card_aspect_ratio(image, card_width_mm=CARD_PRINT_WIDTH_MM, ca
 def crop_real_bleed_to_required_bleed(
     image,
     source_bleed_mm,
-    required_bleed_mm,
+    required_bleed_mm=None,
     card_width_mm=CARD_PRINT_WIDTH_MM,
     card_height_mm=CARD_PRINT_HEIGHT_MM,
+    required_horizontal_bleed_mm=None,
+    required_vertical_bleed_mm=None,
 ):
     """
     Crop a real full-bleed card source down to the bleed required by
-    the selected print template.
+    the selected print-template slot.
 
-    This function never generates bleed and never enlarges the
-    finished 63 x 88 mm card region.
+    Horizontal and vertical target bleed can differ when an existing
+    paper template has asymmetric slot geometry. The finished card
+    region is never enlarged.
     """
 
     source_image = ImageOps.exif_transpose(
@@ -7783,77 +7948,87 @@ def crop_real_bleed_to_required_bleed(
     ).convert("RGB")
 
     try:
-        source_bleed = float(
-            source_bleed_mm or 0.0
-        )
+        source_bleed = float(source_bleed_mm or 0.0)
     except (TypeError, ValueError):
         source_bleed = 0.0
 
     try:
-        required_bleed = float(
-            required_bleed_mm or 0.0
+        fallback_required_bleed = float(required_bleed_mm or 0.0)
+    except (TypeError, ValueError):
+        fallback_required_bleed = 0.0
+
+    try:
+        required_horizontal_bleed = float(
+            fallback_required_bleed
+            if required_horizontal_bleed_mm is None
+            else required_horizontal_bleed_mm
         )
     except (TypeError, ValueError):
-        required_bleed = 0.0
+        required_horizontal_bleed = fallback_required_bleed
 
-    source_bleed = max(
-        0.0,
-        source_bleed,
-    )
+    try:
+        required_vertical_bleed = float(
+            fallback_required_bleed
+            if required_vertical_bleed_mm is None
+            else required_vertical_bleed_mm
+        )
+    except (TypeError, ValueError):
+        required_vertical_bleed = fallback_required_bleed
 
-    required_bleed = max(
-        0.0,
-        required_bleed,
-    )
+    source_bleed = max(0.0, source_bleed)
+    required_horizontal_bleed = max(0.0, required_horizontal_bleed)
+    required_vertical_bleed = max(0.0, required_vertical_bleed)
 
     if (
-        required_bleed
-        > source_bleed + 0.000001
+        required_horizontal_bleed > source_bleed + 0.000001
+        or required_vertical_bleed > source_bleed + 0.000001
     ):
         raise ValueError(
             "Alternate source does not contain enough real bleed "
             "for this print template. "
             f"Source bleed={source_bleed:.4f} mm, "
-            f"required bleed={required_bleed:.4f} mm."
+            f"required horizontal bleed={required_horizontal_bleed:.4f} mm, "
+            f"required vertical bleed={required_vertical_bleed:.4f} mm."
         )
 
-    excess_bleed_mm = (
-        source_bleed
-        - required_bleed
+    excess_horizontal_bleed_mm = (
+        source_bleed - required_horizontal_bleed
+    )
+    excess_vertical_bleed_mm = (
+        source_bleed - required_vertical_bleed
     )
 
-    if excess_bleed_mm <= 0.000001:
+    if (
+        excess_horizontal_bleed_mm <= 0.000001
+        and excess_vertical_bleed_mm <= 0.000001
+    ):
         return source_image
 
     full_source_width_mm = (
         float(card_width_mm)
         + (source_bleed * 2.0)
     )
-
     full_source_height_mm = (
         float(card_height_mm)
         + (source_bleed * 2.0)
     )
 
-    source_width, source_height = (
-        source_image.size
-    )
+    source_width, source_height = source_image.size
 
     crop_x = int(
         round(
             source_width
             * (
-                excess_bleed_mm
+                excess_horizontal_bleed_mm
                 / full_source_width_mm
             )
         )
     )
-
     crop_y = int(
         round(
             source_height
             * (
-                excess_bleed_mm
+                excess_vertical_bleed_mm
                 / full_source_height_mm
             )
         )
@@ -7861,18 +8036,11 @@ def crop_real_bleed_to_required_bleed(
 
     crop_x = max(
         0,
-        min(
-            crop_x,
-            (source_width - 1) // 2,
-        ),
+        min(crop_x, (source_width - 1) // 2),
     )
-
     crop_y = max(
         0,
-        min(
-            crop_y,
-            (source_height - 1) // 2,
-        ),
+        min(crop_y, (source_height - 1) // 2),
     )
 
     left = crop_x
@@ -7880,42 +8048,29 @@ def crop_real_bleed_to_required_bleed(
     right = source_width - crop_x
     bottom = source_height - crop_y
 
-    if (
-        right <= left
-        or bottom <= top
-    ):
+    if right <= left or bottom <= top:
         raise ValueError(
             "Unable to crop real alternate-source bleed. "
             f"Source size={source_width}x{source_height}, "
             f"source bleed={source_bleed:.4f} mm, "
-            f"required bleed={required_bleed:.4f} mm."
+            f"required horizontal bleed={required_horizontal_bleed:.4f} mm, "
+            f"required vertical bleed={required_vertical_bleed:.4f} mm."
         )
 
     cropped_image = source_image.crop(
-        (
-            left,
-            top,
-            right,
-            bottom,
-        )
+        (left, top, right, bottom)
     )
 
     write_debug_log(
         "REAL ALTERNATE BLEED CROP | "
-        f"source_px="
-        f"{source_width}x{source_height} | "
-        f"source_bleed_mm="
-        f"{source_bleed:.4f} | "
-        f"required_bleed_mm="
-        f"{required_bleed:.4f} | "
-        f"crop_mm="
-        f"{excess_bleed_mm:.4f} | "
-        f"crop_px="
-        f"L{crop_x}/R{crop_x}/"
-        f"T{crop_y}/B{crop_y} | "
-        f"result_px="
-        f"{cropped_image.width}x"
-        f"{cropped_image.height}"
+        f"source_px={source_width}x{source_height} | "
+        f"source_bleed_mm={source_bleed:.4f} | "
+        f"required_horizontal_bleed_mm={required_horizontal_bleed:.4f} | "
+        f"required_vertical_bleed_mm={required_vertical_bleed:.4f} | "
+        f"crop_x_mm={excess_horizontal_bleed_mm:.4f} | "
+        f"crop_y_mm={excess_vertical_bleed_mm:.4f} | "
+        f"crop_px=L{crop_x}/R{crop_x}/T{crop_y}/B{crop_y} | "
+        f"result_px={cropped_image.width}x{cropped_image.height}"
     )
 
     return cropped_image
@@ -9561,14 +9716,11 @@ def build_chaos_pack_pdf(
                         image_source.get(
                             "source_has_real_bleed"
                         )
-
-                        and (
+                        and is_silhouette_template(
                             pdf_template_layout.get(
                                 "print_template"
                             )
-                            or ""
-                        ).strip().lower()
-                        == "silhouette-a4-vertical-9"
+                        )
                     )
 
                     cached_result = (
@@ -10850,6 +11002,7 @@ def build_export_card_image(
     add_export_bleed=False,
     use_bleed_template=False,
     skip_card_corner_radius=False,
+    add_edge_border=True,
 ):
     with Image.open(source_image_path) as source_image:
         image = source_image.convert("RGB")
@@ -10907,7 +11060,7 @@ def build_export_card_image(
         # Real full-bleed sources already contain their own edge
         # artwork. Do not manufacture an additional duplicated
         # pixel border around them.
-        if not skip_card_corner_radius:
+        if add_edge_border and not skip_card_corner_radius:
             image = add_duplicated_edge_border(
                 image
             )
@@ -10964,6 +11117,7 @@ def build_chaos_template_rendered_card_image(
     add_export_bleed=False,
     use_bleed_template=False,
     skip_card_corner_radius=False,
+    add_edge_border=True,
 ):
     """
     Shared Chaos Draft card rendering path.
@@ -10990,6 +11144,7 @@ def build_chaos_template_rendered_card_image(
         add_export_bleed=add_export_bleed,
         use_bleed_template=use_bleed_template,
         skip_card_corner_radius=skip_card_corner_radius,
+        add_edge_border=add_edge_border,
     )
 
     return output_image_path
