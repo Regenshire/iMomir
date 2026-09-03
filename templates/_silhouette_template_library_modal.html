@@ -1,0 +1,171 @@
+<div
+    id="silhouetteTemplateLibraryModal"
+    class="silhouette-template-library-modal hidden"
+    aria-hidden="true"
+    data-options-url="{{ url_for('silhouette_template_options') }}"
+    data-upload-url="{{ url_for('silhouette_template_upload') }}"
+>
+    <div
+        class="silhouette-template-library-backdrop"
+        data-silhouette-template-library-close
+    ></div>
+
+    <div
+        class="silhouette-template-library-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="silhouetteTemplateLibraryTitle"
+    >
+        <div class="silhouette-template-library-header">
+            <div>
+                <h2 id="silhouetteTemplateLibraryTitle">
+                    Silhouette Templates
+                </h2>
+
+                <p>
+                    Download a Silhouette Studio template compatible with your print layout and media.
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="silhouette-template-library-close"
+                data-silhouette-template-library-close
+                title="Close"
+                aria-label="Close"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="silhouette-template-library-body">
+            <div class="silhouette-template-library-toolbar">
+                <label
+                    class="silhouette-template-library-filter"
+                    for="silhouetteTemplateLibraryFilter"
+                >
+                    <span>Paper / Print Template</span>
+
+                    <select id="silhouetteTemplateLibraryFilter">
+                        <option value="">All</option>
+                    </select>
+                </label>
+
+                <div
+                    id="silhouetteTemplateLibraryFilterSummary"
+                    class="silhouette-template-library-filter-summary"
+                ></div>
+            </div>
+
+            <div
+                id="silhouetteTemplateLibraryGrid"
+                class="silhouette-template-library-grid"
+            ></div>
+
+            <div
+                id="silhouetteTemplateLibraryEmpty"
+                class="silhouette-template-library-empty hidden"
+            >
+                No Silhouette templates are currently available.
+            </div>
+
+            <div class="silhouette-template-library-admin-row">
+                <button
+                    type="button"
+                    id="silhouetteTemplateUploadToggle"
+                    class="action-button secondary-button"
+                    aria-expanded="false"
+                >
+                    <i class="fa-solid fa-plus"></i>
+                    Add Silhouette Template
+                </button>
+            </div>
+
+            <section
+                id="silhouetteTemplateUploadSection"
+                class="silhouette-template-upload-section hidden"
+            >
+                <h3>
+                    Add Silhouette Template
+                </h3>
+
+                <p>
+                    Upload a Silhouette Studio .studio3 file and associate it with an iMomir Print Template.
+                </p>
+
+                <form
+                    id="silhouetteTemplateUploadForm"
+                    class="silhouette-template-upload-form"
+                >
+                    <label>
+                        <span>Studio3 File</span>
+
+                        <input
+                            type="file"
+                            id="silhouetteTemplateUploadFile"
+                            class="silhouette-template-upload-file-input"
+                            accept=".studio3"
+                            required
+                        >
+                    </label>
+
+                    <label>
+                        <span>Template Name</span>
+
+                        <input
+                            type="text"
+                            id="silhouetteTemplateUploadName"
+                            maxlength="120"
+                            required
+                        >
+                    </label>
+
+                    <label class="silhouette-template-upload-description-field">
+                        <span>Description</span>
+
+                        <textarea
+                            id="silhouetteTemplateUploadDescription"
+                            maxlength="1000"
+                            rows="3"
+                        ></textarea>
+                    </label>
+
+                    <label>
+                        <span>Linked Print Template</span>
+
+                        <select
+                            id="silhouetteTemplateUploadPrintTemplate"
+                            required
+                        ></select>
+                    </label>
+
+                    <div class="silhouette-template-upload-actions">
+                        <button
+                            type="submit"
+                            id="silhouetteTemplateUploadButton"
+                            class="action-button"
+                        >
+                            Upload Template
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <div
+                id="silhouetteTemplateLibraryStatus"
+                class="silhouette-template-library-status hidden"
+                role="status"
+            ></div>
+        </div>
+
+        <div class="silhouette-template-library-footer">
+            <button
+                type="button"
+                class="action-button secondary-button"
+                data-silhouette-template-library-close
+            >
+                Close
+            </button>
+        </div>
+    </div>
+</div>

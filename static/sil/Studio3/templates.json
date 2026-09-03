@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "filename": "Silhouette_Letter_Vertical_8_Card.studio3",
+      "name": "Letter - Vertical - 8 Card Template",
+      "description": "standard Letter template for vertical 8 card layouts",
+      "print_template": "silhouette-letter-horizontal-8"
+    },
+    {
+      "filename": "Silhouette_A4_Horizontal_9_Card.studio3",
+      "name": "A4 - Horizontal - 9 Card Template",
+      "description": "Advanced A4 9 card magic layout",
+      "print_template": "silhouette-a4-vertical-9"
+    },
+    {
+      "filename": "Silhouette_A4_Horizontal_9_Card_GreenBlade.studio3",
+      "name": "A4 - Horizontal - 9 Card Green Blade Template",
+      "description": "This is an Advanced A4 9 card magic layout template intended for use with the Green Blade and high quality thick card stock such as Cody's 313 Blue Core.",
+      "print_template": "silhouette-a4-vertical-9"
+    }
+  ]
+}

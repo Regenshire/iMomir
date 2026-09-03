@@ -2138,12 +2138,24 @@ def record_human_draft_test_pick(draft_test_id, draft_test_pack_card_id, deck_zo
 
     try:
         parsed_draft_test_id = int(draft_test_id)
-        parsed_pack_card_id = int(draft_test_pack_card_id)
     except (TypeError, ValueError):
         return {
             "ok": False,
-            "message": "Invalid draft or card selection.",
+            "message": "Invalid draft selection.",
         }
+
+    raw_pack_card_id = str(draft_test_pack_card_id or "").strip()
+    continue_without_pick = not raw_pack_card_id
+    parsed_pack_card_id = None
+
+    if not continue_without_pick:
+        try:
+            parsed_pack_card_id = int(raw_pack_card_id)
+        except (TypeError, ValueError):
+            return {
+                "ok": False,
+                "message": "Invalid card selection.",
+            }
 
     clean_deck_zone = (deck_zone or "deck").strip().lower()
 
@@ -2174,6 +2186,44 @@ def record_human_draft_test_pick(draft_test_id, draft_test_pack_card_id, deck_zo
         }
 
     current_human_pack_id = int(session_row["current_human_pack_id"] or 0)
+    current_pick_number = int(session_row["current_pick_number"] or 1)
+
+    if continue_without_pick:
+        if current_human_pack_id > 0:
+            remaining_count = get_remaining_cards_for_draft_test_pack(
+                cursor=cursor,
+                draft_test_pack_id=current_human_pack_id,
+            )
+
+            if remaining_count > 0:
+                conn.close()
+                return {
+                    "ok": False,
+                    "message": "Cards are available in the current pack. Choose a card before continuing.",
+                }
+
+        record_ai_draft_test_picks_for_round(
+            cursor=cursor,
+            session_row=session_row,
+            current_pick_number=current_pick_number,
+            now_utc=now_utc,
+        )
+
+        advance_draft_test_after_round(
+            cursor=cursor,
+            session_row=session_row,
+            now_utc=now_utc,
+        )
+
+        conn.commit()
+        conn.close()
+
+        return {
+            "ok": True,
+            "message": "Draft advanced.",
+            "draft_test_id": parsed_draft_test_id,
+            "continued_without_pick": True,
+        }
 
     if current_human_pack_id <= 0:
         conn.close()
@@ -2246,8 +2296,6 @@ def record_human_draft_test_pick(draft_test_id, draft_test_pack_card_id, deck_zo
             "ok": False,
             "message": "Selected card is not available in the current pack.",
         }
-
-    current_pick_number = int(session_row["current_pick_number"] or 1)
 
     cursor.execute(
         """

@@ -355,39 +355,15 @@ PRINT_TEMPLATE_OPTIONS = [
     ("silhouette-a4-vertical-9", "Silhouette A4 - Vertical - 9 Card"),
 ]
 
-PRINT_TEMPLATE_METADATA = {
-    "dk-1234": {
-        "download_links": [],
-    },
-    "standard": {
-        "download_links": [],
-    },
-    "borderless-3p5x5-two-card": {
-        "download_links": [],
-    },
-    "portrait-3p5x5-top-aligned": {
-        "download_links": [],
-    },
-    "landscape-3p5x5-centered": {
-        "download_links": [],
-    },
-    "silhouette-letter-horizontal-8": {
-        "download_links": [
-            {
-                "label": "Download Silhouette Template",
-                "filename": "sil/Silhouette_Legal_Vertical_8_Card.studio3",
-            }
-        ],
-    },
-    "silhouette-a4-vertical-9": {
-        "download_links": [
-            {
-                "label": "Download Silhouette Template",
-                "filename": "sil/Silhouette_A4_Horizontal_9_Card.studio3",
-            }
-        ],
-    },
-}
+PRINT_TEMPLATE_OPTIONS = [
+    ("dk-1234", "DK-1234"),
+    ("standard", "Standard"),
+    ("borderless-3p5x5-two-card", "PDF ONLY - 3.5 x 5 Borderless - 2 Card Layout"),
+    ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
+    ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
+    ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
+    ("silhouette-a4-vertical-9", "Silhouette A4 - Vertical - 9 Card"),
+]
 
 CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [
     ("none", "None"),

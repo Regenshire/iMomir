@@ -7014,13 +7014,90 @@ input {
     flex: var(--deckbuilder-deck-flex) 1 0;
 }
 
+
+/* ==========================================
+   Deck Builder - Collapsible Sideboard
+   ========================================== */
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-sideboard {
+    flex: 0 0 auto;
+    min-height: 0;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-sideboard
+> :not(.deckbuilder-zone-header) {
+    display: none !important;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-sideboard
+.deckbuilder-zone-header-actions
+> :not(#deckbuilderSideboardCollapseButton) {
+    display: none;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-sideboard
+.deckbuilder-zone-header
+> div:first-child
+> span {
+    display: none;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-sideboard
 .deckbuilder-zone-header {
     min-height: 34px;
+
+    padding-bottom: 0;
+    margin-bottom: 0;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-resize-handle {
+    display: none;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+.deckbuilder-zone-deck {
+    flex: 1 1 auto;
+}
+
+
+#deckbuilderSideboardCollapseButton i {
+    transition: transform 0.16s ease;
+}
+
+
+.deckbuilder-main.deckbuilder-sideboard-collapsed
+#deckbuilderSideboardCollapseButton i {
+    transform: rotate(180deg);
+}
+
+.deckbuilder-zone-header {
+    /*
+     * Reserve enough vertical space for both the zone title and subtitle.
+     * The card list must begin below this entire header block.
+     */
+    min-height: 52px;
+    flex: 0 0 auto;
+
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start;
     justify-content: space-between;
+
     gap: 12px;
-    padding-bottom: 8px;
+
+    padding-bottom: 0;
+    margin-bottom: 10px;
 }
 
 .deckbuilder-zone-header-with-actions {
@@ -7129,6 +7206,28 @@ input {
     color: var(--muted);
     font-size: 0.82rem;
     font-weight: 800;
+}
+
+.deckbuilder-zone-header > div:first-child {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+
+    gap: 3px;
+}
+
+
+.deckbuilder-zone-header
+> div:first-child
+> span {
+    display: block;
+
+    margin: 0;
+    padding: 0;
+
+    line-height: 1.2;
 }
 
 .deckbuilder-zone-sideboard .deckbuilder-zone-header h2 {

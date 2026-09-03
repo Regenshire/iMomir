@@ -1,0 +1,619 @@
+.silhouette-template-library-open-button {
+    border: 0;
+    padding: 0;
+
+    background: transparent;
+
+    color: #bcd0ff;
+
+    font: inherit;
+    font-size: 0.9rem;
+
+    text-decoration: underline;
+    text-underline-offset: 2px;
+
+    cursor: pointer;
+}
+
+.silhouette-template-library-open-button:hover {
+    color: #ffffff;
+}
+
+
+.silhouette-template-library-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10030;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 24px;
+}
+
+.silhouette-template-library-modal.hidden {
+    display: none;
+}
+
+
+.silhouette-template-library-backdrop {
+    position: absolute;
+    inset: 0;
+
+    background: rgba(5, 7, 10, 0.80);
+}
+
+
+.silhouette-template-library-dialog {
+    position: relative;
+    z-index: 1;
+
+    width: min(980px, 96vw);
+    max-height: 92vh;
+
+    display: flex;
+    flex-direction: column;
+
+    overflow: hidden;
+
+    border: 1px solid rgba(160, 170, 190, 0.32);
+    border-radius: 16px;
+
+    background: #1b1d22;
+
+    box-shadow:
+        0 24px 70px
+        rgba(0, 0, 0, 0.50);
+}
+
+
+.silhouette-template-library-header,
+.silhouette-template-library-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    gap: 16px;
+
+    padding: 16px 18px;
+}
+
+
+.silhouette-template-library-header {
+    border-bottom:
+        1px solid
+        rgba(160, 170, 190, 0.18);
+}
+
+
+.silhouette-template-library-footer {
+    justify-content: flex-end;
+
+    border-top:
+        1px solid
+        rgba(160, 170, 190, 0.18);
+}
+
+
+.silhouette-template-library-header h2 {
+    margin: 0;
+}
+
+
+.silhouette-template-library-header p {
+    margin: 5px 0 0;
+
+    color:
+        rgba(230, 234, 242, 0.70);
+}
+
+
+.silhouette-template-library-close {
+    width: 38px;
+    height: 38px;
+
+    border: 0;
+    border-radius: 8px;
+
+    background: transparent;
+    color: inherit;
+
+    font-size: 28px;
+
+    cursor: pointer;
+}
+
+
+.silhouette-template-library-close:hover {
+    background:
+        rgba(255, 255, 255, 0.08);
+}
+
+
+.silhouette-template-library-body {
+    overflow-y: auto;
+
+    padding: 18px;
+}
+
+.silhouette-template-library-toolbar {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+
+    gap: 16px;
+
+    margin-bottom: 16px;
+    padding: 12px 14px;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.20);
+
+    border-radius: 12px;
+
+    background:
+        rgba(255, 255, 255, 0.025);
+}
+
+
+.silhouette-template-library-filter {
+    min-width: min(390px, 100%);
+
+    display: flex;
+    flex-direction: column;
+
+    gap: 6px;
+}
+
+
+.silhouette-template-library-filter > span {
+    color:
+        rgba(235, 239, 247, 0.86);
+
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+
+.silhouette-template-library-filter select {
+    min-height: 40px;
+
+    padding: 8px 10px;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.30);
+
+    border-radius: 9px;
+
+    background: #12151b;
+    color: #f2f4f8;
+
+    font: inherit;
+}
+
+
+.silhouette-template-library-filter select:focus {
+    outline: none;
+
+    border-color:
+        rgba(88, 140, 255, 0.82);
+
+    box-shadow:
+        0 0 0 2px
+        rgba(88, 140, 255, 0.16);
+}
+
+
+.silhouette-template-library-filter-summary {
+    flex: 0 0 auto;
+
+    padding-bottom: 9px;
+
+    color:
+        rgba(230, 234, 242, 0.58);
+
+    font-size: 0.8rem;
+}
+
+
+.silhouette-template-library-grid {
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+
+    gap: 14px;
+}
+
+
+.silhouette-template-library-card {
+    min-width: 0;
+
+    display: flex;
+    flex-direction: column;
+
+    padding: 16px;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.24);
+
+    border-radius: 14px;
+
+    background:
+        rgba(255, 255, 255, 0.04);
+
+    transition:
+        border-color 0.14s ease,
+        background 0.14s ease,
+        transform 0.14s ease;
+}
+
+
+.silhouette-template-library-card:hover {
+    border-color:
+        rgba(160, 180, 225, 0.50);
+
+    background:
+        rgba(255, 255, 255, 0.065);
+
+    transform:
+        translateY(-1px);
+}
+
+
+.silhouette-template-library-card.is-compatible {
+    border-color:
+        rgba(74, 190, 112, 0.72);
+
+    background:
+        linear-gradient(
+            180deg,
+            rgba(48, 132, 76, 0.13),
+            rgba(48, 132, 76, 0.055)
+        );
+
+    box-shadow:
+        0 0 0 1px
+        rgba(74, 190, 112, 0.10);
+}
+
+.silhouette-template-library-compatible-label {
+    display: inline-flex;
+    align-items: center;
+
+    width: fit-content;
+
+    margin-bottom: 10px;
+    padding: 4px 8px;
+
+    border-radius: 999px;
+
+    background:
+        rgba(55, 180, 96, 0.18);
+
+    color: #9ee7b7;
+
+    font-size: 0.74rem;
+    font-weight: 800;
+
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+
+.silhouette-template-library-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+
+    gap: 16px;
+}
+
+
+.silhouette-template-library-card-title-wrap {
+    min-width: 0;
+}
+
+
+.silhouette-template-library-card h3 {
+    margin: 0 0 8px;
+
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+
+.silhouette-template-library-print-template {
+    display: inline-block;
+
+    padding: 3px 7px;
+
+    border-radius: 999px;
+
+    background:
+        rgba(90, 130, 210, 0.16);
+
+    color: #c7d7ff;
+
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+
+.silhouette-template-library-description {
+    margin: 14px 0 0;
+
+    color:
+        rgba(230, 234, 242, 0.78);
+
+    line-height: 1.35;
+}
+
+
+.silhouette-template-library-filename {
+    margin-top: auto;
+    margin-bottom: 12px;
+    padding-top: 14px;
+
+    border-top:
+        1px solid
+        rgba(160, 170, 190, 0.12);
+
+    color:
+        rgba(230, 234, 242, 0.48);
+
+    font-size: 0.78rem;
+    line-height: 1.3;
+
+    overflow-wrap: anywhere;
+}
+
+
+.silhouette-template-library-download {
+    width: 100%;
+
+    box-sizing: border-box;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    gap: 7px;
+
+    min-height: 44px;
+    margin-top: 0;
+
+    text-decoration: none;
+}
+
+.silhouette-template-library-admin-row {
+    display: flex;
+    justify-content: flex-end;
+
+    margin-top: 20px;
+    padding-top: 16px;
+
+    border-top:
+        1px solid
+        rgba(160, 170, 190, 0.18);
+}
+
+.silhouette-template-library-admin-row .action-button {
+    width: auto;
+    min-width: 220px;
+}
+
+.silhouette-template-upload-section {
+    margin-top: 14px;
+    padding: 16px;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.22);
+
+    border-radius: 12px;
+
+    background:
+        rgba(255, 255, 255, 0.025);
+}
+
+.silhouette-template-upload-section.hidden {
+    display: none;
+}
+
+
+.silhouette-template-upload-section h3 {
+    margin: 0 0 5px;
+}
+
+
+.silhouette-template-upload-section > p {
+    margin: 0 0 14px;
+
+    color:
+        rgba(230, 234, 242, 0.68);
+}
+
+
+.silhouette-template-upload-form {
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+
+    gap: 16px;
+}
+
+
+.silhouette-template-upload-form label {
+    display: flex;
+    flex-direction: column;
+
+    gap: 6px;
+}
+
+
+.silhouette-template-upload-form label > span {
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+
+.silhouette-template-upload-description-field {
+    grid-column: 1 / -1;
+}
+
+
+.silhouette-template-upload-form input,
+.silhouette-template-upload-form select,
+.silhouette-template-upload-form textarea {
+    width: 100%;
+
+    box-sizing: border-box;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.30);
+
+    border-radius: 9px;
+
+    background: #12151b;
+    color: #f2f4f8;
+
+    font: inherit;
+}
+
+
+.silhouette-template-upload-form input[type="text"],
+.silhouette-template-upload-form select {
+    min-height: 42px;
+    padding: 9px 10px;
+}
+
+
+.silhouette-template-upload-form textarea {
+    min-height: 96px;
+    padding: 10px;
+
+    resize: vertical;
+}
+
+
+.silhouette-template-upload-file-input {
+    min-height: 42px;
+    padding: 5px;
+}
+
+
+.silhouette-template-upload-file-input::file-selector-button {
+    min-height: 30px;
+
+    margin-right: 10px;
+    padding: 5px 10px;
+
+    border:
+        1px solid
+        rgba(160, 170, 190, 0.30);
+
+    border-radius: 7px;
+
+    background: #292e38;
+    color: #f2f4f8;
+
+    font: inherit;
+    font-weight: 700;
+
+    cursor: pointer;
+}
+
+
+.silhouette-template-upload-file-input::file-selector-button:hover {
+    background: #343b48;
+}
+
+
+.silhouette-template-upload-form input:focus,
+.silhouette-template-upload-form select:focus,
+.silhouette-template-upload-form textarea:focus {
+    outline: none;
+
+    border-color:
+        rgba(88, 140, 255, 0.82);
+
+    box-shadow:
+        0 0 0 2px
+        rgba(88, 140, 255, 0.16);
+}
+
+
+.silhouette-template-upload-actions {
+    grid-column: 1 / -1;
+
+    display: flex;
+    justify-content: flex-end;
+
+    margin-top: 2px;
+}
+
+
+.silhouette-template-upload-actions .action-button {
+    width: auto;
+    min-width: 190px;
+}
+
+
+.silhouette-template-library-status,
+.silhouette-template-library-empty {
+    margin-top: 14px;
+    padding: 10px 12px;
+
+    border-radius: 9px;
+
+    background:
+        rgba(255, 255, 255, 0.05);
+}
+
+
+.silhouette-template-library-status.is-error {
+    background:
+        rgba(145, 38, 38, 0.28);
+}
+
+
+@media (max-width: 700px) {
+    .silhouette-template-library-modal {
+        padding: 10px;
+    }
+
+    .silhouette-template-library-dialog {
+        width: 100%;
+        max-height: 96vh;
+    }
+    .silhouette-template-library-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .silhouette-template-library-filter {
+        min-width: 0;
+    }
+
+    .silhouette-template-library-filter-summary {
+        padding-bottom: 0;
+    }
+    .silhouette-template-upload-form {
+        grid-template-columns: 1fr;
+    }
+
+    .silhouette-template-upload-description-field,
+    .silhouette-template-upload-actions {
+        grid-column: auto;
+    }
+    .silhouette-template-library-grid {
+        grid-template-columns: 1fr;
+    }
+}

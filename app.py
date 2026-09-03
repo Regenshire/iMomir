@@ -109,7 +109,6 @@ from settings import (
     PDF_OUTER_SLOT_REGION_BAND_DEFAULT_MODE,
     PDF_OUTER_SLOT_REGION_BAND_DEFAULT_SIZE_MM,
     PRINT_COLOR_MODE_OPTIONS,
-    PRINT_TEMPLATE_METADATA,
     PRINT_TEMPLATE_OPTIONS,
     REPEAT_MODE_OPTIONS,
     SCRYFALL_IMAGE_QUALITY_OPTIONS,
@@ -138,6 +137,12 @@ from settings import (
     resolve_chaos_draft_mode_value,
     resolve_momir_mode_value,
     resolve_scoped_print_config,
+)
+
+from silhouette_templates import (
+    get_silhouette_template_entry,
+    list_silhouette_templates,
+    save_silhouette_template_upload,
 )
 
 from db.pricing import (
@@ -2505,21 +2510,97 @@ def resolve_pdf_template_layout():
     return get_request_pdf_template_layout()
 
 def get_active_print_template_metadata():
-    config = get_effective_print_config(get_request_config())
-    selected_template_value = (config.get("print_template") or "dk-1234").strip().lower()
+    config = get_effective_print_config(
+        get_request_config()
+    )
 
-    if selected_template_value not in PRINT_TEMPLATE_METADATA:
-        return {
-            "template_value": selected_template_value,
-            "download_links": [],
-        }
-
-    template_metadata = PRINT_TEMPLATE_METADATA[selected_template_value]
+    selected_template_value = (
+        config.get(
+            "print_template"
+        )
+        or "dk-1234"
+    ).strip().lower()
 
     return {
-        "template_value": selected_template_value,
-        "download_links": list(template_metadata.get("download_links", [])),
+        "template_value": (
+            selected_template_value
+        ),
+        "is_silhouette": (
+            is_silhouette_template(
+                selected_template_value
+            )
+        ),
     }
+
+def get_silhouette_print_template_options():
+    return [
+        {
+            "value": value,
+            "label": label,
+        }
+        for value, label
+        in PRINT_TEMPLATE_OPTIONS
+        if is_silhouette_template(
+            value
+        )
+    ]
+
+
+def serialize_silhouette_template_entry(
+    entry,
+):
+    if not entry:
+        return None
+
+    print_template_label_map = {
+        item["value"]: item["label"]
+        for item
+        in get_silhouette_print_template_options()
+    }
+
+    print_template = str(
+        entry.get(
+            "print_template"
+        )
+        or ""
+    ).strip().lower()
+
+    return {
+        "filename": (
+            entry["filename"]
+        ),
+        "name": (
+            entry["name"]
+        ),
+        "description": (
+            entry["description"]
+        ),
+        "print_template": (
+            print_template
+        ),
+        "print_template_label": (
+            print_template_label_map.get(
+                print_template,
+                print_template,
+            )
+        ),
+        "download_url": url_for(
+            "silhouette_template_download",
+            filename=entry["filename"],
+        ),
+    }
+
+
+def get_serialized_silhouette_templates():
+    return [
+        serialize_silhouette_template_entry(
+            entry
+        )
+        for entry
+        in list_silhouette_templates(
+            app.static_folder
+        )
+    ]
 
 def resolve_print_settings():
     return get_request_print_settings()
@@ -13831,7 +13912,16 @@ def play_draft():
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "none").strip().lower(),
             enable_track_packs=(config.get("enable_track_packs") or "1").strip() == "1",
             print_card_backs=(chaos_print_config.get("print_card_backs") or "1").strip() == "1",
-            template_download_links=active_template_metadata["download_links"],
+            active_print_template=(
+                active_template_metadata[
+                    "template_value"
+                ]
+            ),
+            show_silhouette_template_library=(
+                active_template_metadata[
+                    "is_silhouette"
+                ]
+            ),
             print_export_defaults=get_print_export_defaults_from_config(config),
         )
 
@@ -13863,7 +13953,16 @@ def play_draft():
             sound_enabled=(config.get("sound_enabled") or "1").strip() == "1",
             chaos_draft_export_format=(config.get("chaos_draft_export_format") or "archidekt").strip().lower(),
             print_card_backs=(chaos_print_config.get("print_card_backs") or "1").strip() == "1",
-            template_download_links=active_template_metadata["download_links"],
+            active_print_template=(
+                active_template_metadata[
+                    "template_value"
+                ]
+            ),
+            show_silhouette_template_library=(
+                active_template_metadata[
+                    "is_silhouette"
+                ]
+            ),
             campaign_players=campaign_players,
             selected_campaign_player_id=selected_campaign_player_id,
             chaos_campaigns=chaos_campaigns,
@@ -13883,7 +13982,16 @@ def play_draft():
             open_print_in_new_tab=print_settings["open_in_new_tab"],
             default_player_count=4,
             default_packs_per_player=3,
-            template_download_links=active_template_metadata["download_links"],
+            active_print_template=(
+                active_template_metadata[
+                    "template_value"
+                ]
+            ),
+            show_silhouette_template_library=(
+                active_template_metadata[
+                    "is_silhouette"
+                ]
+            ),
         )
 
     return redirect(url_for("play_draft"))
@@ -15421,6 +15529,135 @@ def card_back_delete():
                 "The custom card back could not be deleted."
             ),
         }), 500
+
+@app.route(
+    "/silhouette-templates/options",
+    methods=["GET"],
+)
+def silhouette_template_options():
+    return jsonify({
+        "ok": True,
+        "templates": (
+            get_serialized_silhouette_templates()
+        ),
+        "print_template_options": (
+            get_silhouette_print_template_options()
+        ),
+    })
+
+
+@app.route(
+    "/silhouette-templates/upload",
+    methods=["POST"],
+)
+def silhouette_template_upload():
+    allowed_print_templates = {
+        item["value"]
+        for item
+        in get_silhouette_print_template_options()
+    }
+
+    requested_print_template = (
+        request.form.get(
+            "print_template"
+        )
+        or ""
+    ).strip().lower()
+
+    if (
+        requested_print_template
+        not in allowed_print_templates
+    ):
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Choose a valid Silhouette Print Template."
+            ),
+        }), 400
+
+    try:
+        entry = (
+            save_silhouette_template_upload(
+                request.files.get(
+                    "template_file"
+                ),
+                request.form.get(
+                    "name"
+                ),
+                request.form.get(
+                    "description"
+                ),
+                requested_print_template,
+                app.static_folder,
+            )
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                "Silhouette template uploaded."
+            ),
+            "template": (
+                serialize_silhouette_template_entry(
+                    entry
+                )
+            ),
+            "templates": (
+                get_serialized_silhouette_templates()
+            ),
+        })
+
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    except Exception as exc:
+        write_debug_log(
+            "SILHOUETTE TEMPLATE UPLOAD ERROR | "
+            f"error={str(exc)}"
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": (
+                "The Silhouette template could not be uploaded."
+            ),
+        }), 500
+
+
+@app.route(
+    "/silhouette-templates/download/<path:filename>",
+    methods=["GET"],
+)
+def silhouette_template_download(
+    filename,
+):
+    entry = (
+        get_silhouette_template_entry(
+            app.static_folder,
+            filename,
+        )
+    )
+
+    if not entry:
+        return (
+            "Silhouette template was not found.",
+            404,
+        )
+
+    return send_file(
+        entry["absolute_path"],
+        as_attachment=True,
+        download_name=(
+            entry["filename"]
+        ),
+        mimetype=(
+            "application/octet-stream"
+        ),
+        conditional=True,
+    )
 
 @app.route("/config", methods=["GET", "POST"])
 def config():

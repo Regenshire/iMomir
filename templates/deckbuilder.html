@@ -3,6 +3,17 @@
 {% block title %}iMomir - Deck Builder{% endblock %}
 
 {% block page_styles %}
+{% if global_card_upscaling_control_enabled %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/image_compare.css') }}"
+>
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/upscale_batch.css') }}"
+>
+{% endif %}
+
 <link
     rel="stylesheet"
     href="{{ url_for('static', filename='css/card_views.css') }}"
@@ -43,6 +54,9 @@
     data-export-zip-url="{{ deckbuilder.routes.export_zip_url }}"
     data-move-zone-url="{{ deckbuilder.routes.move_zone_url }}"
     data-basic-land-url="{{ deckbuilder.routes.basic_land_url }}"
+    {% if global_card_upscaling_control_enabled %}
+    data-upscale-control-url-template="{{ url_for('chaos_card_upscale_control', card_uuid='__CARD_UUID__') }}"
+    {% endif %}
 >
     <header class="deckbuilder-header">
         <div class="deckbuilder-title-wrap">
@@ -286,6 +300,59 @@
                 <i class="fa-solid fa-square-xmark"></i>
             </button>
 
+            {% if global_card_upscaling_control_enabled %}
+            <button
+                type="button"
+                id="deckbuilderBatchUpscaleButton"
+                class="campaign-test-draft-zone-view-button"
+                title="Batch Upscale Selected Cards"
+                aria-label="Batch Upscale Selected Cards"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    class="imomir-batch-upscale-icon"
+                    aria-hidden="true"
+                    focusable="false"
+                >
+                    <rect
+                        x="3"
+                        y="7"
+                        width="11"
+                        height="12"
+                        rx="1.8"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                    ></rect>
+                    <rect
+                        x="6"
+                        y="4"
+                        width="11"
+                        height="12"
+                        rx="1.8"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                    ></rect>
+                    <path
+                        d="M19 12V5"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                    ></path>
+                    <path
+                        d="M16.4 7.6L19 5l2.6 2.6"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    ></path>
+                </svg>
+            </button>
+            {% endif %}
+
             <button
                 type="button"
                 id="deckbuilderStatsButton"
@@ -356,6 +423,17 @@
                         aria-expanded="false"
                     >
                         <i class="fa-solid fa-filter"></i>
+                    </button>
+
+                    <button
+                        type="button"
+                        id="deckbuilderSideboardCollapseButton"
+                        class="campaign-test-draft-zone-view-button"
+                        title="Collapse Sideboard"
+                        aria-label="Collapse Sideboard"
+                        aria-expanded="true"
+                    >
+                        <i class="fa-solid fa-chevron-up"></i>
                     </button>
                 </div>
             </div>
@@ -856,6 +934,16 @@
         <button type="button" class="deckbuilder-card-context-menu-item" data-context-action="alternate-image">
             Alternate Image Settings
         </button>
+
+        {% if global_card_upscaling_control_enabled %}
+        <button
+            type="button"
+            class="deckbuilder-card-context-menu-item"
+            data-context-action="upscale-image"
+        >
+            Upscale Image
+        </button>
+        {% endif %}
     </div>
     <div id="deckbuilderLandPaletteContextMenu" class="deckbuilder-card-context-menu deckbuilder-land-palette-context-menu hidden" aria-hidden="true">
         <div class="deckbuilder-card-context-submenu-wrap">
@@ -1057,6 +1145,10 @@
 <script>
 (function () {
     const workspace = document.getElementById("deckbuilderWorkspace");
+    const deckbuilderMain = workspace
+        ? workspace.querySelector(".deckbuilder-main")
+        : null;
+
     const deckList = document.getElementById("deckbuilderDeckList");
     const sideboardList = document.getElementById("deckbuilderSideboardList");
     const zoneResizeHandle = document.getElementById("deckbuilderZoneResizeHandle");
@@ -1065,6 +1157,7 @@
     const basicLandPaletteTemplate = document.getElementById("deckbuilderBasicLandPaletteTemplate");
     const openAddCardsButton = document.getElementById("deckbuilderOpenAddCardsButton");
     const sideboardFilterButton = document.getElementById("deckbuilderSideboardFilterButton");
+    const sideboardCollapseButton = document.getElementById("deckbuilderSideboardCollapseButton");
     const sideboardFilterPanel = document.getElementById("deckbuilderSideboardFilterPanel");
     const sideboardFilterText = document.getElementById("deckbuilderSideboardFilterText");
     const sideboardFilterRarity = document.getElementById("deckbuilderSideboardFilterRarity");
@@ -1095,6 +1188,7 @@
     const stackViewButton = document.getElementById("deckbuilderStackViewButton");
     const selectAllButton = document.getElementById("deckbuilderSelectAllButton");
     const clearSelectionButton = document.getElementById("deckbuilderClearSelectionButton");
+    const batchUpscaleButton = document.getElementById("deckbuilderBatchUpscaleButton");
     const statsButton = document.getElementById("deckbuilderStatsButton");
     const deckNameInput = document.getElementById("deckbuilderDeckNameInput");
     const deckTypeSelect = document.getElementById("deckbuilderDeckTypeSelect");
@@ -1171,6 +1265,7 @@
     const loadDecksUrl = workspace.dataset.loadDecksUrl || "";
     const printUrl = workspace.dataset.printUrl || "";
     const exportZipUrl = workspace.dataset.exportZipUrl || "";
+    const upscaleControlUrlTemplate = workspace.dataset.upscaleControlUrlTemplate || "";
     const deckbuilderDragMimeType = "application/x-imomir-deckbuilder";
 
     function writeDeckbuilderClientDebug(label, data) {
@@ -1683,6 +1778,41 @@
         if (sideboardFilterButton) {
             sideboardFilterButton.classList.toggle("campaign-test-draft-zone-view-button-active", sideboardFiltersVisible);
             sideboardFilterButton.setAttribute("aria-expanded", sideboardFiltersVisible ? "true" : "false");
+        }
+    }
+
+    function setDeckbuilderSideboardCollapsed(isCollapsed) {
+        const collapsed = Boolean(isCollapsed);
+
+        if (!deckbuilderMain) {
+            return;
+        }
+
+        deckbuilderMain.classList.toggle(
+            "deckbuilder-sideboard-collapsed",
+            collapsed
+        );
+
+        if (sideboardCollapseButton) {
+            sideboardCollapseButton.setAttribute(
+                "aria-expanded",
+                collapsed ? "false" : "true"
+            );
+
+            sideboardCollapseButton.setAttribute(
+                "aria-label",
+                collapsed
+                    ? "Expand Sideboard"
+                    : "Collapse Sideboard"
+            );
+
+            sideboardCollapseButton.title = collapsed
+                ? "Expand Sideboard"
+                : "Collapse Sideboard";
+        }
+
+        if (collapsed) {
+            setSideboardFilterPanelVisible(false);
         }
     }
 
@@ -2958,6 +3088,93 @@
 
             return String(cardElement.dataset.currentZone || "") === zone;
         });
+    }
+
+    function getDeckbuilderBatchUpscaleCardUuids() {
+        const seen = new Set();
+        const cardUuids = [];
+
+        getDeckbuilderSelectedCards().forEach(function (cardElement) {
+            const cardUuid = String(
+                cardElement.dataset.cardUuid || ""
+            ).trim();
+
+            if (
+                !cardUuid
+                || seen.has(cardUuid)
+            ) {
+                return;
+            }
+
+            seen.add(cardUuid);
+            cardUuids.push(cardUuid);
+        });
+
+        return cardUuids;
+    }
+
+    function openDeckbuilderBatchUpscale() {
+        const cardUuids = getDeckbuilderBatchUpscaleCardUuids();
+
+        if (!cardUuids.length) {
+            showDeckbuilderError(
+                new Error(
+                    "Select at least one card to Batch Upscale."
+                )
+            );
+
+            return;
+        }
+
+        if (
+            !window.iMomirUpscaleBatch
+            || !window.iMomirUpscaleBatch.requestCards
+        ) {
+            showDeckbuilderError(
+                new Error(
+                    "Batch Upscale controls are not available."
+                )
+            );
+
+            return;
+        }
+
+        const deckLabel = String(
+            deckNameInput
+                ? deckNameInput.value
+                : ""
+        ).trim() || "Deck Builder Selection";
+
+        window.iMomirUpscaleBatch.requestCards(
+            cardUuids,
+            {
+                title: "Batch Upscale Selected Cards",
+                sourceLabel: deckLabel,
+                message: (
+                    "Upscale all "
+                    + cardUuids.length
+                    + " selected card(s)?"
+                )
+            }
+        );
+    }
+
+    function buildDeckbuilderUpscaleControlUrl(cardUuid) {
+        const cleanCardUuid = String(
+            cardUuid || ""
+        ).trim();
+
+        if (
+            !cleanCardUuid
+            || !upscaleControlUrlTemplate
+        ) {
+            return "";
+        }
+
+        return upscaleControlUrlTemplate.replace(
+            "__CARD_UUID__",
+            encodeURIComponent(cleanCardUuid)
+        );
     }
 
     function clearDeckbuilderSelection() {
@@ -4398,6 +4615,19 @@
         setDeckbuilderContextActionVisible("duplicate", !isMultiSelection);
         setDeckbuilderContextActionVisible("change-printing", !isMultiSelection);
         setDeckbuilderContextActionVisible("alternate-image", !isMultiSelection);
+
+        setDeckbuilderContextActionVisible(
+            "upscale-image",
+            (
+                !isMultiSelection
+                && Boolean(
+                    String(
+                        payload.cardUuid || ""
+                    ).trim()
+                )
+            )
+        );
+
         setDeckbuilderContextActionVisible("set_commander", !isMultiSelection && !isBasicLand && payload.deckRole !== "commander");
         setDeckbuilderContextActionVisible("set_partner", !isMultiSelection && !isBasicLand && payload.deckRole !== "partner");
         setDeckbuilderContextActionVisible("clear_deck_role", !isMultiSelection && isSpecialDeckRole);
@@ -4616,6 +4846,45 @@
             return;
         }
 
+        if (actionName === "upscale-image") {
+            const controlUrl = buildDeckbuilderUpscaleControlUrl(
+                cardPayload.cardUuid
+            );
+
+            if (!controlUrl) {
+                showDeckbuilderError(
+                    new Error(
+                        "Upscale controls are not available for this card."
+                    )
+                );
+
+                return;
+            }
+
+            if (
+                !window.iMomirUpscaleControl
+                || !window.iMomirUpscaleControl.openUrl
+            ) {
+                showDeckbuilderError(
+                    new Error(
+                        "Upscale controls are not available."
+                    )
+                );
+
+                return;
+            }
+
+            try {
+                await window.iMomirUpscaleControl.openUrl(
+                    controlUrl
+                );
+            } catch (error) {
+                showDeckbuilderError(error);
+            }
+
+            return;
+        }
+
         try {
             let payload = null;
 
@@ -4661,6 +4930,24 @@
         sideboardFilterButton.addEventListener("click", function () {
             setSideboardFilterPanelVisible(!sideboardFiltersVisible);
         });
+    }
+
+    if (sideboardCollapseButton) {
+        sideboardCollapseButton.addEventListener(
+            "click",
+            function () {
+                const isCurrentlyCollapsed = Boolean(
+                    deckbuilderMain
+                    && deckbuilderMain.classList.contains(
+                        "deckbuilder-sideboard-collapsed"
+                    )
+                );
+
+                setDeckbuilderSideboardCollapsed(
+                    !isCurrentlyCollapsed
+                );
+            }
+        );
     }
 
     if (deckFilterButton) {
@@ -4745,6 +5032,13 @@
         clearSelectionButton.addEventListener("click", function () {
             clearDeckbuilderSelection();
         });
+    }
+
+    if (batchUpscaleButton) {
+        batchUpscaleButton.addEventListener(
+            "click",
+            openDeckbuilderBatchUpscale
+        );
     }
 
     if (deckSelectAllButton) {
@@ -5297,4 +5591,11 @@
     updateCounts();
 })();
 </script>
+{% endblock %}
+
+{% block page_scripts_after_app %}
+{% if global_card_upscaling_control_enabled %}
+<script src="{{ url_for('static', filename='js/image_compare.js') }}"></script>
+<script src="{{ url_for('static', filename='js/upscale_batch.js') }}"></script>
+{% endif %}
 {% endblock %}

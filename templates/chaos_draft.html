@@ -11,6 +11,12 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/chaos_draft.css') }}"
 >
+{% if show_silhouette_template_library %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/silhouette_template_library.css') }}"
+>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -135,17 +141,17 @@
         </div>
         {% endif %}
 
-        {% if template_download_links %}
+        {% if show_silhouette_template_library %}
         <div class="chaos-draft-template-links">
-            {% for link in template_download_links %}
-            <a
-                class="chaos-draft-template-link"
-                href="{{ url_for('static', filename=link.filename) }}"
-                download
+            <button
+                type="button"
+                class="silhouette-template-library-open-button"
+                data-silhouette-template-library-open
+                data-active-print-template="{{ active_print_template }}"
             >
-                {{ link.label }}
-            </a>
-            {% endfor %}
+                <i class="fa-solid fa-download"></i>
+                Silhouette Templates
+            </button>
         </div>
         {% endif %}
     </div>
@@ -189,9 +195,17 @@
 {% set print_export_subject_label = "pack" %}
 {% include "_print_export_modal.html" %}
 
+{% if show_silhouette_template_library %}
+{% include "_silhouette_template_library_modal.html" %}
+{% endif %}
+
 <script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
 {% endblock %}
 
 {% block page_scripts_after_app %}
 <script src="{{ url_for('static', filename='js/chaos_draft.js') }}"></script>
+
+{% if show_silhouette_template_library %}
+<script src="{{ url_for('static', filename='js/silhouette_template_library.js') }}"></script>
+{% endif %}
 {% endblock %}
