@@ -24,6 +24,16 @@ from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas
 from io import BytesIO, StringIO
 from pypdf import PdfWriter
+
+from card_backs import (
+    DEFAULT_CARD_BACK_KEY,
+    delete_custom_card_back,
+    list_card_back_options,
+    normalize_card_back_key,
+    resolve_card_back_option,
+    save_custom_card_back_upload,
+)
+
 from flask import Flask, Response, flash, g, jsonify, redirect, render_template, request, send_file, url_for, has_request_context
 
 from paths import (
@@ -41,6 +51,7 @@ from paths import (
     IMAGE_CACHE_DIR,
     LOG_PATH,
     RUNTIME_BASE_DIR,
+    RUNTIME_CARD_BACK_DIR,
     RUNTIME_PACK_ART_DIR,
     UPSCALED_SCRYFALL_DIR,
     SCRYFALL_DEFAULT_CARDS_PATH,
@@ -66,6 +77,7 @@ from settings import (
     CARD_SEARCH_DEFAULT_TITLE,
     CARD_SEARCH_DEFAULT_VARIANT,
     CARD_SEARCH_DEFAULT_VARIANTS,
+    CARD_BACK_UPLOAD_MAX_SIZE_BYTES,
     CHAOS_DUPLICATE_CONTROL_ENABLED,
     CHAOS_DUPLICATE_CONTROL_TYPES,
     CHAOS_DUPLICATE_LOG_ALL_DETECTIONS,
@@ -217,6 +229,7 @@ from db.database import (
     update_custom_draft_set_card_category,
     update_custom_draft_set_card_foil,
     update_custom_draft_set_card_printing,
+    update_custom_draft_set_card_back_key,
     update_tracked_pack_card_foil,
     upsert_custom_draft_set,
 )
@@ -259,6 +272,7 @@ from db.deckdb import (
     remove_basic_land_from_deck,
     remove_deckbuilder_card,
     update_deck_settings,
+    update_deck_card_back_key,
     update_deckbuilder_stack_layout,
     update_deckbuilder_basic_land_printing,
     update_deckbuilder_card_foil,
@@ -721,6 +735,13 @@ def _build_pdf_print_settings(config, print_labels_enabled_override=None):
         "pdf_height_mm": pdf_height_mm,
         "pdf_crop_border": crop_border,
         "print_card_backs": (config.get("print_card_backs") or "0").strip() == "1",
+
+        "default_card_back": normalize_card_back_key(
+            config.get("default_card_back"),
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+            fallback_key=DEFAULT_CARD_BACK_KEY,
+        ),
 
         "pdf_outer_slot_region_band_mode": (
             outer_band_settings["mode"]
@@ -1633,6 +1654,21 @@ def update_config_from_form(form_data):
         if submitted_color_mode not in valid_print_color_modes:
             submitted_color_mode = default_color_mode
         updated_config[f"{print_scope}_print_color_mode"] = submitted_color_mode
+
+        if print_scope == "chaos":
+            updated_config["chaos_default_card_back"] = normalize_card_back_key(
+                form_data.get(
+                    "chaos_default_card_back"
+                ),
+                app.static_folder,
+                RUNTIME_CARD_BACK_DIR,
+                fallback_key=(
+                    existing_print_config.get(
+                        "default_card_back"
+                    )
+                    or DEFAULT_CARD_BACK_KEY
+                ),
+            )
 
         updated_config[f"{print_scope}_pdf_width_mm"] = parse_positive_float(
             f"{print_scope}_pdf_width_mm",
@@ -3714,6 +3750,68 @@ def safe_filename(value):
             allowed.append("_")
     return "".join(allowed).strip("_") or "card"
 
+def get_chaos_default_card_back_key(config=None):
+    if config is None:
+        config = (
+            get_request_config()
+            if has_request_context()
+            else get_config()
+        )
+
+    chaos_print_config = resolve_scoped_print_config(
+        config,
+        "chaos",
+    )
+
+    return normalize_card_back_key(
+        chaos_print_config.get(
+            "default_card_back"
+        ),
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+        fallback_key=DEFAULT_CARD_BACK_KEY,
+    )
+
+
+def serialize_card_back_option(option):
+    if not option:
+        return None
+
+    if option["source"] == "builtin":
+        image_url = url_for(
+            "static",
+            filename=(
+                f"img/card_backs/"
+                f"{option['filename']}"
+            ),
+        )
+
+    else:
+        image_url = url_for(
+            "card_back_custom_image",
+            filename=option["filename"],
+        )
+
+    return {
+        "key": option["key"],
+        "filename": option["filename"],
+        "label": option["label"],
+        "source": option["source"],
+        "image_url": image_url,
+    }
+
+
+def get_serialized_card_back_options():
+    return [
+        serialize_card_back_option(option)
+        for option in list_card_back_options(
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+        )
+    ]
+
+
+
 def get_silhouette_edge_border_pixels():
     try:
         parsed_value = int(SILHOUETTE_EDGE_BORDER_PIXELS)
@@ -4966,10 +5064,20 @@ def build_default_card_back_sheet_pdf():
         draw_width_mm = width_mm + (crop_left_right_mm * 2)
         draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
 
-    mtg_back_path = os.path.join(app.static_folder, "img", "mtg_back_custom_1.jpg")
+    default_back_option = resolve_card_back_option(
+        get_chaos_default_card_back_key(),
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+    )
 
-    if not os.path.exists(mtg_back_path):
-        raise FileNotFoundError(f"Default MTG back image was not found: {mtg_back_path}")
+    if not default_back_option:
+        raise FileNotFoundError(
+            "No usable default card back image was found."
+        )
+
+    mtg_back_path = (
+        default_back_option["absolute_path"]
+    )
 
     # Eight entries gives one full Silhouette Letter sheet.
     # For single-card templates, this intentionally generates 8 card-back pages.
@@ -6302,7 +6410,11 @@ def draw_chaos_card_back_entries_into_pdf_layout(
                     print_settings["print_mode"],
                     slot_defs[back_slot_index],
                     add_edge_bleed_border=True,
-                    rounded_corner_radius_mm=SILHOUETTE_CORNER_RADIUS_MM,
+
+                    # Card backs preserve the corner treatment contained in
+                    # the selected source image. Do not synthesize black
+                    # rounded corners onto full-corner card-back artwork.
+                    rounded_corner_radius_mm=0.0,
                 )
 
             if SILHOUETTE_FILL_UNUSED_SLOTS_WITH_WHITE:
@@ -8913,39 +9025,65 @@ def parse_faces_json(raw_value):
     except Exception:
         return []
 
-def get_chaos_pdf_card_back_source(card_row):
-    default_back_path = os.path.join(
+def get_chaos_pdf_card_back_source(
+    card_row,
+    default_card_back_key=None,
+):
+    resolved_card_back_key = normalize_card_back_key(
+        default_card_back_key,
         app.static_folder,
-        "img",
-        "mtg_back_custom_1.jpg",
+        RUNTIME_CARD_BACK_DIR,
+        fallback_key=get_chaos_default_card_back_key(),
     )
 
-    if not os.path.exists(default_back_path):
+    default_back_option = resolve_card_back_option(
+        resolved_card_back_key,
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+    )
+
+    if not default_back_option:
         raise FileNotFoundError(
-            f"Default MTG back image was not found: {default_back_path}"
+            "No usable default card back image was found."
         )
+
+    default_back_path = (
+        default_back_option["absolute_path"]
+    )
+
+    default_back_name = (
+        default_back_option["label"]
+        or "Card Back"
+    )
 
     if not card_row:
         return {
             "source_type": "local",
             "absolute_path": default_back_path,
             "image_url": "",
-            "face_name": "Magic Card Back",
+            "face_name": default_back_name,
             "is_default_back": True,
         }
 
-    is_dual_faced = int(card_row["is_dual_faced"] or 0) == 1
+    is_dual_faced = (
+        int(card_row["is_dual_faced"] or 0)
+        == 1
+    )
 
     if not is_dual_faced:
         return {
             "source_type": "local",
             "absolute_path": default_back_path,
             "image_url": "",
-            "face_name": "Magic Card Back",
+            "face_name": default_back_name,
             "is_default_back": True,
         }
 
-    back_image_url = (card_row["back_image_url"] or "").strip()
+    back_image_url = (
+        card_row["back_image_url"]
+        or ""
+    ).strip()
+
     back_face_name = (
         card_row["back_face_name"]
         or card_row["card_name"]
@@ -8953,11 +9091,14 @@ def get_chaos_pdf_card_back_source(card_row):
     ).strip()
 
     if not back_image_url:
-        faces = parse_faces_json(card_row["faces_json"])
+        faces = parse_faces_json(
+            card_row["faces_json"]
+        )
 
         if len(faces) >= 2:
             back_image_url = (
-                faces[1].get("image_url") or ""
+                faces[1].get("image_url")
+                or ""
             ).strip()
 
             back_face_name = (
@@ -8978,7 +9119,7 @@ def get_chaos_pdf_card_back_source(card_row):
         "source_type": "local",
         "absolute_path": default_back_path,
         "image_url": "",
-        "face_name": "Magic Card Back",
+        "face_name": default_back_name,
         "is_default_back": True,
     }
 
@@ -9254,9 +9395,11 @@ def prefetch_chaos_pdf_remote_images(
 def build_chaos_pdf_card_back_rendered_entry(
     card_row,
     card_uuid="",
+    default_card_back_key=None,
 ):
     back_source = get_chaos_pdf_card_back_source(
-        card_row
+        card_row,
+        default_card_back_key=default_card_back_key,
     )
 
     # Normal single-faced cards still use
@@ -9449,6 +9592,7 @@ def build_chaos_pack_pdf(
     title_card_only=False,
     pack_label_states=None,
     print_labels_enabled_override=None,
+    default_card_back_key=None,
 ):
     pdf_settings = resolve_pdf_print_settings(
         print_labels_enabled_override=print_labels_enabled_override,
@@ -9485,6 +9629,44 @@ def build_chaos_pack_pdf(
 
     print_card_backs = bool(
         pdf_settings.get("print_card_backs")
+    )
+
+    requested_default_card_back_key = str(
+        default_card_back_key or ""
+    ).strip()
+
+    # A Custom Draft Set can define its own Card Back. Resolve that
+    # here so every Chaos/custom-set PDF path gets identical behavior.
+    if (
+        not requested_default_card_back_key
+        and is_custom_draft_set_code(set_code)
+    ):
+        custom_back_set = get_custom_draft_set(
+            normalize_custom_draft_set_code(
+                set_code
+            )
+        )
+
+        if custom_back_set:
+            requested_default_card_back_key = str(
+                custom_back_set[
+                    "card_back_key"
+                ]
+                or ""
+            ).strip()
+
+    effective_default_card_back_key = (
+        normalize_card_back_key(
+            requested_default_card_back_key,
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+            fallback_key=(
+                pdf_settings.get(
+                    "default_card_back"
+                )
+                or get_chaos_default_card_back_key()
+            ),
+        )
     )
 
     include_pack_label_card = bool(
@@ -9636,6 +9818,7 @@ def build_chaos_pack_pdf(
                         build_chaos_pdf_card_back_rendered_entry(
                             None,
                             card_uuid="",
+                            default_card_back_key=effective_default_card_back_key,
                         )
                     )
             except Exception as exc:
@@ -9679,6 +9862,7 @@ def build_chaos_pack_pdf(
                         build_chaos_pdf_card_back_rendered_entry(
                             card_row,
                             card_uuid=card_uuid,
+                            default_card_back_key=effective_default_card_back_key,
                         )
                     )
                 except Exception as exc:
@@ -9692,6 +9876,7 @@ def build_chaos_pack_pdf(
                         build_chaos_pdf_card_back_rendered_entry(
                             None,
                             card_uuid=card_uuid,
+                            default_card_back_key=effective_default_card_back_key,
                         )
                     )
 
@@ -15079,6 +15264,164 @@ def config_check_new_releases():
 
     return redirect(url_for("config") + "?open=reminders&scroll=reminders")
 
+@app.route(
+    "/card-backs/custom/<filename>",
+    methods=["GET"],
+)
+def card_back_custom_image(filename):
+    clean_filename = os.path.basename(
+        str(filename or "").strip()
+    )
+
+    if (
+        not clean_filename
+        or clean_filename != filename
+    ):
+        return (
+            "Card back image was not found.",
+            404,
+        )
+
+    option = resolve_card_back_option(
+        f"custom:{clean_filename}",
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+    )
+
+    if (
+        not option
+        or option["source"] != "custom"
+    ):
+        return (
+            "Card back image was not found.",
+            404,
+        )
+
+    return send_file(
+        option["absolute_path"],
+        conditional=True,
+        max_age=0,
+    )
+
+
+@app.route(
+    "/card-backs/options",
+    methods=["GET"],
+)
+def card_back_options():
+    return jsonify({
+        "ok": True,
+        "default_key": (
+            get_chaos_default_card_back_key()
+        ),
+        "max_upload_size_bytes": (
+            CARD_BACK_UPLOAD_MAX_SIZE_BYTES
+        ),
+        "options": (
+            get_serialized_card_back_options()
+        ),
+    })
+
+
+@app.route(
+    "/card-backs/upload",
+    methods=["POST"],
+)
+def card_back_upload():
+    try:
+        card_back_key = (
+            save_custom_card_back_upload(
+                request.files.get(
+                    "card_back_file"
+                ),
+                RUNTIME_CARD_BACK_DIR,
+                max_file_size_bytes=(
+                    CARD_BACK_UPLOAD_MAX_SIZE_BYTES
+                ),
+            )
+        )
+
+        option = resolve_card_back_option(
+            card_back_key,
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": "Card back uploaded.",
+            "option": (
+                serialize_card_back_option(
+                    option
+                )
+            ),
+            "options": (
+                get_serialized_card_back_options()
+            ),
+        })
+
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+@app.route(
+    "/card-backs/delete",
+    methods=["POST"],
+)
+def card_back_delete():
+    try:
+        deleted_option = delete_custom_card_back(
+            request.form.get(
+                "card_back_key"
+            ),
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": (
+                f"Deleted custom card back: "
+                f"{deleted_option['label']}"
+            ),
+            "deleted_key": (
+                deleted_option["key"]
+            ),
+            "default_key": (
+                get_chaos_default_card_back_key()
+            ),
+            "options": (
+                get_serialized_card_back_options()
+            ),
+        })
+
+    except FileNotFoundError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 404
+
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
+    except Exception as exc:
+        write_debug_log(
+            "CARD BACK DELETE ERROR | "
+            f"error={str(exc)}"
+        )
+
+        return jsonify({
+            "ok": False,
+            "message": (
+                "The custom card back could not be deleted."
+            ),
+        }), 500
+
 @app.route("/config", methods=["GET", "POST"])
 def config():
     if request.method == "POST":
@@ -18215,15 +18558,39 @@ def get_deckbuilder_routes(deckbuilder_context, back_url=None):
     }
 
 
-def attach_deckbuilder_common_context(deckbuilder_context, back_url=None):
+def attach_deckbuilder_common_context(
+    deckbuilder_context,
+    back_url=None,
+):
     config = get_request_config()
 
-    deckbuilder_context["routes"] = get_deckbuilder_routes(
-        deckbuilder_context,
-        back_url=back_url,
+    deckbuilder_context["routes"] = (
+        get_deckbuilder_routes(
+            deckbuilder_context,
+            back_url=back_url,
+        )
     )
 
-    deckbuilder_context["print_export_defaults"] = get_print_export_defaults_from_config(config)
+    deckbuilder_context["print_export_defaults"] = (
+        get_print_export_defaults_from_config(
+            config
+        )
+    )
+
+    deckbuilder_context["card_back_key"] = (
+        normalize_card_back_key(
+            deckbuilder_context.get(
+                "card_back_key"
+            ),
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+            fallback_key=(
+                get_chaos_default_card_back_key(
+                    config
+                )
+            ),
+        )
+    )
 
     return deckbuilder_context
 
@@ -18568,7 +18935,15 @@ def deckbuilder_print(deck_id):
             booster_name="Deck Builder",
             pack_tracking_code=label_text,
             include_pack_labels=True,
-            print_labels_enabled_override=1 if g.print_export_labels_enabled_override else 0,
+            print_labels_enabled_override=(
+                1
+                if g.print_export_labels_enabled_override
+                else 0
+            ),
+            default_card_back_key=(
+                deck_row["card_back_key"]
+                or None
+            ),
         )
     except Exception as exc:
         write_debug_log(
@@ -19570,6 +19945,37 @@ def deckbuilder_save(deck_id):
 
     status_code = 200 if save_result.get("ok") else 400
     return jsonify(save_result), status_code
+
+@app.route(
+    "/deck-builder/<int:deck_id>/card-back",
+    methods=["POST"],
+)
+def deckbuilder_card_back(deck_id):
+    card_back_option = resolve_card_back_option(
+        request.form.get("card_back_key"),
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+    )
+
+    if not card_back_option:
+        return jsonify({
+            "ok": False,
+            "message": "The selected Card Back was not found.",
+        }), 400
+
+    result = update_deck_card_back_key(
+        deck_id,
+        card_back_option["key"],
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    result["option"] = serialize_card_back_option(
+        card_back_option
+    )
+
+    return jsonify(result)
 
 @app.route("/deckbuilder/<int:deck_id>/basic-land", methods=["POST"])
 def deckbuilder_basic_land(deck_id):
@@ -25935,6 +26341,41 @@ def custom_draft_sets_add():
         flash(str(exc))
         return redirect(url_for("sets"))
 
+@app.route(
+    "/custom-draft-sets/<path:set_code>/card-back",
+    methods=["POST"],
+)
+def custom_draft_set_card_back(set_code):
+    clean_set_code = normalize_custom_draft_set_code(
+        set_code
+    )
+
+    card_back_option = resolve_card_back_option(
+        request.form.get("card_back_key"),
+        app.static_folder,
+        RUNTIME_CARD_BACK_DIR,
+    )
+
+    if not card_back_option:
+        return jsonify({
+            "ok": False,
+            "message": "The selected Card Back was not found.",
+        }), 400
+
+    result = update_custom_draft_set_card_back_key(
+        clean_set_code,
+        card_back_option["key"],
+    )
+
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    result["option"] = serialize_card_back_option(
+        card_back_option
+    )
+
+    return jsonify(result)
+
 @app.route("/custom-draft-sets/<path:set_code>/print", methods=["POST"])
 def custom_draft_set_print(set_code):
     clean_set_code = normalize_custom_draft_set_code(set_code)
@@ -26103,13 +26544,35 @@ def custom_draft_set_manage(set_code):
         },
     ]
 
+    config = get_request_config()
+
+    custom_set_card_back_key = (
+        normalize_card_back_key(
+            custom_set["card_back_key"],
+            app.static_folder,
+            RUNTIME_CARD_BACK_DIR,
+            fallback_key=(
+                get_chaos_default_card_back_key(
+                    config
+                )
+            ),
+        )
+    )
+
     return render_template(
         "custom_draft_set.html",
         custom_set=custom_set,
         pack_slots=pack_slots,
         custom_set_cards=custom_set_cards,
         special_category_options=special_category_options,
-        print_export_defaults=get_print_export_defaults_from_config(get_request_config()),
+        custom_set_card_back_key=(
+            custom_set_card_back_key
+        ),
+        print_export_defaults=(
+            get_print_export_defaults_from_config(
+                config
+            )
+        ),
     )
 
 def get_custom_draft_booster_label(booster_name):

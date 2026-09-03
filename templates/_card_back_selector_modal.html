@@ -1,0 +1,163 @@
+<div
+    id="cardBackSelectorModal"
+    class="card-back-selector-modal hidden"
+    aria-hidden="true"
+    data-options-url="{{ url_for('card_back_options') }}"
+    data-upload-url="{{ url_for('card_back_upload') }}"
+    data-delete-url="{{ url_for('card_back_delete') }}"
+>
+    <div
+        class="card-back-selector-backdrop"
+        data-card-back-selector-close
+    ></div>
+
+    <div
+        class="card-back-selector-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cardBackSelectorTitle"
+    >
+        <div class="card-back-selector-header">
+            <div>
+                <h2 id="cardBackSelectorTitle">
+                    Choose Card Back
+                </h2>
+
+                <p>
+                    Select an included card back or upload a custom image.
+                </p>
+            </div>
+
+            <button
+                type="button"
+                class="card-back-selector-close-button"
+                data-card-back-selector-close
+                aria-label="Close Card Back selector"
+                title="Close"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="card-back-selector-body">
+            <div
+                id="cardBackSelectorGrid"
+                class="card-back-selector-grid"
+            ></div>
+
+            <div
+                id="cardBackSelectorEmpty"
+                class="card-back-selector-empty hidden"
+            >
+                No card back images are available.
+            </div>
+
+            <div class="card-back-selector-upload-panel">
+                <div class="card-back-selector-upload-copy">
+                    <strong>
+                        Upload Custom Card Back
+                    </strong>
+
+                    <span>
+                        The uploaded image will be saved to iMomir and added to this selector.
+                    </span>
+                </div>
+
+                <div class="card-back-selector-upload-controls">
+                    <input
+                        type="file"
+                        id="cardBackSelectorUploadInput"
+                        accept="image/*"
+                    >
+
+                    <button
+                        type="button"
+                        id="cardBackSelectorUploadButton"
+                        class="action-button secondary-button"
+                    >
+                        Upload
+                    </button>
+                </div>
+            </div>
+
+            <div
+                id="cardBackSelectorStatus"
+                class="card-back-selector-status hidden"
+                role="status"
+            ></div>
+        </div>
+
+        <div class="card-back-selector-footer">
+            <button
+                type="button"
+                class="action-button secondary-button"
+                data-card-back-selector-close
+            >
+                Cancel
+            </button>
+
+            <button
+                type="button"
+                id="cardBackSelectorApplyButton"
+                class="action-button"
+            >
+                Use Selected Card Back
+            </button>
+        </div>
+
+        <div
+            id="cardBackDeleteConfirm"
+            class="card-back-delete-confirm hidden"
+            aria-hidden="true"
+        >
+            <div class="card-back-delete-confirm-panel">
+                <h3>
+                    Delete Custom Card Back?
+                </h3>
+
+                <p>
+                    Permanently delete
+                    <strong id="cardBackDeleteConfirmName"></strong>?
+                </p>
+
+                <p class="card-back-delete-confirm-warning">
+                    This removes the uploaded image from iMomir.
+                    This action cannot be undone.
+                </p>
+
+                <div class="card-back-delete-confirm-actions">
+                    <button
+                        type="button"
+                        id="cardBackDeleteConfirmCancel"
+                        class="action-button secondary-button"
+                    >
+                        Cancel
+                    </button>
+
+                    <button
+                        type="button"
+                        id="cardBackDeleteConfirmButton"
+                        class="action-button card-back-delete-confirm-button"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div
+        id="cardBackSelectorContextMenu"
+        class="card-back-selector-context-menu hidden"
+        role="menu"
+    >
+        <button
+            type="button"
+            id="cardBackSelectorDeleteMenuItem"
+            class="card-back-selector-context-menu-item"
+            role="menuitem"
+        >
+            Delete
+        </button>
+    </div>
+</div>

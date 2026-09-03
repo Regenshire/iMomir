@@ -1,3 +1,5 @@
+from card_backs import DEFAULT_CARD_BACK_KEY
+
 APP_VERSION = "2.0.2"
 GITHUB_RELEASE_OWNER = "Regenshire"
 GITHUB_RELEASE_REPO = "iMomir"
@@ -20,6 +22,9 @@ MTGJSON_SET_BOOSTER_SHEETS_URL = f"{MTGJSON_CSV_BASE_URL}/setBoosterSheets.csv"
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 
 APP_SECRET_KEY = "imomir-dev-key"
+
+CARD_BACK_UPLOAD_MAX_SIZE_MB = 35
+CARD_BACK_UPLOAD_MAX_SIZE_BYTES = CARD_BACK_UPLOAD_MAX_SIZE_MB * 1024 * 1024
 
 SILHOUETTE_LETTER_CARD_WIDTH_MM = 63.5
 SILHOUETTE_LETTER_CARD_HEIGHT_MM = 88.9
@@ -142,6 +147,7 @@ SCOPED_PRINT_SETTING_KEYS = (
     "pdf_outer_slot_region_band_color_hex",
 
     "print_card_backs",
+    "default_card_back",
     "print_labels_enabled",
     "print_label_tracking_code",
     "print_label_front_back",
@@ -216,6 +222,7 @@ DEFAULT_CONFIG = {
     "pdf_outer_slot_region_band_color_hex": "",
 
     "print_card_backs": "0",
+    "default_card_back": DEFAULT_CARD_BACK_KEY,
 
     # Mode-specific print settings. Blank values intentionally fall back to
     # the legacy shared print settings until each scope is saved once.
@@ -259,6 +266,7 @@ DEFAULT_CONFIG = {
     "chaos_pdf_outer_slot_region_band_color_hex": "",
 
     "chaos_print_card_backs": "1",
+    "chaos_default_card_back": DEFAULT_CARD_BACK_KEY,
     "chaos_print_labels_enabled": "",
     "chaos_print_label_tracking_code": "",
     "chaos_print_label_front_back": "",

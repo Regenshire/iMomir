@@ -19,6 +19,10 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/custom_draft_set.css') }}"
 >
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/card_back_selector.css') }}"
+>
 {% endblock %}
 
 {% block content %}
@@ -78,7 +82,22 @@
         data-export-zip-url="{{ url_for('custom_draft_set_export_zip', set_code=custom_set.set_code) }}"
     >
         <div class="page-panel">
-            <h2>Set Details</h2>
+            <div class="custom-draft-set-details-header">
+                <h2>Set Details</h2>
+
+                <button
+                    type="button"
+                    id="customDraftSetCardBackButton"
+                    class="custom-draft-header-icon-button"
+                    data-card-back-selector-open
+                    data-card-back-save-url="{{ url_for('custom_draft_set_card_back', set_code=custom_set.set_code) }}"
+                    data-selected-card-back-key="{{ custom_set_card_back_key or '' }}"
+                    title="Card Back"
+                    aria-label="Choose Custom Set Card Back"
+                >
+                    <i class="fa-solid fa-clone"></i>
+                </button>
+            </div>
 
             <div class="custom-draft-set-form-grid">
                 <label class="campaign-add-pack-custom-field">
@@ -1011,6 +1030,8 @@
     {% set print_export_subject_label = "custom draft set" %}
     {% include "_print_export_modal.html" %}
 
+    {% include "_card_back_selector_modal.html" %}
+
     {% set stats_modal_title = "Set Card Stats" %}
     {% set stats_modal_subtitle = "Stats for the currently visible filtered cards." %}
     {% include "_stats_modal.html" %}
@@ -1033,6 +1054,7 @@
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_back_selector.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stats_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_flip.js') }}"></script>
 <script src="{{ url_for('static', filename='js/custom_draft_set.js') }}"></script>

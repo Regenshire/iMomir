@@ -11,6 +11,10 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/config.css') }}"
 >
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/card_back_selector.css') }}"
+>
 {% endblock %}
 
 {% block content %}
@@ -1524,6 +1528,12 @@
         </div>
     </footer>
 </div>
+
+{% include "_card_back_selector_modal.html" %}
+
+<script
+    src="{{ url_for('static', filename='js/card_back_selector.js') }}"
+></script>
 
 <script
     src="{{ url_for('static', filename='js/plugin_manager.js') }}"

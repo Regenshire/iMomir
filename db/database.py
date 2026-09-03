@@ -545,11 +545,19 @@ def initialize_database():
             special_category_2_name TEXT,
             special_category_3_name TEXT,
             icon_svg_path TEXT,
+            card_back_key TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT
         )
         """
+    )
+
+    ensure_column_exists(
+        cursor,
+        "custom_draft_sets",
+        "card_back_key",
+        "TEXT",
     )
 
     cursor.execute(
@@ -920,6 +928,7 @@ def get_custom_draft_sets():
             cds.special_category_2_name,
             cds.special_category_3_name,
             cds.icon_svg_path,
+            cds.card_back_key,
             cds.is_active,
             cds.created_at_utc,
             cds.updated_at_utc,
@@ -962,6 +971,7 @@ def get_custom_draft_set(set_code):
             cds.special_category_2_name,
             cds.special_category_3_name,
             cds.icon_svg_path,
+            cds.card_back_key,
             cds.is_active,
             cds.created_at_utc,
             cds.updated_at_utc,
@@ -980,6 +990,82 @@ def get_custom_draft_set(set_code):
     row = cursor.fetchone()
     conn.close()
     return row
+
+def update_custom_draft_set_card_back_key(
+    set_code,
+    card_back_key,
+):
+    clean_set_code = normalize_custom_draft_set_code(
+        set_code
+    )
+
+    if not clean_set_code:
+        return {
+            "ok": False,
+            "message": "Invalid custom set code.",
+        }
+
+    clean_card_back_key = str(
+        card_back_key or ""
+    ).strip()
+
+    if not clean_card_back_key:
+        return {
+            "ok": False,
+            "message": "Card Back is required.",
+        }
+
+    now_utc = (
+        __import__("datetime")
+        .datetime.now(
+            __import__("datetime").timezone.utc
+        )
+        .strftime("%Y-%m-%d %H:%M:%S UTC")
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT set_code
+        FROM custom_draft_sets
+        WHERE set_code = ?
+        """,
+        (clean_set_code,),
+    )
+
+    if not cursor.fetchone():
+        conn.close()
+
+        return {
+            "ok": False,
+            "message": "Custom draft set was not found.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE custom_draft_sets
+        SET card_back_key = ?,
+            updated_at_utc = ?
+        WHERE set_code = ?
+        """,
+        (
+            clean_card_back_key,
+            now_utc,
+            clean_set_code,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Custom Set Card Back saved.",
+        "set_code": clean_set_code,
+        "card_back_key": clean_card_back_key,
+    }
 
 CUSTOM_DRAFT_PACK_DEFAULT_SLOT_COUNT = 15
 CUSTOM_DRAFT_PACK_MIN_SLOT_COUNT = 1

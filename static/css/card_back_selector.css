@@ -1,0 +1,305 @@
+.card-back-selector-open-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 7px 11px;
+    border: 1px solid rgba(160, 170, 190, 0.34);
+    border-radius: 9px;
+    background: rgba(35, 38, 46, 0.96);
+    color: inherit;
+    cursor: pointer;
+}
+
+.card-back-selector-open-button:hover {
+    border-color: rgba(210, 218, 235, 0.62);
+    background: rgba(48, 52, 63, 0.98);
+}
+
+.card-back-selector-open-button.icon-only {
+    width: 38px;
+    min-width: 38px;
+    padding: 7px;
+}
+
+.card-back-selector-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 10020;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.card-back-selector-modal.hidden {
+    display: none;
+}
+
+.card-back-selector-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 7, 10, 0.78);
+}
+
+.card-back-selector-dialog {
+    position: relative;
+    z-index: 1;
+    width: min(1040px, 96vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid rgba(160, 170, 190, 0.34);
+    border-radius: 16px;
+    background: #1b1d22;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+}
+
+.card-back-selector-header,
+.card-back-selector-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 18px;
+    border-bottom: 1px solid rgba(160, 170, 190, 0.18);
+}
+
+.card-back-selector-header h2 {
+    margin: 0;
+}
+
+.card-back-selector-header p {
+    margin: 5px 0 0;
+    color: rgba(230, 234, 242, 0.72);
+}
+
+.card-back-selector-footer {
+    justify-content: flex-end;
+    border-top: 1px solid rgba(160, 170, 190, 0.18);
+    border-bottom: 0;
+}
+
+.card-back-selector-close-button {
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: inherit;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.card-back-selector-close-button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.card-back-selector-body {
+    overflow-y: auto;
+    padding: 18px;
+}
+
+.card-back-selector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+}
+
+.card-back-selector-option {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+    padding: 9px;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.045);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.card-back-selector-option:hover {
+    background: rgba(255, 255, 255, 0.075);
+}
+
+.card-back-selector-option.is-selected {
+    border-color: #d3ab58;
+    box-shadow: 0 0 0 2px rgba(211, 171, 88, 0.18);
+}
+
+.card-back-selector-option-image-wrap {
+    aspect-ratio: 63 / 88;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #0f1115;
+}
+
+.card-back-selector-option img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.card-back-selector-option-title {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.card-back-selector-option-source {
+    color: rgba(230, 234, 242, 0.62);
+    font-size: 0.82rem;
+}
+
+.card-back-selector-upload-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-top: 20px;
+    padding: 14px;
+    border: 1px solid rgba(160, 170, 190, 0.22);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.card-back-selector-upload-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.card-back-selector-upload-copy span {
+    color: rgba(230, 234, 242, 0.68);
+}
+
+.card-back-selector-upload-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.card-back-selector-status,
+.card-back-selector-empty {
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.card-back-selector-status.is-error {
+    background: rgba(145, 38, 38, 0.28);
+}
+
+.card-back-selector-context-menu {
+    position: fixed;
+    z-index: 10040;
+    min-width: 150px;
+    padding: 6px;
+    border: 1px solid rgba(160, 170, 190, 0.34);
+    border-radius: 9px;
+    background: #202329;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.48);
+}
+
+.card-back-selector-context-menu.hidden {
+    display: none;
+}
+
+.card-back-selector-context-menu-item {
+    width: 100%;
+    padding: 9px 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #f4b4b4;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.card-back-selector-context-menu-item:hover {
+    background: rgba(190, 55, 55, 0.22);
+    color: #ffd0d0;
+}
+
+.card-back-delete-confirm {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(5, 7, 10, 0.82);
+}
+
+.card-back-delete-confirm.hidden {
+    display: none;
+}
+
+.card-back-delete-confirm-panel {
+    width: min(440px, 94%);
+    padding: 20px;
+    border: 1px solid rgba(205, 90, 90, 0.45);
+    border-radius: 14px;
+    background: #202329;
+    box-shadow: 0 20px 52px rgba(0, 0, 0, 0.5);
+}
+
+.card-back-delete-confirm-panel h3 {
+    margin: 0 0 12px;
+}
+
+.card-back-delete-confirm-panel p {
+    margin: 0 0 12px;
+}
+
+.card-back-delete-confirm-warning {
+    color: rgba(235, 222, 222, 0.72);
+    font-size: 0.9rem;
+}
+
+.card-back-delete-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.card-back-delete-confirm-button {
+    border-color: rgba(205, 70, 70, 0.68);
+    background: #9e3030;
+}
+
+.card-back-delete-confirm-button:hover {
+    background: #b83b3b;
+}
+
+@media (max-width: 700px) {
+    .card-back-selector-modal {
+        padding: 10px;
+    }
+
+    .card-back-selector-dialog {
+        width: 100%;
+        max-height: 96vh;
+    }
+
+    .card-back-selector-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card-back-selector-upload-panel {
+        align-items: stretch;
+        flex-direction: column;
+    }
+}

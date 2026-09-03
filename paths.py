@@ -40,6 +40,7 @@ PLUGIN_DOWNLOAD_DIR = os.path.join(DATA_ROOT_DIR, "plugin_downloads")
 
 CUSTOM_SET_ICON_DIR = os.path.join(DATA_ROOT_DIR, "custom_set_icons")
 RUNTIME_IMAGE_DIR = os.path.join(DATA_ROOT_DIR, "img")
+RUNTIME_CARD_BACK_DIR = os.path.join(RUNTIME_IMAGE_DIR, "card_backs")
 RUNTIME_PACK_ART_DIR = os.path.join(RUNTIME_IMAGE_DIR, "pack_art")
 
 PLUGIN_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "plugins")

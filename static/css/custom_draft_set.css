@@ -165,3 +165,19 @@
         width: 100%;
     }
 }
+
+/* ==========================================
+   Custom Draft Set - Set Details Header
+   ========================================== */
+
+.custom-draft-set-details-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.custom-draft-set-details-header h2 {
+    margin: 0;
+}

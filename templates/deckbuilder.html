@@ -2,6 +2,13 @@
 
 {% block title %}iMomir - Deck Builder{% endblock %}
 
+{% block page_styles %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/card_back_selector.css') }}"
+>
+{% endblock %}
+
 {% block content %}
 {% set player = deckbuilder.human_player %}
 
@@ -68,6 +75,19 @@
                     <option value="Pauper"{% if selected_deck_format == 'pauper' %} selected{% endif %}>Pauper</option>
                 </select>
             </label>
+
+            <button
+                type="button"
+                id="deckbuilderCardBackButton"
+                class="deckbuilder-header-icon-button"
+                data-card-back-selector-open
+                data-card-back-save-url="{{ url_for('deckbuilder_card_back', deck_id=deckbuilder.deck_id) }}"
+                data-selected-card-back-key="{{ deckbuilder.card_back_key or '' }}"
+                title="Card Back"
+                aria-label="Choose Deck Card Back"
+            >
+                <i class="fa-solid fa-clone"></i>
+            </button>
 
             <button
                 type="button"
@@ -871,6 +891,8 @@
     {% set print_export_defaults = deckbuilder.print_export_defaults %}
     {% include "_print_export_modal.html" %}
 
+    {% include "_card_back_selector_modal.html" %}
+
     {% include "_card_search_modal.html" %}
 
     <div id="deckbuilderHoverPreview" class="campaign-test-draft-hover-preview hidden" aria-hidden="true">
@@ -1025,6 +1047,7 @@
 <script src="{{ url_for('static', filename='js/custom_draft_search_phrases.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_search_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/print_export_modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/card_back_selector.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stats_modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/card_flip.js') }}"></script>
 <script>

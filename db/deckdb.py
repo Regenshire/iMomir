@@ -1,7 +1,10 @@
 import json
 from datetime import datetime, timezone
 
-from db.database import get_db_connection
+from db.database import (
+    ensure_column_exists,
+    get_db_connection,
+)
 
 
 DECK_SOURCE_TYPE_DRAFT_TEST = "draft_test"
@@ -135,10 +138,18 @@ def ensure_deck_schema():
             default_view_mode TEXT NOT NULL DEFAULT 'grid',
             default_sort_mode TEXT NOT NULL DEFAULT 'rarity-desc',
             notes TEXT,
+            card_back_key TEXT,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT
         )
         """
+    )
+
+    ensure_column_exists(
+        cursor,
+        "decks",
+        "card_back_key",
+        "TEXT",
     )
 
     cursor.execute(
@@ -300,6 +311,81 @@ def get_deck_by_id(deck_id):
 
     return row
 
+def update_deck_card_back_key(
+    deck_id,
+    card_back_key,
+):
+    ensure_deck_schema()
+
+    parsed_deck_id = normalize_deck_optional_int(
+        deck_id
+    )
+
+    if parsed_deck_id is None:
+        return {
+            "ok": False,
+            "message": "Invalid deck ID.",
+        }
+
+    clean_card_back_key = str(
+        card_back_key or ""
+    ).strip()
+
+    if not clean_card_back_key:
+        return {
+            "ok": False,
+            "message": "Card Back is required.",
+        }
+
+    now_utc = deck_utc_now()
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT deck_id
+        FROM decks
+        WHERE deck_id = ?
+          AND status = ?
+        """,
+        (
+            parsed_deck_id,
+            DECK_STATUS_ACTIVE,
+        ),
+    )
+
+    if not cursor.fetchone():
+        conn.close()
+
+        return {
+            "ok": False,
+            "message": "Deck was not found.",
+        }
+
+    cursor.execute(
+        """
+        UPDATE decks
+        SET card_back_key = ?,
+            updated_at_utc = ?
+        WHERE deck_id = ?
+        """,
+        (
+            clean_card_back_key,
+            now_utc,
+            parsed_deck_id,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "message": "Deck Card Back saved.",
+        "deck_id": parsed_deck_id,
+        "card_back_key": clean_card_back_key,
+    }
 
 def archive_deck(deck_id):
     ensure_deck_schema()
@@ -3224,10 +3310,11 @@ def duplicate_deck(deck_id):
             default_view_mode,
             default_sort_mode,
             notes,
+            card_back_key,
             created_at_utc,
             updated_at_utc
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             DECK_SOURCE_TYPE_STANDALONE,
@@ -3240,6 +3327,7 @@ def duplicate_deck(deck_id):
             source_deck["default_view_mode"] or "grid",
             source_deck["default_sort_mode"] or "rarity-desc",
             source_deck["notes"] or "",
+            source_deck["card_back_key"] or None,
             now_utc,
             now_utc,
         ),
@@ -3593,7 +3681,14 @@ def build_deckbuilder_context_for_deck(deck_id):
         "subtitle": subtitle,
         "mode_label": mode_label,
         "deck_name": deck_name,
-        "deck_format": normalize_deck_format(deck_row["deck_format"], fallback=DECK_FORMAT_STANDARD),
+        "deck_format": normalize_deck_format(
+            deck_row["deck_format"],
+            fallback=DECK_FORMAT_STANDARD,
+        ),
+        "card_back_key": (
+            deck_row["card_back_key"]
+            or ""
+        ),
         "human_player": None,
         "deck_cards": get_saved_deckbuilder_cards_for_deck(
             parsed_deck_id,
@@ -3703,8 +3798,18 @@ def build_deckbuilder_context_for_draft_test(draft_state, preferred_deck_id=None
         "mode_label": "Draft Test",
         "deck_name": deck_result["deck"]["deck_name"] if deck_result.get("deck") else "",
         "deck_format": normalize_deck_format(
-            deck_result["deck"]["deck_format"] if deck_result.get("deck") else DECK_FORMAT_LIMITED,
+            deck_result["deck"]["deck_format"]
+            if deck_result.get("deck")
+            else DECK_FORMAT_LIMITED,
             fallback=DECK_FORMAT_LIMITED,
+        ),
+        "card_back_key": (
+            (
+                deck_result["deck"]["card_back_key"]
+                or ""
+            )
+            if deck_result.get("deck")
+            else ""
         ),
         "human_player": human_player,
         "deck_cards": get_saved_deckbuilder_cards_for_deck(

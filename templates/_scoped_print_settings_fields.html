@@ -158,6 +158,32 @@
             {% if values.get("print_card_backs", "0") == "1" %}checked{% endif %}
         >
     </label>
+
+    <div class="toggle-row settings-field">
+        <span>Default Card Back</span>
+
+        <div class="card-back-setting-control">
+            <input
+                type="hidden"
+                id="{{ scope }}DefaultCardBackInput"
+                name="{{ scope }}_default_card_back"
+                value="{{ values.get('default_card_back', '') }}"
+            >
+
+            <button
+                type="button"
+                class="card-back-selector-open-button"
+                data-card-back-selector-open
+                data-card-back-target-input="{{ scope }}DefaultCardBackInput"
+                data-selected-card-back-key="{{ values.get('default_card_back', '') }}"
+                title="Choose Default Card Back"
+                aria-label="Choose Default Card Back"
+            >
+                <i class="fa-solid fa-clone"></i>
+                <span>Choose Card Back</span>
+            </button>
+        </div>
+    </div>
     {% endif %}
 
     <label class="toggle-row settings-field">
