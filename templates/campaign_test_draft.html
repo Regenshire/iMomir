@@ -2,6 +2,13 @@
 
 {% block title %}iMomir - Test Draft{% endblock %}
 
+{% block page_styles %}
+<link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/card_views.css') }}"
+>
+{% endblock %}
+
 {% block content %}
 {% set session = draft_state.session %}
 {% set human_player = namespace(item=None) %}

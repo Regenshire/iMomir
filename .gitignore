@@ -23,6 +23,7 @@ data/upscaling_dev_feedback/
 
 data/
 data/scryfall/default-cards.json
+data/img/card_backs
 Utility/temp/
 Export/
 static/img/set_icons/

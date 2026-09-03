@@ -7895,7 +7895,7 @@ input {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 7px var(--campaign-test-draft-side-width);
     min-height: 0;
-    height: calc(100vh - var(--imomir-workspace-nav-offset, 96px));
+    height: auto;
     overflow: hidden;
 }
 
@@ -8299,12 +8299,18 @@ input {
 }
 
 .campaign-test-draft-bottom-bar {
+    position: relative;
+    z-index: 2;
+
     display: grid;
     grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
     gap: 16px;
     align-items: center;
+
     padding-top: 10px;
+
     border-top: 1px solid rgba(255, 255, 255, 0.09);
+    background: var(--bg);
 }
 
 .campaign-test-draft-selected-label {
@@ -8343,7 +8349,15 @@ input {
 .campaign-test-draft-resize-handle {
     min-width: 7px;
     width: 7px;
-    min-height: 100vh;
+
+    /*
+     * This grid item must fit the Test Draft workspace, not force
+     * the workspace to the full browser viewport height. The workspace
+     * is shorter than 100vh whenever the base navigation is expanded.
+     */
+    min-height: 0;
+    align-self: stretch;
+
     background: rgba(255, 255, 255, 0.035);
     border-left: 1px solid rgba(255, 255, 255, 0.06);
     border-right: 1px solid rgba(255, 255, 255, 0.06);
@@ -8431,6 +8445,9 @@ input {
 
 .campaign-test-draft-zone-sideboard {
     flex: var(--campaign-test-draft-sideboard-flex) 1 0;
+
+    /* Give the Sideboard heading room beneath the resize divider. */
+    padding-top: 10px;
 }
 
 
@@ -8454,11 +8471,13 @@ input {
 
 .campaign-test-draft-zone-header {
     min-height: 32px;
+
     display: flex;
+    align-items: center;
     justify-content: space-between;
-    /* align-items: flex-end;*/
+
     gap: 10px;
-    margin-bottom: 7px;
+    margin-bottom: 9px;
 }
 
 .campaign-test-draft-zone-header h2 {
@@ -8778,6 +8797,20 @@ input {
     align-items: center;
 }
 
+.campaign-test-draft-drop-zone-active
+> .campaign-test-draft-zone-empty,
+.campaign-test-draft-drop-zone-over
+> .campaign-test-draft-zone-empty {
+    border-color: rgba(110, 156, 255, 0.14);
+    background: transparent;
+}
+
+
+.campaign-test-draft-drop-zone-over
+> .campaign-test-draft-zone-empty {
+    border-color: rgba(66, 205, 111, 0.18);
+}
+
 
 .campaign-test-draft-picked-row {
     display: grid;
@@ -8961,16 +8994,35 @@ input {
 }
 
 .campaign-test-draft-drop-zone-active {
-    border-color: rgba(110, 156, 255, 0.45);
-    background: rgba(72, 127, 255, 0.06);
-    min-height: 100%;
+    /*
+     * The zone list is already flex-sized by its parent.
+     * Do not force min-height: 100%; doing so makes Deck and
+     * Sideboard drop targets expand incorrectly while dragging.
+     */
+    min-height: 0;
+
+    border-color: rgba(110, 156, 255, 0.18);
+    background: transparent;
+
+    box-shadow:
+        inset 0 0 0 1px rgba(110, 156, 255, 0.08);
 }
 
+
 .campaign-test-draft-drop-zone-over {
-    border-color: rgba(66, 205, 111, 0.85);
-    background: rgba(66, 205, 111, 0.12);
-    box-shadow: inset 0 0 0 1px rgba(66, 205, 111, 0.20);
+    /*
+     * Highlight only the actual destination with a restrained
+     * rounded inset ring instead of filling the whole zone green.
+     */
+    border-color: rgba(66, 205, 111, 0.62);
+    border-radius: 14px;
+
+    background: rgba(66, 205, 111, 0.035);
+
+    box-shadow:
+        inset 0 0 0 2px rgba(66, 205, 111, 0.22);
 }
+
 
 .campaign-test-draft-drop-zone-working {
     opacity: 0.72;

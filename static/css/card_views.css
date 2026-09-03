@@ -6,6 +6,8 @@
  * - Chaos Draft pack view
  * - Campaign Chaos pack view
  * - Draft inline pack view
+ * - Deck Builder grid / stack views
+ * - Campaign Test Draft card views
  *
  * Keep card-specific presentation here rather than
  * continuing to grow the global style.css file.
@@ -342,6 +344,217 @@
     margin-top: 0.45rem;
 }
 
+/* ==========================================
+   Interactive Deck / Draft Card Presentation
+   ========================================== */
+
+/*
+ * Deck Builder and Test Draft use the same artwork-first presentation
+ * as the newer card-view screens.
+ *
+ * Keep List mode unchanged because its bordered rows are useful there.
+ * These rules only affect visual card/grid/stack presentation.
+ */
+
+.deckbuilder-grid-active .deckbuilder-card,
+.deckbuilder-stack-active
+.deckbuilder-zone-sideboard
+.deckbuilder-card,
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card,
+.campaign-test-draft-picked-grid-active
+.campaign-test-draft-picked-row {
+    padding: 0;
+    margin-bottom: 0;
+
+    border: 0;
+    border-radius: 0;
+
+    background: transparent;
+}
+
+
+.deckbuilder-grid-active .deckbuilder-card:hover,
+.deckbuilder-stack-active
+.deckbuilder-zone-sideboard
+.deckbuilder-card:hover,
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card:hover,
+.campaign-test-draft-picked-grid-active
+.campaign-test-draft-picked-row:hover {
+    border-color: transparent;
+    background: transparent;
+}
+
+
+/* ==========================================
+   Full-width Card Images
+   ========================================== */
+
+.deckbuilder-grid-active
+.deckbuilder-card-image-wrap,
+.deckbuilder-stack-active
+.deckbuilder-zone-sideboard
+.deckbuilder-card-image-wrap,
+.deckbuilder-stack-active
+.deckbuilder-zone-deck
+.deckbuilder-card-image-wrap {
+    width: 100%;
+    border-radius: 13px;
+}
+
+
+.deckbuilder-grid-active
+.deckbuilder-card
+.campaign-test-draft-picked-thumb,
+.deckbuilder-stack-active
+.deckbuilder-zone-sideboard
+.deckbuilder-card
+.campaign-test-draft-picked-thumb,
+.deckbuilder-stack-active
+.deckbuilder-zone-deck
+.deckbuilder-card
+.campaign-test-draft-picked-thumb,
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card-image,
+.campaign-test-draft-picked-grid-active
+.campaign-test-draft-picked-thumb {
+    border-radius: 13px;
+
+    box-shadow:
+        0 4px 12px rgba(0, 0, 0, 0.28);
+
+    transition:
+        transform 140ms ease,
+        filter 140ms ease;
+}
+
+
+/* ==========================================
+   Compact Card Information
+   ========================================== */
+
+.deckbuilder-grid-active
+.deckbuilder-card
+.campaign-test-draft-picked-main,
+.deckbuilder-stack-active
+.deckbuilder-zone-sideboard
+.deckbuilder-card
+.campaign-test-draft-picked-main {
+    min-height: 0;
+    margin-top: 8px;
+}
+
+
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card-footer {
+    min-height: 0;
+    margin-top: 8px;
+}
+
+
+/* ==========================================
+   Borderless Stack Columns
+   ========================================== */
+
+/*
+ * Stack columns still exist for sorting, drag/drop, and grouping.
+ * Only their decorative outer box is removed.
+ */
+
+.deckbuilder-stack-active
+.deckbuilder-zone-deck
+.deckbuilder-stack-column,
+.campaign-test-draft-picked-stack-active
+.campaign-test-draft-zone-deck
+.campaign-test-draft-stack-column {
+    padding: 0;
+
+    border: 0;
+    border-radius: 0;
+
+    background: transparent;
+}
+
+
+/*
+ * The old stack column reserved 8 px on each side for padding.
+ * With the decorative shell gone, let the card use that full width.
+ */
+
+.deckbuilder-stack-active
+.deckbuilder-zone-deck
+.deckbuilder-card {
+    width: var(--deckbuilder-stack-column-width);
+    min-width: var(--deckbuilder-stack-column-width);
+    max-width: var(--deckbuilder-stack-column-width);
+}
+
+
+.campaign-test-draft-picked-stack-active
+.campaign-test-draft-zone-deck
+.campaign-test-draft-picked-row {
+    width: var(--campaign-test-draft-stack-column-width);
+    min-width: var(--campaign-test-draft-stack-column-width);
+    max-width: var(--campaign-test-draft-stack-column-width);
+}
+
+
+.deckbuilder-stack-column-title,
+.campaign-test-draft-stack-column-title {
+    padding: 0 2px;
+}
+
+
+/* ==========================================
+   Test Draft Selected Card
+   ========================================== */
+
+/*
+ * The old selected state relied partly on the outer card border.
+ * Preserve a very obvious selection indicator now that the shell
+ * itself is borderless.
+ */
+
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card-selected {
+    outline: 3px solid rgba(66, 205, 111, 0.90);
+    outline-offset: 2px;
+
+    border-color: transparent;
+    background: transparent;
+
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.45),
+        0 0 18px rgba(66, 205, 111, 0.38);
+}
+
+
+/* ==========================================
+   Artwork Hover
+   ========================================== */
+
+@media (hover: hover) {
+    .deckbuilder-grid-active
+    .deckbuilder-card:hover
+    .campaign-test-draft-picked-thumb,
+
+    .deckbuilder-stack-active
+    .deckbuilder-zone-sideboard
+    .deckbuilder-card:hover
+    .campaign-test-draft-picked-thumb,
+
+    .campaign-test-draft-card-list-grid
+    .campaign-test-draft-card:hover
+    .campaign-test-draft-card-image,
+
+    .campaign-test-draft-picked-grid-active
+    .campaign-test-draft-picked-row:hover
+    .campaign-test-draft-picked-thumb {
+        transform: translateY(-2px);
+        filter: brightness(1.025);
+    }
+}
 
 /* ==========================================
    Responsive Layout
@@ -391,4 +604,71 @@
         font-size: 0.66rem;
         padding: 2px 5px;
     }
+}
+
+/* ==========================================
+   Grid Card Selection Cleanup
+   ========================================== */
+
+/*
+ * Give card names a little breathing room from the
+ * left and bottom edges of the selectable card area.
+ *
+ * Only apply this to Test Draft and Deck Builder Grid View.
+ */
+
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card-name {
+    padding-left: 4px;
+    padding-bottom: 5px;
+}
+
+
+.deckbuilder-grid-active
+.deckbuilder-card
+.campaign-test-draft-picked-name {
+    padding-left: 4px;
+    padding-bottom: 5px;
+}
+
+
+/* ==========================================
+   Test Draft Selected Card
+   ========================================== */
+
+/*
+ * Replace the square outline with a rounded selection ring.
+ * Box-shadow follows border-radius consistently and gives
+ * the entire selectable card area card-like corners.
+ */
+
+.campaign-test-draft-card-list-grid
+.campaign-test-draft-card-selected {
+    border-radius: 13px;
+    outline: none;
+
+    box-shadow:
+        0 0 0 3px rgba(66, 205, 111, 0.90),
+        0 0 18px rgba(66, 205, 111, 0.38);
+}
+
+
+/* ==========================================
+   Deck Builder Grid Selected Card
+   ========================================== */
+
+/*
+ * Deck Builder uses its normal blue selection color.
+ * Restrict this override to Grid View so Stack View
+ * remains exactly as it is now.
+ */
+
+.deckbuilder-grid-active
+.deckbuilder-card-selected {
+    border-radius: 13px;
+    outline: none;
+
+    box-shadow:
+        0 0 0 3px rgba(59, 130, 246, 0.95),
+        0 0 18px rgba(59, 130, 246, 0.48);
 }
