@@ -459,6 +459,19 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
         value = form_data.get(field_name) if hasattr(form_data, "get") else None
         return [] if value is None else [value]
 
+    chaos_print_config = resolve_scoped_print_config(
+        get_request_config(),
+        "chaos",
+    )
+
+    requested_print_template = (
+        form_data.get("print_template")
+        or ""
+    ).strip().lower()
+
+    if requested_print_template in dict(PRINT_TEMPLATE_OPTIONS):
+        g.print_export_print_template_override = requested_print_template
+
     label_mode = (form_data.get("label_text_mode") or "pack_code").strip().lower()
 
     if label_mode not in {"pack_code", "proxy"}:
@@ -473,7 +486,11 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
 
     g.print_export_labels_enabled_override = parse_print_export_override_bool(
         get_form_values("show_print_export_labels"),
-        default_value=True,
+        default_value=get_config_bool(
+            chaos_print_config,
+            "print_labels_enabled",
+            "1",
+        ),
     )
 
     if label_text is not None:
@@ -481,12 +498,20 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
 
     g.print_export_include_pack_label_cards_override = parse_print_export_override_bool(
         get_form_values("include_pack_label_cards"),
-        default_value=False,
+        default_value=get_config_bool(
+            chaos_print_config,
+            "print_pack_label_cards",
+            "0",
+        ),
     )
 
     g.print_export_pdf_cutting_guides_override = parse_print_export_override_bool(
         get_form_values("pdf_cutting_guides"),
-        default_value=True,
+        default_value=get_config_bool(
+            chaos_print_config,
+            "pdf_cutting_guides",
+            "1",
+        ),
     )
 
     g.print_export_silhouette_registration_marks_override = (
@@ -494,15 +519,21 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
             get_form_values(
                 "silhouette_registration_marks"
             ),
-            default_value=(
-                is_silhouette_registration_marks_enabled()
+            default_value=get_config_bool(
+                chaos_print_config,
+                "silhouette_registration_marks",
+                "1",
             ),
         )
     )
 
     g.print_export_add_bleed_override = parse_print_export_override_bool(
         get_form_values("export_add_bleed"),
-        default_value=False,
+        default_value=get_config_bool(
+            get_request_config(),
+            "export_add_bleed",
+            "0",
+        ),
     )
 
 
@@ -540,8 +571,23 @@ def get_effective_print_config(config=None, scope=None):
         else:
             config = get_config()
 
-    effective_scope = scope or get_request_print_scope()
-    return resolve_scoped_print_config(config, effective_scope)
+    effective_scope = (scope or get_request_print_scope()).strip().lower()
+    resolved_config = resolve_scoped_print_config(
+        config,
+        effective_scope,
+    )
+
+    if effective_scope == "chaos" and has_request_context():
+        print_template_override = getattr(
+            g,
+            "print_export_print_template_override",
+            "",
+        )
+
+        if print_template_override:
+            resolved_config["print_template"] = print_template_override
+
+    return resolved_config
 
 
 def get_effective_print_label_settings(config):
@@ -1242,6 +1288,7 @@ def inject_global_template_state():
         "global_reminder_state": global_reminder_state,
         "global_qr_access_url": access_url,
         "global_qr_image_url": build_qr_code_image_url(access_url),
+        "global_print_template_options": PRINT_TEMPLATE_OPTIONS,
 
         "global_card_upscaling_control_enabled": (
             is_card_upscaling_control_enabled()
@@ -18727,14 +18774,11 @@ def campaign_chaos_test_draft_deck_builder(draft_test_id):
 
     config = get_request_config()
 
-    deckbuilder_context["print_export_defaults"] = {
-        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
-        "label_text_mode": "pack_code",
-        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
-        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
-        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
-        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
-    }
+    deckbuilder_context["print_export_defaults"] = (
+        get_print_export_defaults_from_config(
+            config
+        )
+    )
 
     return render_template(
         "deckbuilder.html",
@@ -18922,19 +18966,47 @@ def get_print_export_defaults_from_config(config):
         "chaos",
     )
 
+    print_template = (
+        chaos_print_config.get("print_template")
+        or "dk-1234"
+    ).strip().lower()
+
+    if print_template not in dict(PRINT_TEMPLATE_OPTIONS):
+        print_template = "dk-1234"
+
     return {
-        "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
+        "show_print_export_labels": get_config_bool(
+            chaos_print_config,
+            "print_labels_enabled",
+            "1",
+        ),
         "label_text_mode": "pack_code",
-        "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
-        "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
-        "silhouette_registration_marks": (
-            chaos_print_config.get(
-                "silhouette_registration_marks"
-            )
-            or "1"
-        ).strip() == "1",
-        "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
-        "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
+        "include_pack_label_cards": get_config_bool(
+            chaos_print_config,
+            "print_pack_label_cards",
+            "0",
+        ),
+        "pdf_cutting_guides": get_config_bool(
+            chaos_print_config,
+            "pdf_cutting_guides",
+            "1",
+        ),
+        "silhouette_registration_marks": get_config_bool(
+            chaos_print_config,
+            "silhouette_registration_marks",
+            "1",
+        ),
+        "print_template": print_template,
+        "export_add_bleed": get_config_bool(
+            config,
+            "export_add_bleed",
+            "0",
+        ),
+        "export_enabled": get_config_bool(
+            config,
+            "enable_chaos_card_image_export",
+            "0",
+        ),
     }
 
 

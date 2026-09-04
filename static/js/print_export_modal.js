@@ -267,14 +267,18 @@
             revokeActiveObjectUrlLater();
         }
 
-        function openPdfBlob(blob, filename, pendingWindow) {
+        function openPdfBlob(blob) {
             activeObjectUrl = URL.createObjectURL(blob);
 
-            if (pendingWindow && !pendingWindow.closed) {
-                pendingWindow.location.href = activeObjectUrl;
-            } else {
-                window.open(activeObjectUrl, "_blank", "noopener");
-            }
+            const link = document.createElement("a");
+            link.href = activeObjectUrl;
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.style.display = "none";
+
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
 
             revokeActiveObjectUrlLater();
         }
@@ -291,19 +295,6 @@
             if (!actionUrl) {
                 showMessage("Print / Export URL was not configured.", true);
                 return;
-            }
-
-            let pendingPdfWindow = null;
-
-            if (!isExport) {
-                pendingPdfWindow = window.open("", "_blank", "noopener");
-
-                if (pendingPdfWindow) {
-                    pendingPdfWindow.document.write(
-                        "<!doctype html><title>Generating PDF...</title><body style='font-family: sans-serif; padding: 24px;'>Generating PDF...</body>"
-                    );
-                    pendingPdfWindow.document.close();
-                }
             }
 
             resetStatusPanel();
@@ -342,10 +333,6 @@
                         isExport ? "Export to Zip failed." : "Print to PDF failed."
                     );
 
-                    if (pendingPdfWindow && !pendingPdfWindow.closed) {
-                        pendingPdfWindow.close();
-                    }
-
                     throw new Error(errorText);
                 }
 
@@ -366,7 +353,7 @@
                 if (isExport) {
                     downloadBlob(blob, filename);
                 } else {
-                    openPdfBlob(blob, filename, pendingPdfWindow);
+                    openPdfBlob(blob);
                 }
 
                 setStatusComplete(
@@ -392,6 +379,10 @@
                 openButton.addEventListener("click", function (event) {
                     event.preventDefault();
                     event.stopPropagation();
+
+                    if (form) {
+                        form.reset();
+                    }
 
                     if (typeof config.beforeOpen === "function") {
                         config.beforeOpen();
@@ -462,6 +453,10 @@
 
                 if (options.printUrl || options.exportZipUrl) {
                     setUrls(options.printUrl || "", options.exportZipUrl || "");
+                }
+
+                if (form) {
+                    form.reset();
                 }
 
                 if (typeof options.beforeOpen === "function") {
