@@ -161,6 +161,7 @@ CHAOS_ONLY_PRINT_SETTING_KEYS = (
     "no_wasted_space_enabled",
     "no_wasted_space_set_rules",
     "no_wasted_space_card_types",
+    "no_wasted_space_label_option",
 )
 
 
@@ -274,6 +275,7 @@ DEFAULT_CONFIG = {
     "chaos_no_wasted_space_enabled": "0",
     "chaos_no_wasted_space_set_rules": "current_set",
     "chaos_no_wasted_space_card_types": "any",
+    "chaos_no_wasted_space_label_option": "use_label_setting",
 
     # Legacy safety-band checkbox value.
     "chaos_pdf_outer_slot_region_band": "",
@@ -385,6 +387,15 @@ NO_WASTE_CARD_TYPE_OPTIONS = [
     ("non_basic_lands_only", "Non Basic Lands Only"),
     ("artifacts_only", "Artifacts Only"),
     ("rare_mythic_only", "Rare/Mythic Only"),
+]
+
+NO_WASTE_LABEL_OPTIONS = [
+    ("use_label_setting", "Use Label Setting"),
+    ("bonus_card", "Display BONUS CARD"),
+    ("proxy", "Display PROXY"),
+    ("surprise", "Display SURPRISE!"),
+    ("rarity_hearts", "Display 🤍🤍🤍"),
+    ("no_label", "No Label"),
 ]
 
 CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [

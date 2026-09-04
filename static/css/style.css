@@ -12074,6 +12074,108 @@ body.modal-open {
     overflow: hidden;
 }
 
+.no-waste-surprise-section {
+    grid-column: 1 / -1;
+    width: 100%;
+    border: 1px solid rgba(156, 95, 255, 0.28);
+    border-radius: 14px;
+    background: rgba(111, 45, 189, 0.055);
+    padding: 10px;
+    transition:
+        border-color 160ms ease,
+        box-shadow 160ms ease,
+        background 160ms ease;
+}
+
+.no-waste-surprise-section-active {
+    border-color: rgba(193, 132, 255, 0.82);
+    background: linear-gradient(
+        110deg,
+        rgba(92, 32, 160, 0.17) 0%,
+        rgba(177, 102, 255, 0.28) 35%,
+        rgba(112, 49, 189, 0.16) 52%,
+        rgba(216, 167, 255, 0.24) 68%,
+        rgba(92, 32, 160, 0.17) 100%
+    );
+    background-size: 240% 100%;
+    box-shadow:
+        0 0 0 1px rgba(179, 111, 255, 0.13),
+        0 0 24px rgba(153, 77, 255, 0.19);
+    animation: no-waste-purple-shimmer 3.2s linear infinite;
+}
+
+.no-waste-surprise-toggle-row {
+    margin: 0;
+}
+
+.no-waste-surprise-toggle-row > span {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.no-waste-surprise-toggle-row strong {
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.no-waste-surprise-toggle-row small {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.no-waste-surprise-details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(193, 132, 255, 0.22);
+}
+
+.no-waste-surprise-details.hidden {
+    display: none !important;
+}
+
+.no-waste-label-option-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.no-waste-label-option-field select {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--button);
+    color: var(--text);
+    padding: 7px 10px;
+    font: inherit;
+    cursor: pointer;
+}
+
+.no-waste-label-option-field select:hover {
+    background: var(--button-hover);
+}
+
+@keyframes no-waste-purple-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+
+    100% {
+        background-position: -140% 0;
+    }
+}
+
+@media (max-width: 760px) {
+    .no-waste-surprise-details {
+        grid-template-columns: 1fr;
+    }
+}
+
 .imomir-multi-select-field {
     position: relative;
     display: flex;

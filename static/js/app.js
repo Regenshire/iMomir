@@ -823,6 +823,202 @@ function initializeAppNavigationMenus() {
     loadSavedMenuState();
 })();
 
+(function () {
+    const multiSelectSelector = "[data-imomir-multi-select]";
+    const noWasteSectionSelector = "[data-no-waste-surprise-section]";
+
+    function updateMultiSelectLabel(container) {
+        const label = container.querySelector(
+            ".custom-draft-multi-select-label"
+        );
+
+        if (!label) {
+            return;
+        }
+
+        const selectedLabels = Array.from(
+            container.querySelectorAll(
+                'input[type="checkbox"]:checked'
+            )
+        ).map(function (checkbox) {
+            const optionLabel = checkbox.closest("label");
+            const textNode = optionLabel
+                ? optionLabel.querySelector("span")
+                : null;
+
+            return textNode
+                ? textNode.textContent.trim()
+                : String(checkbox.value || "").trim();
+        }).filter(Boolean);
+
+        label.textContent = selectedLabels.length
+            ? selectedLabels.join(", ")
+            : (container.dataset.placeholder || "Any");
+    }
+
+    function closeMultiSelectMenu(container) {
+        const button = container.querySelector(
+            ".custom-draft-multi-select-button"
+        );
+        const menu = container.querySelector(
+            ".custom-draft-multi-select-menu"
+        );
+
+        if (button) {
+            button.setAttribute("aria-expanded", "false");
+        }
+
+        if (menu) {
+            menu.classList.add("hidden");
+        }
+    }
+
+    function bindMultiSelect(container) {
+        if (container.dataset.imomirMultiSelectBound === "1") {
+            return;
+        }
+
+        container.dataset.imomirMultiSelectBound = "1";
+
+        const button = container.querySelector(
+            ".custom-draft-multi-select-button"
+        );
+        const menu = container.querySelector(
+            ".custom-draft-multi-select-menu"
+        );
+
+        if (button && menu) {
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                const shouldOpen = menu.classList.contains("hidden");
+
+                document.querySelectorAll(
+                    multiSelectSelector
+                ).forEach(function (otherContainer) {
+                    if (otherContainer !== container) {
+                        closeMultiSelectMenu(otherContainer);
+                    }
+                });
+
+                menu.classList.toggle("hidden", !shouldOpen);
+                button.setAttribute(
+                    "aria-expanded",
+                    shouldOpen ? "true" : "false"
+                );
+            });
+        }
+
+        container.querySelectorAll(
+            'input[type="checkbox"]'
+        ).forEach(function (checkbox) {
+            checkbox.addEventListener("change", function () {
+                const exclusiveValue = String(
+                    container.dataset.exclusiveValue || ""
+                ).trim().toLowerCase();
+
+                if (checkbox.checked && exclusiveValue) {
+                    const checkboxValue = String(
+                        checkbox.value || ""
+                    ).trim().toLowerCase();
+
+                    container.querySelectorAll(
+                        'input[type="checkbox"]'
+                    ).forEach(function (otherCheckbox) {
+                        const otherValue = String(
+                            otherCheckbox.value || ""
+                        ).trim().toLowerCase();
+
+                        if (checkboxValue === exclusiveValue) {
+                            if (otherCheckbox !== checkbox) {
+                                otherCheckbox.checked = false;
+                            }
+                        } else if (otherValue === exclusiveValue) {
+                            otherCheckbox.checked = false;
+                        }
+                    });
+                }
+
+                updateMultiSelectLabel(container);
+            });
+        });
+
+        updateMultiSelectLabel(container);
+    }
+
+    function updateNoWasteSection(section) {
+        const toggle = section.querySelector(
+            "[data-no-waste-surprise-toggle]"
+        );
+        const details = section.querySelector(
+            "[data-no-waste-surprise-details]"
+        );
+        const isEnabled = Boolean(toggle && toggle.checked);
+
+        section.classList.toggle(
+            "no-waste-surprise-section-active",
+            isEnabled
+        );
+
+        if (details) {
+            details.classList.toggle("hidden", !isEnabled);
+        }
+    }
+
+    function bindNoWasteSection(section) {
+        if (section.dataset.noWasteSurpriseBound === "1") {
+            return;
+        }
+
+        section.dataset.noWasteSurpriseBound = "1";
+
+        const toggle = section.querySelector(
+            "[data-no-waste-surprise-toggle]"
+        );
+
+        if (toggle) {
+            toggle.addEventListener("change", function () {
+                updateNoWasteSection(section);
+            });
+        }
+
+        updateNoWasteSection(section);
+    }
+
+    document.querySelectorAll(
+        multiSelectSelector
+    ).forEach(bindMultiSelect);
+
+    document.querySelectorAll(
+        noWasteSectionSelector
+    ).forEach(bindNoWasteSection);
+
+    document.addEventListener("click", function (event) {
+        if (event.target.closest(multiSelectSelector)) {
+            return;
+        }
+
+        document.querySelectorAll(
+            multiSelectSelector
+        ).forEach(closeMultiSelectMenu);
+    });
+
+    document.querySelectorAll("form").forEach(function (form) {
+        form.addEventListener("reset", function () {
+            window.requestAnimationFrame(function () {
+                form.querySelectorAll(
+                    multiSelectSelector
+                ).forEach(updateMultiSelectLabel);
+
+                form.querySelectorAll(
+                    noWasteSectionSelector
+                ).forEach(updateNoWasteSection);
+            });
+        });
+    });
+})();
+
 /* ==========================================
    Reusable checkbox multi-select dropdowns
    ========================================== */

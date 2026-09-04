@@ -1,8 +1,8 @@
 import copy
 import csv
-import gzip
 import hashlib
 import json
+import math
 import os
 import random
 import re
@@ -98,6 +98,7 @@ from settings import (
     MTGJSON_SET_BOOSTER_SHEETS_URL,
     MTGJSON_SET_LIST_URL,
     NO_WASTE_CARD_TYPE_OPTIONS,
+    NO_WASTE_LABEL_OPTIONS,
     NO_WASTE_SET_RULE_OPTIONS,
     OTHER_FILTER_KEYS,
     PACK_PRICE_SOURCE_OPTIONS,
@@ -459,6 +460,10 @@ NO_WASTE_CARD_TYPE_VALUES = tuple(
     value for value, _ in NO_WASTE_CARD_TYPE_OPTIONS
 )
 
+NO_WASTE_LABEL_OPTION_VALUES = tuple(
+    value for value, _ in NO_WASTE_LABEL_OPTIONS
+)
+
 
 def normalize_no_waste_option_values(
     raw_values,
@@ -511,6 +516,15 @@ def normalize_no_waste_card_types(raw_values):
     return normalized_values
 
 
+def normalize_no_waste_label_option(raw_value):
+    clean_value = str(raw_value or "").strip().lower()
+
+    if clean_value in NO_WASTE_LABEL_OPTION_VALUES:
+        return clean_value
+
+    return "use_label_setting"
+
+
 def resolve_no_waste_settings_from_config(config):
     chaos_print_config = resolve_scoped_print_config(
         config or {},
@@ -534,6 +548,12 @@ def resolve_no_waste_settings_from_config(config):
                 "no_wasted_space_card_types"
             )
             or "any"
+        ),
+        "label_option": normalize_no_waste_label_option(
+            chaos_print_config.get(
+                "no_wasted_space_label_option"
+            )
+            or "use_label_setting"
         ),
     }
 
@@ -576,6 +596,14 @@ def get_request_no_waste_settings():
             g.print_export_no_wasted_space_card_types_override
         )
 
+    if hasattr(
+        g,
+        "print_export_no_wasted_space_label_option_override",
+    ):
+        settings["label_option"] = normalize_no_waste_label_option(
+            g.print_export_no_wasted_space_label_option_override
+        )
+
     return settings
 
 
@@ -606,6 +634,8 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
 
     if label_mode not in {"pack_code", "proxy"}:
         label_mode = "pack_code"
+
+    g.print_export_label_mode_override = label_mode
 
     if label_mode == "proxy":
         label_text = "iMomir PROXY"
@@ -687,6 +717,15 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
             get_form_values(
                 "no_wasted_space_card_types"
             )
+        )
+    )
+
+    g.print_export_no_wasted_space_label_option_override = (
+        normalize_no_waste_label_option(
+            form_data.get(
+                "no_wasted_space_label_option"
+            )
+            or no_waste_defaults["label_option"]
         )
     )
 
@@ -817,8 +856,37 @@ def get_effective_pack_tracking_code(pack_tracking_code, label_settings=None):
     if not label_settings.get("print_labels_enabled"):
         return ""
 
-    if has_request_context() and hasattr(g, "print_export_label_text_override"):
-        return (g.print_export_label_text_override or "").strip()
+    if has_request_context():
+        label_mode_override = getattr(
+            g,
+            "print_export_label_mode_override",
+            "",
+        )
+
+        if label_mode_override == "proxy":
+            return (
+                getattr(
+                    g,
+                    "print_export_label_text_override",
+                    "iMomir PROXY",
+                )
+                or "iMomir PROXY"
+            ).strip()
+
+        if label_mode_override == "pack_code":
+            label_text_override = getattr(
+                g,
+                "print_export_label_text_override",
+                None,
+            )
+
+            if label_text_override is not None:
+                return str(label_text_override or "").strip()
+
+            return (pack_tracking_code or "").strip()
+
+        if hasattr(g, "print_export_label_text_override"):
+            return (g.print_export_label_text_override or "").strip()
 
     if not label_settings.get("print_label_tracking_code"):
         return ""
@@ -1458,6 +1526,9 @@ def inject_global_template_state():
         "global_no_waste_card_type_options": (
             NO_WASTE_CARD_TYPE_OPTIONS
         ),
+        "global_no_waste_label_options": (
+            NO_WASTE_LABEL_OPTIONS
+        ),
 
         "global_card_upscaling_control_enabled": (
             is_card_upscaling_control_enabled()
@@ -2006,6 +2077,14 @@ def update_config_from_form(form_data):
     ] = ",".join(
         normalize_no_waste_card_types(
             raw_no_waste_card_types
+        )
+    )
+
+    updated_config[
+        "chaos_no_wasted_space_label_option"
+    ] = normalize_no_waste_label_option(
+        form_data.get(
+            "chaos_no_wasted_space_label_option"
         )
     )
 
@@ -5278,7 +5357,95 @@ def build_card_corner_label_text(rendered_entry, pack_tracking_code=None, print_
 
     return " - ".join(label_parts).strip()
 
-def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=None, print_front_back_label=False):
+
+NO_WASTE_RARITY_LABEL_RGB = {
+    "common": (255, 255, 255),
+    "uncommon": (192, 192, 192),
+    "rare": (212, 175, 55),
+    "mythic": (211, 84, 32),
+    "mythic rare": (211, 84, 32),
+}
+
+
+def get_no_waste_rarity_label_rgb(card_row):
+    rarity = ""
+
+    if card_row:
+        try:
+            rarity = str(
+                card_row["rarity"] or ""
+            ).strip().lower()
+        except (KeyError, IndexError, TypeError):
+            rarity = ""
+
+    return NO_WASTE_RARITY_LABEL_RGB.get(
+        rarity,
+        NO_WASTE_RARITY_LABEL_RGB["common"],
+    )
+
+
+def resolve_no_waste_filler_label_render_options(rendered_entry):
+    label_option = normalize_no_waste_label_option(
+        get_request_no_waste_settings().get(
+            "label_option"
+        )
+    )
+
+    if label_option == "use_label_setting":
+        return {
+            "use_print_job_label": True,
+            "use_label_text_override": False,
+            "label_text_override": "",
+            "label_fill_rgb_override": None,
+            "force_label_rendering": False,
+        }
+
+    if label_option == "no_label":
+        return {
+            "use_print_job_label": False,
+            "use_label_text_override": True,
+            "label_text_override": "",
+            "label_fill_rgb_override": None,
+            "force_label_rendering": False,
+        }
+
+    label_text_by_option = {
+        "bonus_card": "BONUS CARD",
+        "proxy": "PROXY",
+        "surprise": "SURPRISE!",
+        "rarity_hearts": "♥♥♥"
+    }
+
+    label_fill_rgb_override = None
+
+    if label_option in {"rarity_hearts"}:
+        label_fill_rgb_override = (
+            get_no_waste_rarity_label_rgb(
+                rendered_entry.get("card_row")
+            )
+        )
+
+    return {
+        "use_print_job_label": False,
+        "use_label_text_override": True,
+        "label_text_override": label_text_by_option.get(
+            label_option,
+            "BONUS CARD",
+        ),
+        "label_fill_rgb_override": label_fill_rgb_override,
+        "force_label_rendering": True,
+    }
+
+
+def build_pdf_rendered_entry_with_template(
+    rendered_entry,
+    pack_tracking_code=None,
+    print_front_back_label=False,
+    label_text_override="",
+    use_label_text_override=False,
+    label_fill_rgb_override=None,
+    force_label_rendering=False,
+):
     card_row = rendered_entry.get("card_row")
     card_uuid = (rendered_entry.get("card_uuid") or "").strip()
     page_kind = (rendered_entry.get("page_kind") or "").strip().lower()
@@ -5286,16 +5453,33 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
     if not card_row or not card_uuid:
         return rendered_entry
 
-    label_text = build_card_corner_label_text(
-        rendered_entry,
-        pack_tracking_code=pack_tracking_code,
-        print_front_back_label=print_front_back_label,
-    )
+    if use_label_text_override:
+        label_text = str(
+            label_text_override or ""
+        ).strip()
+    else:
+        label_text = build_card_corner_label_text(
+            rendered_entry,
+            pack_tracking_code=pack_tracking_code,
+            print_front_back_label=print_front_back_label,
+        )
+
+    label_cache_key = label_text or "nolabel"
+
+    if force_label_rendering:
+        label_cache_key = f"{label_cache_key}__forced"
+
+    if label_fill_rgb_override is not None:
+        fill_rgb = tuple(label_fill_rgb_override)
+        label_cache_key = (
+            f"{label_cache_key}__rgb_"
+            f"{fill_rgb[0]}_{fill_rgb[1]}_{fill_rgb[2]}"
+        )
 
     rendered_temp_path = get_chaos_rendered_pdf_image_temp_path(
         card_uuid,
         page_kind,
-        label_text,
+        label_cache_key,
     )
 
     uses_real_source_bleed = bool(
@@ -5331,6 +5515,10 @@ def build_pdf_rendered_entry_with_template(rendered_entry, pack_tracking_code=No
         # ordinary cards it rounds the finished 63 x 88 mm card before
         # adding bleed; real full-bleed sources keep their existing edges.
         skip_card_corner_radius=True,
+        normal_text_fill_rgb_override=(
+            label_fill_rgb_override
+        ),
+        force_normal_label=force_label_rendering,
     )
 
     updated_entry = dict(rendered_entry)
@@ -10898,26 +11086,69 @@ def build_chaos_pack_pdf(
 
         template_rendered_entries = []
 
+        print_job_label_text = get_effective_pack_tracking_code(
+            pack_tracking_code,
+            label_settings=pdf_settings,
+        )
+
         for rendered_entry in rendered_image_entries:
             if rendered_entry.get("page_kind") == "title":
                 template_rendered_entries.append(rendered_entry)
                 continue
 
+            label_render_options = {
+                "use_print_job_label": True,
+                "use_label_text_override": False,
+                "label_text_override": "",
+                "label_fill_rgb_override": None,
+                "force_label_rendering": False,
+            }
+
+            if rendered_entry.get("is_no_waste_filler"):
+                label_render_options = (
+                    resolve_no_waste_filler_label_render_options(
+                        rendered_entry
+                    )
+                )
+
             template_rendered_entries.append(
                 build_pdf_rendered_entry_with_template(
                     rendered_entry,
                     pack_tracking_code=(
-                        None
-                        if rendered_entry.get(
-                            "is_no_waste_filler"
-                        )
-                        else get_effective_pack_tracking_code(
-                            pack_tracking_code,
-                            label_settings=pdf_settings,
-                        )
+                        print_job_label_text
+                        if label_render_options[
+                            "use_print_job_label"
+                        ]
+                        else None
                     ),
-                    print_front_back_label=pdf_settings.get(
-                        "print_label_front_back"
+                    print_front_back_label=(
+                        pdf_settings.get(
+                            "print_label_front_back"
+                        )
+                        if label_render_options[
+                            "use_print_job_label"
+                        ]
+                        else False
+                    ),
+                    label_text_override=(
+                        label_render_options[
+                            "label_text_override"
+                        ]
+                    ),
+                    use_label_text_override=(
+                        label_render_options[
+                            "use_label_text_override"
+                        ]
+                    ),
+                    label_fill_rgb_override=(
+                        label_render_options[
+                            "label_fill_rgb_override"
+                        ]
+                    ),
+                    force_label_rendering=(
+                        label_render_options[
+                            "force_label_rendering"
+                        ]
                     ),
                 )
             )
@@ -11993,11 +12224,23 @@ def draw_image_export_template_text(
     )
 
 
-def draw_image_export_corner_label(image, label_text, template_config, matte_rgb, overlay_fill_rgb=None):
+def draw_image_export_corner_label(
+    image,
+    label_text,
+    template_config,
+    matte_rgb,
+    overlay_fill_rgb=None,
+    normal_text_fill_rgb_override=None,
+    force_normal_label=False,
+):
     source_image = image.convert("RGB")
     template_config = template_config or {}
 
-    if has_request_context() and hasattr(g, "print_export_labels_enabled_override"):
+    if (
+        not force_normal_label
+        and has_request_context()
+        and hasattr(g, "print_export_labels_enabled_override")
+    ):
         if not bool(g.print_export_labels_enabled_override):
             return source_image
 
@@ -12008,7 +12251,10 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     text_box_enabled = bool(template_config.get("text_box_enabled", True))
 
     normal_label_text = (label_text or "").strip()
-    if not pack_code_enabled or not text_box_enabled:
+    if (
+        not force_normal_label
+        and (not pack_code_enabled or not text_box_enabled)
+    ):
         normal_label_text = ""
 
     custom_text = str(template_config.get("custom_text") or "").strip()
@@ -12064,10 +12310,15 @@ def draw_image_export_corner_label(image, label_text, template_config, matte_rgb
     draw = ImageDraw.Draw(source_image)
 
     if normal_label_text:
-        normal_text_fill_rgb = get_readable_overlay_text_rgb(
-            overlay_fill_rgb,
-            template_config=template_config,
-        )
+        if normal_text_fill_rgb_override is not None:
+            normal_text_fill_rgb = tuple(
+                normal_text_fill_rgb_override
+            )
+        else:
+            normal_text_fill_rgb = get_readable_overlay_text_rgb(
+                overlay_fill_rgb,
+                template_config=template_config,
+            )
 
         draw_image_export_template_text(
             draw=draw,
@@ -12123,6 +12374,8 @@ def build_export_card_image(
     use_bleed_template=False,
     skip_card_corner_radius=False,
     add_edge_border=True,
+    normal_text_fill_rgb_override=None,
+    force_normal_label=False,
 ):
     with Image.open(source_image_path) as source_image:
         image = source_image.convert("RGB")
@@ -12223,6 +12476,10 @@ def build_export_card_image(
             template_config=template_config,
             matte_rgb=card_matte_rgb,
             overlay_fill_rgb=overlay_fill_rgb,
+            normal_text_fill_rgb_override=(
+                normal_text_fill_rgb_override
+            ),
+            force_normal_label=force_normal_label,
         )
 
         os.makedirs(os.path.dirname(output_image_path), exist_ok=True)
@@ -12238,6 +12495,8 @@ def build_chaos_template_rendered_card_image(
     use_bleed_template=False,
     skip_card_corner_radius=False,
     add_edge_border=True,
+    normal_text_fill_rgb_override=None,
+    force_normal_label=False,
 ):
     """
     Shared Chaos Draft card rendering path.
@@ -12265,6 +12524,10 @@ def build_chaos_template_rendered_card_image(
         use_bleed_template=use_bleed_template,
         skip_card_corner_radius=skip_card_corner_radius,
         add_edge_border=add_edge_border,
+        normal_text_fill_rgb_override=(
+            normal_text_fill_rgb_override
+        ),
+        force_normal_label=force_normal_label,
     )
 
     return output_image_path
@@ -16729,6 +16992,7 @@ def config():
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
         no_waste_set_rule_options=NO_WASTE_SET_RULE_OPTIONS,
         no_waste_card_type_options=NO_WASTE_CARD_TYPE_OPTIONS,
+        no_waste_label_options=NO_WASTE_LABEL_OPTIONS,
         chaos_draft_export_format_options=CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
         scryfall_image_quality_options=SCRYFALL_IMAGE_QUALITY_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
@@ -19748,6 +20012,9 @@ def get_print_export_defaults_from_config(config):
         ),
         "no_wasted_space_card_types": (
             no_waste_settings["card_types"]
+        ),
+        "no_wasted_space_label_option": (
+            no_waste_settings["label_option"]
         ),
         "print_template": print_template,
         "export_add_bleed": get_config_bool(

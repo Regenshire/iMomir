@@ -1,4 +1,4 @@
-{% macro render_scoped_print_settings(scope, values, print_template_options, print_color_mode_options, include_chaos_options=false, no_waste_set_rule_options=(), no_waste_card_type_options=()) %}
+{% macro render_scoped_print_settings(scope, values, print_template_options, print_color_mode_options, include_chaos_options=false, no_waste_set_rule_options=(), no_waste_card_type_options=(), no_waste_label_options=()) %}
 <div class="settings-grid">
     <label class="toggle-row" for="{{ scope }}_print_template">
         <span>Default Print Template</span>
@@ -25,88 +25,121 @@
     {% if include_chaos_options %}
     {% set selected_no_waste_set_rules = (values.get("no_wasted_space_set_rules") or "current_set").split(",") %}
     {% set selected_no_waste_card_types = (values.get("no_wasted_space_card_types") or "any").split(",") %}
+    {% set selected_no_waste_label_option = values.get("no_wasted_space_label_option") or "use_label_setting" %}
+    {% set no_waste_enabled = values.get("no_wasted_space_enabled", "0") == "1" %}
 
-    <label class="toggle-row settings-field">
-        <span>No Wasted Space! Surprise Me</span>
-        <input
-            type="checkbox"
-            name="{{ scope }}_no_wasted_space_enabled"
-            {% if values.get("no_wasted_space_enabled", "0") == "1" %}checked{% endif %}
-        >
-    </label>
-
-    <div
-        class="imomir-multi-select-field custom-draft-multi-select"
-        data-imomir-multi-select
-        data-placeholder="Current Set Only"
+    <section
+        class="no-waste-surprise-section{% if no_waste_enabled %} no-waste-surprise-section-active{% endif %}"
+        data-no-waste-surprise-section
     >
-        <span class="imomir-multi-select-title">
-            No Wasted Space - Set Rules
-        </span>
-
-        <button
-            type="button"
-            class="custom-draft-multi-select-button"
-            aria-haspopup="true"
-            aria-expanded="false"
-        >
-            <span class="custom-draft-multi-select-label">
-                Current Set Only
+        <label class="toggle-row settings-field no-waste-surprise-toggle-row">
+            <span>
+                <strong>No Wasted Space! Surprise Me</strong>
+                <small>Fill unused print slots with surprise cards.</small>
             </span>
-            <span class="custom-draft-multi-select-chevron">▾</span>
-        </button>
+            <input
+                type="checkbox"
+                class="no-waste-surprise-toggle"
+                name="{{ scope }}_no_wasted_space_enabled"
+                data-no-waste-surprise-toggle
+                {% if no_waste_enabled %}checked{% endif %}
+            >
+        </label>
 
-        <div class="custom-draft-multi-select-menu hidden">
-            {% for value, label in no_waste_set_rule_options %}
-            <label>
-                <input
-                    type="checkbox"
-                    name="{{ scope }}_no_wasted_space_set_rules"
-                    value="{{ value }}"
-                    {% if value in selected_no_waste_set_rules %}checked{% endif %}
-                >
-                <span>{{ label }}</span>
-            </label>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div
-        class="imomir-multi-select-field custom-draft-multi-select"
-        data-imomir-multi-select
-        data-placeholder="Any cards"
-        data-exclusive-value="any"
-    >
-        <span class="imomir-multi-select-title">
-            No Wasted Space - Card Type
-        </span>
-
-        <button
-            type="button"
-            class="custom-draft-multi-select-button"
-            aria-haspopup="true"
-            aria-expanded="false"
+        <div
+            class="no-waste-surprise-details{% if not no_waste_enabled %} hidden{% endif %}"
+            data-no-waste-surprise-details
         >
-            <span class="custom-draft-multi-select-label">
-                Any cards
-            </span>
-            <span class="custom-draft-multi-select-chevron">▾</span>
-        </button>
+            <div
+                class="imomir-multi-select-field custom-draft-multi-select"
+                data-imomir-multi-select
+                data-placeholder="Current Set Only"
+            >
+                <span class="imomir-multi-select-title">
+                    No Wasted Space - Set Rules
+                </span>
 
-        <div class="custom-draft-multi-select-menu hidden">
-            {% for value, label in no_waste_card_type_options %}
-            <label>
-                <input
-                    type="checkbox"
-                    name="{{ scope }}_no_wasted_space_card_types"
-                    value="{{ value }}"
-                    {% if value in selected_no_waste_card_types %}checked{% endif %}
+                <button
+                    type="button"
+                    class="custom-draft-multi-select-button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
                 >
-                <span>{{ label }}</span>
+                    <span class="custom-draft-multi-select-label">
+                        Current Set Only
+                    </span>
+                    <span class="custom-draft-multi-select-chevron">▾</span>
+                </button>
+
+                <div class="custom-draft-multi-select-menu hidden">
+                    {% for value, label in no_waste_set_rule_options %}
+                    <label>
+                        <input
+                            type="checkbox"
+                            name="{{ scope }}_no_wasted_space_set_rules"
+                            value="{{ value }}"
+                            {% if value in selected_no_waste_set_rules %}checked{% endif %}
+                        >
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div
+                class="imomir-multi-select-field custom-draft-multi-select"
+                data-imomir-multi-select
+                data-placeholder="Any cards"
+                data-exclusive-value="any"
+            >
+                <span class="imomir-multi-select-title">
+                    No Wasted Space - Card Type
+                </span>
+
+                <button
+                    type="button"
+                    class="custom-draft-multi-select-button"
+                    aria-haspopup="true"
+                    aria-expanded="false"
+                >
+                    <span class="custom-draft-multi-select-label">
+                        Any cards
+                    </span>
+                    <span class="custom-draft-multi-select-chevron">▾</span>
+                </button>
+
+                <div class="custom-draft-multi-select-menu hidden">
+                    {% for value, label in no_waste_card_type_options %}
+                    <label>
+                        <input
+                            type="checkbox"
+                            name="{{ scope }}_no_wasted_space_card_types"
+                            value="{{ value }}"
+                            {% if value in selected_no_waste_card_types %}checked{% endif %}
+                        >
+                        <span>{{ label }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <label class="no-waste-label-option-field">
+                <span class="imomir-multi-select-title">
+                    No Wasted Space - Label Options
+                </span>
+                <select name="{{ scope }}_no_wasted_space_label_option">
+                    {% for value, label in no_waste_label_options %}
+                    <option
+                        value="{{ value }}"
+                        {% if selected_no_waste_label_option == value %}selected{% endif %}
+                    >
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
             </label>
-            {% endfor %}
         </div>
-    </div>
+    </section>
     {% endif %}
 
     <label class="toggle-row" for="{{ scope }}_print_color_mode">
