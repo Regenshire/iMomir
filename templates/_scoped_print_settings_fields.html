@@ -11,6 +11,17 @@
         </select>
     </label>
 
+    {% if include_chaos_options %}
+    <label class="toggle-row settings-field">
+        <span>Silhouette Registration Marks</span>
+        <input
+            type="checkbox"
+            name="{{ scope }}_silhouette_registration_marks"
+            {% if values.get("silhouette_registration_marks", "1") == "1" %}checked{% endif %}
+        >
+    </label>
+    {% endif %}
+
     <label class="toggle-row" for="{{ scope }}_print_color_mode">
         <span>Default Print Color</span>
         <select id="{{ scope }}_print_color_mode" name="{{ scope }}_print_color_mode">

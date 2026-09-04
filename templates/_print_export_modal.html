@@ -132,6 +132,20 @@
                             {% if not print_export_defaults or print_export_defaults.pdf_cutting_guides %}checked{% endif %}
                         >
                     </label>
+                    <label class="toggle-row">
+                        <span>Silhouette Registration Marks</span>
+                        <input
+                            type="hidden"
+                            name="silhouette_registration_marks"
+                            value="0"
+                        >
+                        <input
+                            type="checkbox"
+                            name="silhouette_registration_marks"
+                            value="1"
+                            {% if not print_export_defaults or print_export_defaults.silhouette_registration_marks %}checked{% endif %}
+                        >
+                    </label>
                 </div>
 
                 <div class="print-export-settings-section">

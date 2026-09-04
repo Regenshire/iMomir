@@ -156,6 +156,11 @@ SCOPED_PRINT_SETTING_KEYS = (
 )
 
 
+CHAOS_ONLY_PRINT_SETTING_KEYS = (
+    "silhouette_registration_marks",
+)
+
+
 def resolve_scoped_print_config(config, scope):
     resolved = dict(config or {})
     normalized_scope = (scope or "momir").strip().lower()
@@ -165,7 +170,12 @@ def resolve_scoped_print_config(config, scope):
 
     prefix = f"{normalized_scope}_"
 
-    for key in SCOPED_PRINT_SETTING_KEYS:
+    scoped_keys = SCOPED_PRINT_SETTING_KEYS
+
+    if normalized_scope == "chaos":
+        scoped_keys += CHAOS_ONLY_PRINT_SETTING_KEYS
+
+    for key in scoped_keys:
         scoped_value = resolved.get(f"{prefix}{key}")
 
         if scoped_value is None:
@@ -257,6 +267,7 @@ DEFAULT_CONFIG = {
     "chaos_print_bleed_size_mm": "",
     "chaos_pdf_crop_border": "",
     "chaos_pdf_cutting_guides": "1",
+    "chaos_silhouette_registration_marks": "1",
 
     # Legacy safety-band checkbox value.
     "chaos_pdf_outer_slot_region_band": "",
@@ -351,18 +362,8 @@ PRINT_TEMPLATE_OPTIONS = [
     ("borderless-3p5x5-two-card", "PDF ONLY - 3.5 x 5 Borderless - 2 Card Layout"),
     ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
     ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
-    ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
-    ("silhouette-a4-vertical-9", "Silhouette A4 - Vertical - 9 Card"),
-]
-
-PRINT_TEMPLATE_OPTIONS = [
-    ("dk-1234", "DK-1234"),
-    ("standard", "Standard"),
-    ("borderless-3p5x5-two-card", "PDF ONLY - 3.5 x 5 Borderless - 2 Card Layout"),
-    ("portrait-3p5x5-top-aligned", "PDF ONLY - 3.5 x 5 Portrait Top aligned"),
-    ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
-    ("silhouette-letter-horizontal-8", "Silhouette Letter - Horizontal - 8 Card"),
-    ("silhouette-a4-vertical-9", "Silhouette A4 - Vertical - 9 Card"),
+    ("silhouette-letter-horizontal-8", "US Letter - Horizontal - 8 Card"),
+    ("silhouette-a4-vertical-9", "A4 - Vertical - 9 Card"),
 ]
 
 CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [

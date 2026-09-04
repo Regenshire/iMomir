@@ -489,6 +489,17 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
         default_value=True,
     )
 
+    g.print_export_silhouette_registration_marks_override = (
+        parse_print_export_override_bool(
+            get_form_values(
+                "silhouette_registration_marks"
+            ),
+            default_value=(
+                is_silhouette_registration_marks_enabled()
+            ),
+        )
+    )
+
     g.print_export_add_bleed_override = parse_print_export_override_bool(
         get_form_values("export_add_bleed"),
         default_value=False,
@@ -1562,6 +1573,7 @@ def update_config_from_form(form_data):
         "chaos_use_pdf_print",
         "chaos_pdf_crop_border",
         "chaos_pdf_cutting_guides",
+        "chaos_silhouette_registration_marks",
         "chaos_print_card_backs",
         "chaos_print_labels_enabled",
         "chaos_print_label_tracking_code",
@@ -4534,6 +4546,71 @@ def draw_pdf_background_image(pdf_canvas, image_path, page_width_mm, page_height
         mask="auto",
     )
 
+def is_silhouette_registration_marks_enabled():
+    if (
+        has_request_context()
+        and hasattr(
+            g,
+            "print_export_silhouette_registration_marks_override",
+        )
+    ):
+        return bool(
+            g.print_export_silhouette_registration_marks_override
+        )
+
+    try:
+        config = (
+            get_request_config()
+            if has_request_context()
+            else get_config()
+        )
+
+        config = resolve_scoped_print_config(
+            config,
+            "chaos",
+        )
+    except Exception:
+        config = {}
+
+    return (
+        config.get("silhouette_registration_marks")
+        or "1"
+    ).strip() == "1"
+
+
+def get_silhouette_registration_background_path(
+    silhouette_spec,
+):
+    if not silhouette_spec:
+        return None
+
+    if not is_silhouette_registration_marks_enabled():
+        return None
+
+    background_filename = (
+        silhouette_spec.get("background_filename")
+        or ""
+    ).strip()
+
+    if not background_filename:
+        raise ValueError(
+            "Silhouette layout does not define a registration background."
+        )
+
+    background_abs_path = os.path.join(
+        app.static_folder,
+        "sil",
+        background_filename,
+    )
+
+    if not os.path.exists(background_abs_path):
+        raise FileNotFoundError(
+            f"Silhouette background not found: "
+            f"{background_abs_path}"
+        )
+
+    return background_abs_path
+
 def is_pdf_cutting_guides_enabled():
     if has_request_context() and hasattr(g, "print_export_pdf_cutting_guides_override"):
         return bool(g.print_export_pdf_cutting_guides_override)
@@ -6422,16 +6499,11 @@ def draw_chaos_card_back_entries_into_pdf_layout(
     )
 
     if silhouette_spec:
-        background_abs_path = os.path.join(
-            app.static_folder,
-            "sil",
-            silhouette_spec["background_filename"],
-        )
-
-        if not os.path.exists(background_abs_path):
-            raise FileNotFoundError(
-                f"Silhouette background not found: {background_abs_path}"
+        background_abs_path = (
+            get_silhouette_registration_background_path(
+                silhouette_spec
             )
+        )
 
         slot_defs = silhouette_spec["slot_defs"]
         columns = int(silhouette_spec.get("columns") or len(slot_defs))
@@ -6451,12 +6523,13 @@ def draw_chaos_card_back_entries_into_pdf_layout(
                 page_start_index:page_start_index + cards_per_page
             ]
 
-            draw_pdf_background_image(
-                pdf_canvas,
-                background_abs_path,
-                width_mm,
-                height_mm,
-            )
+            if background_abs_path:
+                draw_pdf_background_image(
+                    pdf_canvas,
+                    background_abs_path,
+                    width_mm,
+                    height_mm,
+                )
 
             if should_draw_pdf_outer_slot_region_band(
                 print_settings,
@@ -6769,14 +6842,11 @@ def draw_chaos_rendered_entries_into_pdf_layout(
     )
 
     if silhouette_spec:
-        background_abs_path = os.path.join(
-            app.static_folder,
-            "sil",
-            silhouette_spec["background_filename"],
+        background_abs_path = (
+            get_silhouette_registration_background_path(
+                silhouette_spec
+            )
         )
-
-        if not os.path.exists(background_abs_path):
-            raise FileNotFoundError(f"Silhouette background not found: {background_abs_path}")
 
         slot_defs = silhouette_spec["slot_defs"]
         cards_per_page = len(slot_defs)
@@ -6786,12 +6856,13 @@ def draw_chaos_rendered_entries_into_pdf_layout(
                 page_start_index:page_start_index + cards_per_page
             ]
 
-            draw_pdf_background_image(
-                pdf_canvas,
-                background_abs_path,
-                width_mm,
-                height_mm,
-            )
+            if background_abs_path:
+                draw_pdf_background_image(
+                    pdf_canvas,
+                    background_abs_path,
+                    width_mm,
+                    height_mm,
+                )
 
             if should_draw_pdf_outer_slot_region_band(
                 print_settings,
@@ -18846,11 +18917,22 @@ def get_fresh_deckbuilder_ajax_payload(deck_id, extra_result_key=None, extra_res
 
 
 def get_print_export_defaults_from_config(config):
+    chaos_print_config = resolve_scoped_print_config(
+        config,
+        "chaos",
+    )
+
     return {
         "show_print_export_labels": (config.get("print_labels_enabled") or "1").strip() == "1",
         "label_text_mode": "pack_code",
         "include_pack_label_cards": (config.get("print_pack_label_cards") or "0").strip() == "1",
         "pdf_cutting_guides": (config.get("pdf_cutting_guides") or "1").strip() == "1",
+        "silhouette_registration_marks": (
+            chaos_print_config.get(
+                "silhouette_registration_marks"
+            )
+            or "1"
+        ).strip() == "1",
         "export_add_bleed": (config.get("export_add_bleed") or "0").strip() == "1",
         "export_enabled": (config.get("enable_chaos_card_image_export") or "0").strip() == "1",
     }
