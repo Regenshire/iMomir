@@ -822,3 +822,285 @@ function initializeAppNavigationMenus() {
 
     loadSavedMenuState();
 })();
+
+/* ==========================================
+   Reusable checkbox multi-select dropdowns
+   ========================================== */
+(function () {
+    const selector = "[data-imomir-multi-select]";
+
+    function getContainers(root) {
+        return Array.from(
+            (root || document).querySelectorAll(selector)
+        );
+    }
+
+    function closeContainer(container) {
+        if (!container) {
+            return;
+        }
+
+        const button = container.querySelector(
+            ".custom-draft-multi-select-button"
+        );
+        const menu = container.querySelector(
+            ".custom-draft-multi-select-menu"
+        );
+
+        if (button) {
+            button.setAttribute(
+                "aria-expanded",
+                "false"
+            );
+        }
+
+        if (menu) {
+            menu.classList.add("hidden");
+        }
+    }
+
+    function getSelectedLabels(container) {
+        return Array.from(
+            container.querySelectorAll(
+                'input[type="checkbox"]:checked'
+            )
+        ).map(function (checkbox) {
+            const label = checkbox.closest("label");
+            const labelText = label
+                ? label.querySelector("span")
+                : null;
+
+            return (
+                labelText
+                && labelText.textContent
+            )
+                ? labelText.textContent.trim()
+                : String(
+                    checkbox.value || ""
+                ).trim();
+        }).filter(Boolean);
+    }
+
+    function updateContainerLabel(container) {
+        if (!container) {
+            return;
+        }
+
+        const labelElement = container.querySelector(
+            ".custom-draft-multi-select-label"
+        );
+
+        if (!labelElement) {
+            return;
+        }
+
+        const selectedLabels = getSelectedLabels(
+            container
+        );
+
+        const totalOptions = (
+            container.querySelectorAll(
+                'input[type="checkbox"]'
+            ).length
+        );
+
+        const placeholder = (
+            container.dataset.placeholder
+            || "Any"
+        );
+
+        const allLabel = (
+            container.dataset.allLabel
+            || "All"
+        );
+
+        if (!selectedLabels.length) {
+            labelElement.textContent = placeholder;
+            return;
+        }
+
+        if (
+            totalOptions > 0
+            && selectedLabels.length === totalOptions
+        ) {
+            labelElement.textContent = allLabel;
+            return;
+        }
+
+        labelElement.textContent = (
+            selectedLabels.join(", ")
+        );
+    }
+
+    function bindContainer(container) {
+        if (
+            !container
+            || container.dataset.imomirMultiSelectBound === "1"
+        ) {
+            return;
+        }
+
+        container.dataset.imomirMultiSelectBound = "1";
+
+        const button = container.querySelector(
+            ".custom-draft-multi-select-button"
+        );
+
+        const menu = container.querySelector(
+            ".custom-draft-multi-select-menu"
+        );
+
+        if (button && menu) {
+            button.addEventListener(
+                "click",
+                function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    const shouldOpen = (
+                        menu.classList.contains(
+                            "hidden"
+                        )
+                    );
+
+                    getContainers(document).forEach(
+                        function (otherContainer) {
+                            if (
+                                otherContainer
+                                !== container
+                            ) {
+                                closeContainer(
+                                    otherContainer
+                                );
+                            }
+                        }
+                    );
+
+                    menu.classList.toggle(
+                        "hidden",
+                        !shouldOpen
+                    );
+
+                    button.setAttribute(
+                        "aria-expanded",
+                        shouldOpen
+                            ? "true"
+                            : "false"
+                    );
+                }
+            );
+        }
+
+        Array.from(
+            container.querySelectorAll(
+                'input[type="checkbox"]'
+            )
+        ).forEach(function (checkbox) {
+            checkbox.addEventListener(
+                "change",
+                function () {
+                    const exclusiveValue = String(
+                        container.dataset.exclusiveValue
+                        || ""
+                    ).trim().toLowerCase();
+
+                    if (
+                        checkbox.checked
+                        && exclusiveValue
+                    ) {
+                        const checkboxValue = String(
+                            checkbox.value || ""
+                        ).trim().toLowerCase();
+
+                        if (
+                            checkboxValue
+                            === exclusiveValue
+                        ) {
+                            Array.from(
+                                container.querySelectorAll(
+                                    'input[type="checkbox"]'
+                                )
+                            ).forEach(
+                                function (otherCheckbox) {
+                                    if (
+                                        otherCheckbox
+                                        !== checkbox
+                                    ) {
+                                        otherCheckbox.checked = false;
+                                    }
+                                }
+                            );
+                        } else {
+                            const exclusiveCheckbox = (
+                                container.querySelector(
+                                    'input[type="checkbox"][value="'
+                                    + CSS.escape(
+                                        exclusiveValue
+                                    )
+                                    + '"]'
+                                )
+                            );
+
+                            if (exclusiveCheckbox) {
+                                exclusiveCheckbox.checked = false;
+                            }
+                        }
+                    }
+
+                    updateContainerLabel(
+                        container
+                    );
+                }
+            );
+        });
+
+        updateContainerLabel(container);
+    }
+
+    getContainers(document).forEach(
+        bindContainer
+    );
+
+    document.addEventListener(
+        "click",
+        function (event) {
+            if (event.target.closest(selector)) {
+                return;
+            }
+
+            getContainers(document).forEach(
+                closeContainer
+            );
+        }
+    );
+
+    document.addEventListener(
+        "keydown",
+        function (event) {
+            if (event.key !== "Escape") {
+                return;
+            }
+
+            getContainers(document).forEach(
+                closeContainer
+            );
+        }
+    );
+
+    document.querySelectorAll(
+        "form"
+    ).forEach(function (form) {
+        form.addEventListener(
+            "reset",
+            function () {
+                window.requestAnimationFrame(
+                    function () {
+                        getContainers(form).forEach(
+                            updateContainerLabel
+                        );
+                    }
+                );
+            }
+        );
+    });
+})();

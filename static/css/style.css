@@ -12074,6 +12074,19 @@ body.modal-open {
     overflow: hidden;
 }
 
+.imomir-multi-select-field {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.imomir-multi-select-title {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
 .custom-draft-multi-select {
     position: relative;
 }

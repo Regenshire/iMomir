@@ -158,6 +158,9 @@ SCOPED_PRINT_SETTING_KEYS = (
 
 CHAOS_ONLY_PRINT_SETTING_KEYS = (
     "silhouette_registration_marks",
+    "no_wasted_space_enabled",
+    "no_wasted_space_set_rules",
+    "no_wasted_space_card_types",
 )
 
 
@@ -268,6 +271,9 @@ DEFAULT_CONFIG = {
     "chaos_pdf_crop_border": "",
     "chaos_pdf_cutting_guides": "1",
     "chaos_silhouette_registration_marks": "1",
+    "chaos_no_wasted_space_enabled": "0",
+    "chaos_no_wasted_space_set_rules": "current_set",
+    "chaos_no_wasted_space_card_types": "any",
 
     # Legacy safety-band checkbox value.
     "chaos_pdf_outer_slot_region_band": "",
@@ -364,6 +370,21 @@ PRINT_TEMPLATE_OPTIONS = [
     ("landscape-3p5x5-centered", "PDF ONLY - 3.5 x 5 Landscape Centered"),
     ("silhouette-letter-horizontal-8", "US Letter - Horizontal - 8 Card"),
     ("silhouette-a4-vertical-9", "A4 - Vertical - 9 Card"),
+]
+
+NO_WASTE_SET_RULE_OPTIONS = [
+    ("current_set", "Current Set Only"),
+    ("set_selection", "Use Set Selection"),
+]
+
+NO_WASTE_CARD_TYPE_OPTIONS = [
+    ("any", "Any cards"),
+    ("any_no_tokens", "Any cards (no tokens)"),
+    ("tokens_only", "Tokens Only"),
+    ("basic_lands_only", "Basic Lands Only"),
+    ("non_basic_lands_only", "Non Basic Lands Only"),
+    ("artifacts_only", "Artifacts Only"),
+    ("rare_mythic_only", "Rare/Mythic Only"),
 ]
 
 CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS = [

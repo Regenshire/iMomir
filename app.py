@@ -97,6 +97,8 @@ from settings import (
     MTGJSON_SET_BOOSTER_SHEET_CARDS_URL,
     MTGJSON_SET_BOOSTER_SHEETS_URL,
     MTGJSON_SET_LIST_URL,
+    NO_WASTE_CARD_TYPE_OPTIONS,
+    NO_WASTE_SET_RULE_OPTIONS,
     OTHER_FILTER_KEYS,
     PACK_PRICE_SOURCE_OPTIONS,
     PRIMARY_TYPE_KEYS,
@@ -449,6 +451,134 @@ def parse_print_export_override_bool(raw_value, default_value=False):
     return bool(default_value)
 
 
+NO_WASTE_SET_RULE_VALUES = tuple(
+    value for value, _ in NO_WASTE_SET_RULE_OPTIONS
+)
+
+NO_WASTE_CARD_TYPE_VALUES = tuple(
+    value for value, _ in NO_WASTE_CARD_TYPE_OPTIONS
+)
+
+
+def normalize_no_waste_option_values(
+    raw_values,
+    valid_values,
+    fallback_values,
+):
+    if isinstance(raw_values, str):
+        source_values = raw_values.replace("|", ",").split(",")
+    elif isinstance(raw_values, (list, tuple, set)):
+        source_values = list(raw_values)
+    else:
+        source_values = []
+
+    selected_lookup = {
+        str(value or "").strip().lower()
+        for value in source_values
+        if str(value or "").strip()
+    }
+
+    normalized_values = [
+        value
+        for value in valid_values
+        if value in selected_lookup
+    ]
+
+    if normalized_values:
+        return normalized_values
+
+    return list(fallback_values)
+
+
+def normalize_no_waste_set_rules(raw_values):
+    return normalize_no_waste_option_values(
+        raw_values,
+        NO_WASTE_SET_RULE_VALUES,
+        ("current_set",),
+    )
+
+
+def normalize_no_waste_card_types(raw_values):
+    normalized_values = normalize_no_waste_option_values(
+        raw_values,
+        NO_WASTE_CARD_TYPE_VALUES,
+        ("any",),
+    )
+
+    if "any" in normalized_values:
+        return ["any"]
+
+    return normalized_values
+
+
+def resolve_no_waste_settings_from_config(config):
+    chaos_print_config = resolve_scoped_print_config(
+        config or {},
+        "chaos",
+    )
+
+    return {
+        "enabled": get_config_bool(
+            chaos_print_config,
+            "no_wasted_space_enabled",
+            "0",
+        ),
+        "set_rules": normalize_no_waste_set_rules(
+            chaos_print_config.get(
+                "no_wasted_space_set_rules"
+            )
+            or "current_set"
+        ),
+        "card_types": normalize_no_waste_card_types(
+            chaos_print_config.get(
+                "no_wasted_space_card_types"
+            )
+            or "any"
+        ),
+    }
+
+
+def get_request_no_waste_settings():
+    config = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    settings = resolve_no_waste_settings_from_config(
+        config
+    )
+
+    if not has_request_context():
+        return settings
+
+    if hasattr(
+        g,
+        "print_export_no_wasted_space_enabled_override",
+    ):
+        settings["enabled"] = bool(
+            g.print_export_no_wasted_space_enabled_override
+        )
+
+    if hasattr(
+        g,
+        "print_export_no_wasted_space_set_rules_override",
+    ):
+        settings["set_rules"] = list(
+            g.print_export_no_wasted_space_set_rules_override
+        )
+
+    if hasattr(
+        g,
+        "print_export_no_wasted_space_card_types_override",
+    ):
+        settings["card_types"] = list(
+            g.print_export_no_wasted_space_card_types_override
+        )
+
+    return settings
+
+
 def set_request_print_export_overrides_from_form(form_data, default_label_text=""):
     clean_default_label_text = None if default_label_text is None else str(default_label_text or "").strip()
 
@@ -524,6 +654,39 @@ def set_request_print_export_overrides_from_form(form_data, default_label_text="
                 "silhouette_registration_marks",
                 "1",
             ),
+        )
+    )
+
+    no_waste_defaults = (
+        resolve_no_waste_settings_from_config(
+            get_request_config()
+        )
+    )
+
+    g.print_export_no_wasted_space_enabled_override = (
+        parse_print_export_override_bool(
+            get_form_values(
+                "no_wasted_space_enabled"
+            ),
+            default_value=(
+                no_waste_defaults["enabled"]
+            ),
+        )
+    )
+
+    g.print_export_no_wasted_space_set_rules_override = (
+        normalize_no_waste_set_rules(
+            get_form_values(
+                "no_wasted_space_set_rules"
+            )
+        )
+    )
+
+    g.print_export_no_wasted_space_card_types_override = (
+        normalize_no_waste_card_types(
+            get_form_values(
+                "no_wasted_space_card_types"
+            )
         )
     )
 
@@ -1289,6 +1452,12 @@ def inject_global_template_state():
         "global_qr_access_url": access_url,
         "global_qr_image_url": build_qr_code_image_url(access_url),
         "global_print_template_options": PRINT_TEMPLATE_OPTIONS,
+        "global_no_waste_set_rule_options": (
+            NO_WASTE_SET_RULE_OPTIONS
+        ),
+        "global_no_waste_card_type_options": (
+            NO_WASTE_CARD_TYPE_OPTIONS
+        ),
 
         "global_card_upscaling_control_enabled": (
             is_card_upscaling_control_enabled()
@@ -1621,6 +1790,7 @@ def update_config_from_form(form_data):
         "chaos_pdf_crop_border",
         "chaos_pdf_cutting_guides",
         "chaos_silhouette_registration_marks",
+        "chaos_no_wasted_space_enabled",
         "chaos_print_card_backs",
         "chaos_print_labels_enabled",
         "chaos_print_label_tracking_code",
@@ -1806,6 +1976,38 @@ def update_config_from_form(form_data):
                 or PDF_OUTER_SLOT_REGION_BAND_DEFAULT_COLOR_HEX
             ),
         )
+
+    raw_no_waste_set_rules = (
+        form_data.getlist(
+            "chaos_no_wasted_space_set_rules"
+        )
+        if hasattr(form_data, "getlist")
+        else []
+    )
+
+    updated_config[
+        "chaos_no_wasted_space_set_rules"
+    ] = ",".join(
+        normalize_no_waste_set_rules(
+            raw_no_waste_set_rules
+        )
+    )
+
+    raw_no_waste_card_types = (
+        form_data.getlist(
+            "chaos_no_wasted_space_card_types"
+        )
+        if hasattr(form_data, "getlist")
+        else []
+    )
+
+    updated_config[
+        "chaos_no_wasted_space_card_types"
+    ] = ",".join(
+        normalize_no_waste_card_types(
+            raw_no_waste_card_types
+        )
+    )
 
     submitted_pack_price_source = (form_data.get("pack_price_source") or "").strip().lower()
     if submitted_pack_price_source not in {"tcgplayer-retail"}:
@@ -9781,6 +9983,499 @@ def build_chaos_print_pages_for_card(card_row):
 
     return pages
 
+def get_no_waste_cards_per_page(pdf_template_layout):
+    silhouette_spec = get_silhouette_pdf_layout_spec(
+        pdf_template_layout.get("print_template")
+    )
+
+    if silhouette_spec:
+        return len(
+            silhouette_spec.get("slot_defs") or []
+        )
+
+    if (
+        pdf_template_layout.get(
+            "is_multi_card_layout",
+            False,
+        )
+        and pdf_template_layout.get(
+            "print_template"
+        ) == "borderless-3p5x5-two-card"
+    ):
+        return 2
+
+    return 1
+
+
+def get_no_waste_print_slot_count_for_card_row(
+    card_row,
+    print_card_backs,
+):
+    page_entries = build_chaos_print_pages_for_card(
+        card_row
+    )
+
+    if not page_entries:
+        return 0
+
+    if print_card_backs:
+        front_page_entries = [
+            page_entry
+            for page_entry in page_entries
+            if (
+                page_entry.get("page_kind")
+                or ""
+            ).strip().lower() != "back"
+        ]
+
+        if front_page_entries:
+            return 1
+
+    return len(page_entries)
+
+
+def get_no_waste_source_set_codes(cards):
+    card_uuids = [
+        str(card.get("card_uuid") or "").strip()
+        for card in cards or []
+        if str(card.get("card_uuid") or "").strip()
+    ]
+
+    if not card_uuids:
+        return set()
+
+    placeholders = ",".join(
+        ["?"] * len(card_uuids)
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT DISTINCT
+            UPPER(set_code) AS set_code
+        FROM chaos_cards
+        WHERE card_uuid IN ({placeholders})
+          AND TRIM(COALESCE(set_code, '')) <> ''
+        """,
+        card_uuids,
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return {
+        (row["set_code"] or "").strip().upper()
+        for row in rows
+        if (row["set_code"] or "").strip()
+    }
+
+
+def expand_no_waste_set_codes_with_token_sets(
+    set_codes,
+):
+    base_set_codes = {
+        str(set_code or "").strip().upper()
+        for set_code in set_codes or []
+        if str(set_code or "").strip()
+    }
+
+    token_candidates = {
+        f"T{set_code}"
+        for set_code in base_set_codes
+        if (
+            set_code != "DECK"
+            and not set_code.endswith("^")
+            and not set_code.startswith("T")
+        )
+    }
+
+    if not token_candidates:
+        return base_set_codes
+
+    placeholders = ",".join(
+        ["?"] * len(token_candidates)
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT
+            UPPER(set_code) AS set_code
+        FROM sets
+        WHERE UPPER(set_code) IN ({placeholders})
+          AND LOWER(COALESCE(set_type, '')) = 'token'
+        """,
+        sorted(token_candidates),
+    )
+
+    for row in cursor.fetchall():
+        token_set_code = (
+            row["set_code"] or ""
+        ).strip().upper()
+
+        if token_set_code:
+            base_set_codes.add(
+                token_set_code
+            )
+
+    conn.close()
+
+    return base_set_codes
+
+
+def resolve_no_waste_allowed_set_codes(
+    cards,
+    current_set_code,
+    set_rules,
+    config,
+):
+    allowed_set_codes = set()
+    unrestricted = False
+
+    clean_current_set_code = str(
+        current_set_code or ""
+    ).strip().upper()
+
+    if "current_set" in set_rules:
+        if (
+            clean_current_set_code
+            and clean_current_set_code != "DECK"
+            and not clean_current_set_code.endswith("^")
+        ):
+            allowed_set_codes.add(
+                clean_current_set_code
+            )
+        else:
+            allowed_set_codes.update(
+                get_no_waste_source_set_codes(
+                    cards
+                )
+            )
+
+    if "set_selection" in set_rules:
+        if get_config_bool(
+            config,
+            "all_sets_enabled",
+            "1",
+        ):
+            unrestricted = True
+        else:
+            allowed_set_codes.update(
+                str(set_code or "").strip().upper()
+                for set_code in get_selected_set_codes()
+                if str(set_code or "").strip()
+            )
+
+    if unrestricted:
+        return None
+
+    return expand_no_waste_set_codes_with_token_sets(
+        allowed_set_codes
+    )
+
+
+def append_no_waste_card_type_filters(
+    where_clauses,
+    selected_card_types,
+):
+    card_types = set(
+        normalize_no_waste_card_types(
+            selected_card_types
+        )
+    )
+
+    if "any" in card_types:
+        return
+
+    type_line_sql = (
+        "LOWER(COALESCE(cc.type_line, ''))"
+    )
+
+    if "any_no_tokens" in card_types:
+        where_clauses.append(
+            f"{type_line_sql} NOT LIKE '%token%'"
+        )
+
+    if "tokens_only" in card_types:
+        where_clauses.append(
+            f"{type_line_sql} LIKE '%token%'"
+        )
+
+    if "basic_lands_only" in card_types:
+        where_clauses.append(
+            f"{type_line_sql} LIKE '%basic land%'"
+        )
+
+    if "non_basic_lands_only" in card_types:
+        where_clauses.append(
+            f"{type_line_sql} LIKE '%land%'"
+        )
+        where_clauses.append(
+            f"{type_line_sql} NOT LIKE '%basic land%'"
+        )
+
+    if "artifacts_only" in card_types:
+        where_clauses.append(
+            f"{type_line_sql} LIKE '%artifact%'"
+        )
+
+    if "rare_mythic_only" in card_types:
+        where_clauses.append(
+            "LOWER(COALESCE(cc.rarity, '')) "
+            "IN ('rare', 'mythic', 'mythic rare')"
+        )
+
+
+def query_no_waste_candidate_rows(
+    allowed_set_codes,
+    selected_card_types,
+    limit=500,
+):
+    where_clauses = [
+        "TRIM(COALESCE(cc.card_uuid, '')) <> ''",
+        (
+            "("
+            "TRIM(COALESCE(cc.front_image_url, '')) <> '' "
+            "OR TRIM(COALESCE(cc.image_url, '')) <> '' "
+            "OR TRIM(COALESCE(cc.faces_json, '')) "
+            "NOT IN ('', '[]')"
+            ")"
+        ),
+    ]
+
+    params = []
+
+    if allowed_set_codes is not None:
+        clean_set_codes = sorted({
+            str(set_code or "").strip().upper()
+            for set_code in allowed_set_codes
+            if str(set_code or "").strip()
+        })
+
+        if not clean_set_codes:
+            return []
+
+        placeholders = ",".join(
+            ["?"] * len(clean_set_codes)
+        )
+
+        where_clauses.append(
+            f"UPPER(cc.set_code) IN ({placeholders})"
+        )
+
+        params.extend(
+            clean_set_codes
+        )
+
+    append_no_waste_card_type_filters(
+        where_clauses,
+        selected_card_types,
+    )
+
+    try:
+        parsed_limit = max(
+            1,
+            min(
+                500,
+                int(limit),
+            ),
+        )
+    except (TypeError, ValueError):
+        parsed_limit = 500
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        f"""
+        SELECT
+            cc.*
+        FROM chaos_cards cc
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY RANDOM()
+        LIMIT ?
+        """,
+        [
+            *params,
+            parsed_limit,
+        ],
+    )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return rows
+
+
+def choose_no_waste_surprise_cards(
+    cards,
+    current_set_code,
+    slots_needed,
+    settings,
+    print_card_backs,
+):
+    if slots_needed <= 0:
+        return []
+
+    config = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    allowed_set_codes = (
+        resolve_no_waste_allowed_set_codes(
+            cards,
+            current_set_code,
+            settings["set_rules"],
+            config,
+        )
+    )
+
+    candidate_rows = (
+        query_no_waste_candidate_rows(
+            allowed_set_codes,
+            settings["card_types"],
+            limit=500,
+        )
+    )
+
+    eligible_rows = [
+        card_row
+        for card_row in candidate_rows
+        if get_no_waste_print_slot_count_for_card_row(
+            card_row,
+            print_card_backs,
+        ) == 1
+    ]
+
+    if not eligible_rows:
+        return []
+
+    chosen_rows = list(
+        eligible_rows[:slots_needed]
+    )
+
+    while len(chosen_rows) < slots_needed:
+        chosen_rows.append(
+            random.choice(
+                eligible_rows
+            )
+        )
+
+    surprise_cards = []
+
+    for card_row in chosen_rows:
+        surprise_cards.append({
+            "card_uuid": (
+                card_row["card_uuid"]
+                or ""
+            ).strip(),
+            "is_no_waste_filler": True,
+        })
+
+        write_debug_log(
+            "NO WASTED SPACE FILL | "
+            f"card={card_row['card_name']} | "
+            f"set={card_row['set_code']} | "
+            f"rarity={card_row['rarity']} | "
+            f"type={card_row['type_line']}"
+        )
+
+    return surprise_cards
+
+
+def build_no_waste_surprise_cards(
+    cards,
+    current_set_code,
+    pdf_template_layout,
+    print_card_backs,
+    occupied_non_card_slots=0,
+):
+    settings = (
+        get_request_no_waste_settings()
+    )
+
+    if not settings["enabled"]:
+        return []
+
+    cards_per_page = (
+        get_no_waste_cards_per_page(
+            pdf_template_layout
+        )
+    )
+
+    if cards_per_page <= 1:
+        return []
+
+    occupied_slots = max(
+        0,
+        int(
+            occupied_non_card_slots
+            or 0
+        ),
+    )
+
+    for card in cards or []:
+        card_uuid = str(
+            card.get("card_uuid")
+            or ""
+        ).strip()
+
+        if not card_uuid:
+            continue
+
+        card_row = get_chaos_card_by_uuid(
+            card_uuid
+        )
+
+        if not card_row:
+            continue
+
+        occupied_slots += (
+            get_no_waste_print_slot_count_for_card_row(
+                card_row,
+                print_card_backs,
+            )
+        )
+
+    if occupied_slots <= 0:
+        return []
+
+    slots_needed = (
+        -occupied_slots
+    ) % cards_per_page
+
+    if slots_needed == 0:
+        return []
+
+    surprise_cards = (
+        choose_no_waste_surprise_cards(
+            cards,
+            current_set_code,
+            slots_needed,
+            settings,
+            print_card_backs,
+        )
+    )
+
+    write_debug_log(
+        "NO WASTED SPACE SUMMARY | "
+        f"template={pdf_template_layout.get('print_template')} | "
+        f"cards_per_page={cards_per_page} | "
+        f"occupied_slots={occupied_slots} | "
+        f"slots_needed={slots_needed} | "
+        f"fillers_selected={len(surprise_cards)} | "
+        f"set_rules={','.join(settings['set_rules'])} | "
+        f"card_types={','.join(settings['card_types'])}"
+    )
+
+    return surprise_cards
+
 def build_chaos_pack_pdf(
     cards,
     pack_display_name,
@@ -9828,6 +10523,10 @@ def build_chaos_pack_pdf(
 
     print_card_backs = bool(
         pdf_settings.get("print_card_backs")
+    )
+
+    cards_to_render = list(
+        cards or []
     )
 
     requested_default_card_back_key = str(
@@ -10023,17 +10722,43 @@ def build_chaos_pack_pdf(
             except Exception as exc:
                 write_debug_log(f"CHAOS TITLE CARD ERROR | pack={pack_display_name} | error={str(exc)}")
 
+        no_waste_surprise_cards = (
+            build_no_waste_surprise_cards(
+                cards_to_render,
+                set_code,
+                pdf_template_layout,
+                print_card_backs,
+                occupied_non_card_slots=len(
+                    rendered_image_entries
+                ),
+            )
+        )
+
+        if no_waste_surprise_cards:
+            cards_to_render.extend(
+                no_waste_surprise_cards
+            )
+
         # Prefetch all remote card images concurrently before rendering.
         prefetch_chaos_pdf_remote_images(
-            cards,
+            cards_to_render,
             print_card_backs=print_card_backs,
             max_workers=6,
         )
 
         # Normal card image entries.
-        for card in cards:
+        for card in cards_to_render:
             card_uuid = card.get("card_uuid")
-            card_row = get_chaos_card_by_uuid(card_uuid)
+
+            is_no_waste_filler = bool(
+                card.get(
+                    "is_no_waste_filler"
+                )
+            )
+
+            card_row = get_chaos_card_by_uuid(
+                card_uuid
+            )
 
             if not card_row:
                 continue
@@ -10138,6 +10863,9 @@ def build_chaos_pack_pdf(
                         "is_dual_faced": int(card_row["is_dual_faced"] or 0),
                         "is_persistent_cache_file": True,
                         "is_template_rendered": False,
+                        "is_no_waste_filler": (
+                            is_no_waste_filler
+                        ),
                         "export_frame_template": (
                             image_source.get(
                                 "export_frame_template"
@@ -10178,11 +10906,19 @@ def build_chaos_pack_pdf(
             template_rendered_entries.append(
                 build_pdf_rendered_entry_with_template(
                     rendered_entry,
-                    pack_tracking_code=get_effective_pack_tracking_code(
-                        pack_tracking_code,
-                        label_settings=pdf_settings,
+                    pack_tracking_code=(
+                        None
+                        if rendered_entry.get(
+                            "is_no_waste_filler"
+                        )
+                        else get_effective_pack_tracking_code(
+                            pack_tracking_code,
+                            label_settings=pdf_settings,
+                        )
                     ),
-                    print_front_back_label=pdf_settings.get("print_label_front_back"),
+                    print_front_back_label=pdf_settings.get(
+                        "print_label_front_back"
+                    ),
                 )
             )
 
@@ -15991,6 +16727,8 @@ def config():
         repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
         print_color_mode_options=PRINT_COLOR_MODE_OPTIONS,
+        no_waste_set_rule_options=NO_WASTE_SET_RULE_OPTIONS,
+        no_waste_card_type_options=NO_WASTE_CARD_TYPE_OPTIONS,
         chaos_draft_export_format_options=CHAOS_DRAFT_EXPORT_FORMAT_OPTIONS,
         scryfall_image_quality_options=SCRYFALL_IMAGE_QUALITY_OPTIONS,
         momir_default_token_variant_options=MOMIR_DEFAULT_TOKEN_VARIANT_OPTIONS,
@@ -18966,6 +19704,12 @@ def get_print_export_defaults_from_config(config):
         "chaos",
     )
 
+    no_waste_settings = (
+        resolve_no_waste_settings_from_config(
+            config
+        )
+    )
+
     print_template = (
         chaos_print_config.get("print_template")
         or "dk-1234"
@@ -18995,6 +19739,15 @@ def get_print_export_defaults_from_config(config):
             chaos_print_config,
             "silhouette_registration_marks",
             "1",
+        ),
+        "no_wasted_space_enabled": (
+            no_waste_settings["enabled"]
+        ),
+        "no_wasted_space_set_rules": (
+            no_waste_settings["set_rules"]
+        ),
+        "no_wasted_space_card_types": (
+            no_waste_settings["card_types"]
         ),
         "print_template": print_template,
         "export_add_bleed": get_config_bool(
