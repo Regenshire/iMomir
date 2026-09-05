@@ -16304,7 +16304,23 @@ def is_upscaling_show_generated_bleed_enabled():
     ).strip() == "1"
 
 
-def get_upscaling_holofoil_stamp_replacement():
+def is_upscaling_holofoil_stamp_enabled():
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    return (
+        config_values.get(
+            "upscaling_holofoil_stamp_enabled",
+            "0",
+        )
+        or "0"
+    ).strip() == "1"
+
+
+def get_upscaling_holofoil_stamp_default_replacement():
     config_values = (
         get_request_config()
         if has_request_context()
@@ -16314,18 +16330,24 @@ def get_upscaling_holofoil_stamp_replacement():
     replacement = str(
         config_values.get(
             "upscaling_holofoil_stamp_replacement",
-            "none",
+            "background",
         )
-        or "none"
+        or "background"
     ).strip().lower()
 
     if replacement not in {
-        "none",
         "background",
     }:
-        return "none"
+        return "background"
 
     return replacement
+
+
+def get_upscaling_holofoil_stamp_replacement():
+    if not is_upscaling_holofoil_stamp_enabled():
+        return "none"
+
+    return get_upscaling_holofoil_stamp_default_replacement()
 
 
 def resolve_upscaling_holofoil_stamp_replacement(
@@ -16537,16 +16559,28 @@ def config_upscaling_holofoil_stamp():
         or {}
     )
 
+    enabled = bool(
+        payload.get(
+            "enabled",
+            False,
+        )
+    )
+
     replacement = str(
         payload.get(
             "replacement",
-            "none",
+            "background",
         )
-        or "none"
+        or "background"
     ).strip().lower()
 
-    if replacement not in {
+    if replacement in {
+        "",
         "none",
+    }:
+        replacement = "background"
+
+    if replacement not in {
         "background",
     }:
         return jsonify({
@@ -16558,13 +16592,24 @@ def config_upscaling_holofoil_stamp():
         }), 400
 
     set_config_value(
+        "upscaling_holofoil_stamp_enabled",
+        "1" if enabled else "0",
+    )
+
+    set_config_value(
         "upscaling_holofoil_stamp_replacement",
         replacement,
     )
 
     return jsonify({
         "ok": True,
+        "enabled": enabled,
         "replacement": replacement,
+        "effective_replacement": (
+            replacement
+            if enabled
+            else "none"
+        ),
     })
 
 

@@ -1155,355 +1155,7 @@
             </div>
         </div>
 
-
-        {% if ready_upscaler_plugins %}
-
-        <div
-            id="section_image_upscaling"
-            class="page-panel collapsible-panel {% if section_defaults.get('image_upscaling') == '1' %}is-open{% endif %}"
-            data-section="image_upscaling"
-        >
-            <button
-                type="button"
-                class="collapsible-header"
-            >
-                <span>Advanced Image Upscaling</span>
-                <span class="collapsible-chevron">▾</span>
-            </button>
-
-            <div class="collapsible-body">
-                <div class="settings-grid">
-                    <label
-                        class="toggle-row settings-field"
-                        for="upscalingActivePlugin"
-                    >
-                        <span>Active Upscaler</span>
-
-                        <select
-                            id="upscalingActivePlugin"
-                            name="upscaling_active_plugin"
-                            form="configForm"
-                        >
-                            {% for plugin in ready_upscaler_plugins %}
-                            <option
-                                value="{{ plugin.get('plugin_id') }}"
-                                {% if plugin.get('plugin_id') == active_upscaler_plugin_id %}selected{% endif %}
-                            >
-                                {{ plugin.get("name") or plugin.get("plugin_id") }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </label>
-                </div>
-
-                <div
-                    id="upscalingActivePluginStatus"
-                    class="refresh-status-text"
-                >
-                    Only the selected Upscaler will provide models to manual and batch image upscaling.
-                </div>
-
-                <div class="settings-grid">
-                    <label class="toggle-row settings-field">
-                        <span>
-                            Add Upscale Button to Card View
-                        </span>
-
-                        <input
-                            type="checkbox"
-                            id="upscalingAddButtonToCardView"
-                            {% if config.get("upscaling_add_button_to_card_view", "1") == "1" %}checked{% endif %}
-                            {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
-                        >
-                    </label>
-
-                    <label
-                        class="toggle-row settings-field"
-                        for="upscalingHolofoilStampReplacement"
-                    >
-                        <span>
-                            Holofoil Stamp Replacement
-                        </span>
-
-                        <select
-                            id="upscalingHolofoilStampReplacement"
-                            {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
-                        >
-                            <option
-                                value="none"
-                                {% if config.get("upscaling_holofoil_stamp_replacement", "none") == "none" %}selected{% endif %}
-                            >
-                                Off
-                            </option>
-                            <option
-                                value="background"
-                                {% if config.get("upscaling_holofoil_stamp_replacement", "none") == "background" %}selected{% endif %}
-                            >
-                                Background Color
-                            </option>
-                        </select>
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>
-                            Generate Bleed / Outpainting
-                        </span>
-
-                        <input
-                            type="checkbox"
-                            id="upscalingGenerateBleed"
-                            {% if config.get("upscaling_generate_bleed", "0") == "1" %}checked{% endif %}
-                            {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>
-                            Show Generative Bleed in Upscale Window
-                        </span>
-
-                        <input
-                            type="checkbox"
-                            id="upscalingShowGeneratedBleed"
-                            {% if config.get("upscaling_show_generated_bleed", "0") == "1" %}checked{% endif %}
-                            {% if not upscaler_plugin_status.get("ready") or config.get("upscaling_generate_bleed", "0") != "1" %}disabled{% endif %}
-                        >
-                    </label>
-
-                    {% if upscaler_plugin_status.get("development") %}
-                    <label class="toggle-row settings-field">
-                        <span>
-                            <strong>
-                                DEV MODE - Dev Feedback System
-                            </strong>
-                        </span>
-
-                        <input
-                            type="checkbox"
-                            id="upscalingDevFeedbackSystem"
-                            {% if config.get("upscaling_dev_feedback_system", "0") == "1" %}checked{% endif %}
-                        >
-                    </label>
-
-                    <label class="toggle-row settings-field">
-                        <span>
-                            <strong>
-                                DEV MODE - Add icon to lower left
-                            </strong>
-                        </span>
-
-                        <input
-                            type="checkbox"
-                            id="upscalingDevSourceIndicator"
-                            {% if config.get("upscaling_dev_source_indicator", "0") == "1" %}checked{% endif %}
-                        >
-                    </label>
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingCardViewSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if upscaler_plugin_status.get("ready") %}
-                        Show the Upscale control icon on supported card views.
-                    {% else %}
-                        Install a compatible Upscaler plugin before enabling this option.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingHolofoilStampSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_holofoil_stamp_replacement", "none") == "background" %}
-                        Holofoil stamp removal is enabled. The detected stamp area will be restored from the surrounding card background.
-                    {% else %}
-                        Holofoil stamps will be left unchanged.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingGenerateBleedSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_generate_bleed", "0") == "1" %}
-                        Generated bleed is enabled. New Upscales will attempt to create a 3.0 mm full-bleed print master.
-                    {% else %}
-                        Generated bleed is disabled.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingShowGeneratedBleedSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_generate_bleed", "0") != "1" %}
-                        Enable Generate Bleed / Outpainting to review bleed in the Upscale window.
-                    {% elif config.get("upscaling_show_generated_bleed", "0") == "1" %}
-                        The Upscale window will show the full-bleed candidate when one is available.
-                    {% else %}
-                        The Upscale window will show the normal cropped Upscale.
-                    {% endif %}
-                </div>
-
-                <div class="refresh-panel">
-                    <div class="refresh-status-text">
-                        <div>
-                            <strong>
-                                Image Maintenance
-                            </strong>
-                        </div>
-
-                        <div>
-                            Analyze and remove unused Upscaled image files,
-                            abandoned candidates, orphan files, and broken
-                            database references.
-                        </div>
-                    </div>
-
-                    <div
-                        class="metadata-list"
-                        style="margin-top: 12px;"
-                    >
-                        <div class="metadata-row">
-                            <span>Total Upscale Records</span>
-                            <strong id="upscaleMaintenanceTotalRecords">
-                                —
-                            </strong>
-                        </div>
-
-                        <div class="metadata-row">
-                            <span>Active Upscales</span>
-                            <strong id="upscaleMaintenanceActiveRecords">
-                                —
-                            </strong>
-                        </div>
-
-                        <div class="metadata-row">
-                            <span>Unused Records</span>
-                            <strong id="upscaleMaintenanceUnusedRecords">
-                                —
-                            </strong>
-                        </div>
-
-                        <div class="metadata-row">
-                            <span>Unused / Orphan Files</span>
-                            <strong id="upscaleMaintenanceUnusedFiles">
-                                —
-                            </strong>
-                        </div>
-
-                        <div class="metadata-row">
-                            <span>Recoverable Disk Space</span>
-                            <strong id="upscaleMaintenanceRecoverableSpace">
-                                —
-                            </strong>
-                        </div>
-                    </div>
-
-                    <div
-                        id="upscaleMaintenanceStatus"
-                        class="refresh-status-text"
-                        style="margin-top: 10px;"
-                    >
-                        Click Analyze Images to inspect the Upscale image store.
-                    </div>
-
-                    <div class="config-button-row">
-                        <button
-                            type="button"
-                            id="upscaleMaintenanceAnalyzeButton"
-                            class="action-button secondary-button"
-                        >
-                            Analyze Images
-                        </button>
-
-                        <button
-                            type="button"
-                            id="upscaleMaintenanceCleanButton"
-                            class="action-button secondary-button"
-                            disabled
-                        >
-                            Clean Unused Images
-                        </button>
-                    </div>
-                </div>
-
-                {% if upscaler_plugin_status.get("ready") %}
-                <div class="config-button-row">
-                    <button
-                        type="button"
-                        id="upscaleNextCardsButton"
-                        class="action-button secondary-button"
-                        {% if config.get("upscaling_add_button_to_card_view", "1") != "1" %}disabled{% endif %}
-                    >
-                        Upscale Next X Cards
-                    </button>
-                </div>
-                {% endif %}
-
-                {% if upscaler_plugin_status.get("development") %}
-                <div
-                    id="upscalingDevSourceIndicatorSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_dev_source_indicator", "0") == "1" %}
-                        DEV Upscale indicator is enabled. Newly generated Upscaled image files will contain a red dot in the lower-left corner.
-                    {% else %}
-                        DEV Upscale indicator is disabled.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingDevFeedbackSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_dev_feedback_system", "0") == "1" %}
-                        Dev Feedback is enabled. Accepting or discarding an upscale candidate will append one evaluation record to the feedback dataset.
-                    {% else %}
-                        Dev Feedback is disabled.
-                    {% endif %}
-                </div>
-
-                <div class="metadata-list">
-                    <div class="metadata-row">
-                        <span>Dev Feedback Directory</span>
-                        <strong class="metadata-value-wrap">
-                            data\upscaling_dev_feedback\
-                        </strong>
-                    </div>
-
-                    <div class="metadata-row">
-                        <span>Feedback Log</span>
-                        <strong class="metadata-value-wrap">
-                            upscaling_dev_feedback.jsonl
-                        </strong>
-                    </div>
-
-                    <div class="metadata-row">
-                        <span>Feedback Records</span>
-                        <strong>
-                            {{ upscaling_dev_feedback_log_status.get("record_count", 0) }}
-                        </strong>
-                    </div>
-                </div>
-
-                {% if upscaling_dev_feedback_log_status.get("exists") %}
-                <div class="config-button-row">
-                    <a
-                        class="action-button secondary-button"
-                        href="{{ url_for('upscaling_dev_feedback_download') }}"
-                    >
-                        Download Dev Feedback Log
-                    </a>
-                </div>
-                {% endif %}
-                {% endif %}
-
-            </div>
-        </div>
-        {% endif %}
+        {% include "_advanced_image_upscaling.html" %}
 
         <div id="section_danger_zone" class="page-panel collapsible-panel {% if section_defaults.get('danger_zone') == '1' %}is-open{% endif %}" data-section="danger_zone">
             <button type="button" class="collapsible-header">
@@ -1723,6 +1375,18 @@
 
     const cardViewSettingStatus = document.getElementById(
         "upscalingCardViewSettingStatus"
+    );
+
+    const holofoilStampSection = document.getElementById(
+        "upscalingHolofoilStampSection"
+    );
+
+    const holofoilStampToggle = document.getElementById(
+        "upscalingHolofoilStampEnabled"
+    );
+
+    const holofoilStampDetails = document.getElementById(
+        "upscalingHolofoilStampDetails"
     );
 
     const holofoilStampSelect = document.getElementById(
@@ -1953,84 +1617,173 @@
         );
     }
 
-    if (holofoilStampSelect) {
-        holofoilStampSelect.addEventListener(
-            "change",
-            async function () {
-                const previousReplacement = (
-                    holofoilStampSelect.dataset.savedValue
-                    || "none"
-                );
+    function updateHolofoilStampAppearance() {
+        if (
+            !holofoilStampToggle
+            || !holofoilStampSection
+            || !holofoilStampDetails
+        ) {
+            return;
+        }
 
-                const requestedReplacement = (
-                    holofoilStampSelect.value
-                    || "none"
-                ).trim();
-
-                holofoilStampSelect.disabled = true;
-
-                if (holofoilStampSettingStatus) {
-                    holofoilStampSettingStatus.textContent =
-                        "Saving Holofoil Stamp setting...";
-                }
-
-                try {
-                    const response = await fetch(
-                        "/config/upscaling/holofoil-stamp",
-                        {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                                "Accept": "application/json"
-                            },
-                            body: JSON.stringify({
-                                replacement: requestedReplacement
-                            })
-                        }
-                    );
-
-                    const data = await response.json();
-
-                    if (
-                        !response.ok
-                        || !data.ok
-                    ) {
-                        throw new Error(
-                            data.message
-                            || "Could not save Holofoil Stamp setting."
-                        );
-                    }
-
-                    holofoilStampSelect.value =
-                        data.replacement;
-
-                    holofoilStampSelect.dataset.savedValue =
-                        data.replacement;
-
-                    if (holofoilStampSettingStatus) {
-                        holofoilStampSettingStatus.textContent =
-                            data.replacement === "background"
-                                ? "Holofoil stamp removal is enabled. The detected stamp area will be restored from the surrounding card background."
-                                : "Holofoil stamps will be left unchanged.";
-                    }
-
-                } catch (error) {
-                    holofoilStampSelect.value =
-                        previousReplacement;
-
-                    if (holofoilStampSettingStatus) {
-                        holofoilStampSettingStatus.textContent =
-                            error.message
-                            || "Could not save Holofoil Stamp setting.";
-                    }
-                }
-
-                holofoilStampSelect.disabled = false;
-            }
+        const enabled = Boolean(
+            holofoilStampToggle.checked
         );
 
-        holofoilStampSelect.dataset.savedValue =
-            holofoilStampSelect.value;
+        holofoilStampSection.classList.toggle(
+            "no-waste-surprise-section-active",
+            enabled
+        );
+
+        holofoilStampDetails.classList.toggle(
+            "hidden",
+            !enabled
+        );
+    }
+
+    async function saveHolofoilStampSettings() {
+        if (
+            !holofoilStampToggle
+            || !holofoilStampSelect
+        ) {
+            return;
+        }
+
+        const previousEnabled = (
+            holofoilStampToggle.dataset.savedValue
+            === "1"
+        );
+
+        const previousReplacement = (
+            holofoilStampSelect.dataset.savedValue
+            || "background"
+        );
+
+        const requestedEnabled = Boolean(
+            holofoilStampToggle.checked
+        );
+
+        const requestedReplacement = (
+            holofoilStampSelect.value
+            || "background"
+        ).trim();
+
+        holofoilStampToggle.disabled = true;
+        holofoilStampSelect.disabled = true;
+
+        if (holofoilStampSettingStatus) {
+            holofoilStampSettingStatus.textContent =
+                "Saving Holofoil Stamp settings...";
+        }
+
+        try {
+            const response = await fetch(
+                "/config/upscaling/holofoil-stamp",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({
+                        enabled: requestedEnabled,
+                        replacement: requestedReplacement
+                    })
+                }
+            );
+
+            const data = await response.json();
+
+            if (
+                !response.ok
+                || !data.ok
+            ) {
+                throw new Error(
+                    data.message
+                    || "Could not save Holofoil Stamp settings."
+                );
+            }
+
+            holofoilStampToggle.checked = Boolean(
+                data.enabled
+            );
+
+            holofoilStampSelect.value = (
+                data.replacement
+                || "background"
+            );
+
+            holofoilStampToggle.dataset.savedValue = (
+                data.enabled
+                ? "1"
+                : "0"
+            );
+
+            holofoilStampSelect.dataset.savedValue = (
+                data.replacement
+                || "background"
+            );
+
+            updateHolofoilStampAppearance();
+
+            if (holofoilStampSettingStatus) {
+                holofoilStampSettingStatus.textContent = (
+                    data.enabled
+                        ? "Holofoil/security stamp post-processing is enabled for new upscales."
+                        : "Holofoil/security stamp post-processing is disabled."
+                );
+            }
+
+        } catch (error) {
+            holofoilStampToggle.checked = (
+                previousEnabled
+            );
+
+            holofoilStampSelect.value = (
+                previousReplacement
+            );
+
+            updateHolofoilStampAppearance();
+
+            if (holofoilStampSettingStatus) {
+                holofoilStampSettingStatus.textContent = (
+                    error.message
+                    || "Could not save Holofoil Stamp settings."
+                );
+            }
+
+        } finally {
+            holofoilStampToggle.disabled = false;
+            holofoilStampSelect.disabled = false;
+        }
+    }
+
+    if (
+        holofoilStampToggle
+        && holofoilStampSelect
+    ) {
+        holofoilStampToggle.dataset.savedValue = (
+            holofoilStampToggle.checked
+            ? "1"
+            : "0"
+        );
+
+        holofoilStampSelect.dataset.savedValue = (
+            holofoilStampSelect.value
+            || "background"
+        );
+
+        updateHolofoilStampAppearance();
+
+        holofoilStampToggle.addEventListener(
+            "change",
+            saveHolofoilStampSettings
+        );
+
+        holofoilStampSelect.addEventListener(
+            "change",
+            saveHolofoilStampSettings
+        );
     }
 
     if (generateBleedToggle) {

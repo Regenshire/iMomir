@@ -1154,7 +1154,81 @@
 }
 
 
+.upscaling-holofoil-section.no-waste-surprise-section-active {
+    animation: none;
+    background: rgba(111, 45, 189, 0.13);
+    background-size: auto;
+}
+
+.upscaling-holofoil-info-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(2, minmax(0, 1fr));
+    gap: 10px;
+
+    margin-top: 10px;
+    padding-top: 10px;
+
+    border-top: 1px solid rgba(193, 132, 255, 0.22);
+}
+
+.upscaling-holofoil-replacement-details {
+    grid-template-columns:
+        minmax(0, 1fr);
+}
+
+.upscaling-dev-section {
+    margin-top: 18px;
+    padding: 14px;
+
+    border: 1px solid rgba(255, 86, 86, 0.45);
+    border-radius: 12px;
+
+    background: linear-gradient(
+        180deg,
+        rgba(112, 24, 24, 0.20),
+        rgba(72, 14, 14, 0.12)
+    );
+
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 100, 100, 0.04);
+}
+
+.upscaling-dev-section-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+
+    border-bottom: 1px solid rgba(255, 100, 100, 0.24);
+}
+
+.upscaling-dev-section-title {
+    color: #ff8f8f;
+
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+}
+
+.upscaling-dev-section .settings-field {
+    border-color: rgba(255, 100, 100, 0.22);
+    background: rgba(92, 20, 20, 0.12);
+}
+
+.upscaling-dev-section .metadata-list,
+.upscaling-dev-section .config-button-row {
+    margin-top: 12px;
+}
+
+
 @media (max-width: 760px) {
+    .upscaling-holofoil-info-grid {
+        grid-template-columns: 1fr;
+    }
+
     .plugin-card-meta {
         grid-template-columns: 1fr;
     }

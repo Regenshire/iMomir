@@ -319,7 +319,8 @@ DEFAULT_CONFIG = {
 
     "upscaling_active_plugin": "",
     "upscaling_add_button_to_card_view": "1",
-    "upscaling_holofoil_stamp_replacement": "none",
+    "upscaling_holofoil_stamp_enabled": "0",
+    "upscaling_holofoil_stamp_replacement": "background",
     "upscaling_dev_feedback_system": "0",
 
     "display_pack_prices": "1",
