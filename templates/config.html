@@ -1373,10 +1373,6 @@
         "upscalingAddButtonToCardView"
     );
 
-    const cardViewSettingStatus = document.getElementById(
-        "upscalingCardViewSettingStatus"
-    );
-
     const holofoilStampSection = document.getElementById(
         "upscalingHolofoilStampSection"
     );
@@ -1393,24 +1389,12 @@
         "upscalingHolofoilStampReplacement"
     );
 
-    const holofoilStampSettingStatus = document.getElementById(
-        "upscalingHolofoilStampSettingStatus"
-    );
-
     const generateBleedToggle = document.getElementById(
         "upscalingGenerateBleed"
     );
 
-    const generateBleedSettingStatus = document.getElementById(
-        "upscalingGenerateBleedSettingStatus"
-    );
-
     const showGeneratedBleedToggle = document.getElementById(
         "upscalingShowGeneratedBleed"
-    );
-
-    const showGeneratedBleedSettingStatus = document.getElementById(
-        "upscalingShowGeneratedBleedSettingStatus"
     );
 
     const upscaleMaintenanceAnalyzeButton =
@@ -1595,21 +1579,14 @@
                             !Boolean(data.enabled);
                     }
 
-                    if (cardViewSettingStatus) {
-                        cardViewSettingStatus.textContent =
-                            data.enabled
-                                ? "Upscale controls are enabled."
-                                : "Upscale controls are disabled.";
-                    }
-
                 } catch (error) {
                     cardViewToggle.checked =
                         !requestedEnabled;
 
-                    if (cardViewSettingStatus) {
-                        cardViewSettingStatus.textContent =
-                            error.message;
-                    }
+                    console.error(
+                        "Could not save Upscaling setting.",
+                        error
+                    );
                 }
 
                 cardViewToggle.disabled = false;
@@ -1656,7 +1633,7 @@
 
         const previousReplacement = (
             holofoilStampSelect.dataset.savedValue
-            || "background"
+            || "none"
         );
 
         const requestedEnabled = Boolean(
@@ -1665,16 +1642,11 @@
 
         const requestedReplacement = (
             holofoilStampSelect.value
-            || "background"
+            || "none"
         ).trim();
 
         holofoilStampToggle.disabled = true;
         holofoilStampSelect.disabled = true;
-
-        if (holofoilStampSettingStatus) {
-            holofoilStampSettingStatus.textContent =
-                "Saving Holofoil Stamp settings...";
-        }
 
         try {
             const response = await fetch(
@@ -1710,7 +1682,7 @@
 
             holofoilStampSelect.value = (
                 data.replacement
-                || "background"
+                || "none"
             );
 
             holofoilStampToggle.dataset.savedValue = (
@@ -1726,14 +1698,6 @@
 
             updateHolofoilStampAppearance();
 
-            if (holofoilStampSettingStatus) {
-                holofoilStampSettingStatus.textContent = (
-                    data.enabled
-                        ? "Holofoil/security stamp post-processing is enabled for new upscales."
-                        : "Holofoil/security stamp post-processing is disabled."
-                );
-            }
-
         } catch (error) {
             holofoilStampToggle.checked = (
                 previousEnabled
@@ -1745,12 +1709,10 @@
 
             updateHolofoilStampAppearance();
 
-            if (holofoilStampSettingStatus) {
-                holofoilStampSettingStatus.textContent = (
-                    error.message
-                    || "Could not save Holofoil Stamp settings."
-                );
-            }
+            console.error(
+                "Could not save Holofoil Stamp settings.",
+                error
+            );
 
         } finally {
             holofoilStampToggle.disabled = false;
@@ -1770,7 +1732,7 @@
 
         holofoilStampSelect.dataset.savedValue = (
             holofoilStampSelect.value
-            || "background"
+            || "none"
         );
 
         updateHolofoilStampAppearance();
@@ -1841,33 +1803,14 @@
                         }
                     }
 
-                    if (
-                        generateBleedSettingStatus
-                    ) {
-                        generateBleedSettingStatus.textContent =
-                            data.enabled
-                                ? "Generated bleed is enabled. New Upscales will attempt to create a 3.0 mm full-bleed print master."
-                                : "Generated bleed is disabled.";
-                    }
-
-                    if (
-                        showGeneratedBleedSettingStatus
-                        && !data.enabled
-                    ) {
-                        showGeneratedBleedSettingStatus.textContent =
-                            "Enable Generate Bleed / Outpainting to review bleed in the Upscale window.";
-                    }
-
                 } catch (error) {
                     generateBleedToggle.checked =
                         !requestedEnabled;
 
-                    if (
-                        generateBleedSettingStatus
-                    ) {
-                        generateBleedSettingStatus.textContent =
-                            error.message;
-                    }
+                    console.error(
+                        "Could not save generated bleed setting.",
+                        error
+                    );
                 }
 
                 generateBleedToggle.disabled = false;
@@ -1917,25 +1860,14 @@
                             data.enabled
                         );
 
-                    if (
-                        showGeneratedBleedSettingStatus
-                    ) {
-                        showGeneratedBleedSettingStatus.textContent =
-                            data.enabled
-                                ? "The Upscale window will show the full-bleed candidate when one is available."
-                                : "The Upscale window will show the normal cropped Upscale.";
-                    }
-
                 } catch (error) {
                     showGeneratedBleedToggle.checked =
                         !requestedEnabled;
 
-                    if (
-                        showGeneratedBleedSettingStatus
-                    ) {
-                        showGeneratedBleedSettingStatus.textContent =
-                            error.message;
-                    }
+                    console.error(
+                        "Could not save generated bleed preview setting.",
+                        error
+                    );
                 }
 
                 showGeneratedBleedToggle.disabled =

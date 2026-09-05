@@ -60,23 +60,30 @@
                     </label>
 
                     {% set holofoil_stamp_enabled = config.get("upscaling_holofoil_stamp_enabled", "0") == "1" %}
-                    {% set holofoil_stamp_replacement = config.get("upscaling_holofoil_stamp_replacement", "background") %}
-                    {% if holofoil_stamp_replacement not in ["background"] %}
-                        {% set holofoil_stamp_replacement = "background" %}
+                    {% set holofoil_stamp_replacement = config.get("upscaling_holofoil_stamp_replacement", "none") %}
+                    {% if holofoil_stamp_replacement not in ["none", "background"] %}
+                        {% set holofoil_stamp_replacement = "none" %}
                     {% endif %}
 
                     <section
                         id="upscalingHolofoilStampSection"
                         class="no-waste-surprise-section upscaling-holofoil-section{% if holofoil_stamp_enabled %} no-waste-surprise-section-active{% endif %}"
                     >
-                        <label class="toggle-row settings-field no-waste-surprise-toggle-row">
+                        <label class="toggle-row settings-field no-waste-surprise-toggle-row upscaling-holofoil-toggle-row">
                             <span>
                                 <strong>Remove Holofoil from Upscaled Image</strong>
-                                <small>
-                                    Remove Holofoil stamps from cards as part of the AI upscaling process.<br>
-                                    <i>Warning - This is post-processing that manipulates the image. A small percentage of cards may show artifacts or distortion. This requires additional time to process.</i>
-                                </small>
 
+                                <small class="upscaling-holofoil-subtext">
+                                    <span>
+                                        Remove Holofoil stamps from cards as part of the AI upscaling process.
+                                    </span>
+
+                                    <span class="upscaling-holofoil-warning">
+                                        <i>
+                                            Warning - This is post-processing that manipulates the image. A small percentage of cards may show artifacts or distortion. This requires additional time to process.
+                                        </i>
+                                    </span>
+                                </small>
                             </span>
 
                             <input
@@ -101,6 +108,12 @@
                                     {% if not upscaler_plugin_status.get("ready") %}disabled{% endif %}
                                 >
                                     <option
+                                        value="none"
+                                        {% if holofoil_stamp_replacement == "none" %}selected{% endif %}
+                                    >
+                                        None / Holofoil Keep
+                                    </option>
+                                    <option
                                         value="background"
                                         {% if holofoil_stamp_replacement == "background" %}selected{% endif %}
                                     >
@@ -111,6 +124,7 @@
                         </div>
                     </section>
 
+                    <!--
                     <label class="toggle-row settings-field">
                         <span>
                             Generate Bleed / Outpainting
@@ -136,74 +150,23 @@
                             {% if not upscaler_plugin_status.get("ready") or config.get("upscaling_generate_bleed", "0") != "1" %}disabled{% endif %}
                         >
                     </label>
-
+                    -->
                 </div>
 
-                <div
-                    id="upscalingCardViewSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if upscaler_plugin_status.get("ready") %}
-                        Show the Upscale control icon on supported card views.
-                    {% else %}
-                        Install a compatible Upscaler plugin before enabling this option.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingHolofoilStampSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_holofoil_stamp_replacement", "none") == "background" %}
-                        Holofoil stamp removal is enabled. The detected stamp area will be restored from the surrounding card background.
-                    {% else %}
-                        Holofoil stamps will be left unchanged.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingGenerateBleedSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_generate_bleed", "0") == "1" %}
-                        Generated bleed is enabled. New Upscales will attempt to create a 3.0 mm full-bleed print master.
-                    {% else %}
-                        Generated bleed is disabled.
-                    {% endif %}
-                </div>
-
-                <div
-                    id="upscalingShowGeneratedBleedSettingStatus"
-                    class="refresh-status-text"
-                >
-                    {% if config.get("upscaling_generate_bleed", "0") != "1" %}
-                        Enable Generate Bleed / Outpainting to review bleed in the Upscale window.
-                    {% elif config.get("upscaling_show_generated_bleed", "0") == "1" %}
-                        The Upscale window will show the full-bleed candidate when one is available.
-                    {% else %}
-                        The Upscale window will show the normal cropped Upscale.
-                    {% endif %}
-                </div>
-
-                <div class="refresh-panel">
-                    <div class="refresh-status-text">
-                        <div>
-                            <strong>
-                                Image Maintenance
-                            </strong>
+                <section class="upscaling-maintenance-section">
+                    <div class="upscaling-maintenance-section-header">
+                        <div class="upscaling-maintenance-section-title">
+                            Image Maintenance
                         </div>
 
-                        <div>
+                        <div class="refresh-status-text">
                             Analyze and remove unused Upscaled image files,
                             abandoned candidates, orphan files, and broken
                             database references.
                         </div>
                     </div>
 
-                    <div
-                        class="metadata-list"
-                        style="margin-top: 12px;"
-                    >
+                    <div class="metadata-list upscaling-maintenance-metadata">
                         <div class="metadata-row">
                             <span>Total Upscale Records</span>
                             <strong id="upscaleMaintenanceTotalRecords">
@@ -242,13 +205,12 @@
 
                     <div
                         id="upscaleMaintenanceStatus"
-                        class="refresh-status-text"
-                        style="margin-top: 10px;"
+                        class="refresh-status-text upscaling-maintenance-status"
                     >
                         Click Analyze Images to inspect the Upscale image store.
                     </div>
 
-                    <div class="config-button-row">
+                    <div class="config-button-row upscaling-maintenance-actions">
                         <button
                             type="button"
                             id="upscaleMaintenanceAnalyzeButton"
@@ -266,7 +228,7 @@
                             Clean Unused Images
                         </button>
                     </div>
-                </div>
+                </section>
 
                 {% if upscaler_plugin_status.get("ready") %}
                 <div class="config-button-row">

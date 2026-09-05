@@ -116,6 +116,12 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 
+.imomir-upscale-controls.imomir-upscale-controls-no-holofoil {
+    grid-template-columns:
+        minmax(0, 2fr)
+        minmax(180px, 1fr);
+}
+
 .imomir-upscale-model-select,
 .imomir-upscale-holofoil-select,
 .imomir-upscale-controls .action-button {
@@ -229,7 +235,8 @@
 }
 
 @media (max-width: 700px) {
-    .imomir-upscale-controls {
+    .imomir-upscale-controls,
+    .imomir-upscale-controls.imomir-upscale-controls-no-holofoil {
         grid-template-columns: 1fr;
     }
 

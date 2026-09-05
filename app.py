@@ -16330,15 +16330,16 @@ def get_upscaling_holofoil_stamp_default_replacement():
     replacement = str(
         config_values.get(
             "upscaling_holofoil_stamp_replacement",
-            "background",
+            "none",
         )
-        or "background"
+        or "none"
     ).strip().lower()
 
     if replacement not in {
+        "none",
         "background",
     }:
-        return "background"
+        return "none"
 
     return replacement
 
@@ -16353,12 +16354,15 @@ def get_upscaling_holofoil_stamp_replacement():
 def resolve_upscaling_holofoil_stamp_replacement(
     requested_value=None,
 ):
+    if not is_upscaling_holofoil_stamp_enabled():
+        return "none"
+
     if requested_value is None:
-        return get_upscaling_holofoil_stamp_replacement()
+        return get_upscaling_holofoil_stamp_default_replacement()
 
     replacement = str(
         requested_value
-        or ""
+        or "none"
     ).strip().lower()
 
     if replacement not in {
@@ -16569,18 +16573,13 @@ def config_upscaling_holofoil_stamp():
     replacement = str(
         payload.get(
             "replacement",
-            "background",
+            "none",
         )
-        or "background"
+        or "none"
     ).strip().lower()
 
-    if replacement in {
-        "",
-        "none",
-    }:
-        replacement = "background"
-
     if replacement not in {
+        "none",
         "background",
     }:
         return jsonify({
@@ -24273,8 +24272,11 @@ def upscaling_model_options():
 
     return jsonify({
         "ok": True,
+        "holofoil_stamp_enabled": (
+            is_upscaling_holofoil_stamp_enabled()
+        ),
         "holofoil_stamp_replacement_default": (
-            get_upscaling_holofoil_stamp_replacement()
+            get_upscaling_holofoil_stamp_default_replacement()
         ),
         "plugins": (
             get_upscaler_plugin_model_results(
@@ -24432,8 +24434,12 @@ def chaos_card_upscale_control(card_uuid):
             is_upscaling_show_generated_bleed_enabled()
         ),
 
+        "holofoil_stamp_enabled": (
+            is_upscaling_holofoil_stamp_enabled()
+        ),
+
         "holofoil_stamp_replacement_default": (
-            get_upscaling_holofoil_stamp_replacement()
+            get_upscaling_holofoil_stamp_default_replacement()
         ),
 
         "plugins": plugin_results,

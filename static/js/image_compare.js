@@ -3,6 +3,7 @@
     let titleElement = null;
     let modelSelect = null;
     let holofoilStampSelect = null;
+    let holofoilStampEnabled = false;
     let runButton = null;
 
     let sourceImage = null;
@@ -1425,7 +1426,7 @@
             );
 
         holofoilStampSelect.className =
-            "imomir-upscale-holofoil-select";
+            "imomir-upscale-holofoil-select hidden";
 
         holofoilStampSelect.setAttribute(
             "aria-label",
@@ -1446,7 +1447,7 @@
             "none";
 
         holofoilKeepOption.textContent =
-            "Holofoil: Keep";
+            "None / Holofoil: Keep";
 
         const holofoilBackgroundOption =
             document.createElement(
@@ -2045,7 +2046,10 @@
     function setBusy(isBusy) {
         runButton.disabled = isBusy;
         modelSelect.disabled = isBusy;
-        holofoilStampSelect.disabled = isBusy;
+        holofoilStampSelect.disabled = (
+            isBusy
+            || !holofoilStampEnabled
+        );
         acceptButton.disabled = isBusy;
         discardButton.disabled = isBusy;
         revertButton.disabled = isBusy;
@@ -2557,6 +2561,10 @@
 
         populateModels(data);
 
+        holofoilStampEnabled = Boolean(
+            data.holofoil_stamp_enabled
+        );
+
         const defaultHolofoilReplacement = String(
             data.holofoil_stamp_replacement_default
             || "none"
@@ -2568,6 +2576,22 @@
                 ? "background"
                 : "none"
         );
+
+        holofoilStampSelect.classList.toggle(
+            "hidden",
+            !holofoilStampEnabled
+        );
+
+        holofoilStampSelect.disabled = (
+            !holofoilStampEnabled
+        );
+
+        if (holofoilStampSelect.parentElement) {
+            holofoilStampSelect.parentElement.classList.toggle(
+                "imomir-upscale-controls-no-holofoil",
+                !holofoilStampEnabled
+            );
+        }
 
         renderActiveFace();
 
@@ -2741,8 +2765,12 @@
                         face: currentData.face,
                         run_id: activeRunId,
                         holofoil_stamp_replacement: (
-                            holofoilStampSelect.value
-                            || "none"
+                            holofoilStampEnabled
+                                ? (
+                                    holofoilStampSelect.value
+                                    || "none"
+                                )
+                                : "none"
                         )
                     })
                 }

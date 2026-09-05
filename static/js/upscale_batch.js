@@ -26,6 +26,7 @@
 
     let holofoilWrap = null;
     let holofoilSelect = null;
+    let holofoilEnabled = false;
 
     let replaceWrap = null;
     let replaceCheckbox = null;
@@ -145,7 +146,7 @@
             );
 
         holofoilWrap.className =
-            "imomir-batch-upscale-model-wrap";
+            "imomir-batch-upscale-model-wrap hidden";
 
         const holofoilLabel =
             document.createElement(
@@ -172,7 +173,7 @@
             "none";
 
         holofoilKeepOption.textContent =
-            "Off";
+            "Holofoil Keep";
 
         const holofoilBackgroundOption =
             document.createElement(
@@ -460,6 +461,10 @@
     async function loadBatchModels() {
         modelSelect.innerHTML = "";
         modelSelect.disabled = true;
+        holofoilEnabled = false;
+        holofoilWrap.classList.add(
+            "hidden"
+        );
         holofoilSelect.disabled = true;
         startButton.disabled = true;
 
@@ -574,6 +579,10 @@
                 }
             }
 
+            holofoilEnabled = Boolean(
+                data.holofoil_stamp_enabled
+            );
+
             const defaultHolofoilReplacement = String(
                 data.holofoil_stamp_replacement_default
                 || "none"
@@ -586,11 +595,16 @@
                     : "none"
             );
 
+            holofoilWrap.classList.toggle(
+                "hidden",
+                !holofoilEnabled
+            );
+
             modelSelect.disabled =
                 false;
 
             holofoilSelect.disabled =
-                false;
+                !holofoilEnabled;
 
             startButton.disabled =
                 false;
@@ -598,6 +612,12 @@
         } catch (error) {
             messageElement.textContent =
                 error.message;
+
+            holofoilEnabled = false;
+
+            holofoilWrap.classList.add(
+                "hidden"
+            );
 
             modelSelect.disabled =
                 true;
@@ -643,7 +663,7 @@
             "hidden"
         );
 
-        holofoilWrap.classList.remove(
+        holofoilWrap.classList.add(
             "hidden"
         );
 
@@ -959,10 +979,14 @@
                 replaceCheckbox.checked
             );
 
-        payload.holofoil_stamp_replacement = String(
-            holofoilSelect.value
-            || "none"
-        ).trim().toLowerCase();
+        payload.holofoil_stamp_replacement = (
+            holofoilEnabled
+                ? String(
+                    holofoilSelect.value
+                    || "none"
+                ).trim().toLowerCase()
+                : "none"
+        );
 
         saveUpscaleModel(
             selectedValue
