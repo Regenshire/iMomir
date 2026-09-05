@@ -1,5 +1,6 @@
 import copy
 import csv
+import gzip
 import hashlib
 import json
 import math
@@ -496,11 +497,13 @@ def normalize_no_waste_option_values(
 
 
 def normalize_no_waste_set_rules(raw_values):
-    return normalize_no_waste_option_values(
+    normalized_values = normalize_no_waste_option_values(
         raw_values,
         NO_WASTE_SET_RULE_VALUES,
         ("current_set",),
     )
+
+    return [normalized_values[0]]
 
 
 def normalize_no_waste_card_types(raw_values):
@@ -510,10 +513,7 @@ def normalize_no_waste_card_types(raw_values):
         ("any",),
     )
 
-    if "any" in normalized_values:
-        return ["any"]
-
-    return normalized_values
+    return [normalized_values[0]]
 
 
 def normalize_no_waste_label_option(raw_value):
@@ -2255,7 +2255,11 @@ def import_chaos_cards_from_all_printings():
         if not isinstance(set_payload, dict):
             continue
 
-        cards = safe_list(set_payload.get("cards"))
+        cards = [
+            *safe_list(set_payload.get("cards")),
+            *safe_list(set_payload.get("tokens")),
+        ]
+
         for card_obj in cards:
             if not isinstance(card_obj, dict):
                 continue
@@ -2271,10 +2275,10 @@ def import_chaos_cards_from_all_printings():
             continue
 
         set_code_clean = (set_code or "").strip().upper()
-        cards = set_obj.get("cards", [])
-
-        if not isinstance(cards, list):
-            continue
+        cards = [
+            *safe_list(set_obj.get("cards")),
+            *safe_list(set_obj.get("tokens")),
+        ]
 
         for card_obj in cards:
             if not isinstance(card_obj, dict):
@@ -2325,7 +2329,21 @@ def import_chaos_cards_from_all_printings():
             image_url = front_image_url or (build_scryfall_image_url(scryfall_id) if scryfall_id else None)
 
             is_booster = 1
-            if card_obj.get("isPromo") is True:
+            card_type_line = (
+                card_obj.get("type")
+                or ""
+            ).strip().lower()
+
+            if (
+                card_obj.get("isPromo") is True
+                or "token" in card_type_line
+                or "emblem" in card_type_line
+                or layout in {
+                    "token",
+                    "double_faced_token",
+                    "emblem",
+                }
+            ):
                 is_booster = 0
 
             cursor.execute(
@@ -10269,50 +10287,16 @@ def expand_no_waste_set_codes_with_token_sets(
         if str(set_code or "").strip()
     }
 
-    token_candidates = {
+    token_set_codes = {
         f"T{set_code}"
         for set_code in base_set_codes
         if (
             set_code != "DECK"
             and not set_code.endswith("^")
-            and not set_code.startswith("T")
         )
     }
 
-    if not token_candidates:
-        return base_set_codes
-
-    placeholders = ",".join(
-        ["?"] * len(token_candidates)
-    )
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        f"""
-        SELECT
-            UPPER(set_code) AS set_code
-        FROM sets
-        WHERE UPPER(set_code) IN ({placeholders})
-          AND LOWER(COALESCE(set_type, '')) = 'token'
-        """,
-        sorted(token_candidates),
-    )
-
-    for row in cursor.fetchall():
-        token_set_code = (
-            row["set_code"] or ""
-        ).strip().upper()
-
-        if token_set_code:
-            base_set_codes.add(
-                token_set_code
-            )
-
-    conn.close()
-
-    return base_set_codes
+    return base_set_codes | token_set_codes
 
 
 def resolve_no_waste_allowed_set_codes(
@@ -10385,12 +10369,22 @@ def append_no_waste_card_type_filters(
 
     if "any_no_tokens" in card_types:
         where_clauses.append(
-            f"{type_line_sql} NOT LIKE '%token%'"
+            "("
+            "LOWER(COALESCE(cc.layout, '')) "
+            "NOT IN ('token', 'double_faced_token', 'emblem') "
+            f"AND {type_line_sql} NOT LIKE '%token%' "
+            f"AND {type_line_sql} NOT LIKE '%emblem%'"
+            ")"
         )
 
     if "tokens_only" in card_types:
         where_clauses.append(
-            f"{type_line_sql} LIKE '%token%'"
+            "("
+            "LOWER(COALESCE(cc.layout, '')) "
+            "IN ('token', 'double_faced_token', 'emblem') "
+            f"OR {type_line_sql} LIKE '%token%' "
+            f"OR {type_line_sql} LIKE '%emblem%'"
+            ")"
         )
 
     if "basic_lands_only" in card_types:
@@ -13883,6 +13877,207 @@ def import_scryfall_default_cards_into_database():
 
     return inserted_count
 
+
+def import_scryfall_tokens_into_chaos_cards():
+    if not os.path.exists(SCRYFALL_DEFAULT_CARDS_PATH):
+        raise FileNotFoundError(
+            "Scryfall default-cards bulk file was not found."
+        )
+
+    supported_layouts = {
+        "token",
+        "double_faced_token",
+        "emblem",
+    }
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT scryfall_id
+        FROM chaos_cards
+        WHERE TRIM(COALESCE(scryfall_id, '')) <> ''
+        """
+    )
+
+    existing_scryfall_ids = {
+        (row["scryfall_id"] or "").strip()
+        for row in cursor.fetchall()
+        if (row["scryfall_id"] or "").strip()
+    }
+
+    imported_count = 0
+
+    try:
+        for card_obj in iter_scryfall_default_card_objects(
+            SCRYFALL_DEFAULT_CARDS_PATH
+        ):
+            if not isinstance(card_obj, dict):
+                continue
+
+            layout = (
+                card_obj.get("layout") or ""
+            ).strip().lower()
+
+            if layout not in supported_layouts:
+                continue
+
+            games = {
+                str(game or "").strip().lower()
+                for game in safe_list(card_obj.get("games"))
+            }
+
+            if "paper" not in games:
+                continue
+
+            scryfall_id = (card_obj.get("id") or "").strip()
+            card_name = (card_obj.get("name") or "").strip()
+            set_code = (card_obj.get("set") or "").strip().upper()
+
+            if (
+                not scryfall_id
+                or not card_name
+                or not set_code
+                or scryfall_id in existing_scryfall_ids
+            ):
+                continue
+
+            front_image_url = ""
+            back_image_url = ""
+            front_face_name = card_name
+            back_face_name = ""
+            face_count = 0
+            is_dual_faced = 0
+
+            if layout == "double_faced_token":
+                card_faces = safe_list(card_obj.get("card_faces"))
+
+                if len(card_faces) < 2:
+                    continue
+
+                front_face = safe_dict(card_faces[0])
+                back_face = safe_dict(card_faces[1])
+                front_uris = safe_dict(front_face.get("image_uris"))
+                back_uris = safe_dict(back_face.get("image_uris"))
+
+                front_image_url = (
+                    front_uris.get("normal")
+                    or front_uris.get("large")
+                    or front_uris.get("png")
+                    or ""
+                )
+
+                back_image_url = (
+                    back_uris.get("normal")
+                    or back_uris.get("large")
+                    or back_uris.get("png")
+                    or ""
+                )
+
+                if not front_image_url or not back_image_url:
+                    continue
+
+                front_face_name = (
+                    front_face.get("name") or card_name
+                ).strip()
+
+                back_face_name = (
+                    back_face.get("name") or card_name
+                ).strip()
+
+                face_count = 2
+                is_dual_faced = 1
+
+            else:
+                image_uris = safe_dict(
+                    card_obj.get("image_uris")
+                )
+
+                front_image_url = (
+                    image_uris.get("normal")
+                    or image_uris.get("large")
+                    or image_uris.get("png")
+                    or ""
+                )
+
+                if not front_image_url:
+                    continue
+
+            cursor.execute(
+                """
+                INSERT INTO chaos_cards (
+                    card_uuid,
+                    set_code,
+                    card_name,
+                    rarity,
+                    type_line,
+                    layout,
+                    collector_number,
+                    scryfall_id,
+                    image_url,
+                    is_booster,
+                    faces_json,
+                    face_count,
+                    is_dual_faced,
+                    front_image_url,
+                    back_image_url,
+                    front_face_name,
+                    back_face_name,
+                    frame_version
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"scryfall-{scryfall_id}",
+                    set_code,
+                    card_name,
+                    (
+                        card_obj.get("rarity") or ""
+                    ).strip().lower(),
+                    card_obj.get("type_line") or "",
+                    layout,
+                    card_obj.get("collector_number"),
+                    scryfall_id,
+                    front_image_url,
+                    0,
+                    "[]",
+                    face_count,
+                    is_dual_faced,
+                    front_image_url,
+                    back_image_url or None,
+                    front_face_name,
+                    back_face_name or None,
+                    (
+                        card_obj.get("frame") or ""
+                    ).strip().lower(),
+                ),
+            )
+
+            existing_scryfall_ids.add(scryfall_id)
+            imported_count += 1
+
+            if imported_count % 500 == 0:
+                conn.commit()
+
+        conn.commit()
+
+    finally:
+        conn.close()
+
+    set_import_metadata(
+        "scryfall_tokens_imported",
+        imported_count,
+    )
+
+    write_debug_log(
+        "SCRYFALL TOKEN IMPORT COMPLETE | "
+        f"imported={imported_count}"
+    )
+
+    return imported_count
+
+
 def get_scryfall_default_cards_row_count():
     conn = get_db_connection()
 
@@ -14894,6 +15089,20 @@ def run_refresh_job(force_download=False):
         chaos_cards_imported = import_chaos_cards_from_all_printings()
         print("=== CHAOS DRAFT: IMPORTED CHAOS CARDS ===", chaos_cards_imported)
         append_refresh_detail_line(f"=== CHAOS DRAFT: IMPORTED CHAOS CARDS === {chaos_cards_imported}")
+
+        set_refresh_status(
+            stage="Importing Printable Tokens",
+            message="Adding paper tokens and emblems from the Scryfall bulk file...",
+            cards_processed=summary["cards_imported"],
+            cards_imported=summary["cards_imported"],
+            sets_represented=summary["sets_represented"],
+        )
+
+        scryfall_tokens_imported = import_scryfall_tokens_into_chaos_cards()
+        print("=== CHAOS DRAFT: IMPORTED SCRYFALL TOKENS ===", scryfall_tokens_imported)
+        append_refresh_detail_line(
+            f"=== CHAOS DRAFT: IMPORTED SCRYFALL TOKENS === {scryfall_tokens_imported}"
+        )
 
         set_refresh_status(
             stage="Importing Chaos Draft Booster Data",

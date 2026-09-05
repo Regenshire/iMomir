@@ -193,78 +193,37 @@
                             class="no-waste-surprise-details{% if not no_waste_modal_enabled %} hidden{% endif %}"
                             data-no-waste-surprise-details
                         >
-                            <div
-                                class="imomir-multi-select-field custom-draft-multi-select"
-                                data-imomir-multi-select
-                                data-placeholder="Current Set Only"
-                            >
+                            <label class="no-waste-label-option-field">
                                 <span class="imomir-multi-select-title">
                                     Set Rules
                                 </span>
-
-                                <button
-                                    type="button"
-                                    class="custom-draft-multi-select-button"
-                                    aria-haspopup="true"
-                                    aria-expanded="false"
-                                >
-                                    <span class="custom-draft-multi-select-label">
-                                        Current Set Only
-                                    </span>
-                                    <span class="custom-draft-multi-select-chevron">▾</span>
-                                </button>
-
-                                <div class="custom-draft-multi-select-menu hidden">
+                                <select name="no_wasted_space_set_rules">
                                     {% for value, label in global_no_waste_set_rule_options %}
-                                    <label>
-                                        <input
-                                            type="checkbox"
-                                            name="no_wasted_space_set_rules"
-                                            value="{{ value }}"
-                                            {% if print_export_defaults and value in print_export_defaults.no_wasted_space_set_rules %}checked{% endif %}
-                                        >
-                                        <span>{{ label }}</span>
-                                    </label>
+                                    <option
+                                        value="{{ value }}"
+                                        {% if print_export_defaults and value in print_export_defaults.no_wasted_space_set_rules %}selected{% endif %}
+                                    >
+                                        {{ label }}
+                                    </option>
                                     {% endfor %}
-                                </div>
-                            </div>
+                                </select>
+                            </label>
 
-                            <div
-                                class="imomir-multi-select-field custom-draft-multi-select"
-                                data-imomir-multi-select
-                                data-placeholder="Any cards"
-                                data-exclusive-value="any"
-                            >
+                            <label class="no-waste-label-option-field">
                                 <span class="imomir-multi-select-title">
                                     Card Type
                                 </span>
-
-                                <button
-                                    type="button"
-                                    class="custom-draft-multi-select-button"
-                                    aria-haspopup="true"
-                                    aria-expanded="false"
-                                >
-                                    <span class="custom-draft-multi-select-label">
-                                        Any cards
-                                    </span>
-                                    <span class="custom-draft-multi-select-chevron">▾</span>
-                                </button>
-
-                                <div class="custom-draft-multi-select-menu hidden">
+                                <select name="no_wasted_space_card_types">
                                     {% for value, label in global_no_waste_card_type_options %}
-                                    <label>
-                                        <input
-                                            type="checkbox"
-                                            name="no_wasted_space_card_types"
-                                            value="{{ value }}"
-                                            {% if print_export_defaults and value in print_export_defaults.no_wasted_space_card_types %}checked{% endif %}
-                                        >
-                                        <span>{{ label }}</span>
-                                    </label>
+                                    <option
+                                        value="{{ value }}"
+                                        {% if print_export_defaults and value in print_export_defaults.no_wasted_space_card_types %}selected{% endif %}
+                                    >
+                                        {{ label }}
+                                    </option>
                                     {% endfor %}
-                                </div>
-                            </div>
+                                </select>
+                            </label>
 
                             <label class="no-waste-label-option-field">
                                 <span class="imomir-multi-select-title">
