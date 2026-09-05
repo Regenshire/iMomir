@@ -2,6 +2,7 @@
     let overlay = null;
     let titleElement = null;
     let modelSelect = null;
+    let holofoilStampSelect = null;
     let runButton = null;
 
     let sourceImage = null;
@@ -1418,6 +1419,54 @@
             }
         );
 
+        holofoilStampSelect =
+            document.createElement(
+                "select"
+            );
+
+        holofoilStampSelect.className =
+            "imomir-upscale-holofoil-select";
+
+        holofoilStampSelect.setAttribute(
+            "aria-label",
+            "Holofoil Stamp Replacement"
+        );
+
+        holofoilStampSelect.setAttribute(
+            "title",
+            "Holofoil Stamp Replacement"
+        );
+
+        const holofoilKeepOption =
+            document.createElement(
+                "option"
+            );
+
+        holofoilKeepOption.value =
+            "none";
+
+        holofoilKeepOption.textContent =
+            "Holofoil: Keep";
+
+        const holofoilBackgroundOption =
+            document.createElement(
+                "option"
+            );
+
+        holofoilBackgroundOption.value =
+            "background";
+
+        holofoilBackgroundOption.textContent =
+            "Holofoil: Remove";
+
+        holofoilStampSelect.appendChild(
+            holofoilKeepOption
+        );
+
+        holofoilStampSelect.appendChild(
+            holofoilBackgroundOption
+        );
+
         runButton =
             document.createElement("button");
 
@@ -1429,6 +1478,9 @@
             '<i class="fa-solid fa-wand-magic-sparkles"></i> Run Upscale';
 
         controls.appendChild(modelSelect);
+        controls.appendChild(
+            holofoilStampSelect
+        );
         controls.appendChild(runButton);
 
         const grid =
@@ -1993,6 +2045,7 @@
     function setBusy(isBusy) {
         runButton.disabled = isBusy;
         modelSelect.disabled = isBusy;
+        holofoilStampSelect.disabled = isBusy;
         acceptButton.disabled = isBusy;
         discardButton.disabled = isBusy;
         revertButton.disabled = isBusy;
@@ -2504,6 +2557,18 @@
 
         populateModels(data);
 
+        const defaultHolofoilReplacement = String(
+            data.holofoil_stamp_replacement_default
+            || "none"
+        ).trim().toLowerCase();
+
+        holofoilStampSelect.value = (
+            defaultHolofoilReplacement
+            === "background"
+                ? "background"
+                : "none"
+        );
+
         renderActiveFace();
 
         acceptButton.classList.add(
@@ -2674,7 +2739,11 @@
                         plugin_id: pluginId,
                         model_id: modelId,
                         face: currentData.face,
-                        run_id: activeRunId
+                        run_id: activeRunId,
+                        holofoil_stamp_replacement: (
+                            holofoilStampSelect.value
+                            || "none"
+                        )
                     })
                 }
             );

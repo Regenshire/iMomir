@@ -108,6 +108,7 @@
     display: grid;
     grid-template-columns:
         minmax(0, 2fr)
+        minmax(150px, 210px)
         minmax(180px, 1fr);
     gap: 12px;
     align-items: stretch;
@@ -116,6 +117,7 @@
 }
 
 .imomir-upscale-model-select,
+.imomir-upscale-holofoil-select,
 .imomir-upscale-controls .action-button {
     width: 100%;
     min-width: 0;
@@ -125,7 +127,8 @@
     margin: 0;
 }
 
-.imomir-upscale-model-select {
+.imomir-upscale-model-select,
+.imomir-upscale-holofoil-select {
     padding: 0 12px;
     font: inherit;
 }

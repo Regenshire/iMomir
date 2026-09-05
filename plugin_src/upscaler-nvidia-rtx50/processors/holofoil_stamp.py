@@ -47,12 +47,28 @@ RESTORATION_CONTEXT_WIDTH_RATIO = 0.012
 DARK_CONTEXT_LUMINANCE_THRESHOLD = 72.0
 DARK_CONTEXT_MIN_FRACTION = 0.25
 DARK_CONTEXT_VERTICAL_RADIUS_RATIO = 0.002
+LIGHT_CONTEXT_LUMINANCE_THRESHOLD = 145.0
+LIGHT_CONTEXT_MIN_FRACTION = 0.12
+LIGHT_CONTEXT_BACKGROUND_MEDIAN_MIN_LUMINANCE = 135.0
+LIGHT_CONTEXT_VERTICAL_RADIUS_RATIO = 0.004
+TEXT_SAFE_TOP_FRACTION = 0.45
 TEXT_SAFE_BOTTOM_FRACTION = 0.20
 
 TEXT_PRESERVE_BOTTOM_FRACTION = 0.45
 TEXT_PRESERVE_LUMINANCE_THRESHOLD = 180.0
 TEXT_PRESERVE_BACKGROUND_MAX_LUMINANCE = 110.0
 TEXT_PRESERVE_MAX_CHANNEL_SPREAD = 24
+TEXT_PRESERVE_DARK_LUMINANCE_THRESHOLD = 105.0
+TEXT_PRESERVE_LIGHT_BACKGROUND_MIN_LUMINANCE = 145.0
+TEXT_PRESERVE_MIN_CONTRAST = 55.0
+TEXT_PRESERVE_DARK_MAX_CHANNEL_SPREAD = 40
+TEXT_PRESERVE_UPPER_CANONICAL_FRACTION = 0.85
+TEXT_PRESERVE_UPPER_ANCHOR_MARGIN = 2
+TEXT_PRESERVE_UPPER_COMPONENT_MAX_WIDTH_RATIO = 0.35
+TEXT_PRESERVE_UPPER_COMPONENT_MAX_HEIGHT_RATIO = 0.55
+TEXT_PRESERVE_UPPER_LIGHT_LUMINANCE_THRESHOLD = 180.0
+TEXT_PRESERVE_UPPER_LIGHT_MIN_CONTRAST = 35.0
+TEXT_PRESERVE_UPPER_DILATION_SIZE = 5
 TEXT_PRESERVE_DILATION_SIZE = 3
 
 STAMP_SHAPE_UNKNOWN = "unknown"
@@ -77,6 +93,7 @@ TRIANGLE_SHOULDER_WIDTH_RATIO = 0.142
 TRIANGLE_SHOULDER_HEIGHT_RATIO = 0.018
 
 CANONICAL_TARGET_PAD_SIZE = 5
+STAMP_UPPER_MASK_PAD_RATIO = 0.005
 
 OVAL_MASK_EXPANSION_SIZE = 9
 TRIANGLE_MASK_EXPANSION_SIZE = 39
@@ -164,6 +181,33 @@ class HolofoilStampProcessor:
             )
             or ""
         ).strip().lower()
+
+        security_stamp_shape = (
+            SECURITY_STAMP_SHAPE_MAP.get(
+                security_stamp
+            )
+        )
+
+        if not security_stamp_shape:
+            result[
+                "holofoil_stamp"
+            ] = {
+                "replacement": replacement,
+                "detected": False,
+                "background_restored": False,
+                "normalized_box": None,
+                "skipped": True,
+                "skip_reason": (
+                    "missing_security_stamp"
+                    if not security_stamp
+                    else "unsupported_security_stamp"
+                ),
+                "frame_version": frame_version,
+                "security_stamp": security_stamp,
+                "processing_ms": 0.0,
+            }
+
+            return result
 
         if (
             frame_version
@@ -524,6 +568,62 @@ class HolofoilStampProcessor:
                     )
                 )
 
+        metadata_shape = (
+            SECURITY_STAMP_SHAPE_MAP.get(
+                str(
+                    security_stamp
+                    or ""
+                ).strip().lower()
+            )
+        )
+
+        canonical_box = (
+            canonical_target_mask.getbbox()
+        )
+
+        if (
+            metadata_shape
+            and canonical_box
+        ):
+            upper_mask_pad = max(
+                2,
+                int(
+                    round(
+                        image.height
+                        * STAMP_UPPER_MASK_PAD_RATIO
+                    )
+                ),
+            )
+
+            upper_mask_limit = max(
+                0,
+                canonical_box[1]
+                - upper_mask_pad,
+            )
+
+            upper_clip_mask = Image.new(
+                "L",
+                expanded_mask.size,
+                0,
+            )
+
+            upper_clip_mask.paste(
+                255,
+                (
+                    0,
+                    upper_mask_limit,
+                    expanded_mask.width,
+                    expanded_mask.height,
+                ),
+            )
+
+            expanded_mask = (
+                ImageChops.darker(
+                    expanded_mask,
+                    upper_clip_mask,
+                )
+            )
+
         restoration_context_box = (
             expanded_mask.getbbox()
         )
@@ -581,6 +681,23 @@ class HolofoilStampProcessor:
                 restoration_context_box,
             )
         )
+
+        upper_text_protection_mask = (
+            self._build_upper_text_protection_mask(
+                actual_patch,
+                restoration_patch,
+                canonical_target_mask,
+                component_box,
+            )
+        )
+
+        if upper_text_protection_mask is not None:
+            feathered_mask = (
+                ImageChops.subtract(
+                    feathered_mask,
+                    upper_text_protection_mask,
+                )
+            )
 
         if (
             stamp_shape
@@ -691,6 +808,20 @@ class HolofoilStampProcessor:
             - component_top,
         )
 
+        text_safe_end = min(
+            component_bottom,
+            component_top
+            + max(
+                1,
+                int(
+                    round(
+                        component_height
+                        * TEXT_SAFE_TOP_FRACTION
+                    )
+                ),
+            ),
+        )
+
         text_safe_start = max(
             component_top,
             component_bottom
@@ -775,6 +906,16 @@ class HolofoilStampProcessor:
                 round(
                     image.height
                     * DARK_CONTEXT_VERTICAL_RADIUS_RATIO
+                )
+            ),
+        )
+
+        light_vertical_radius = max(
+            3,
+            int(
+                round(
+                    image.height
+                    * LIGHT_CONTEXT_VERTICAL_RADIUS_RATIO
                 )
             ),
         )
@@ -868,18 +1009,110 @@ class HolofoilStampProcessor:
                 * right_color[2]
             )
 
-            use_text_safe_sampling = (
+            use_light_text_safe_sampling = (
+                local_y
+                <= text_safe_end
+            )
+
+            used_light_background = False
+
+            if use_light_text_safe_sampling:
+                stable_top = max(
+                    0,
+                    source_y
+                    - light_vertical_radius,
+                )
+
+                stable_bottom = min(
+                    image.height,
+                    source_y
+                    + light_vertical_radius
+                    + 1,
+                )
+
+                left_light_color = (
+                    self._light_background_color(
+                        image,
+                        (
+                            left_context_left,
+                            stable_top,
+                            left_context_right,
+                            stable_bottom,
+                        ),
+                    )
+                )
+
+                right_light_color = (
+                    self._light_background_color(
+                        image,
+                        (
+                            right_context_left,
+                            stable_top,
+                            right_context_right,
+                            stable_bottom,
+                        ),
+                    )
+                )
+
+                if (
+                    left_light_color
+                    is not None
+                    and right_light_color
+                    is not None
+                ):
+                    left_color = (
+                        left_light_color
+                    )
+
+                    right_color = (
+                        right_light_color
+                    )
+
+                    used_light_background = True
+
+                elif (
+                    left_light_color
+                    is not None
+                ):
+                    left_color = (
+                        left_light_color
+                    )
+
+                    right_color = (
+                        left_light_color
+                    )
+
+                    used_light_background = True
+
+                elif (
+                    right_light_color
+                    is not None
+                ):
+                    left_color = (
+                        right_light_color
+                    )
+
+                    right_color = (
+                        right_light_color
+                    )
+
+                    used_light_background = True
+
+            use_dark_text_safe_sampling = (
                 local_y
                 >= text_safe_start
             )
 
             if (
-                use_text_safe_sampling
-                or (
-                    left_luminance
-                    <= DARK_CONTEXT_LUMINANCE_THRESHOLD
-                    and right_luminance
-                    <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                not used_light_background
+                and (
+                    use_dark_text_safe_sampling
+                    or (
+                        left_luminance
+                        <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                        and right_luminance
+                        <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                    )
                 )
             ):
                 stable_top = max(
@@ -1411,6 +1644,424 @@ class HolofoilStampProcessor:
         )
 
     @staticmethod
+    def _build_upper_text_protection_mask(
+        actual_patch,
+        restoration_patch,
+        canonical_target_mask,
+        component_box,
+    ):
+        canonical_box = (
+            canonical_target_mask.getbbox()
+        )
+
+        if not canonical_box:
+            return None
+
+        (
+            component_left,
+            component_top,
+            component_right,
+            component_bottom,
+        ) = component_box
+
+        canonical_height = max(
+            1,
+            canonical_box[3]
+            - canonical_box[1],
+        )
+
+        protect_start = max(
+            0,
+            component_top - 2,
+        )
+
+        protect_end = min(
+            actual_patch.height,
+            canonical_box[1]
+            + max(
+                2,
+                int(
+                    round(
+                        canonical_height
+                        * TEXT_PRESERVE_UPPER_CANONICAL_FRACTION
+                    )
+                ),
+            ),
+        )
+
+        protect_left = max(
+            0,
+            component_left - 2,
+        )
+
+        protect_right = min(
+            actual_patch.width,
+            component_right + 2,
+        )
+
+        if (
+            protect_right
+            <= protect_left
+            or protect_end
+            <= protect_start
+        ):
+            return None
+
+        actual_pixels = (
+            actual_patch.load()
+        )
+
+        restoration_pixels = (
+            restoration_patch.load()
+        )
+
+        candidate_mask = Image.new(
+            "L",
+            actual_patch.size,
+            0,
+        )
+
+        candidate_pixels = (
+            candidate_mask.load()
+        )
+
+        for y in range(
+            protect_start,
+            protect_end,
+        ):
+            for x in range(
+                protect_left,
+                protect_right,
+            ):
+                actual_pixel = (
+                    actual_pixels[
+                        x,
+                        y,
+                    ]
+                )
+
+                restoration_pixel = (
+                    restoration_pixels[
+                        x,
+                        y,
+                    ]
+                )
+
+                actual_luminance = (
+                    0.2126
+                    * actual_pixel[0]
+                    + 0.7152
+                    * actual_pixel[1]
+                    + 0.0722
+                    * actual_pixel[2]
+                )
+
+                restoration_luminance = (
+                    0.2126
+                    * restoration_pixel[0]
+                    + 0.7152
+                    * restoration_pixel[1]
+                    + 0.0722
+                    * restoration_pixel[2]
+                )
+
+                channel_spread = (
+                    max(
+                        actual_pixel[:3]
+                    )
+                    - min(
+                        actual_pixel[:3]
+                    )
+                )
+
+                dark_text_candidate = (
+                    actual_luminance
+                    <= TEXT_PRESERVE_DARK_LUMINANCE_THRESHOLD
+                    and restoration_luminance
+                    >= TEXT_PRESERVE_LIGHT_BACKGROUND_MIN_LUMINANCE
+                    and (
+                        restoration_luminance
+                        - actual_luminance
+                    )
+                    >= TEXT_PRESERVE_MIN_CONTRAST
+                    and channel_spread
+                    <= TEXT_PRESERVE_DARK_MAX_CHANNEL_SPREAD
+                )
+
+                light_text_candidate = (
+                    actual_luminance
+                    >= TEXT_PRESERVE_UPPER_LIGHT_LUMINANCE_THRESHOLD
+                    and (
+                        actual_luminance
+                        - restoration_luminance
+                    )
+                    >= TEXT_PRESERVE_UPPER_LIGHT_MIN_CONTRAST
+                    and channel_spread
+                    <= TEXT_PRESERVE_DARK_MAX_CHANNEL_SPREAD
+                )
+
+                if (
+                    dark_text_candidate
+                    or light_text_candidate
+                ):
+                    candidate_pixels[
+                        x,
+                        y,
+                    ] = 255
+
+        if not candidate_mask.getbbox():
+            return None
+
+        max_component_width = max(
+            4,
+            int(
+                round(
+                    actual_patch.width
+                    * TEXT_PRESERVE_UPPER_COMPONENT_MAX_WIDTH_RATIO
+                )
+            ),
+        )
+
+        max_component_height = max(
+            4,
+            int(
+                round(
+                    actual_patch.height
+                    * TEXT_PRESERVE_UPPER_COMPONENT_MAX_HEIGHT_RATIO
+                )
+            ),
+        )
+
+        canonical_anchor_y = max(
+            0,
+            canonical_box[1]
+            - TEXT_PRESERVE_UPPER_ANCHOR_MARGIN,
+        )
+
+        source_pixels = (
+            candidate_mask.load()
+        )
+
+        visited = bytearray(
+            candidate_mask.width
+            * candidate_mask.height
+        )
+
+        protection_mask = Image.new(
+            "L",
+            actual_patch.size,
+            0,
+        )
+
+        protection_pixels = (
+            protection_mask.load()
+        )
+
+        for y in range(
+            protect_start,
+            protect_end,
+        ):
+            for x in range(
+                protect_left,
+                protect_right,
+            ):
+                index = (
+                    y
+                    * candidate_mask.width
+                    + x
+                )
+
+                if (
+                    visited[index]
+                    or source_pixels[
+                        x,
+                        y,
+                    ] == 0
+                ):
+                    continue
+
+                stack = [
+                    (
+                        x,
+                        y,
+                    )
+                ]
+
+                visited[index] = 1
+                component = []
+
+                while stack:
+                    (
+                        current_x,
+                        current_y,
+                    ) = stack.pop()
+
+                    component.append(
+                        (
+                            current_x,
+                            current_y,
+                        )
+                    )
+
+                    for (
+                        next_x,
+                        next_y,
+                    ) in (
+                        (
+                            current_x - 1,
+                            current_y - 1,
+                        ),
+                        (
+                            current_x,
+                            current_y - 1,
+                        ),
+                        (
+                            current_x + 1,
+                            current_y - 1,
+                        ),
+                        (
+                            current_x - 1,
+                            current_y,
+                        ),
+                        (
+                            current_x + 1,
+                            current_y,
+                        ),
+                        (
+                            current_x - 1,
+                            current_y + 1,
+                        ),
+                        (
+                            current_x,
+                            current_y + 1,
+                        ),
+                        (
+                            current_x + 1,
+                            current_y + 1,
+                        ),
+                    ):
+                        if not (
+                            protect_left
+                            <= next_x
+                            < protect_right
+                            and protect_start
+                            <= next_y
+                            < protect_end
+                        ):
+                            continue
+
+                        next_index = (
+                            next_y
+                            * candidate_mask.width
+                            + next_x
+                        )
+
+                        if (
+                            visited[next_index]
+                            or source_pixels[
+                                next_x,
+                                next_y,
+                            ] == 0
+                        ):
+                            continue
+
+                        visited[next_index] = 1
+
+                        stack.append(
+                            (
+                                next_x,
+                                next_y,
+                            )
+                        )
+
+                min_x = min(
+                    point[0]
+                    for point
+                    in component
+                )
+
+                max_x = max(
+                    point[0]
+                    for point
+                    in component
+                )
+
+                min_y = min(
+                    point[1]
+                    for point
+                    in component
+                )
+
+                max_y = max(
+                    point[1]
+                    for point
+                    in component
+                )
+
+                component_width = (
+                    max_x
+                    - min_x
+                    + 1
+                )
+
+                component_height = (
+                    max_y
+                    - min_y
+                    + 1
+                )
+
+                if (
+                    min_y
+                    > canonical_anchor_y
+                    or component_width
+                    > max_component_width
+                    or component_height
+                    > max_component_height
+                ):
+                    continue
+
+                for (
+                    component_x,
+                    component_y,
+                ) in component:
+                    protection_pixels[
+                        component_x,
+                        component_y,
+                    ] = 255
+
+        if not protection_mask.getbbox():
+            return None
+
+        protection_mask = (
+            protection_mask.filter(
+                ImageFilter.MaxFilter(
+                    TEXT_PRESERVE_UPPER_DILATION_SIZE
+                )
+            )
+        )
+
+        clip_mask = Image.new(
+            "L",
+            actual_patch.size,
+            0,
+        )
+
+        clip_mask.paste(
+            255,
+            (
+                protect_left,
+                protect_start,
+                protect_right,
+                protect_end,
+            ),
+        )
+
+        return ImageChops.darker(
+            protection_mask,
+            clip_mask,
+        )
+
+    @staticmethod
     def _build_footer_text_protection_mask(
         actual_patch,
         restoration_patch,
@@ -1576,6 +2227,175 @@ class HolofoilStampProcessor:
         return ImageChops.darker(
             protection_mask,
             clip_mask,
+        )
+
+    @staticmethod
+    def _light_background_color(
+        image,
+        box,
+    ):
+        (
+            left,
+            top,
+            right,
+            bottom,
+        ) = box
+
+        if (
+            right <= left
+            or bottom <= top
+        ):
+            return None
+
+        region = image.crop(
+            box
+        )
+
+        pixels = list(
+            region.getdata()
+        )
+
+        if not pixels:
+            return None
+
+        luminance_values = sorted(
+            (
+                0.2126
+                * pixel[0]
+                + 0.7152
+                * pixel[1]
+                + 0.0722
+                * pixel[2]
+            )
+            for pixel
+            in pixels
+        )
+
+        luminance_count = len(
+            luminance_values
+        )
+
+        luminance_middle = (
+            luminance_count
+            // 2
+        )
+
+        if (
+            luminance_count
+            % 2
+        ):
+            median_luminance = (
+                luminance_values[
+                    luminance_middle
+                ]
+            )
+
+        else:
+            median_luminance = (
+                luminance_values[
+                    luminance_middle - 1
+                ]
+                + luminance_values[
+                    luminance_middle
+                ]
+            ) / 2.0
+
+        if (
+            median_luminance
+            < LIGHT_CONTEXT_BACKGROUND_MEDIAN_MIN_LUMINANCE
+        ):
+            return None
+
+        light_pixels = []
+
+        for pixel in pixels:
+            luminance = (
+                0.2126
+                * pixel[0]
+                + 0.7152
+                * pixel[1]
+                + 0.0722
+                * pixel[2]
+            )
+
+            if (
+                luminance
+                >= LIGHT_CONTEXT_LUMINANCE_THRESHOLD
+            ):
+                light_pixels.append(
+                    pixel[:3]
+                )
+
+        minimum_light_pixels = max(
+            1,
+            int(
+                round(
+                    len(
+                        pixels
+                    )
+                    * LIGHT_CONTEXT_MIN_FRACTION
+                )
+            ),
+        )
+
+        if (
+            len(
+                light_pixels
+            )
+            < minimum_light_pixels
+        ):
+            return None
+
+        median_color = []
+
+        for channel in range(3):
+            channel_values = sorted(
+                pixel[
+                    channel
+                ]
+                for pixel
+                in light_pixels
+            )
+
+            value_count = len(
+                channel_values
+            )
+
+            middle_index = (
+                value_count
+                // 2
+            )
+
+            if (
+                value_count
+                % 2
+            ):
+                median_value = (
+                    channel_values[
+                        middle_index
+                    ]
+                )
+
+            else:
+                median_value = (
+                    channel_values[
+                        middle_index - 1
+                    ]
+                    + channel_values[
+                        middle_index
+                    ]
+                ) / 2.0
+
+            median_color.append(
+                int(
+                    round(
+                        median_value
+                    )
+                )
+            )
+
+        return tuple(
+            median_color
         )
 
     @staticmethod

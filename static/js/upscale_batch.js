@@ -24,6 +24,9 @@
     let modelWrap = null;
     let modelSelect = null;
 
+    let holofoilWrap = null;
+    let holofoilSelect = null;
+
     let replaceWrap = null;
     let replaceCheckbox = null;
 
@@ -136,6 +139,68 @@
             modelSelect
         );
 
+        holofoilWrap =
+            document.createElement(
+                "label"
+            );
+
+        holofoilWrap.className =
+            "imomir-batch-upscale-model-wrap";
+
+        const holofoilLabel =
+            document.createElement(
+                "span"
+            );
+
+        holofoilLabel.textContent =
+            "Holofoil Stamp";
+
+        holofoilSelect =
+            document.createElement(
+                "select"
+            );
+
+        holofoilSelect.className =
+            "imomir-batch-upscale-model-select";
+
+        const holofoilKeepOption =
+            document.createElement(
+                "option"
+            );
+
+        holofoilKeepOption.value =
+            "none";
+
+        holofoilKeepOption.textContent =
+            "Off";
+
+        const holofoilBackgroundOption =
+            document.createElement(
+                "option"
+            );
+
+        holofoilBackgroundOption.value =
+            "background";
+
+        holofoilBackgroundOption.textContent =
+            "Background Color";
+
+        holofoilSelect.appendChild(
+            holofoilKeepOption
+        );
+
+        holofoilSelect.appendChild(
+            holofoilBackgroundOption
+        );
+
+        holofoilWrap.appendChild(
+            holofoilLabel
+        );
+
+        holofoilWrap.appendChild(
+            holofoilSelect
+        );
+
         replaceWrap =
             document.createElement(
                 "label"
@@ -209,6 +274,7 @@
         body.appendChild(detailElement);
         body.appendChild(inputWrap);
         body.appendChild(modelWrap);
+        body.appendChild(holofoilWrap);
         body.appendChild(replaceWrap);
         body.appendChild(progressWrap);
 
@@ -394,6 +460,7 @@
     async function loadBatchModels() {
         modelSelect.innerHTML = "";
         modelSelect.disabled = true;
+        holofoilSelect.disabled = true;
         startButton.disabled = true;
 
         try {
@@ -507,7 +574,22 @@
                 }
             }
 
+            const defaultHolofoilReplacement = String(
+                data.holofoil_stamp_replacement_default
+                || "none"
+            ).trim().toLowerCase();
+
+            holofoilSelect.value = (
+                defaultHolofoilReplacement
+                === "background"
+                    ? "background"
+                    : "none"
+            );
+
             modelSelect.disabled =
+                false;
+
+            holofoilSelect.disabled =
                 false;
 
             startButton.disabled =
@@ -518,6 +600,9 @@
                 error.message;
 
             modelSelect.disabled =
+                true;
+
+            holofoilSelect.disabled =
                 true;
 
             startButton.disabled =
@@ -555,6 +640,10 @@
         );
 
         modelWrap.classList.remove(
+            "hidden"
+        );
+
+        holofoilWrap.classList.remove(
             "hidden"
         );
 
@@ -625,6 +714,10 @@
         );
 
         modelWrap.classList.add(
+            "hidden"
+        );
+
+        holofoilWrap.classList.add(
             "hidden"
         );
 
@@ -865,6 +958,11 @@
             Boolean(
                 replaceCheckbox.checked
             );
+
+        payload.holofoil_stamp_replacement = String(
+            holofoilSelect.value
+            || "none"
+        ).trim().toLowerCase();
 
         saveUpscaleModel(
             selectedValue

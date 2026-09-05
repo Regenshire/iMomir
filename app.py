@@ -1660,6 +1660,7 @@ upscaling_batch_status = {
     "message": "No batch upscale has been run.",
     "source_label": "",
     "replace_existing": False,
+    "holofoil_stamp_replacement": "",
     "total_cards": 0,
     "processed_cards": 0,
     "completed_cards": 0,
@@ -16327,6 +16328,29 @@ def get_upscaling_holofoil_stamp_replacement():
     return replacement
 
 
+def resolve_upscaling_holofoil_stamp_replacement(
+    requested_value=None,
+):
+    if requested_value is None:
+        return get_upscaling_holofoil_stamp_replacement()
+
+    replacement = str(
+        requested_value
+        or ""
+    ).strip().lower()
+
+    if replacement not in {
+        "none",
+        "background",
+    }:
+        raise ValueError(
+            "Invalid Holofoil Stamp "
+            "Replacement option."
+        )
+
+    return replacement
+
+
 def get_upscaling_bleed_frame_context(
     card_row,
 ):
@@ -24204,6 +24228,9 @@ def upscaling_model_options():
 
     return jsonify({
         "ok": True,
+        "holofoil_stamp_replacement_default": (
+            get_upscaling_holofoil_stamp_replacement()
+        ),
         "plugins": (
             get_upscaler_plugin_model_results(
                 force_refresh=(
@@ -24358,6 +24385,10 @@ def chaos_card_upscale_control(card_uuid):
 
         "show_generated_bleed_in_upscale_window": (
             is_upscaling_show_generated_bleed_enabled()
+        ),
+
+        "holofoil_stamp_replacement_default": (
+            get_upscaling_holofoil_stamp_replacement()
         ),
 
         "plugins": plugin_results,
@@ -24858,6 +24889,7 @@ def run_card_upscale_candidate_batch(
     plugin_id,
     model_id,
     requested_face="front",
+    holofoil_stamp_replacement=None,
     progress_callback=None,
 ):
     total_started = (
@@ -24905,6 +24937,12 @@ def run_card_upscale_candidate_batch(
         raise ValueError(
             "Card not found."
         )
+
+    resolved_holofoil_stamp_replacement = (
+        resolve_upscaling_holofoil_stamp_replacement(
+            holofoil_stamp_replacement
+        )
+    )
 
     clean_requested_face = str(
         requested_face
@@ -25165,7 +25203,7 @@ def run_card_upscale_candidate_batch(
                     is_upscaling_dev_source_indicator_enabled()
                 ),
                 "holofoil_stamp_replacement": (
-                    get_upscaling_holofoil_stamp_replacement()
+                    resolved_holofoil_stamp_replacement
                 ),
                 "host_assets": {
                     "fonts_dir": os.path.abspath(
@@ -25885,6 +25923,11 @@ def chaos_card_upscale_run(card_uuid):
                 model_id=model_id,
                 requested_face=(
                     requested_face
+                ),
+                holofoil_stamp_replacement=(
+                    payload.get(
+                        "holofoil_stamp_replacement"
+                    )
                 ),
                 progress_callback=(
                     update_run_progress
@@ -26688,6 +26731,7 @@ def run_upscaling_batch_job(
     selection,
     source_label="Batch Upscale",
     replace_existing=False,
+    holofoil_stamp_replacement=None,
 ):
     try:
         total_cards = len(
@@ -26813,6 +26857,9 @@ def run_upscaling_batch_job(
                             ]
                         ),
                         requested_face="front",
+                        holofoil_stamp_replacement=(
+                            holofoil_stamp_replacement
+                        ),
                     )
                 )
 
@@ -26987,6 +27034,21 @@ def upscaling_batch_start():
         )
     )
 
+    try:
+        holofoil_stamp_replacement = (
+            resolve_upscaling_holofoil_stamp_replacement(
+                payload.get(
+                    "holofoil_stamp_replacement"
+                )
+            )
+        )
+
+    except ValueError as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+        }), 400
+
     raw_card_uuids = payload.get(
         "card_uuids"
     )
@@ -27127,6 +27189,9 @@ def upscaling_batch_start():
             "replace_existing": (
                 replace_existing
             ),
+            "holofoil_stamp_replacement": (
+                holofoil_stamp_replacement
+            ),
             "total_cards": len(
                 card_uuids
             ),
@@ -27175,6 +27240,9 @@ def upscaling_batch_start():
             ),
             "replace_existing": (
                 replace_existing
+            ),
+            "holofoil_stamp_replacement": (
+                holofoil_stamp_replacement
             ),
         },
         daemon=True,
