@@ -106,6 +106,7 @@ function initializeRefreshCards() {
     async function fetchRefreshStatus() {
         const response = await fetch("/refresh-cards/status", {
             method: "GET",
+            cache: "no-store",
             headers: {
                 "Accept": "application/json"
             }
@@ -148,12 +149,12 @@ function initializeRefreshCards() {
                 refreshError.classList.remove("hidden");
             }
 
-            setRefreshRunningUi(false);
-
-            if (refreshPollTimer) {
-                clearInterval(refreshPollTimer);
-                refreshPollTimer = null;
+            if (refreshObservedRunning) {
+                setRefreshRunningUi(true);
+                return;
             }
+
+            setRefreshRunningUi(false);
         }
     }
 

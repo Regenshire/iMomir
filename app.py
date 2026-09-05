@@ -3234,6 +3234,13 @@ def build_config_page_refresh_status(import_metadata):
     if current_refresh_status.get("is_running"):
         return current_refresh_status
 
+    if (
+        current_refresh_status.get("stage")
+        in {"Complete", "Failed"}
+        and current_refresh_status.get("finished_at")
+    ):
+        return current_refresh_status
+
     cards_imported = import_metadata.get("cards_imported", "0")
     sets_represented = import_metadata.get("sets_represented", "0")
     finished_at = import_metadata.get("last_refresh_utc")
@@ -10003,11 +10010,61 @@ def build_chaos_pdf_card_back_rendered_entry(
     card_row,
     card_uuid="",
     default_card_back_key=None,
+    paired_token_card_row=None,
 ):
-    back_source = get_chaos_pdf_card_back_source(
-        card_row,
-        default_card_back_key=default_card_back_key,
-    )
+    source_card_row = card_row
+    source_page_kind = "back"
+    source_card_uuid = (card_uuid or "").strip()
+    back_source = None
+
+    if paired_token_card_row:
+        paired_pages = build_chaos_print_pages_for_card(
+            paired_token_card_row
+        )
+
+        paired_front_entry = next(
+            (
+                page_entry
+                for page_entry in paired_pages
+                if (
+                    page_entry.get("page_kind")
+                    or ""
+                ).strip().lower() != "back"
+            ),
+            None,
+        )
+
+        if paired_front_entry:
+            source_card_row = paired_token_card_row
+            source_page_kind = (
+                paired_front_entry.get("page_kind")
+                or "single"
+            ).strip().lower()
+            source_card_uuid = (
+                paired_token_card_row["card_uuid"]
+                or ""
+            ).strip()
+
+            back_source = {
+                "source_type": "remote",
+                "absolute_path": "",
+                "image_url": (
+                    paired_front_entry.get("image_url")
+                    or ""
+                ).strip(),
+                "face_name": (
+                    paired_front_entry.get("face_name")
+                    or paired_token_card_row["card_name"]
+                    or "Token"
+                ).strip(),
+                "is_default_back": False,
+            }
+
+    if back_source is None:
+        back_source = get_chaos_pdf_card_back_source(
+            card_row,
+            default_card_back_key=default_card_back_key,
+        )
 
     # Normal single-faced cards still use
     # the configured local Magic card back.
@@ -10030,8 +10087,8 @@ def build_chaos_pdf_card_back_rendered_entry(
     #
     # Alternate -> Upscaled -> Scryfall.
     image_source = resolve_card_image_source_for_page(
-        card_row,
-        "back",
+        source_card_row,
+        source_page_kind,
         back_source.get("image_url") or "",
     )
 
@@ -10065,8 +10122,8 @@ def build_chaos_pdf_card_back_rendered_entry(
             )
 
         cached_result = download_chaos_image_to_cache(
-            card_uuid,
-            "back",
+            source_card_uuid,
+            source_page_kind,
             back_source["face_name"],
             back_image_url,
         )
@@ -10538,6 +10595,22 @@ def choose_no_waste_surprise_cards(
     if not eligible_rows:
         return []
 
+    token_back_rows = []
+
+    if print_card_backs:
+        token_back_rows = [
+            card_row
+            for card_row in query_no_waste_candidate_rows(
+                allowed_set_codes,
+                ["tokens_only"],
+                limit=500,
+            )
+            if get_no_waste_print_slot_count_for_card_row(
+                card_row,
+                True,
+            ) == 1
+        ]
+
     chosen_rows = list(
         eligible_rows[:slots_needed]
     )
@@ -10552,20 +10625,80 @@ def choose_no_waste_surprise_cards(
     surprise_cards = []
 
     for card_row in chosen_rows:
-        surprise_cards.append({
+        surprise_card = {
             "card_uuid": (
                 card_row["card_uuid"]
                 or ""
             ).strip(),
             "is_no_waste_filler": True,
-        })
+        }
+
+        layout = (
+            card_row["layout"]
+            or ""
+        ).strip().lower()
+
+        type_line = (
+            card_row["type_line"]
+            or ""
+        ).strip().lower()
+
+        is_token = (
+            layout in {
+                "token",
+                "double_faced_token",
+                "emblem",
+            }
+            or "token" in type_line
+            or "emblem" in type_line
+        )
+
+        has_own_back = bool(
+            int(card_row["is_dual_faced"] or 0) == 1
+            and (
+                (card_row["back_image_url"] or "").strip()
+                or len(parse_faces_json(card_row["faces_json"])) >= 2
+            )
+        )
+
+        if (
+            print_card_backs
+            and is_token
+            and not has_own_back
+            and token_back_rows
+        ):
+            different_token_rows = [
+                token_row
+                for token_row in token_back_rows
+                if (
+                    token_row["card_uuid"]
+                    or ""
+                ).strip() != surprise_card["card_uuid"]
+            ]
+
+            paired_token_row = random.choice(
+                different_token_rows
+                or token_back_rows
+            )
+
+            surprise_card[
+                "no_waste_back_card_uuid"
+            ] = (
+                paired_token_row["card_uuid"]
+                or ""
+            ).strip()
+
+        surprise_cards.append(
+            surprise_card
+        )
 
         write_debug_log(
             "NO WASTED SPACE FILL | "
             f"card={card_row['card_name']} | "
             f"set={card_row['set_code']} | "
             f"rarity={card_row['rarity']} | "
-            f"type={card_row['type_line']}"
+            f"type={card_row['type_line']} | "
+            f"paired_back={surprise_card.get('no_waste_back_card_uuid', '')}"
         )
 
     return surprise_cards
@@ -10963,12 +11096,28 @@ def build_chaos_pack_pdf(
                         front_page_entries[0]
                     ]
 
+                paired_token_card_row = None
+                paired_token_card_uuid = (
+                    card.get(
+                        "no_waste_back_card_uuid"
+                    )
+                    or ""
+                ).strip()
+
+                if paired_token_card_uuid:
+                    paired_token_card_row = (
+                        get_chaos_card_by_uuid(
+                            paired_token_card_uuid
+                        )
+                    )
+
                 try:
                     card_back_rendered_entries.append(
                         build_chaos_pdf_card_back_rendered_entry(
                             card_row,
                             card_uuid=card_uuid,
                             default_card_back_key=effective_default_card_back_key,
+                            paired_token_card_row=paired_token_card_row,
                         )
                     )
                 except Exception as exc:
@@ -17421,16 +17570,26 @@ def refresh_cards_start():
 
 @app.route("/refresh-cards/status", methods=["GET"])
 def refresh_cards_status():
+    current_status = get_refresh_status_copy()
+
+    if current_status.get("is_running"):
+        return jsonify(current_status)
+
+    if (
+        current_status.get("stage") in {"Complete", "Failed"}
+        and current_status.get("finished_at")
+    ):
+        return jsonify(current_status)
+
     try:
         import_metadata = get_import_metadata()
         return jsonify(build_config_page_refresh_status(import_metadata))
     except Exception as exc:
-        return jsonify({
-            "is_running": False,
-            "stage": "Failed",
-            "message": "Refresh status failed.",
-            "error": str(exc),
-        }), 500
+        write_error_log(
+            "REFRESH STATUS METADATA READ FAILED",
+            exc=exc,
+        )
+        return jsonify(current_status)
 
 @app.route("/download-card-images/start", methods=["POST"])
 def download_card_images_start():
