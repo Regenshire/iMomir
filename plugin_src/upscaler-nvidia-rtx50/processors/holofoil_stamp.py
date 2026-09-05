@@ -40,7 +40,9 @@ CONTEXT_WIDTH_RATIO = 0.025
 
 RESTORATION_CONTEXT_WIDTH_RATIO = 0.012
 DARK_CONTEXT_LUMINANCE_THRESHOLD = 72.0
+DARK_CONTEXT_MIN_FRACTION = 0.25
 DARK_CONTEXT_VERTICAL_RADIUS_RATIO = 0.002
+TEXT_SAFE_BOTTOM_FRACTION = 0.20
 
 STAMP_SHAPE_UNKNOWN = "unknown"
 STAMP_SHAPE_OVAL = "oval"
@@ -450,8 +452,36 @@ class HolofoilStampProcessor:
             component_box[0]
         )
 
+        component_top = (
+            component_box[1]
+        )
+
         component_right = (
             component_box[2]
+        )
+
+        component_bottom = (
+            component_box[3]
+        )
+
+        component_height = max(
+            1,
+            component_bottom
+            - component_top,
+        )
+
+        text_safe_start = max(
+            component_top,
+            component_bottom
+            - max(
+                1,
+                int(
+                    round(
+                        component_height
+                        * TEXT_SAFE_BOTTOM_FRACTION
+                    )
+                ),
+            ),
         )
 
         patch_width = max(
@@ -617,11 +647,19 @@ class HolofoilStampProcessor:
                 * right_color[2]
             )
 
+            use_text_safe_sampling = (
+                local_y
+                >= text_safe_start
+            )
+
             if (
-                left_luminance
-                <= DARK_CONTEXT_LUMINANCE_THRESHOLD
-                and right_luminance
-                <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                use_text_safe_sampling
+                or (
+                    left_luminance
+                    <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                    and right_luminance
+                    <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                )
             ):
                 stable_top = max(
                     0,
@@ -636,39 +674,43 @@ class HolofoilStampProcessor:
                     + 1,
                 )
 
-                left_color = self._median_color(
-                    image,
-                    (
-                        left_context_left,
-                        stable_top,
-                        left_context_right,
-                        stable_bottom,
-                    ),
-                    (
-                        max(
-                            0,
-                            full_component_left - 1,
+                left_dark_color = (
+                    self._dark_background_color(
+                        image,
+                        (
+                            left_context_left,
+                            stable_top,
+                            left_context_right,
+                            stable_bottom,
                         ),
-                        source_y,
-                    ),
+                    )
                 )
 
-                right_color = self._median_color(
-                    image,
-                    (
-                        right_context_left,
-                        stable_top,
-                        right_context_right,
-                        stable_bottom,
-                    ),
-                    (
-                        min(
-                            image.width - 1,
-                            full_component_right,
+                right_dark_color = (
+                    self._dark_background_color(
+                        image,
+                        (
+                            right_context_left,
+                            stable_top,
+                            right_context_right,
+                            stable_bottom,
                         ),
-                        source_y,
-                    ),
+                    )
                 )
+
+                if (
+                    left_dark_color
+                    is not None
+                    and right_dark_color
+                    is not None
+                ):
+                    left_color = (
+                        left_dark_color
+                    )
+
+                    right_color = (
+                        right_dark_color
+                    )
 
             for local_x in range(
                 patch_width
@@ -912,6 +954,127 @@ class HolofoilStampProcessor:
             )
             for value
             in statistics.median[:3]
+        )
+
+    @staticmethod
+    def _dark_background_color(
+        image,
+        box,
+    ):
+        (
+            left,
+            top,
+            right,
+            bottom,
+        ) = box
+
+        if (
+            right <= left
+            or bottom <= top
+        ):
+            return None
+
+        region = image.crop(
+            box
+        )
+
+        pixels = list(
+            region.getdata()
+        )
+
+        if not pixels:
+            return None
+
+        dark_pixels = []
+
+        for pixel in pixels:
+            luminance = (
+                0.2126
+                * pixel[0]
+                + 0.7152
+                * pixel[1]
+                + 0.0722
+                * pixel[2]
+            )
+
+            if (
+                luminance
+                <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+            ):
+                dark_pixels.append(
+                    pixel[:3]
+                )
+
+        minimum_dark_pixels = max(
+            1,
+            int(
+                round(
+                    len(
+                        pixels
+                    )
+                    * DARK_CONTEXT_MIN_FRACTION
+                )
+            ),
+        )
+
+        if (
+            len(
+                dark_pixels
+            )
+            < minimum_dark_pixels
+        ):
+            return None
+
+        median_color = []
+
+        for channel in range(3):
+            channel_values = sorted(
+                pixel[
+                    channel
+                ]
+                for pixel
+                in dark_pixels
+            )
+
+            value_count = len(
+                channel_values
+            )
+
+            middle_index = (
+                value_count
+                // 2
+            )
+
+            if (
+                value_count
+                % 2
+            ):
+                median_value = (
+                    channel_values[
+                        middle_index
+                    ]
+                )
+
+            else:
+                median_value = (
+                    channel_values[
+                        middle_index - 1
+                    ]
+                    + channel_values[
+                        middle_index
+                    ]
+                ) / 2.0
+
+            median_color.append(
+                int(
+                    round(
+                        median_value
+                    )
+                )
+            )
+
+        return tuple(
+            median_color
         )
 
     @staticmethod
