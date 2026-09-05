@@ -38,7 +38,18 @@ MAX_COMPONENT_COVERAGE = 0.62
 CONTEXT_GAP_RATIO = 0.004
 CONTEXT_WIDTH_RATIO = 0.025
 
-MASK_EXPANSION_SIZE = 9
+RESTORATION_CONTEXT_WIDTH_RATIO = 0.012
+DARK_CONTEXT_LUMINANCE_THRESHOLD = 72.0
+DARK_CONTEXT_VERTICAL_RADIUS_RATIO = 0.002
+
+STAMP_SHAPE_UNKNOWN = "unknown"
+STAMP_SHAPE_OVAL = "oval"
+STAMP_SHAPE_TRIANGLE = "triangle"
+
+OVAL_MIDDLE_BULGE_RATIO = 1.28
+
+OVAL_MASK_EXPANSION_SIZE = 9
+TRIANGLE_MASK_EXPANSION_SIZE = 39
 MASK_FEATHER_RADIUS = 2.0
 
 
@@ -323,10 +334,28 @@ class HolofoilStampProcessor:
                 None,
             )
 
+        stamp_shape = (
+            self._classify_stamp_shape(
+                component_mask
+            )
+        )
+
+        mask_expansion_size = (
+            OVAL_MASK_EXPANSION_SIZE
+        )
+
+        if (
+            stamp_shape
+            == STAMP_SHAPE_TRIANGLE
+        ):
+            mask_expansion_size = (
+                TRIANGLE_MASK_EXPANSION_SIZE
+            )
+
         expanded_mask = (
             component_mask.filter(
                 ImageFilter.MaxFilter(
-                    MASK_EXPANSION_SIZE
+                    mask_expansion_size
                 )
             )
         )
@@ -349,8 +378,16 @@ class HolofoilStampProcessor:
             )
         )
 
+        restoration_patch = (
+            self._build_local_restoration_patch(
+                image,
+                search_box,
+                component_box,
+            )
+        )
+
         restored_patch = Image.composite(
-            expected_patch,
+            restoration_patch,
             actual_patch,
             feathered_mask,
         )
@@ -395,6 +432,285 @@ class HolofoilStampProcessor:
             restored_image,
             normalized_box,
         )
+
+    def _build_local_restoration_patch(
+        self,
+        image,
+        search_box,
+        component_box,
+    ):
+        (
+            search_left,
+            search_top,
+            search_right,
+            search_bottom,
+        ) = search_box
+
+        component_left = (
+            component_box[0]
+        )
+
+        component_right = (
+            component_box[2]
+        )
+
+        patch_width = max(
+            1,
+            search_right - search_left,
+        )
+
+        patch_height = max(
+            1,
+            search_bottom - search_top,
+        )
+
+        full_component_left = (
+            search_left
+            + component_left
+        )
+
+        full_component_right = (
+            search_left
+            + component_right
+        )
+
+        gap_pixels = max(
+            2,
+            int(
+                round(
+                    image.width
+                    * CONTEXT_GAP_RATIO
+                )
+            ),
+        )
+
+        context_width = max(
+            8,
+            int(
+                round(
+                    image.width
+                    * RESTORATION_CONTEXT_WIDTH_RATIO
+                )
+            ),
+        )
+
+        left_context_right = max(
+            1,
+            full_component_left
+            - gap_pixels,
+        )
+
+        left_context_left = max(
+            0,
+            left_context_right
+            - context_width,
+        )
+
+        right_context_left = min(
+            image.width - 1,
+            full_component_right
+            + gap_pixels,
+        )
+
+        right_context_right = min(
+            image.width,
+            right_context_left
+            + context_width,
+        )
+
+        dark_vertical_radius = max(
+            3,
+            int(
+                round(
+                    image.height
+                    * DARK_CONTEXT_VERTICAL_RADIUS_RATIO
+                )
+            ),
+        )
+
+        patch = Image.new(
+            "RGB",
+            (
+                patch_width,
+                patch_height,
+            ),
+        )
+
+        patch_pixels = (
+            patch.load()
+        )
+
+        component_denominator = max(
+            1,
+            component_right
+            - component_left
+            - 1,
+        )
+
+        for local_y in range(
+            patch_height
+        ):
+            source_y = (
+                search_top
+                + local_y
+            )
+
+            sample_top = max(
+                0,
+                source_y - 1,
+            )
+
+            sample_bottom = min(
+                image.height,
+                source_y + 2,
+            )
+
+            left_color = self._median_color(
+                image,
+                (
+                    left_context_left,
+                    sample_top,
+                    left_context_right,
+                    sample_bottom,
+                ),
+                (
+                    max(
+                        0,
+                        full_component_left - 1,
+                    ),
+                    source_y,
+                ),
+            )
+
+            right_color = self._median_color(
+                image,
+                (
+                    right_context_left,
+                    sample_top,
+                    right_context_right,
+                    sample_bottom,
+                ),
+                (
+                    min(
+                        image.width - 1,
+                        full_component_right,
+                    ),
+                    source_y,
+                ),
+            )
+
+            left_luminance = (
+                0.2126
+                * left_color[0]
+                + 0.7152
+                * left_color[1]
+                + 0.0722
+                * left_color[2]
+            )
+
+            right_luminance = (
+                0.2126
+                * right_color[0]
+                + 0.7152
+                * right_color[1]
+                + 0.0722
+                * right_color[2]
+            )
+
+            if (
+                left_luminance
+                <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+                and right_luminance
+                <= DARK_CONTEXT_LUMINANCE_THRESHOLD
+            ):
+                stable_top = max(
+                    0,
+                    source_y
+                    - dark_vertical_radius,
+                )
+
+                stable_bottom = min(
+                    image.height,
+                    source_y
+                    + dark_vertical_radius
+                    + 1,
+                )
+
+                left_color = self._median_color(
+                    image,
+                    (
+                        left_context_left,
+                        stable_top,
+                        left_context_right,
+                        stable_bottom,
+                    ),
+                    (
+                        max(
+                            0,
+                            full_component_left - 1,
+                        ),
+                        source_y,
+                    ),
+                )
+
+                right_color = self._median_color(
+                    image,
+                    (
+                        right_context_left,
+                        stable_top,
+                        right_context_right,
+                        stable_bottom,
+                    ),
+                    (
+                        min(
+                            image.width - 1,
+                            full_component_right,
+                        ),
+                        source_y,
+                    ),
+                )
+
+            for local_x in range(
+                patch_width
+            ):
+                ratio = (
+                    local_x
+                    - component_left
+                ) / component_denominator
+
+                ratio = max(
+                    0.0,
+                    min(
+                        1.0,
+                        ratio,
+                    ),
+                )
+
+                patch_pixels[
+                    local_x,
+                    local_y,
+                ] = tuple(
+                    int(
+                        round(
+                            left_color[
+                                channel
+                            ]
+                            + (
+                                right_color[
+                                    channel
+                                ]
+                                - left_color[
+                                    channel
+                                ]
+                            )
+                            * ratio
+                        )
+                    )
+                    for channel
+                    in range(3)
+                )
+
+        return patch
 
     def _build_horizontal_background_patch(
         self,
@@ -597,6 +913,133 @@ class HolofoilStampProcessor:
             for value
             in statistics.median[:3]
         )
+
+    @staticmethod
+    def _classify_stamp_shape(
+        component_mask,
+    ):
+        component_box = (
+            component_mask.getbbox()
+        )
+
+        if not component_box:
+            return STAMP_SHAPE_UNKNOWN
+
+        component_region = (
+            component_mask.crop(
+                component_box
+            )
+        )
+
+        region_pixels = (
+            component_region.load()
+        )
+
+        row_widths = []
+
+        for y in range(
+            component_region.height
+        ):
+            row_width = 0
+
+            for x in range(
+                component_region.width
+            ):
+                if (
+                    region_pixels[
+                        x,
+                        y,
+                    ]
+                    > 0
+                ):
+                    row_width += 1
+
+            row_widths.append(
+                row_width
+            )
+
+        if not row_widths:
+            return STAMP_SHAPE_UNKNOWN
+
+        quarter_size = max(
+            1,
+            len(
+                row_widths
+            )
+            // 4,
+        )
+
+        top_width = (
+            sum(
+                row_widths[
+                    :quarter_size
+                ]
+            )
+            / quarter_size
+        )
+
+        middle_start = (
+            len(
+                row_widths
+            )
+            // 3
+        )
+
+        middle_end = max(
+            middle_start + 1,
+            (
+                len(
+                    row_widths
+                )
+                * 2
+            )
+            // 3,
+        )
+
+        middle_rows = (
+            row_widths[
+                middle_start:
+                middle_end
+            ]
+        )
+
+        middle_width = (
+            sum(
+                middle_rows
+            )
+            / max(
+                1,
+                len(
+                    middle_rows
+                ),
+            )
+        )
+
+        bottom_width = (
+            sum(
+                row_widths[
+                    -quarter_size:
+                ]
+            )
+            / quarter_size
+        )
+
+        shoulder_width = max(
+            1.0,
+            top_width,
+            bottom_width,
+        )
+
+        if (
+            middle_width
+            >= (
+                shoulder_width
+                * OVAL_MIDDLE_BULGE_RATIO
+            )
+        ):
+            return STAMP_SHAPE_OVAL
+
+        return STAMP_SHAPE_TRIANGLE
 
     @staticmethod
     def _select_stamp_component(
