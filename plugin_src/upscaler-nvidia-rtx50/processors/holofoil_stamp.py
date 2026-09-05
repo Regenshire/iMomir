@@ -4,6 +4,7 @@ import time
 from PIL import (
     Image,
     ImageChops,
+    ImageDraw,
     ImageFilter,
     ImageStat,
 )
@@ -15,6 +16,10 @@ REPLACEMENT_BACKGROUND = "background"
 SUPPORTED_REPLACEMENTS = {
     REPLACEMENT_NONE,
     REPLACEMENT_BACKGROUND,
+}
+
+HOLOFOIL_SUPPORTED_FRAME_VERSIONS = {
+    "2015",
 }
 
 STAMP_SEARCH_BOX = (
@@ -44,14 +49,39 @@ DARK_CONTEXT_MIN_FRACTION = 0.25
 DARK_CONTEXT_VERTICAL_RADIUS_RATIO = 0.002
 TEXT_SAFE_BOTTOM_FRACTION = 0.20
 
+TEXT_PRESERVE_BOTTOM_FRACTION = 0.45
+TEXT_PRESERVE_LUMINANCE_THRESHOLD = 180.0
+TEXT_PRESERVE_BACKGROUND_MAX_LUMINANCE = 110.0
+TEXT_PRESERVE_MAX_CHANNEL_SPREAD = 24
+TEXT_PRESERVE_DILATION_SIZE = 3
+
 STAMP_SHAPE_UNKNOWN = "unknown"
 STAMP_SHAPE_OVAL = "oval"
 STAMP_SHAPE_TRIANGLE = "triangle"
 
+SECURITY_STAMP_SHAPE_MAP = {
+    "oval": STAMP_SHAPE_OVAL,
+    "circle": STAMP_SHAPE_OVAL,
+    "triangle": STAMP_SHAPE_TRIANGLE,
+}
+
 OVAL_MIDDLE_BULGE_RATIO = 1.28
+TRIANGLE_BOTTOM_TAPER_RATIO = 0.70
+
+OVAL_TARGET_WIDTH_RATIO = 0.110
+OVAL_TARGET_HEIGHT_RATIO = 0.043
+
+TRIANGLE_TARGET_WIDTH_RATIO = 0.120
+TRIANGLE_TARGET_HEIGHT_RATIO = 0.064
+TRIANGLE_SHOULDER_WIDTH_RATIO = 0.142
+TRIANGLE_SHOULDER_HEIGHT_RATIO = 0.018
+
+CANONICAL_TARGET_PAD_SIZE = 5
 
 OVAL_MASK_EXPANSION_SIZE = 9
 TRIANGLE_MASK_EXPANSION_SIZE = 39
+TRIANGLE_SHADOW_PAD_SIZE = 9
+TRIANGLE_SHADOW_UPPER_FRACTION = 0.60
 MASK_FEATHER_RADIUS = 2.0
 
 
@@ -106,6 +136,58 @@ class HolofoilStampProcessor:
                 "requires an Upscale result object."
             )
 
+        card = (
+            payload.get(
+                "card"
+            )
+            or {}
+        )
+
+        if not isinstance(
+            card,
+            dict,
+        ):
+            card = {}
+
+        frame_version = str(
+            card.get(
+                "frame_version",
+                "",
+            )
+            or ""
+        ).strip().lower()
+
+        security_stamp = str(
+            card.get(
+                "security_stamp",
+                "",
+            )
+            or ""
+        ).strip().lower()
+
+        if (
+            frame_version
+            not in HOLOFOIL_SUPPORTED_FRAME_VERSIONS
+        ):
+            result[
+                "holofoil_stamp"
+            ] = {
+                "replacement": replacement,
+                "detected": False,
+                "background_restored": False,
+                "normalized_box": None,
+                "skipped": True,
+                "skip_reason": (
+                    "unsupported_frame_version"
+                    if frame_version
+                    else "missing_frame_version"
+                ),
+                "frame_version": frame_version,
+                "processing_ms": 0.0,
+            }
+
+            return result
+
         output_path = (
             self._resolve_output_path(
                 payload,
@@ -130,7 +212,8 @@ class HolofoilStampProcessor:
             restored_image,
             normalized_box,
         ) = self._restore_background(
-            output_image
+            output_image,
+            security_stamp=security_stamp,
         )
 
         detected = (
@@ -157,6 +240,10 @@ class HolofoilStampProcessor:
                 if normalized_box
                 else None
             ),
+            "skipped": False,
+            "skip_reason": "",
+            "frame_version": frame_version,
+            "security_stamp": security_stamp,
             "processing_ms": round(
                 (
                     time.perf_counter()
@@ -209,6 +296,7 @@ class HolofoilStampProcessor:
     def _restore_background(
         self,
         image,
+        security_stamp="",
     ):
         search_box = (
             self._normalized_box_to_pixels(
@@ -337,8 +425,17 @@ class HolofoilStampProcessor:
             )
 
         stamp_shape = (
-            self._classify_stamp_shape(
-                component_mask
+            self._resolve_stamp_shape(
+                component_mask,
+                security_stamp,
+            )
+        )
+
+        canonical_target_mask = (
+            self._build_canonical_stamp_target_mask(
+                component_mask,
+                image.size,
+                stamp_shape,
             )
         )
 
@@ -362,6 +459,88 @@ class HolofoilStampProcessor:
             )
         )
 
+        if (
+            stamp_shape
+            == STAMP_SHAPE_TRIANGLE
+        ):
+            triangle_box = (
+                expanded_mask.getbbox()
+            )
+
+            if triangle_box:
+                triangle_height = max(
+                    1,
+                    triangle_box[3]
+                    - triangle_box[1],
+                )
+
+                shadow_cleanup_bottom = min(
+                    expanded_mask.height,
+                    triangle_box[1]
+                    + max(
+                        1,
+                        int(
+                            round(
+                                triangle_height
+                                * TRIANGLE_SHADOW_UPPER_FRACTION
+                            )
+                        ),
+                    ),
+                )
+
+                shadow_cleanup_mask = (
+                    expanded_mask.filter(
+                        ImageFilter.MaxFilter(
+                            TRIANGLE_SHADOW_PAD_SIZE
+                        )
+                    )
+                )
+
+                upper_shadow_mask = Image.new(
+                    "L",
+                    expanded_mask.size,
+                    0,
+                )
+
+                upper_shadow_mask.paste(
+                    shadow_cleanup_mask.crop(
+                        (
+                            0,
+                            0,
+                            expanded_mask.width,
+                            shadow_cleanup_bottom,
+                        )
+                    ),
+                    (
+                        0,
+                        0,
+                    ),
+                )
+
+                expanded_mask = (
+                    ImageChops.lighter(
+                        expanded_mask,
+                        upper_shadow_mask,
+                    )
+                )
+
+        restoration_context_box = (
+            expanded_mask.getbbox()
+        )
+
+        if not restoration_context_box:
+            return (
+                image,
+                None,
+            )
+
+        expanded_mask = (
+            ImageChops.lighter(
+                expanded_mask,
+                canonical_target_mask,
+            )
+        )
+
         component_box = (
             expanded_mask.getbbox()
         )
@@ -372,7 +551,7 @@ class HolofoilStampProcessor:
                 None,
             )
 
-        feathered_mask = (
+        blurred_mask = (
             expanded_mask.filter(
                 ImageFilter.GaussianBlur(
                     MASK_FEATHER_RADIUS
@@ -380,13 +559,55 @@ class HolofoilStampProcessor:
             )
         )
 
+        feathered_mask = (
+            blurred_mask
+        )
+
+        if (
+            stamp_shape
+            == STAMP_SHAPE_TRIANGLE
+        ):
+            feathered_mask = (
+                ImageChops.lighter(
+                    expanded_mask,
+                    blurred_mask,
+                )
+            )
+
         restoration_patch = (
             self._build_local_restoration_patch(
                 image,
                 search_box,
-                component_box,
+                restoration_context_box,
             )
         )
+
+        if (
+            stamp_shape
+            == STAMP_SHAPE_TRIANGLE
+        ):
+            text_protection_mask = (
+                self._build_footer_text_protection_mask(
+                    actual_patch,
+                    restoration_patch,
+                    component_box,
+                )
+            )
+
+            if text_protection_mask is not None:
+                text_protection_mask = (
+                    ImageChops.subtract(
+                        text_protection_mask,
+                        canonical_target_mask,
+                    )
+                )
+
+                feathered_mask = (
+                    ImageChops.subtract(
+                        feathered_mask,
+                        text_protection_mask,
+                    )
+                )
 
         restored_patch = Image.composite(
             restoration_patch,
@@ -957,6 +1178,407 @@ class HolofoilStampProcessor:
         )
 
     @staticmethod
+    def _build_canonical_stamp_target_mask(
+        component_mask,
+        full_image_size,
+        stamp_shape,
+    ):
+        component_box = (
+            component_mask.getbbox()
+        )
+
+        target_mask = Image.new(
+            "L",
+            component_mask.size,
+            0,
+        )
+
+        if not component_box:
+            return target_mask
+
+        (
+            component_left,
+            component_top,
+            component_right,
+            component_bottom,
+        ) = component_box
+
+        center_x = (
+            target_mask.width
+            / 2.0
+        )
+
+        center_y = (
+            component_top
+            + component_bottom
+        ) / 2.0
+
+        full_width = max(
+            1,
+            full_image_size[0],
+        )
+
+        full_height = max(
+            1,
+            full_image_size[1],
+        )
+
+        if (
+            stamp_shape
+            == STAMP_SHAPE_OVAL
+        ):
+            target_width = max(
+                1,
+                int(
+                    round(
+                        full_width
+                        * OVAL_TARGET_WIDTH_RATIO
+                    )
+                ),
+            )
+
+            target_height = max(
+                1,
+                int(
+                    round(
+                        full_height
+                        * OVAL_TARGET_HEIGHT_RATIO
+                    )
+                ),
+            )
+
+        elif (
+            stamp_shape
+            == STAMP_SHAPE_TRIANGLE
+        ):
+            target_width = max(
+                1,
+                int(
+                    round(
+                        full_width
+                        * TRIANGLE_TARGET_WIDTH_RATIO
+                    )
+                ),
+            )
+
+            target_height = max(
+                1,
+                int(
+                    round(
+                        full_height
+                        * TRIANGLE_TARGET_HEIGHT_RATIO
+                    )
+                ),
+            )
+
+        else:
+            return component_mask.copy()
+
+        left = max(
+            0,
+            int(
+                round(
+                    center_x
+                    - target_width / 2.0
+                )
+            ),
+        )
+
+        top = max(
+            0,
+            int(
+                round(
+                    center_y
+                    - target_height / 2.0
+                )
+            ),
+        )
+
+        right = min(
+            target_mask.width,
+            left + target_width,
+        )
+
+        bottom = min(
+            target_mask.height,
+            top + target_height,
+        )
+
+        if (
+            right <= left
+            or bottom <= top
+        ):
+            return target_mask
+
+        draw = ImageDraw.Draw(
+            target_mask
+        )
+
+        if (
+            stamp_shape
+            == STAMP_SHAPE_OVAL
+        ):
+            draw.ellipse(
+                (
+                    left,
+                    top,
+                    right - 1,
+                    bottom - 1,
+                ),
+                fill=255,
+            )
+
+        else:
+            shoulder_width = max(
+                target_width,
+                int(
+                    round(
+                        full_width
+                        * TRIANGLE_SHOULDER_WIDTH_RATIO
+                    )
+                ),
+            )
+
+            shoulder_height = max(
+                1,
+                int(
+                    round(
+                        full_height
+                        * TRIANGLE_SHOULDER_HEIGHT_RATIO
+                    )
+                ),
+            )
+
+            shoulder_left = max(
+                0,
+                int(
+                    round(
+                        center_x
+                        - shoulder_width / 2.0
+                    )
+                ),
+            )
+
+            shoulder_right = min(
+                target_mask.width,
+                int(
+                    round(
+                        center_x
+                        + shoulder_width / 2.0
+                    )
+                ),
+            )
+
+            shoulder_bottom = min(
+                bottom - 1,
+                top + shoulder_height,
+            )
+
+            draw.polygon(
+                (
+                    (
+                        shoulder_left,
+                        top,
+                    ),
+                    (
+                        shoulder_right - 1,
+                        top,
+                    ),
+                    (
+                        right - 1,
+                        shoulder_bottom,
+                    ),
+                    (
+                        int(
+                            round(
+                                center_x
+                            )
+                        ),
+                        bottom - 1,
+                    ),
+                    (
+                        left,
+                        shoulder_bottom,
+                    ),
+                ),
+                fill=255,
+            )
+
+        return target_mask.filter(
+            ImageFilter.MaxFilter(
+                CANONICAL_TARGET_PAD_SIZE
+            )
+        )
+
+    @staticmethod
+    def _build_footer_text_protection_mask(
+        actual_patch,
+        restoration_patch,
+        component_box,
+    ):
+        (
+            component_left,
+            component_top,
+            component_right,
+            component_bottom,
+        ) = component_box
+
+        component_height = max(
+            1,
+            component_bottom
+            - component_top,
+        )
+
+        protect_start = max(
+            component_top,
+            component_bottom
+            - max(
+                1,
+                int(
+                    round(
+                        component_height
+                        * TEXT_PRESERVE_BOTTOM_FRACTION
+                    )
+                ),
+            ),
+        )
+
+        protect_end = min(
+            actual_patch.height,
+            component_bottom + 2,
+        )
+
+        protect_left = max(
+            0,
+            component_left - 2,
+        )
+
+        protect_right = min(
+            actual_patch.width,
+            component_right + 2,
+        )
+
+        if (
+            protect_right
+            <= protect_left
+            or protect_end
+            <= protect_start
+        ):
+            return None
+
+        actual_pixels = (
+            actual_patch.load()
+        )
+
+        restoration_pixels = (
+            restoration_patch.load()
+        )
+
+        protection_mask = Image.new(
+            "L",
+            actual_patch.size,
+            0,
+        )
+
+        protection_pixels = (
+            protection_mask.load()
+        )
+
+        for y in range(
+            protect_start,
+            protect_end,
+        ):
+            for x in range(
+                protect_left,
+                protect_right,
+            ):
+                actual_pixel = (
+                    actual_pixels[
+                        x,
+                        y,
+                    ]
+                )
+
+                restoration_pixel = (
+                    restoration_pixels[
+                        x,
+                        y,
+                    ]
+                )
+
+                actual_luminance = (
+                    0.2126
+                    * actual_pixel[0]
+                    + 0.7152
+                    * actual_pixel[1]
+                    + 0.0722
+                    * actual_pixel[2]
+                )
+
+                restoration_luminance = (
+                    0.2126
+                    * restoration_pixel[0]
+                    + 0.7152
+                    * restoration_pixel[1]
+                    + 0.0722
+                    * restoration_pixel[2]
+                )
+
+                channel_spread = (
+                    max(
+                        actual_pixel[:3]
+                    )
+                    - min(
+                        actual_pixel[:3]
+                    )
+                )
+
+                if (
+                    actual_luminance
+                    >= TEXT_PRESERVE_LUMINANCE_THRESHOLD
+                    and restoration_luminance
+                    <= TEXT_PRESERVE_BACKGROUND_MAX_LUMINANCE
+                    and channel_spread
+                    <= TEXT_PRESERVE_MAX_CHANNEL_SPREAD
+                ):
+                    protection_pixels[
+                        x,
+                        y,
+                    ] = 255
+
+        if not protection_mask.getbbox():
+            return None
+
+        protection_mask = (
+            protection_mask.filter(
+                ImageFilter.MaxFilter(
+                    TEXT_PRESERVE_DILATION_SIZE
+                )
+            )
+        )
+
+        clip_mask = Image.new(
+            "L",
+            actual_patch.size,
+            0,
+        )
+
+        clip_mask.paste(
+            255,
+            (
+                protect_left,
+                protect_start,
+                protect_right,
+                protect_end,
+            ),
+        )
+
+        return ImageChops.darker(
+            protection_mask,
+            clip_mask,
+        )
+
+    @staticmethod
     def _dark_background_color(
         image,
         box,
@@ -1078,6 +1700,27 @@ class HolofoilStampProcessor:
         )
 
     @staticmethod
+    def _resolve_stamp_shape(
+        component_mask,
+        security_stamp,
+    ):
+        metadata_shape = (
+            SECURITY_STAMP_SHAPE_MAP.get(
+                str(
+                    security_stamp
+                    or ""
+                ).strip().lower()
+            )
+        )
+
+        if metadata_shape:
+            return metadata_shape
+
+        return HolofoilStampProcessor._classify_stamp_shape(
+            component_mask
+        )
+
+    @staticmethod
     def _classify_stamp_shape(
         component_mask,
     ):
@@ -1186,6 +1829,17 @@ class HolofoilStampProcessor:
             )
             / quarter_size
         )
+
+        if (
+            top_width
+            > 0
+            and bottom_width
+            <= (
+                top_width
+                * TRIANGLE_BOTTOM_TAPER_RATIO
+            )
+        ):
+            return STAMP_SHAPE_TRIANGLE
 
         shoulder_width = max(
             1.0,

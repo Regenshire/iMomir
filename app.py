@@ -2300,6 +2300,7 @@ def import_chaos_cards_from_all_printings():
             layout = (card_obj.get("layout") or "").strip().lower()
             side = (card_obj.get("side") or "").strip().lower()
             frame_version = (card_obj.get("frameVersion") or "").strip().lower()
+            security_stamp = (card_obj.get("securityStamp") or "").strip().lower()
             border_color = (card_obj.get("borderColor") or "").strip().lower()
             colors_json = json.dumps(safe_list(card_obj.get("colors")))
             color_identity_json = json.dumps(safe_list(card_obj.get("colorIdentity")))
@@ -2372,13 +2373,14 @@ def import_chaos_cards_from_all_printings():
                     front_face_name,
                     back_face_name,
                     frame_version,
+                    security_stamp,
                     border_color,
                     colors_json,
                     color_identity_json,
                     edhrec_rank,
                     edhrec_saltiness
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     card_uuid,
@@ -2404,6 +2406,7 @@ def import_chaos_cards_from_all_printings():
                     front_face_name,
                     back_face_name,
                     frame_version,
+                    security_stamp,
                     border_color,
                     colors_json,
                     color_identity_json,
@@ -4141,6 +4144,7 @@ def extract_chaos_card_faces(card_obj, uuid_lookup):
                     "type_line": card_obj.get("type") or "",
                     "mana_cost": card_obj.get("manaCost"),
                     "layout": layout,
+                    "security_stamp": (card_obj.get("securityStamp") or "").strip().lower(),
                     "scryfall_id": parent_scryfall_id,
                     "image_url": build_scryfall_face_image_url(shared_scryfall_id, "front") if shared_scryfall_id else None,
                 },
@@ -4152,6 +4156,7 @@ def extract_chaos_card_faces(card_obj, uuid_lookup):
                     "type_line": other_face_obj.get("type") or "",
                     "mana_cost": other_face_obj.get("manaCost"),
                     "layout": layout,
+                    "security_stamp": (other_face_obj.get("securityStamp") or "").strip().lower(),
                     "scryfall_id": other_scryfall_id,
                     "image_url": build_scryfall_face_image_url(shared_scryfall_id, "back") if shared_scryfall_id else None,
                 },
@@ -23040,6 +23045,12 @@ def get_chaos_card_image_face_context(
             or card_row["layout"]
             or ""
         ),
+
+        "security_stamp": (
+            face_payload.get("security_stamp")
+            or card_row["security_stamp"]
+            or ""
+        ),
     }
 
     if clean_requested_face == "back":
@@ -24411,6 +24422,16 @@ def build_upscale_plugin_card_payload(
         "frame_version": (
             card_row[
                 "frame_version"
+            ]
+            or ""
+        ),
+
+        "security_stamp": (
+            face_context.get(
+                "security_stamp"
+            )
+            or card_row[
+                "security_stamp"
             ]
             or ""
         ),

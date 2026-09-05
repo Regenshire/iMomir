@@ -171,6 +171,7 @@ def initialize_database():
         ensure_column_exists(cursor, "chaos_cards", "back_image_url", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "front_face_name", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "back_face_name", "TEXT")
+        ensure_column_exists(cursor, "chaos_cards", "security_stamp", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "colors_json", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "color_identity_json", "TEXT")
         ensure_column_exists(cursor, "chaos_cards", "edhrec_rank", "INTEGER")
@@ -262,6 +263,7 @@ def initialize_database():
             front_face_name TEXT,
             back_face_name TEXT,
             frame_version TEXT,
+            security_stamp TEXT,
             border_color TEXT,
             colors_json TEXT,
             color_identity_json TEXT,
@@ -272,6 +274,7 @@ def initialize_database():
     )
 
     ensure_column_exists(cursor, "chaos_cards", "frame_version", "TEXT")
+    ensure_column_exists(cursor, "chaos_cards", "security_stamp", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "border_color", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "colors_json", "TEXT")
     ensure_column_exists(cursor, "chaos_cards", "color_identity_json", "TEXT")
