@@ -16298,6 +16298,30 @@ def is_upscaling_show_generated_bleed_enabled():
     ).strip() == "1"
 
 
+def get_upscaling_holofoil_stamp_replacement():
+    config_values = (
+        get_request_config()
+        if has_request_context()
+        else get_config()
+    )
+
+    replacement = str(
+        config_values.get(
+            "upscaling_holofoil_stamp_replacement",
+            "none",
+        )
+        or "none"
+    ).strip().lower()
+
+    if replacement not in {
+        "none",
+        "background",
+    }:
+        return "none"
+
+    return replacement
+
+
 def get_upscaling_bleed_frame_context(
     card_row,
 ):
@@ -16469,6 +16493,49 @@ def config_upscaling_active_plugin():
     return jsonify({
         "ok": True,
         "plugin_id": plugin_id,
+    })
+
+
+@app.route(
+    "/config/upscaling/holofoil-stamp",
+    methods=["POST"],
+)
+def config_upscaling_holofoil_stamp():
+    payload = (
+        request.get_json(
+            silent=True
+        )
+        or {}
+    )
+
+    replacement = str(
+        payload.get(
+            "replacement",
+            "none",
+        )
+        or "none"
+    ).strip().lower()
+
+    if replacement not in {
+        "none",
+        "background",
+    }:
+        return jsonify({
+            "ok": False,
+            "message": (
+                "Invalid Holofoil Stamp "
+                "Replacement option."
+            ),
+        }), 400
+
+    set_config_value(
+        "upscaling_holofoil_stamp_replacement",
+        replacement,
+    )
+
+    return jsonify({
+        "ok": True,
+        "replacement": replacement,
     })
 
 
@@ -24532,6 +24599,19 @@ def build_upscale_candidate_response(
             )
         ),
 
+        "holofoil_stamp": (
+            plugin_result.get(
+                "holofoil_stamp"
+            )
+            if isinstance(
+                plugin_result.get(
+                    "holofoil_stamp"
+                ),
+                dict,
+            )
+            else {}
+        ),
+
         "accept_url": url_for(
             "upscaled_candidate_accept",
             upscaled_image_id=(
@@ -25063,6 +25143,9 @@ def run_card_upscale_candidate_batch(
                 "dev_add_source_indicator": (
                     is_upscaling_dev_source_indicator_enabled()
                 ),
+                "holofoil_stamp_replacement": (
+                    get_upscaling_holofoil_stamp_replacement()
+                ),
                 "host_assets": {
                     "fonts_dir": os.path.abspath(
                         os.path.join(
@@ -25176,6 +25259,32 @@ def run_card_upscale_candidate_batch(
             plugin_result_by_face[
                 face_name
             ] = plugin_result
+
+        holofoil_stamp_result = (
+            plugin_result.get(
+                "holofoil_stamp"
+            )
+        )
+
+        if isinstance(
+            holofoil_stamp_result,
+            dict,
+        ):
+            write_debug_log(
+                "HOLOFOIL STAMP | "
+                f"card_uuid={card_uuid} | "
+                f"face={face_name or 'unknown'} | "
+                f"replacement="
+                f"{holofoil_stamp_result.get('replacement', '')} | "
+                f"detected="
+                f"{int(bool(holofoil_stamp_result.get('detected')))} | "
+                f"background_restored="
+                f"{int(bool(holofoil_stamp_result.get('background_restored')))} | "
+                f"normalized_box="
+                f"{json.dumps(holofoil_stamp_result.get('normalized_box'))} | "
+                f"processing_ms="
+                f"{holofoil_stamp_result.get('processing_ms', 0)}"
+            )
 
     for prepared_face in prepared_faces:
         face_context = prepared_face[

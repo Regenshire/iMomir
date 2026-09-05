@@ -1152,6 +1152,17 @@ def handle_upscale(payload):
             f"for model {model_id}."
         )
 
+    from processors.holofoil_stamp import (
+        apply_holofoil_stamp_postprocess,
+    )
+
+    result = (
+        apply_holofoil_stamp_postprocess(
+            processor_payload,
+            result,
+        )
+    )
+
     apply_dev_source_indicator(
         processor_payload,
         result,

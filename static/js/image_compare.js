@@ -2459,6 +2459,26 @@
             );
         }
 
+        const holofoilStamp = (
+            output.holofoil_stamp
+            && typeof output.holofoil_stamp
+            === "object"
+        )
+            ? output.holofoil_stamp
+            : null;
+
+        if (
+            holofoilStamp
+            && holofoilStamp.replacement
+            === "background"
+        ) {
+            metaParts.push(
+                holofoilStamp.detected
+                    ? "Holofoil removed"
+                    : "Holofoil not detected"
+            );
+        }
+
         outputMeta.textContent =
             metaParts.join(" • ");
     }
