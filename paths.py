@@ -45,6 +45,18 @@ RUNTIME_PACK_ART_DIR = os.path.join(RUNTIME_IMAGE_DIR, "pack_art")
 
 PLUGIN_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "plugins")
 
+BUNDLED_PRINT_TEMPLATE_DIR = os.path.join(
+    BUNDLE_BASE_DIR,
+    "print",
+    "templates",
+)
+
+RUNTIME_PRINT_TEMPLATE_DIR = os.path.join(
+    RUNTIME_BASE_DIR,
+    "print",
+    "templates",
+)
+
 EXPORT_ROOT_DIR = os.path.join(RUNTIME_BASE_DIR, "Export")
 
 ATOMIC_CARDS_PATH = os.path.join(DATA_DOWNLOAD_DIR, "AtomicCards.json")
@@ -65,6 +77,31 @@ LOG_PATH = os.path.join(RUNTIME_BASE_DIR, "imomir_debug.log")
 
 def get_template_dir():
     return os.path.join(BUNDLE_BASE_DIR, "templates")
+
+
+def get_runtime_print_template_dir():
+    return RUNTIME_PRINT_TEMPLATE_DIR
+
+
+def get_print_template_dirs():
+    template_dirs = []
+    seen_paths = set()
+
+    for template_dir in (
+        BUNDLED_PRINT_TEMPLATE_DIR,
+        RUNTIME_PRINT_TEMPLATE_DIR,
+    ):
+        normalized_path = os.path.normcase(
+            os.path.abspath(template_dir)
+        )
+
+        if normalized_path in seen_paths:
+            continue
+
+        seen_paths.add(normalized_path)
+        template_dirs.append(template_dir)
+
+    return tuple(template_dirs)
 
 
 def get_static_dir():

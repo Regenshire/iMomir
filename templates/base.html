@@ -86,7 +86,7 @@
               <div class="app-nav-main-control">
                 <a
                   class="app-nav-primary-link"
-                  href="{{ url_for('deckbuilder_index') }}"
+                  href="{{ url_for('sets') }}"
                 >
                   Cards
                 </a>
@@ -103,6 +103,26 @@
               </div>
 
               <div class="app-nav-dropdown app-cards-dropdown" role="menu">
+                <div class="app-nav-dropdown-group">
+                  <a
+                    class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
+                    href="{{ url_for('sets') }}"
+                  >
+                    <span class="app-nav-heading-icon">
+                      <i class="fa-solid fa-clone"></i>
+                    </span>
+                    <span>Sets</span>
+                  </a>
+
+                  <a
+                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
+                    href="{{ url_for('sets') }}"
+                    role="menuitem"
+                  >
+                    Manage
+                  </a>
+                </div>
+
                 <div class="app-nav-dropdown-group">
                   <a
                     class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
@@ -128,26 +148,6 @@
                   >
                     Roulette
                   </span>
-                </div>
-
-                <div class="app-nav-dropdown-group">
-                  <a
-                    class="app-nav-dropdown-heading app-nav-dropdown-heading-link"
-                    href="{{ url_for('sets') }}"
-                  >
-                    <span class="app-nav-heading-icon">
-                      <i class="fa-solid fa-clone"></i>
-                    </span>
-                    <span>Sets</span>
-                  </a>
-
-                  <a
-                    class="app-nav-dropdown-item app-nav-dropdown-item-indented"
-                    href="{{ url_for('sets') }}"
-                    role="menuitem"
-                  >
-                    Manage
-                  </a>
                 </div>
 
                 <div class="app-nav-dropdown-group">
