@@ -1092,32 +1092,12 @@ def _build_pdf_template_layout(
         or "dk-1234"
     ).strip().lower()
 
-    if effective_scope == "chaos":
-        template_layout = (
-            build_chaos_registry_template_layout(
-                print_template
-            )
+    template_layout = (
+        build_registry_template_layout(
+            print_template,
+            effective_scope,
         )
-
-    else:
-        if print_template not in {
-            "dk-1234",
-            "standard",
-            "borderless-3p5x5-two-card",
-            "silhouette-letter-horizontal-8",
-            "silhouette-a4-vertical-9",
-            "perf-63x94",
-            "perf-69x94",
-            "landscape-3p5x5-centered",
-            "portrait-3p5x5-top-aligned",
-        }:
-            print_template = "dk-1234"
-
-        template_layout = (
-            resolve_print_template_layout(
-                print_template
-            )
-        )
+    )
 
     pdf_layout = {
         "print_template": (
@@ -1172,71 +1152,60 @@ def _build_pdf_template_layout(
                 False,
             )
         ),
+        "slot_defs": [
+            dict(slot_def)
+            for slot_def
+            in template_layout.get(
+                "slot_defs",
+                []
+            )
+        ],
+        "columns": int(
+            template_layout.get(
+                "columns",
+                1,
+            )
+            or 1
+        ),
+        "rows": int(
+            template_layout.get(
+                "rows",
+                1,
+            )
+            or 1
+        ),
+        "add_edge_bleed_border": bool(
+            template_layout.get(
+                "add_edge_bleed_border",
+                False,
+            )
+        ),
+        "fill_unused_slots_with_white": bool(
+            template_layout.get(
+                "fill_unused_slots_with_white",
+                False,
+            )
+        ),
+        "corner_radius_mm": float(
+            template_layout.get(
+                "corner_radius_mm",
+                0.0,
+            )
+            or 0.0
+        ),
+        "registration_background_path": (
+            template_layout.get(
+                "registration_background_path"
+            )
+            or ""
+        ),
+        "back_side_slot_order": (
+            template_layout.get(
+                "back_side_slot_order"
+            )
+            or "same"
+        ).strip().lower(),
     }
-
-    if effective_scope == "chaos":
-        pdf_layout.update({
-            "slot_defs": [
-                dict(slot_def)
-                for slot_def
-                in template_layout.get(
-                    "slot_defs",
-                    []
-                )
-            ],
-
-            "columns": int(
-                template_layout.get(
-                    "columns",
-                    1,
-                )
-                or 1
-            ),
-
-            "rows": int(
-                template_layout.get(
-                    "rows",
-                    1,
-                )
-                or 1
-            ),
-
-            "add_edge_bleed_border": bool(
-                template_layout.get(
-                    "add_edge_bleed_border",
-                    False,
-                )
-            ),
-
-            "fill_unused_slots_with_white": bool(
-                template_layout.get(
-                    "fill_unused_slots_with_white",
-                    False,
-                )
-            ),
-
-            "corner_radius_mm": float(
-                template_layout.get(
-                    "corner_radius_mm",
-                    0.0,
-                )
-                or 0.0
-            ),
-
-            "registration_background_path": (
-                template_layout.get(
-                    "registration_background_path"
-                )
-                or ""
-            ),
-
-            "back_side_slot_order": (
-                template_layout.get(
-                    "back_side_slot_order"
-                )
-                or "same"
-            ).strip().lower(),
-        })
 
     return pdf_layout
 
@@ -1263,32 +1232,12 @@ def _build_print_settings(config):
         or "dk-1234"
     ).strip().lower()
 
-    if effective_scope == "chaos":
-        template_layout = (
-            build_chaos_registry_template_layout(
-                print_template
-            )
+    template_layout = (
+        build_registry_template_layout(
+            print_template,
+            effective_scope,
         )
-
-    else:
-        if print_template not in {
-            "dk-1234",
-            "standard",
-            "borderless-3p5x5-two-card",
-            "silhouette-letter-horizontal-8",
-            "silhouette-a4-vertical-9",
-            "perf-63x94",
-            "perf-69x94",
-            "landscape-3p5x5-centered",
-            "portrait-3p5x5-top-aligned",
-        }:
-            print_template = "dk-1234"
-
-        template_layout = (
-            resolve_print_template_layout(
-                print_template
-            )
-        )
+    )
 
     print_mode = (request.args.get("mode") or config.get("print_color_mode") or "grayscale").strip().lower()
     if print_mode not in {"grayscale", "color", "monochrome", "optimal"}:
@@ -1312,7 +1261,22 @@ def _build_print_settings(config):
         "sheet_offset_y": template_layout["sheet_offset_y_css"],
         "print_mode": print_mode,
         "open_in_new_tab": open_in_new_tab,
-        "is_multi_card_layout": template_layout.get("is_multi_card_layout", False),
+        "is_multi_card_layout": template_layout.get(
+            "is_multi_card_layout",
+            False,
+        ),
+        "uses_fixed_inner_margin": template_layout.get(
+            "uses_fixed_inner_margin",
+            False,
+        ),
+        "slot_defs": [
+            dict(slot_def)
+            for slot_def
+            in template_layout.get(
+                "slot_defs",
+                []
+            )
+        ],
 
         "pdf_outer_slot_region_band_mode": (
             outer_band_settings["mode"]
@@ -2104,19 +2068,13 @@ def update_config_from_form(form_data):
             print_scope,
         )
 
-        if print_scope == "chaos":
-            valid_print_templates = {
-                value
-                for value, _
-                in get_chaos_print_template_options()
-            }
-
-        else:
-            valid_print_templates = set(
-                dict(
-                    PRINT_TEMPLATE_OPTIONS
-                )
+        valid_print_templates = {
+            value
+            for value, _
+            in get_print_template_options_for_scope(
+                print_scope
             )
+        }
 
         default_template = (
             existing_print_config.get(
@@ -2806,24 +2764,60 @@ def import_chaos_booster_data():
     conn.close()
 
 
-def get_chaos_print_template_options():
+def get_print_template_options_for_scope(scope):
     return get_print_template_registry().get_options(
-        scope="chaos",
+        scope=scope,
     )
 
 
-def is_chaos_print_template_supported(print_template):
+def get_chaos_print_template_options():
+    return get_print_template_options_for_scope(
+        "chaos"
+    )
+
+
+def get_momir_print_template_options():
+    return get_print_template_options_for_scope(
+        "momir"
+    )
+
+
+def is_print_template_supported_for_scope(
+    print_template,
+    scope,
+):
     template = get_print_template_registry().get(
         print_template
     )
 
     return bool(
         template
-        and template.cardprint_support
+        and template.supports_scope(scope)
     )
 
 
-def resolve_chaos_print_template(print_template):
+def is_chaos_print_template_supported(
+    print_template
+):
+    return is_print_template_supported_for_scope(
+        print_template,
+        "chaos",
+    )
+
+
+def is_momir_print_template_supported(
+    print_template
+):
+    return is_print_template_supported_for_scope(
+        print_template,
+        "momir",
+    )
+
+
+def resolve_print_template_for_scope(
+    print_template,
+    scope,
+):
     registry = get_print_template_registry()
 
     template = registry.get(
@@ -2832,7 +2826,7 @@ def resolve_chaos_print_template(print_template):
 
     if (
         template
-        and template.cardprint_support
+        and template.supports_scope(scope)
     ):
         return template
 
@@ -2842,27 +2836,50 @@ def resolve_chaos_print_template(print_template):
 
     if (
         fallback_template
-        and fallback_template.cardprint_support
+        and fallback_template.supports_scope(
+            scope
+        )
     ):
         return fallback_template
 
     available_templates = registry.list_templates(
-        scope="chaos",
+        scope=scope,
     )
 
     if available_templates:
         return available_templates[0]
 
     raise ValueError(
-        "No Card Print-compatible print templates are available."
+        f"No print templates are available "
+        f"for scope: {scope}"
     )
 
 
-def build_chaos_registry_template_layout(
-    print_template,
+def resolve_chaos_print_template(
+    print_template
 ):
-    template = resolve_chaos_print_template(
-        print_template
+    return resolve_print_template_for_scope(
+        print_template,
+        "chaos",
+    )
+
+
+def resolve_momir_print_template(
+    print_template
+):
+    return resolve_print_template_for_scope(
+        print_template,
+        "momir",
+    )
+
+
+def build_registry_template_layout(
+    print_template,
+    scope,
+):
+    template = resolve_print_template_for_scope(
+        print_template,
+        scope,
     )
 
     slot_defs = [
@@ -3019,6 +3036,22 @@ def build_chaos_registry_template_layout(
         ).strip().lower(),
     }
 
+def build_chaos_registry_template_layout(
+    print_template,
+):
+    return build_registry_template_layout(
+        print_template,
+        "chaos",
+    )
+
+
+def build_momir_registry_template_layout(
+    print_template,
+):
+    return build_registry_template_layout(
+        print_template,
+        "momir",
+    )
 
 def resolve_print_template_layout(print_template):
     normalized_template = (print_template or "").strip().lower()
@@ -5367,7 +5400,10 @@ def get_print_template_registration_background_path(
     ):
         return None
 
-    if not is_silhouette_registration_marks_enabled():
+    if (
+        get_request_print_scope() == "chaos"
+        and not is_silhouette_registration_marks_enabled()
+    ):
         return None
 
     background_abs_path = (
@@ -6038,52 +6074,188 @@ def draw_card_corner_label(pdf_canvas, slot_x_mm, slot_y_mm, slot_width_mm, slot
 
 def build_single_image_pdf_buffer(image_path):
     pdf_settings = resolve_pdf_print_settings()
-    pdf_template_layout = resolve_pdf_template_layout()
+    pdf_template_layout = (
+        resolve_pdf_template_layout()
+    )
     print_settings = resolve_print_settings()
 
-    width_mm = pdf_template_layout["page_width_mm"]
-    height_mm = pdf_template_layout["page_height_mm"]
-    crop_border = pdf_settings["pdf_crop_border"]
+    width_mm = (
+        pdf_template_layout[
+            "page_width_mm"
+        ]
+    )
+    height_mm = (
+        pdf_template_layout[
+            "page_height_mm"
+        ]
+    )
+
+    crop_border = (
+        pdf_settings[
+            "pdf_crop_border"
+        ]
+    )
 
     buffer = BytesIO()
-    pdf_canvas = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    draw_x_mm = pdf_template_layout["draw_x_mm"]
-    draw_y_mm = pdf_template_layout["draw_y_mm"]
-    draw_width_mm = pdf_template_layout["draw_width_mm"]
-    draw_height_mm = pdf_template_layout["draw_height_mm"]
+    pdf_canvas = canvas.Canvas(
+        buffer,
+        pagesize=(
+            width_mm * mm,
+            height_mm * mm,
+        ),
+    )
 
-    if crop_border and not pdf_template_layout["uses_fixed_inner_margin"]:
-        crop_left_right_mm = width_mm * 0.05
-        crop_top_bottom_mm = height_mm * 0.034
+    slot_defs = [
+        dict(slot_def)
+        for slot_def
+        in (
+            pdf_template_layout.get(
+                "slot_defs"
+            )
+            or []
+        )
+    ]
 
-        draw_x_mm = -crop_left_right_mm
-        draw_y_mm = -crop_top_bottom_mm
-        draw_width_mm = width_mm + (crop_left_right_mm * 2)
-        draw_height_mm = height_mm + (crop_top_bottom_mm * 2)
+    use_slot_compositor = bool(
+        slot_defs
+        and pdf_template_layout.get(
+            "uses_fixed_inner_margin",
+            False,
+        )
+    )
 
-    if (
-        pdf_template_layout.get("is_multi_card_layout", False)
-        and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card"
-    ):
-        slot_defs = get_two_card_borderless_slots_mm()
+    if use_slot_compositor:
+        background_abs_path = (
+            get_print_template_registration_background_path(
+                pdf_template_layout
+            )
+        )
 
-        for slot in slot_defs:
-            draw_processed_image_into_two_card_slot(
+        if background_abs_path:
+            draw_pdf_background_image(
+                pdf_canvas,
+                background_abs_path,
+                width_mm,
+                height_mm,
+            )
+
+        add_edge_bleed_border = bool(
+            pdf_template_layout.get(
+                "add_edge_bleed_border",
+                False,
+            )
+        )
+
+        corner_radius_mm = float(
+            pdf_template_layout.get(
+                "corner_radius_mm",
+                0.0,
+            )
+            or 0.0
+        )
+
+        for slot_def in slot_defs:
+            draw_processed_image_into_slot(
                 pdf_canvas,
                 image_path,
-                print_settings["print_mode"],
-                slot,
+                print_settings[
+                    "print_mode"
+                ],
+                slot_def,
+                add_edge_bleed_border=(
+                    add_edge_bleed_border
+                ),
+                rounded_corner_radius_mm=(
+                    corner_radius_mm
+                ),
             )
+
+        if is_pdf_cutting_guides_enabled():
+            for slot_def in slot_defs:
+                cut_rect = (
+                    get_pdf_cut_rect_for_slot(
+                        slot_def
+                    )
+                )
+
+                draw_pdf_cutting_guide_corner_marks(
+                    pdf_canvas,
+                    cut_rect,
+                )
+
     else:
-        pdf_image_reader = build_pdf_image_reader(image_path, print_settings["print_mode"])
+        draw_x_mm = (
+            pdf_template_layout[
+                "draw_x_mm"
+            ]
+        )
+        draw_y_mm = (
+            pdf_template_layout[
+                "draw_y_mm"
+            ]
+        )
+        draw_width_mm = (
+            pdf_template_layout[
+                "draw_width_mm"
+            ]
+        )
+        draw_height_mm = (
+            pdf_template_layout[
+                "draw_height_mm"
+            ]
+        )
+
+        if crop_border:
+            crop_left_right_mm = (
+                width_mm * 0.05
+            )
+            crop_top_bottom_mm = (
+                height_mm * 0.034
+            )
+
+            draw_x_mm = (
+                -crop_left_right_mm
+            )
+            draw_y_mm = (
+                -crop_top_bottom_mm
+            )
+            draw_width_mm = (
+                width_mm
+                + (
+                    crop_left_right_mm
+                    * 2
+                )
+            )
+            draw_height_mm = (
+                height_mm
+                + (
+                    crop_top_bottom_mm
+                    * 2
+                )
+            )
+
+        pdf_image_reader = (
+            build_pdf_image_reader(
+                image_path,
+                print_settings[
+                    "print_mode"
+                ],
+            )
+        )
 
         pdf_canvas.drawImage(
             pdf_image_reader,
             draw_x_mm * mm,
             draw_y_mm * mm,
-            width=draw_width_mm * mm,
-            height=draw_height_mm * mm,
+            width=(
+                draw_width_mm
+                * mm
+            ),
+            height=(
+                draw_height_mm
+                * mm
+            ),
             preserveAspectRatio=False,
             mask="auto",
         )
@@ -16370,36 +16542,150 @@ def print_tower_of_power_batch_pdf():
         return "No matching card images found", 404
 
     buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=(width_mm * mm, height_mm * mm))
 
-    if pdf_template_layout.get("is_multi_card_layout", False) and pdf_template_layout["print_template"] == "borderless-3p5x5-two-card":
-        slot_defs = get_two_card_borderless_slots_mm()
+    c = canvas.Canvas(
+        buffer,
+        pagesize=(
+            width_mm * mm,
+            height_mm * mm,
+        ),
+    )
 
-        for page_start_index in range(0, len(valid_card_paths), 2):
-            page_card_paths = valid_card_paths[page_start_index:page_start_index + 2]
+    slot_defs = [
+        dict(slot_def)
+        for slot_def
+        in (
+            pdf_template_layout.get(
+                "slot_defs"
+            )
+            or []
+        )
+    ]
 
-            for slot_index, card_path in enumerate(page_card_paths):
-                draw_processed_image_into_two_card_slot(
+    use_slot_compositor = bool(
+        slot_defs
+        and pdf_template_layout.get(
+            "uses_fixed_inner_margin",
+            False,
+        )
+    )
+
+    if use_slot_compositor:
+        cards_per_page = len(
+            slot_defs
+        )
+
+        background_abs_path = (
+            get_print_template_registration_background_path(
+                pdf_template_layout
+            )
+        )
+
+        add_edge_bleed_border = bool(
+            pdf_template_layout.get(
+                "add_edge_bleed_border",
+                False,
+            )
+        )
+
+        corner_radius_mm = float(
+            pdf_template_layout.get(
+                "corner_radius_mm",
+                0.0,
+            )
+            or 0.0
+        )
+
+        for page_start_index in range(
+            0,
+            len(valid_card_paths),
+            cards_per_page,
+        ):
+            page_card_paths = (
+                valid_card_paths[
+                    page_start_index:
+                    page_start_index
+                    + cards_per_page
+                ]
+            )
+
+            if background_abs_path:
+                draw_pdf_background_image(
                     c,
-                    card_path,
-                    print_settings["print_mode"],
-                    slot_defs[slot_index],
+                    background_abs_path,
+                    width_mm,
+                    height_mm,
                 )
 
+            for (
+                slot_index,
+                card_path,
+            ) in enumerate(
+                page_card_paths
+            ):
+                draw_processed_image_into_slot(
+                    c,
+                    card_path,
+                    print_settings[
+                        "print_mode"
+                    ],
+                    slot_defs[
+                        slot_index
+                    ],
+                    add_edge_bleed_border=(
+                        add_edge_bleed_border
+                    ),
+                    rounded_corner_radius_mm=(
+                        corner_radius_mm
+                    ),
+                )
+
+            if is_pdf_cutting_guides_enabled():
+                for slot_index in range(
+                    len(page_card_paths)
+                ):
+                    cut_rect = (
+                        get_pdf_cut_rect_for_slot(
+                            slot_defs[
+                                slot_index
+                            ]
+                        )
+                    )
+
+                    draw_pdf_cutting_guide_corner_marks(
+                        c,
+                        cut_rect,
+                    )
+
             c.showPage()
+
     else:
         for card_path in valid_card_paths:
-            pdf_image_reader = build_pdf_image_reader(card_path, print_settings["print_mode"])
+            pdf_image_reader = (
+                build_pdf_image_reader(
+                    card_path,
+                    print_settings[
+                        "print_mode"
+                    ],
+                )
+            )
 
             c.drawImage(
                 pdf_image_reader,
                 draw_x_mm * mm,
                 draw_y_mm * mm,
-                width=draw_width_mm * mm,
-                height=draw_height_mm * mm,
+                width=(
+                    draw_width_mm
+                    * mm
+                ),
+                height=(
+                    draw_height_mm
+                    * mm
+                ),
                 preserveAspectRatio=False,
                 mask="auto",
             )
+
             c.showPage()
 
     c.save()
@@ -18206,6 +18492,9 @@ def config():
         grouped_game_modes=grouped_game_modes,
         repeat_mode_options=REPEAT_MODE_OPTIONS,
         print_template_options=PRINT_TEMPLATE_OPTIONS,
+        momir_print_template_options=(
+            get_momir_print_template_options()
+        ),
         chaos_print_template_options=(
             get_chaos_print_template_options()
         ),
