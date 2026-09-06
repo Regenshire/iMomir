@@ -23,6 +23,7 @@ class PrintTemplate:
     source_path: str
 
     enabled: bool
+    featured_template: bool
     momir_support: bool
     cardprint_support: bool
 
@@ -317,6 +318,7 @@ class PrintTemplateRegistry:
         return sorted(
             templates,
             key=lambda template: (
+                not template.featured_template,
                 template.display_name.lower(),
                 template.template_id,
             ),
@@ -574,6 +576,12 @@ class PrintTemplateRegistry:
                 "Template",
                 "Enabled",
                 fallback=True,
+            ),
+            featured_template=_get_bool(
+                parser,
+                "Template",
+                "FeaturedTemplate",
+                fallback=False,
             ),
             momir_support=_get_bool(
                 parser,

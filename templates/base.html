@@ -10,6 +10,11 @@
       href="{{ url_for('static', filename='css/style.css') }}"
     />
 
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='css/print_template_selector.css') }}"
+    />
+
     {% block page_styles %}{% endblock %}
   </head>
   <body>
@@ -373,6 +378,8 @@
       </div>
     </div>
 
+    {% include "_print_template_selector_modal.html" %}
+
     <div id="appQrModal" class="app-qr-modal-backdrop hidden" aria-hidden="true">
       <div class="app-qr-modal" role="dialog" aria-modal="true" aria-labelledby="appQrModalTitle">
         <div class="app-qr-modal-header">
@@ -403,6 +410,8 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+
+    <script src="{{ url_for('static', filename='js/print_template_selector.js') }}"></script>
 
     {% block page_scripts_before_app %}{% endblock %}
 

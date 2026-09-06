@@ -23,6 +23,41 @@
     object-fit: fill;
 }
 
+.print-template-registration-background {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--print-width);
+    height: var(--print-height);
+    display: block;
+    object-fit: fill;
+    z-index: 0;
+    pointer-events: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+.print-template-slot {
+    position: absolute;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: #ffffff;
+    z-index: 1;
+}
+
+.print-template-slot-image {
+    position: absolute;
+    left: var(--slot-image-left, 0);
+    top: var(--slot-image-top, 0);
+    width: var(--slot-image-width, 100%);
+    height: var(--slot-image-height, 100%);
+    max-width: none;
+    max-height: none;
+    transform-origin: top left;
+    transform: var(--slot-image-transform, none);
+    object-fit: fill;
+}
+
 .print-template-borderless-3p5x5-two-card .print-sheet-two-card-slot {
     position: absolute;
     left: 0;
@@ -152,6 +187,42 @@
         height: 100% !important;
         display: block;
         object-fit: fill;
+    }
+
+    .print-template-registration-background {
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: var(--print-width) !important;
+        height: var(--print-height) !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        object-fit: fill;
+        z-index: 0;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .print-template-slot {
+        position: fixed !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        box-sizing: border-box;
+        overflow: hidden;
+        z-index: 1;
+    }
+
+    .print-template-slot-image {
+        position: absolute !important;
+        left: var(--slot-image-left, 0) !important;
+        top: var(--slot-image-top, 0) !important;
+        width: var(--slot-image-width, 100%) !important;
+        height: var(--slot-image-height, 100%) !important;
+        max-width: none !important;
+        max-height: none !important;
+        transform-origin: top left !important;
+        transform: var(--slot-image-transform, none) !important;
+        object-fit: fill !important;
     }
 
     .print-return-bar {

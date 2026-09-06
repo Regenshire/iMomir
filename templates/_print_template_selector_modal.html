@@ -1,0 +1,299 @@
+<div
+    id="printTemplateSelectorModal"
+    class="campaign-add-pack-modal print-template-selector-backdrop hidden"
+    aria-hidden="true"
+>
+    <div
+        class="campaign-add-pack-dialog print-template-selector-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="printTemplateSelectorTitle"
+    >
+        <div class="campaign-add-pack-header">
+            <div>
+                <h2
+                    id="printTemplateSelectorTitle"
+                    class="campaign-add-pack-title"
+                >
+                    Select Print Template
+                </h2>
+
+                <p
+                    id="printTemplateSelectorScopeLabel"
+                    class="campaign-add-pack-subtitle"
+                >
+                    Choose a template or narrow the list with filters.
+                </p>
+            </div>
+
+            <button
+                type="button"
+                id="printTemplateSelectorCloseButton"
+                class="campaign-add-pack-close-button"
+                aria-label="Close template selector"
+            >
+                ×
+            </button>
+        </div>
+
+        <div class="print-template-selector-body">
+            <div class="print-template-selector-filter-panel">
+                <div class="print-template-selector-quick-filters">
+                    <label class="print-template-selector-filter print-template-selector-search-filter">
+                        <span>Search</span>
+
+                        <input
+                            type="search"
+                            id="printTemplateSelectorSearch"
+                            placeholder="Name, tag, paper, printer..."
+                            autocomplete="off"
+                        >
+                    </label>
+
+                    <label class="print-template-selector-filter">
+                        <span>Paper Size</span>
+
+                        <select
+                            id="printTemplateSelectorPaperSize"
+                            data-print-template-filter="paperSize"
+                        >
+                            <option value="">All Paper Sizes</option>
+                        </select>
+                    </label>
+
+                    <label class="print-template-selector-filter">
+                        <span>Layout</span>
+
+                        <select
+                            id="printTemplateSelectorLayout"
+                            data-print-template-filter="layout"
+                        >
+                            <option value="">All Layouts</option>
+                        </select>
+                    </label>
+
+                    <div class="print-template-selector-filter-actions">
+                        <button
+                            type="button"
+                            id="printTemplateSelectorClearFilters"
+                            class="print-template-selector-clear-button"
+                        >
+                            <i class="fa-solid fa-rotate-left"></i>
+                            Clear Filters
+                        </button>
+                    </div>
+                </div>
+
+                <details class="print-template-selector-advanced-filters">
+                    <summary>
+                        <span>
+                            <i class="fa-solid fa-sliders"></i>
+                            Advanced Filters
+                        </span>
+
+                        <i class="fa-solid fa-chevron-down print-template-selector-advanced-chevron"></i>
+                    </summary>
+
+                    <div class="print-template-selector-advanced-filter-grid">
+                        <label class="print-template-selector-filter">
+                            <span>Printer</span>
+
+                            <select
+                                id="printTemplateSelectorPrinter"
+                                data-print-template-filter="printer"
+                            >
+                                <option value="">All Printers</option>
+                            </select>
+                        </label>
+
+                        <label class="print-template-selector-filter">
+                            <span>Printer Model</span>
+
+                            <select
+                                id="printTemplateSelectorPrinterModel"
+                                data-print-template-filter="printerModel"
+                            >
+                                <option value="">All Models</option>
+                            </select>
+                        </label>
+
+                        <label class="print-template-selector-filter">
+                            <span>Paper Stock</span>
+
+                            <select
+                                id="printTemplateSelectorPaperStock"
+                                data-print-template-filter="paperStock"
+                            >
+                                <option value="">All Paper Stock</option>
+                            </select>
+                        </label>
+
+                        <label class="print-template-selector-filter">
+                            <span>Paper Stock Type</span>
+
+                            <select
+                                id="printTemplateSelectorPaperStockType"
+                                data-print-template-filter="paperStockType"
+                            >
+                                <option value="">All Stock Types</option>
+                            </select>
+                        </label>
+
+                        <label class="print-template-selector-filter">
+                            <span>Orientation</span>
+
+                            <select
+                                id="printTemplateSelectorOrientation"
+                                data-print-template-filter="orientation"
+                            >
+                                <option value="">All Orientations</option>
+                            </select>
+                        </label>
+
+                        <label class="print-template-selector-filter">
+                            <span>Silhouette</span>
+
+                            <select
+                                id="printTemplateSelectorSilhouette"
+                                data-print-template-filter="silhouette"
+                            >
+                                <option value="">Any</option>
+                                <option value="true">Supported</option>
+                                <option value="false">Not Supported</option>
+                            </select>
+                        </label>
+                    </div>
+                </details>
+            </div>
+
+            <div class="print-template-selector-results-header">
+                <strong>Print Templates</strong>
+
+                <span id="printTemplateSelectorResultCount">
+                    0 templates
+                </span>
+            </div>
+
+            <div
+                id="printTemplateSelectorResults"
+                class="print-template-selector-results"
+            >
+                {% for template in global_print_template_catalog %}
+                <button
+                    type="button"
+                    class="print-template-selector-card"
+                    data-print-template-card
+                    data-template-id="{{ template.template_id|e }}"
+                    data-template-name="{{ template.display_name|e }}"
+                    data-description="{{ template.description|e }}"
+                    data-momir-support="{{ 'true' if template.momir_support else 'false' }}"
+                    data-cardprint-support="{{ 'true' if template.cardprint_support else 'false' }}"
+                    data-printer="{{ template.printer|e }}"
+                    data-printer-model="{{ template.printer_model|e }}"
+                    data-paper-stock="{{ template.paper_stock|e }}"
+                    data-paper-stock-type="{{ template.paper_stock_type|e }}"
+                    data-paper-size="{{ template.paper_size|e }}"
+                    data-layout="{{ template.layout|e }}"
+                    data-orientation="{{ template.orientation|e }}"
+                    data-silhouette="{{ 'true' if template.silhouette_support else 'false' }}"
+                    data-silhouette-model="{{ template.silhouette_model|e }}"
+                    data-tags="{{ template.tags|e }}"
+                >
+                    <span class="print-template-selector-card-name">
+                        {{ template.display_name }}
+                    </span>
+
+                    {% if template.description %}
+                    <span class="print-template-selector-card-description">
+                        {{ template.description }}
+                    </span>
+                    {% endif %}
+
+                    <span class="print-template-selector-card-details">
+                        <span>
+                            {{ template.paper_size }}
+                        </span>
+
+                        <span>
+                            {{ template.orientation }}
+                        </span>
+
+                        <span>
+                            Layout: {{ template.layout }}
+                        </span>
+
+                        <span>
+                            {{ template.cards_per_page }}
+                            Card{% if template.cards_per_page != 1 %}s{% endif %}
+                        </span>
+
+                        {% if template.silhouette_support %}
+                        <span>
+                            Silhouette
+                        </span>
+                        {% endif %}
+                    </span>
+
+                    {% if template.printer != "Any"
+                        or template.printer_model != "Any"
+                        or template.paper_stock != "Any"
+                        or template.paper_stock_type != "Any"
+                    %}
+                    <span class="print-template-selector-card-specifics">
+                        {% if template.printer != "Any" %}
+                        <span>
+                            Printer: {{ template.printer }}
+                        </span>
+                        {% endif %}
+
+                        {% if template.printer_model != "Any" %}
+                        <span>
+                            Model: {{ template.printer_model }}
+                        </span>
+                        {% endif %}
+
+                        {% if template.paper_stock != "Any" %}
+                        <span>
+                            Stock: {{ template.paper_stock }}
+                        </span>
+                        {% endif %}
+
+                        {% if template.paper_stock_type != "Any" %}
+                        <span>
+                            Type: {{ template.paper_stock_type }}
+                        </span>
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                </button>
+                {% endfor %}
+            </div>
+
+            <div
+                id="printTemplateSelectorEmpty"
+                class="print-template-selector-empty hidden"
+            >
+                No templates match the current filters.
+            </div>
+        </div>
+
+        <div class="print-template-selector-footer">
+            <button
+                type="button"
+                id="printTemplateSelectorCancelButton"
+                class="action-button secondary-button print-template-selector-footer-button"
+            >
+                Cancel
+            </button>
+
+            <button
+                type="button"
+                id="printTemplateSelectorApplyButton"
+                class="action-button print-template-selector-footer-button"
+                disabled
+            >
+                Use Selected Template
+            </button>
+        </div>
+    </div>
+</div>

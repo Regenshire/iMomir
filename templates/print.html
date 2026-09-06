@@ -22,22 +22,28 @@
     </style>
 </head>
 <body class="print-page print-template-{{ print_template }} print-mode-{{ print_mode }}">
-    {% if print_template == "borderless-3p5x5-two-card" %}
-        <div class="print-sheet print-sheet-two-card-slot print-sheet-two-card-slot-top">
-            <img
-                src="{{ image_src }}"
-                alt="{{ card['name'] }}"
-                class="print-card-image print-card-image-rotated-90"
-            >
-        </div>
+    {% if print_slots %}
+        {% if registration_background_src %}
+        <img
+            src="{{ registration_background_src }}"
+            alt=""
+            class="print-template-registration-background"
+            aria-hidden="true"
+        >
+        {% endif %}
 
-        <div class="print-sheet print-sheet-two-card-slot print-sheet-two-card-slot-bottom">
+        {% for slot in print_slots %}
+        <div
+            class="print-template-slot"
+            style="{{ slot.style }}"
+        >
             <img
                 src="{{ image_src }}"
                 alt="{{ card['name'] }}"
-                class="print-card-image print-card-image-rotated-90"
+                class="print-card-image print-template-slot-image"
             >
         </div>
+        {% endfor %}
     {% else %}
         <div class="print-sheet">
             <img

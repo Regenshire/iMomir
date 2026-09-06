@@ -111,22 +111,36 @@
                 <div class="print-export-settings-section">
                     <div class="print-export-settings-section-title">PDF Printing</div>
 
-                    <label class="toggle-row" for="printExportPrintTemplate">
+                    <div class="toggle-row">
                         <span>Print Template / Paper</span>
-                        <select
-                            id="printExportPrintTemplate"
-                            name="print_template"
-                        >
-                            {% for value, label in global_print_template_options %}
-                            <option
-                                value="{{ value }}"
-                                {% if print_export_defaults and print_export_defaults.print_template == value %}selected{% endif %}
+
+                        <div class="print-template-setting-control">
+                            <select
+                                id="printExportPrintTemplate"
+                                name="print_template"
                             >
-                                {{ label }}
-                            </option>
-                            {% endfor %}
-                        </select>
-                    </label>
+                                {% for value, label in global_print_template_options %}
+                                <option
+                                    value="{{ value }}"
+                                    {% if print_export_defaults and print_export_defaults.print_template == value %}selected{% endif %}
+                                >
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+
+                            <button
+                                type="button"
+                                class="print-template-browse-button"
+                                data-print-template-selector-open
+                                data-print-template-target="printExportPrintTemplate"
+                                data-print-template-scope="chaos"
+                            >
+                                <i class="fa-solid fa-table-cells-large"></i>
+                                Browse Print Templates
+                            </button>
+                        </div>
+                    </div>
                     <label class="toggle-row">
                         <span>Silhouette Registration Marks</span>
                         <input

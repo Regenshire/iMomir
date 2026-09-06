@@ -1654,6 +1654,9 @@ def inject_global_template_state():
         "global_print_template_options": (
             get_chaos_print_template_options()
         ),
+        "global_print_template_catalog": (
+            get_print_template_catalog()
+        ),
         "global_no_waste_set_rule_options": (
             NO_WASTE_SET_RULE_OPTIONS
         ),
@@ -2780,6 +2783,92 @@ def get_momir_print_template_options():
     return get_print_template_options_for_scope(
         "momir"
     )
+
+
+def get_print_template_catalog():
+    registry = get_print_template_registry()
+    catalog = []
+
+    for template in registry.list_templates():
+        metadata = dict(
+            template.metadata
+            or {}
+        )
+
+        def metadata_value(
+            key,
+            default="Any",
+        ):
+            value = str(
+                metadata.get(key)
+                or ""
+            ).strip()
+
+            return value or default
+
+        layout_label = (
+            f"{int(template.columns)}x"
+            f"{int(template.rows)}"
+        )
+
+        catalog.append({
+            "template_id": (
+                template.template_id
+            ),
+            "display_name": (
+                template.display_name
+            ),
+            "description": (
+                template.description
+                or ""
+            ),
+            "momir_support": bool(
+                template.momir_support
+            ),
+            "cardprint_support": bool(
+                template.cardprint_support
+            ),
+            "featured_template": bool(
+                template.featured_template
+            ),
+            "printer": metadata_value(
+                "printer"
+            ),
+            "printer_model": metadata_value(
+                "printer_model"
+            ),
+            "paper_stock": metadata_value(
+                "paper_stock"
+            ),
+            "paper_stock_type": metadata_value(
+                "paper_stock_type"
+            ),
+            "paper_size": metadata_value(
+                "paper_size"
+            ),
+            "orientation": metadata_value(
+                "orientation"
+            ),
+            "silhouette_support": bool(
+                template.is_silhouette_layout
+            ),
+            "silhouette_model": metadata_value(
+                "silhouette_model"
+            ),
+            "tags": str(
+                metadata.get("tags")
+                or ""
+            ).strip(),
+            "layout": layout_label,
+            "layout_type": (
+                template.layout_type
+            ),
+            "cards_per_page": int(
+                template.cards_per_page
+            ),
+        })
+
+    return catalog
 
 
 def is_print_template_supported_for_scope(
@@ -6793,21 +6882,151 @@ def build_inline_pdf_response(pdf_buffer, filename):
         }
     )
 
+def build_html_print_slots(template_layout):
+    page_height_mm = float(
+        template_layout["page_height_mm"]
+    )
+
+    html_slots = []
+
+    def format_mm(value):
+        return (
+            f"{float(value):.6f}"
+            .rstrip("0")
+            .rstrip(".")
+        )
+
+    for slot_def in (
+        template_layout.get("slot_defs")
+        or []
+    ):
+        x_mm = float(
+            slot_def.get("x_mm")
+            or 0.0
+        )
+        y_mm = float(
+            slot_def.get("y_mm")
+            or 0.0
+        )
+        width_mm = float(
+            slot_def["width_mm"]
+        )
+        height_mm = float(
+            slot_def["height_mm"]
+        )
+
+        rotation_degrees = int(
+            slot_def.get(
+                "rotation_degrees"
+            )
+            or 0
+        ) % 360
+
+        top_mm = (
+            page_height_mm
+            - y_mm
+            - height_mm
+        )
+
+        image_width_mm = width_mm
+        image_height_mm = height_mm
+        image_left_mm = 0.0
+        image_top_mm = 0.0
+        image_transform = "none"
+
+        if rotation_degrees == 90:
+            image_width_mm = height_mm
+            image_height_mm = width_mm
+            image_left_mm = width_mm
+            image_transform = "rotate(90deg)"
+
+        elif rotation_degrees == 180:
+            image_left_mm = width_mm
+            image_top_mm = height_mm
+            image_transform = "rotate(180deg)"
+
+        elif rotation_degrees == 270:
+            image_width_mm = height_mm
+            image_height_mm = width_mm
+            image_top_mm = height_mm
+            image_transform = "rotate(-90deg)"
+
+        html_slots.append({
+            "style": (
+                f"left:{format_mm(x_mm)}mm;"
+                f"top:{format_mm(top_mm)}mm;"
+                f"width:{format_mm(width_mm)}mm;"
+                f"height:{format_mm(height_mm)}mm;"
+                f"--slot-image-left:{format_mm(image_left_mm)}mm;"
+                f"--slot-image-top:{format_mm(image_top_mm)}mm;"
+                f"--slot-image-width:{format_mm(image_width_mm)}mm;"
+                f"--slot-image-height:{format_mm(image_height_mm)}mm;"
+                f"--slot-image-transform:{image_transform};"
+            ),
+        })
+
+    return html_slots
+
+
 def render_print_page(card, image_src):
     print_settings = resolve_print_settings()
+
+    template_layout = (
+        build_momir_registry_template_layout(
+            print_settings[
+                "print_template"
+            ]
+        )
+    )
+
+    registration_background_src = ""
+
+    if template_layout.get(
+        "registration_background_path"
+    ):
+        registration_background_src = url_for(
+            "print_template_registration_background",
+            template_id=(
+                template_layout[
+                    "print_template"
+                ]
+            ),
+        )
 
     return render_template(
         "print.html",
         card=card,
         image_src=image_src,
-        print_mode=print_settings["print_mode"],
-        print_template=print_settings["print_template"],
-        print_width=print_settings["print_width"],
-        print_height=print_settings["print_height"],
-        sheet_width=print_settings["sheet_width"],
-        sheet_height=print_settings["sheet_height"],
-        sheet_offset_x=print_settings["sheet_offset_x"],
-        sheet_offset_y=print_settings["sheet_offset_y"],
+        print_mode=print_settings[
+            "print_mode"
+        ],
+        print_template=print_settings[
+            "print_template"
+        ],
+        print_width=print_settings[
+            "print_width"
+        ],
+        print_height=print_settings[
+            "print_height"
+        ],
+        sheet_width=print_settings[
+            "sheet_width"
+        ],
+        sheet_height=print_settings[
+            "sheet_height"
+        ],
+        sheet_offset_x=print_settings[
+            "sheet_offset_x"
+        ],
+        sheet_offset_y=print_settings[
+            "sheet_offset_y"
+        ],
+        print_slots=build_html_print_slots(
+            template_layout
+        ),
+        registration_background_src=(
+            registration_background_src
+        ),
     )
 
 def get_pack_label_set_icon_path(set_code, fallback_set_code=None):
@@ -16456,6 +16675,73 @@ def result():
         card_print_href=get_card_print_href(card["card_key"]) if card else "",
         open_print_in_new_tab=print_settings["open_in_new_tab"],
     )
+
+@app.route(
+    "/print-template-registration-background/"
+    "<template_id>"
+)
+def print_template_registration_background(
+    template_id,
+):
+    template = (
+        get_print_template_registry().get(
+            template_id
+        )
+    )
+
+    if (
+        not template
+        or not template.momir_support
+    ):
+        return "Print template not found", 404
+
+    background_path = os.path.abspath(
+        (
+            template.silhouette.get(
+                "registration_background_path"
+            )
+            or ""
+        ).strip()
+    )
+
+    if not background_path:
+        return "Registration background not found", 404
+
+    template_dir = os.path.abspath(
+        os.path.dirname(
+            template.source_path
+        )
+    )
+
+    try:
+        common_path = os.path.commonpath(
+            [
+                template_dir,
+                background_path,
+            ]
+        )
+
+    except ValueError:
+        return "Invalid registration background", 404
+
+    if common_path != template_dir:
+        return "Invalid registration background", 404
+
+    if not os.path.isfile(
+        background_path
+    ):
+        return "Registration background not found", 404
+
+    response = send_file(
+        background_path
+    )
+
+    response.headers[
+        "Cache-Control"
+    ] = "no-store"
+
+    return response
+
 
 @app.route("/print/<card_key>")
 def print_card(card_key):
